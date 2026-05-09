@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Gaurav POS Hub</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <div>
+          <h1>Gaurav POS</h1>
+          <p id="dayStatus">Starting hub...</p>
+        </div>
+        <form id="openDayForm" class="open-day-form">
+          <input id="openingCash" type="number" min="0" step="1" placeholder="Opening cash" />
+          <button type="submit">Open Day</button>
+        </form>
+        <div class="status-strip">
+          <span id="hubHealth">LAN hub</span>
+          <span id="syncStatus">Sync pending: 0</span>
+          <button id="processPrints" type="button">Run Prints</button>
+        </div>
+      </header>
+
+      <section class="workspace">
+        <section class="tables-panel">
+          <div class="panel-header">
+            <h2>Tables</h2>
+            <button id="refresh" type="button">Refresh</button>
+          </div>
+          <div id="tables" class="table-grid"></div>
+        </section>
+
+        <section class="order-panel">
+          <div class="panel-header">
+            <div>
+              <h2 id="orderTitle">Select a table</h2>
+              <p id="orderMeta"></p>
+            </div>
+            <input id="captainId" value="waiter-1" aria-label="Captain ID" />
+          </div>
+
+          <div class="order-layout">
+            <div>
+              <div id="menu" class="menu-list"></div>
+            </div>
+            <div class="ticket">
+              <div class="ticket-controls">
+                <label>Pax <input id="pax" type="number" min="1" max="99" value="2" /></label>
+                <button id="submitOrder" type="button">Send KOT</button>
+              </div>
+              <div id="draftItems" class="draft-items"></div>
+              <div class="billing-actions">
+                <button id="generateBill" type="button">Bill</button>
+                <button id="settleBill" type="button">Settle Cash</button>
+                <button id="cancelOrder" type="button">Cancel</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="ops-panel">
+          <div class="panel-header">
+            <h2>KDS</h2>
+            <select id="kdsUnit"></select>
+          </div>
+          <div id="kds" class="kds-list"></div>
+
+          <div class="panel-header print-header">
+            <h2>Print Queue</h2>
+          </div>
+          <div id="printJobs" class="print-list"></div>
+        </section>
+      </section>
+    </main>
+
+    <template id="emptyState">
+      <div class="empty">No records</div>
+    </template>
+
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>

@@ -1,0 +1,14 @@
+{
+  "expo": {
+    "name": "Gaurav POS Mobile",
+    "slug": "gaurav-pos-mobile",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "assetBundlePatterns": ["**/*"],
+    "android": {
+      "package": "com.gauravpos.mobile",
+      "usesCleartextTraffic": true
+    }
+  }
+}
