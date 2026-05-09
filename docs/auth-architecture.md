@@ -42,6 +42,8 @@ Only Google sign-in should be enabled in WorkOS AuthKit. Disable password, OTP/m
 
 - Cloud admin uses WorkOS AuthKit in `apps/cloud-admin`.
 - Convex auth config expects WorkOS JWTs in `convex/auth.config.ts`.
-- Local hub endpoints are not yet protected by local device tokens.
+- Local hub REST endpoints and realtime WebSocket are protected by local device tokens.
+- Hub pairing APIs can create one-time pairing codes, exchange them for long-lived local device tokens, list devices, and revoke paired devices.
+- Development seeds `dev-admin-token`; production should set `HUB_ADMIN_TOKEN`.
 - Convex event ingestion HTTP route requires `POS_SYNC_SECRET`.
-- Device pairing, role snapshots, and hub-local authorization middleware are the next auth tasks.
+- Cloud-to-hub role snapshots are still pending; current hub roles are stored locally.

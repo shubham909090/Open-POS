@@ -174,5 +174,62 @@ export const migrations = [
       CREATE INDEX IF NOT EXISTS idx_print_jobs_status ON print_jobs(status, created_at);
       CREATE INDEX IF NOT EXISTS idx_sync_outbox_status ON sync_outbox(status, created_at);
     `
+  },
+  {
+    id: "002_local_auth_and_settings",
+    sql: `
+      CREATE TABLE IF NOT EXISTS hub_settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS local_devices (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        role TEXT NOT NULL,
+        token_hash TEXT NOT NULL UNIQUE,
+        status TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        last_seen_at TEXT,
+        revoked_at TEXT
+      );
+
+      CREATE TABLE IF NOT EXISTS pairing_codes (
+        id TEXT PRIMARY KEY,
+        code_hash TEXT NOT NULL UNIQUE,
+        device_name TEXT NOT NULL,
+        role TEXT NOT NULL,
+        status TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        used_at TEXT,
+        used_device_id TEXT
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_local_devices_hash ON local_devices(token_hash);
+      CREATE INDEX IF NOT EXISTS idx_pairing_codes_status ON pairing_codes(status, expires_at);
+    `
+  },
+  {
+    id: "003_idempotency_records",
+    sql: `
+      CREATE TABLE IF NOT EXISTS idempotency_records (
+        key TEXT NOT NULL,
+        route TEXT NOT NULL,
+        request_hash TEXT NOT NULL,
+        response_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY (key, route)
+      );
+    `
+  },
+  {
+    id: "004_system_printer_targets",
+    sql: `
+      ALTER TABLE production_units ADD COLUMN printer_mode TEXT NOT NULL DEFAULT 'network';
+      ALTER TABLE production_units ADD COLUMN printer_name TEXT;
+      ALTER TABLE print_jobs ADD COLUMN printer_name TEXT;
+    `
   }
 ] as const;

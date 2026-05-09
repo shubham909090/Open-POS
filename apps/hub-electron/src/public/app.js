@@ -2,7 +2,11 @@ const state = {
   bootstrap: null,
   selectedTableId: null,
   selectedOrder: null,
-  draft: new Map()
+  draft: new Map(),
+  systemPrinters: [],
+  devices: [],
+  backups: [],
+  closeSummary: null
 };
 
 const $ = (id) => document.getElementById(id);
@@ -10,10 +14,12 @@ const money = (paise) =>
   new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR" }).format((paise ?? 0) / 100);
 
 async function api(path, options = {}) {
+  const token = $("deviceToken")?.value || localStorage.getItem("deviceToken") || "dev-admin-token";
   const response = await fetch(path, {
     ...options,
     headers: {
       "content-type": "application/json",
+      "x-device-token": token,
       ...(options.headers ?? {})
     }
   });
@@ -25,6 +31,9 @@ async function api(path, options = {}) {
 }
 
 async function loadBootstrap() {
+  if ($("deviceToken") && !$("deviceToken").value) {
+    $("deviceToken").value = localStorage.getItem("deviceToken") || "dev-admin-token";
+  }
   state.bootstrap = await api("/sync/bootstrap");
   $("hubHealth").textContent = "LAN hub online";
   const pending = state.bootstrap.syncStatus?.counts?.pending ?? 0;
@@ -33,14 +42,165 @@ async function loadBootstrap() {
   renderTables();
   renderMenu();
   renderUnits();
+  renderSetupOptions();
   renderPrintJobs();
+  await renderReceiptPrinter();
+  await loadAdminPanels();
   await loadKds();
+}
+
+async function loadAdminPanels() {
+  const [devices, backups, closeSummary] = await Promise.all([
+    api("/devices").catch(() => []),
+    api("/backups").catch(() => []),
+    api("/pos-days/close-summary").catch(() => null)
+  ]);
+  state.devices = devices;
+  state.backups = backups;
+  state.closeSummary = closeSummary;
+  renderDevices();
+  renderBackups();
+  renderMenuAdmin();
+  renderCloseSummary();
+}
+
+async function loadSystemPrinters() {
+  try {
+    state.systemPrinters = await api("/system-printers");
+  } catch {
+    state.systemPrinters = [];
+  }
+  renderPrinterOptions();
+}
+
+function renderCloseSummary() {
+  const target = $("closeSummary");
+  if (!target) return;
+  const summary = state.closeSummary;
+  if (!summary?.openDay) {
+    target.textContent = "No open day.";
+    return;
+  }
+  target.innerHTML = `
+    <span>Open orders: <strong>${summary.openOrders}</strong></span>
+    <span>Unpaid bills: <strong>${summary.unpaidBills}</strong></span>
+    <span>Cash: <strong>${money(summary.cashPaymentsPaise)}</strong></span>
+    <span>UPI: <strong>${money(summary.upiPaymentsPaise)}</strong></span>
+    <span>Card: <strong>${money(summary.cardPaymentsPaise)}</strong></span>
+  `;
+}
+
+function renderDevices() {
+  const list = $("deviceList");
+  if (!list) return;
+  list.textContent = "";
+  if (state.devices.length === 0) return list.append(emptyNode());
+  for (const device of state.devices) {
+    const row = document.createElement("div");
+    row.className = "admin-row";
+    row.innerHTML = `
+      <div>
+        <strong>${device.name}</strong><br />
+        <small>${device.role} · ${device.status}${device.last_seen_at ? ` · seen ${new Date(device.last_seen_at).toLocaleString()}` : ""}</small>
+      </div>
+    `;
+    if (device.status !== "revoked" && device.id !== "device-local-admin") {
+      const revoke = document.createElement("button");
+      revoke.type = "button";
+      revoke.className = "danger";
+      revoke.textContent = "Revoke";
+      revoke.addEventListener("click", async () => {
+        await api(`/devices/${device.id}/revoke`, {
+          method: "POST",
+          body: JSON.stringify({ reason: "Revoked from setup" })
+        });
+        await loadBootstrap();
+      });
+      row.append(revoke);
+    }
+    list.append(row);
+  }
+}
+
+function renderMenuAdmin() {
+  const list = $("menuAdminList");
+  if (!list) return;
+  list.textContent = "";
+  for (const item of state.bootstrap?.menuItems ?? []) {
+    const row = document.createElement("div");
+    row.className = "admin-row";
+    row.innerHTML = `
+      <div>
+        <strong>${item.name}</strong><br />
+        <small>${item.production_unit_name} · ${money(item.price_paise)} · ${item.active ? "active" : "disabled"}</small>
+      </div>
+    `;
+    const edit = document.createElement("button");
+    edit.type = "button";
+    edit.className = "secondary";
+    edit.textContent = "Edit";
+    edit.addEventListener("click", async () => {
+      const name = prompt("Item name", item.name);
+      if (!name) return;
+      const price = prompt("Price in rupees", String(item.price_paise / 100));
+      if (price === null) return;
+      await api(`/menu-items/${item.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ name, pricePaise: Math.round(Number(price) * 100), active: item.active })
+      });
+      await loadBootstrap();
+    });
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.textContent = item.active ? "Disable" : "Enable";
+    toggle.addEventListener("click", async () => {
+      await api(`/menu-items/${item.id}/active`, {
+        method: "PATCH",
+        body: JSON.stringify({ active: !item.active })
+      });
+      await loadBootstrap();
+    });
+    row.append(edit, toggle);
+    list.append(row);
+  }
+}
+
+function renderBackups() {
+  const list = $("backupList");
+  if (!list) return;
+  list.textContent = "";
+  if (state.backups.length === 0) return list.append(emptyNode());
+  for (const backup of state.backups) {
+    const row = document.createElement("div");
+    row.className = "admin-row";
+    row.innerHTML = `
+      <div>
+        <strong>${backup.fileName}</strong><br />
+        <small>${new Date(backup.createdAt).toLocaleString()} · ${Math.ceil(backup.sizeBytes / 1024)} KB</small>
+      </div>
+    `;
+    const restore = document.createElement("button");
+    restore.type = "button";
+    restore.className = "danger";
+    restore.textContent = "Schedule Restore";
+    restore.addEventListener("click", async () => {
+      if (!confirm("Schedule this backup to restore on the next hub restart?")) return;
+      await api("/backups/restore", {
+        method: "POST",
+        body: JSON.stringify({ fileName: backup.fileName })
+      });
+      alert("Restore scheduled. Restart the hub app to apply it.");
+    });
+    row.append(restore);
+    list.append(row);
+  }
 }
 
 function renderDay() {
   const day = state.bootstrap?.openDay;
   $("dayStatus").textContent = day ? `POS day open: ${day.id}` : "POS day closed";
   $("openDayForm").style.display = day ? "none" : "flex";
+  $("closeDayForm").style.display = day ? "flex" : "none";
 }
 
 function renderTables() {
@@ -92,6 +252,52 @@ function renderUnits() {
   if (current) select.value = current;
 }
 
+function renderSetupOptions() {
+  const tableFloor = $("tableFloor");
+  const menuItemUnit = $("menuItemUnit");
+  const selectedFloor = tableFloor.value;
+  const selectedUnit = menuItemUnit.value;
+  tableFloor.textContent = "";
+  menuItemUnit.textContent = "";
+
+  for (const floor of state.bootstrap?.floors ?? []) {
+    const option = document.createElement("option");
+    option.value = floor.id;
+    option.textContent = floor.name;
+    tableFloor.append(option);
+  }
+
+  for (const unit of state.bootstrap?.productionUnits ?? []) {
+    const option = document.createElement("option");
+    option.value = unit.id;
+    option.textContent = unit.name;
+    menuItemUnit.append(option);
+  }
+
+  if (selectedFloor) tableFloor.value = selectedFloor;
+  if (selectedUnit) menuItemUnit.value = selectedUnit;
+  renderPrinterOptions();
+}
+
+function renderPrinterOptions() {
+  const selects = [$("receiptPrinterName"), $("unitPrinterName")].filter(Boolean);
+  for (const select of selects) {
+    const current = select.value;
+    select.textContent = "";
+    const blank = document.createElement("option");
+    blank.value = "";
+    blank.textContent = state.systemPrinters.length ? "Select PC printer" : "No PC printers loaded";
+    select.append(blank);
+    for (const printer of state.systemPrinters) {
+      const option = document.createElement("option");
+      option.value = printer.name;
+      option.textContent = `${printer.displayName}${printer.isDefault ? " (default)" : ""}`;
+      select.append(option);
+    }
+    if (current) select.value = current;
+  }
+}
+
 function renderPrintJobs() {
   const list = $("printJobs");
   list.textContent = "";
@@ -122,6 +328,13 @@ function renderPrintJobs() {
     }
     list.append(row);
   }
+}
+
+async function renderReceiptPrinter() {
+  const settings = await api("/settings/receipt-printer");
+  $("receiptPrinterName").value = settings.printerName ?? "";
+  $("receiptHost").value = settings.printerHost ?? "";
+  $("receiptPort").value = settings.printerPort ?? 9100;
 }
 
 async function selectTable(tableId) {
@@ -236,6 +449,17 @@ async function loadKds() {
       });
       actions.append(action);
     }
+    const reprint = document.createElement("button");
+    reprint.type = "button";
+    reprint.textContent = "reprint";
+    reprint.addEventListener("click", async () => {
+      await api(`/kot/${kot.id}/reprint`, {
+        method: "POST",
+        body: JSON.stringify({ reason: "KDS reprint", requestedBy: "cashier-1" })
+      });
+      await loadBootstrap();
+    });
+    actions.append(reprint);
     node.append(actions);
     list.append(node);
   }
@@ -258,6 +482,21 @@ $("openDayForm").addEventListener("submit", async (event) => {
     })
   });
   await loadBootstrap();
+});
+
+$("closeDayForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  await api("/pos-days/close", {
+    method: "POST",
+    body: JSON.stringify({
+      closingCashPaise: Number($("closingCash").value || 0) * 100,
+      closedBy: "cashier-1"
+    })
+  });
+  state.selectedOrder = null;
+  state.draft.clear();
+  await loadBootstrap();
+  renderOrder();
 });
 
 $("submitOrder").addEventListener("click", async () => {
@@ -288,6 +527,16 @@ $("generateBill").addEventListener("click", async () => {
   await loadBootstrap();
 });
 
+$("reprintBill").addEventListener("click", async () => {
+  const bill = state.selectedOrder?.bill;
+  if (!bill) return;
+  await api(`/bills/${bill.id}/reprint`, {
+    method: "POST",
+    body: JSON.stringify({ reason: "Cashier reprint", requestedBy: "cashier-1" })
+  });
+  await loadBootstrap();
+});
+
 $("settleBill").addEventListener("click", async () => {
   const bill = state.selectedOrder?.bill;
   if (!bill) return;
@@ -312,14 +561,113 @@ $("cancelOrder").addEventListener("click", async () => {
 });
 
 $("refresh").addEventListener("click", loadBootstrap);
+$("deviceToken").addEventListener("change", () => {
+  localStorage.setItem("deviceToken", $("deviceToken").value);
+  void loadBootstrap();
+});
 $("kdsUnit").addEventListener("change", loadKds);
 $("processPrints").addEventListener("click", async () => {
   await api("/print-jobs/process", { method: "POST" });
   await loadBootstrap();
 });
+$("loadPrinters").addEventListener("click", loadSystemPrinters);
+$("receiptPrinterForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  await api("/settings/receipt-printer", {
+    method: "PUT",
+    body: JSON.stringify({
+      printerMode: $("receiptPrinterName").value ? "system" : "network",
+      printerName: $("receiptPrinterName").value || undefined,
+      printerHost: $("receiptHost").value,
+      printerPort: Number($("receiptPort").value || 9100)
+    })
+  });
+  await loadBootstrap();
+});
+$("floorForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  await api("/floors", {
+    method: "POST",
+    body: JSON.stringify({ name: $("floorName").value })
+  });
+  $("floorName").value = "";
+  await loadBootstrap();
+});
+$("tableForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  await api("/tables", {
+    method: "POST",
+    body: JSON.stringify({ floorId: $("tableFloor").value, name: $("tableName").value })
+  });
+  $("tableName").value = "";
+  await loadBootstrap();
+});
+$("unitForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  await api("/production-units", {
+    method: "POST",
+    body: JSON.stringify({
+      name: $("unitName").value,
+      printerMode: $("unitPrinterName").value ? "system" : "network",
+      printerName: $("unitPrinterName").value || undefined,
+      printerHost: $("unitHost").value,
+      printerPort: Number($("unitPort").value || 9100),
+      kdsEnabled: true
+    })
+  });
+  $("unitName").value = "";
+  $("unitHost").value = "";
+  $("unitPort").value = "9100";
+  await loadBootstrap();
+});
+$("menuItemForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  await api("/menu-items", {
+    method: "POST",
+    body: JSON.stringify({
+      name: $("menuItemName").value,
+      pricePaise: Number($("menuItemPrice").value || 0) * 100,
+      productionUnitId: $("menuItemUnit").value,
+      active: true
+    })
+  });
+  $("menuItemName").value = "";
+  $("menuItemPrice").value = "";
+  await loadBootstrap();
+});
+$("pairingForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const result = await api("/devices/pairing-codes", {
+    method: "POST",
+    body: JSON.stringify({
+      deviceName: $("pairingName").value || "New device",
+      role: $("pairingRole").value,
+      expiresInMinutes: 10
+    })
+  });
+  $("pairingResult").textContent = `Code ${result.code} expires ${new Date(result.expiresAt).toLocaleTimeString()}`;
+  await loadAdminPanels();
+});
+
+$("backupForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  await api("/backups", {
+    method: "POST",
+    body: JSON.stringify({ label: $("backupLabel").value || "manual" })
+  });
+  $("backupLabel").value = "";
+  await loadAdminPanels();
+});
+
+$("pullCloud").addEventListener("click", async () => {
+  const result = await api("/sync/pull", { method: "POST" });
+  alert(result.skipped ? "Cloud pull skipped. Check Convex URL, POS secret, and installation id." : `Applied ${result.applied} cloud changes.`);
+  await loadBootstrap();
+});
 
 const protocol = location.protocol === "https:" ? "wss:" : "ws:";
-const realtime = new WebSocket(`${protocol}//${location.host}/realtime`);
+const realtimeToken = localStorage.getItem("deviceToken") || "dev-admin-token";
+const realtime = new WebSocket(`${protocol}//${location.host}/realtime`, [`pos-token.${realtimeToken}`]);
 realtime.addEventListener("message", () => {
   void loadBootstrap();
 });
@@ -327,3 +675,12 @@ realtime.addEventListener("message", () => {
 loadBootstrap().catch((error) => {
   $("hubHealth").textContent = error.message;
 });
+
+for (const item of document.querySelectorAll(".nav-item")) {
+  item.addEventListener("click", () => {
+    document.querySelectorAll(".nav-item").forEach((button) => button.classList.remove("active"));
+    document.querySelectorAll(".view").forEach((view) => view.classList.remove("active"));
+    item.classList.add("active");
+    $(item.dataset.view).classList.add("active");
+  });
+}

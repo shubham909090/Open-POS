@@ -1,12 +1,17 @@
 import Database from "better-sqlite3";
+import { drizzle, type BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
+import { eq } from "drizzle-orm";
 import { dirname } from "node:path";
 import { mkdirSync } from "node:fs";
+import * as schema from "./drizzle-schema.js";
 import { migrations } from "./schema.js";
 
 export type SqliteDatabase = Database.Database;
+export type HubOrm = BetterSQLite3Database<typeof schema> & { $client: SqliteDatabase };
 
 export class HubDatabase {
   readonly db: SqliteDatabase;
+  readonly orm: HubOrm;
 
   constructor(path = ":memory:") {
     if (path !== ":memory:") {
@@ -15,6 +20,7 @@ export class HubDatabase {
 
     this.db = new Database(path);
     this.db.pragma("foreign_keys = ON");
+    this.orm = drizzle(this.db, { schema });
   }
 
   migrate(): void {
@@ -26,17 +32,20 @@ export class HubDatabase {
     `);
 
     for (const migration of migrations) {
-      const applied = this.db
-        .prepare("SELECT id FROM migrations WHERE id = ?")
-        .get(migration.id);
+      const applied = this.orm
+        .select({ id: schema.migrationsTable.id })
+        .from(schema.migrationsTable)
+        .where(eq(schema.migrationsTable.id, migration.id))
+        .get();
 
       if (applied) continue;
 
       const runMigration = this.db.transaction(() => {
         this.db.exec(migration.sql);
-        this.db
-          .prepare("INSERT INTO migrations (id, applied_at) VALUES (?, ?)")
-          .run(migration.id, new Date().toISOString());
+        this.orm.insert(schema.migrationsTable).values({
+          id: migration.id,
+          appliedAt: new Date().toISOString()
+        }).run();
       });
 
       runMigration();
@@ -45,18 +54,19 @@ export class HubDatabase {
 
   seedDemoData(): void {
     const seed = this.db.transaction(() => {
-      this.db
-        .prepare("INSERT OR IGNORE INTO floors (id, name) VALUES (?, ?)")
-        .run("floor-main", "Main");
+      this.orm.insert(schema.floors).values({ id: "floor-main", name: "Main" }).onConflictDoNothing().run();
 
       for (const table of ["T1", "T2", "T3", "T4"]) {
-        this.db
-          .prepare(
-            `INSERT OR IGNORE INTO restaurant_tables
-              (id, floor_id, name, status, current_order_id, occupied_at)
-             VALUES (?, ?, ?, 'free', NULL, NULL)`
-          )
-          .run(`table-${table.toLowerCase()}`, "floor-main", table);
+        this.orm
+          .insert(schema.restaurantTables)
+          .values({
+            id: `table-${table.toLowerCase()}`,
+            floorId: "floor-main",
+            name: table,
+            status: "free"
+          })
+          .onConflictDoNothing()
+          .run();
       }
 
       const units = [
@@ -65,13 +75,18 @@ export class HubDatabase {
       ] as const;
 
       for (const unit of units) {
-        this.db
-          .prepare(
-            `INSERT OR IGNORE INTO production_units
-              (id, name, printer_host, printer_port, kds_enabled)
-             VALUES (?, ?, ?, ?, 1)`
-          )
-          .run(...unit);
+        this.orm
+          .insert(schema.productionUnits)
+          .values({
+            id: unit[0],
+            name: unit[1],
+            printerHost: unit[2],
+            printerPort: unit[3],
+            kdsEnabled: true,
+            printerMode: "network"
+          })
+          .onConflictDoNothing()
+          .run();
       }
 
       const items = [
@@ -81,13 +96,17 @@ export class HubDatabase {
       ] as const;
 
       for (const item of items) {
-        this.db
-          .prepare(
-            `INSERT OR IGNORE INTO menu_items
-              (id, name, price_paise, production_unit_id, active)
-             VALUES (?, ?, ?, ?, 1)`
-          )
-          .run(...item);
+        this.orm
+          .insert(schema.menuItems)
+          .values({
+            id: item[0],
+            name: item[1],
+            pricePaise: item[2],
+            productionUnitId: item[3],
+            active: true
+          })
+          .onConflictDoNothing()
+          .run();
       }
     });
 

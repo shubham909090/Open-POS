@@ -22,7 +22,7 @@ describe("PrintJobService", () => {
     });
 
     const adapter = new DryRunPrinterAdapter();
-    const service = new PrintJobService(database.db, adapter);
+    const service = new PrintJobService(database.orm, adapter);
     const result = await service.processPending();
 
     expect(result).toEqual({ printed: 1, failed: 0 });
@@ -42,7 +42,7 @@ describe("PrintJobService", () => {
       items: [{ menuItemId: "item-dal-fry", quantity: 1 }]
     });
 
-    const service = new PrintJobService(database.db, new FailingPrinterAdapter());
+    const service = new PrintJobService(database.orm, new FailingPrinterAdapter());
     const result = await service.processPending();
 
     expect(result).toEqual({ printed: 0, failed: 1 });

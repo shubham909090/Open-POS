@@ -1,30 +1,38 @@
-import type { SqliteDatabase } from "../db/database.js";
+import { and, asc, eq, inArray, lt, sql } from "drizzle-orm";
+import type { HubOrm } from "../db/database.js";
+import { printJobs } from "../db/drizzle-schema.js";
 import type { PrinterAdapter } from "./escpos.js";
 
 interface PrintJobRow {
   id: string;
-  printer_host: string | null;
-  printer_port: number | null;
+  printerHost: string | null;
+  printerPort: number | null;
+  printerName: string | null;
   payload: string;
   attempts: number;
 }
 
 export class PrintJobService {
   constructor(
-    private readonly db: SqliteDatabase,
+    private readonly db: HubOrm,
     private readonly adapter: PrinterAdapter
   ) {}
 
   async processPending(limit = 10): Promise<{ printed: number; failed: number }> {
     const jobs = this.db
-      .prepare(
-        `SELECT id, printer_host, printer_port, payload, attempts
-         FROM print_jobs
-         WHERE status IN ('pending', 'failed') AND attempts < 5
-         ORDER BY created_at ASC
-         LIMIT ?`
-      )
-      .all(limit) as PrintJobRow[];
+      .select({
+        id: printJobs.id,
+        printerHost: printJobs.printerHost,
+        printerPort: printJobs.printerPort,
+        printerName: printJobs.printerName,
+        payload: printJobs.payload,
+        attempts: printJobs.attempts
+      })
+      .from(printJobs)
+      .where(and(inArray(printJobs.status, ["pending", "failed"]), lt(printJobs.attempts, 5)))
+      .orderBy(asc(printJobs.createdAt))
+      .limit(limit)
+      .all() as PrintJobRow[];
 
     let printed = 0;
     let failed = 0;
@@ -32,23 +40,38 @@ export class PrintJobService {
     for (const job of jobs) {
       const now = new Date().toISOString();
       this.db
-        .prepare("UPDATE print_jobs SET status = 'printing', attempts = attempts + 1, updated_at = ? WHERE id = ?")
-        .run(now, job.id);
+        .update(printJobs)
+        .set({ status: "printing", attempts: sql`${printJobs.attempts} + 1`, updatedAt: now })
+        .where(eq(printJobs.id, job.id))
+        .run();
 
       try {
-        if (!job.printer_host || !job.printer_port) {
+        if (!job.printerName && (!job.printerHost || !job.printerPort)) {
           throw new Error("No printer configured for print job");
         }
 
-        await this.adapter.print(job.printer_host, job.printer_port, job.payload);
+        await this.adapter.print({
+          printerHost: job.printerHost,
+          printerPort: job.printerPort,
+          printerName: job.printerName,
+          payload: job.payload
+        });
         this.db
-          .prepare("UPDATE print_jobs SET status = 'printed', last_error = NULL, updated_at = ? WHERE id = ?")
-          .run(new Date().toISOString(), job.id);
+          .update(printJobs)
+          .set({ status: "printed", lastError: null, updatedAt: new Date().toISOString() })
+          .where(eq(printJobs.id, job.id))
+          .run();
         printed += 1;
       } catch (error) {
         this.db
-          .prepare("UPDATE print_jobs SET status = 'failed', last_error = ?, updated_at = ? WHERE id = ?")
-          .run(error instanceof Error ? error.message : "Unknown print error", new Date().toISOString(), job.id);
+          .update(printJobs)
+          .set({
+            status: "failed",
+            lastError: error instanceof Error ? error.message : "Unknown print error",
+            updatedAt: new Date().toISOString()
+          })
+          .where(eq(printJobs.id, job.id))
+          .run();
         failed += 1;
       }
     }

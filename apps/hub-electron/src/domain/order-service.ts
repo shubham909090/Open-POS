@@ -13,9 +13,11 @@ import {
   type RetryPrintJobInput,
   type SettleBillInput,
   type SubmitOrderInput,
-  type UpdateKotStatusInput
+  type UpdateKotStatusInput,
+  type UpdateMenuItemInput,
+  type UpdateReceiptPrinterInput
 } from "@gaurav-pos/shared";
-import type { SqliteDatabase } from "../db/database.js";
+import type { HubOrm, SqliteDatabase } from "../db/database.js";
 import { DomainError } from "./errors.js";
 import { makeId } from "./ids.js";
 import { renderBillTicket, renderKotTicket, type KotTicketItem } from "./tickets.js";
@@ -41,6 +43,7 @@ interface MenuItemRow {
   unit_name: string;
   printer_host: string;
   printer_port: number;
+  printer_name: string | null;
 }
 
 interface OrderRow {
@@ -69,6 +72,7 @@ interface UnitRow {
   name: string;
   printer_host: string;
   printer_port: number;
+  printer_name: string | null;
   kds_enabled?: number;
 }
 
@@ -89,10 +93,15 @@ interface KotItemChange {
   productionUnitName: string;
   printerHost: string;
   printerPort: number;
+  printerName: string | null;
 }
 
 export class OrderService {
-  constructor(private readonly db: SqliteDatabase) {}
+  constructor(private readonly orm: HubOrm) {}
+
+  private get db(): SqliteDatabase {
+    return this.orm.$client;
+  }
 
   openPosDay(input: OpenPosDayInput): { id: string } {
     const existing = this.getOpenPosDay();
@@ -196,7 +205,8 @@ export class OrderService {
           productionUnitId: item.production_unit_id,
           productionUnitName: unit.name,
           printerHost: unit.printer_host,
-          printerPort: unit.printer_port
+          printerPort: unit.printer_port,
+          printerName: unit.printer_name
         };
       });
 
@@ -220,7 +230,7 @@ export class OrderService {
       const kot = this.db
         .prepare(
           `SELECT k.*, o.captain_id, t.name AS table_name, u.name AS unit_name,
-            u.printer_host, u.printer_port
+            u.printer_host, u.printer_port, u.printer_name
            FROM kots k
            JOIN orders o ON o.id = k.order_id
            JOIN restaurant_tables t ON t.id = o.table_id
@@ -240,6 +250,7 @@ export class OrderService {
             unit_name: string;
             printer_host: string;
             printer_port: number;
+            printer_name: string | null;
           }
         | undefined;
 
@@ -270,6 +281,7 @@ export class OrderService {
         productionUnitId: kot.production_unit_id,
         printerHost: kot.printer_host,
         printerPort: kot.printer_port,
+        printerName: kot.printer_name,
         payload
       });
 
@@ -278,6 +290,57 @@ export class OrderService {
     });
 
     return run();
+  }
+
+  reprintBill(billId: string, input: ReprintKotInput): { printJobId: string } {
+    const run = this.db.transaction(() => {
+      const bill = this.db
+        .prepare(
+          `SELECT b.*, t.name AS table_name
+           FROM bills b
+           JOIN orders o ON o.id = b.order_id
+           JOIN restaurant_tables t ON t.id = o.table_id
+           WHERE b.id = ?`
+        )
+        .get(billId) as
+        | {
+            id: string;
+            table_name: string;
+            subtotal_paise: number;
+            tax_paise: number;
+            total_paise: number;
+            created_at: string;
+          }
+        | undefined;
+
+      if (!bill) throw new DomainError("Bill not found", 404);
+
+      const payload = `${renderBillTicket({
+        tableName: bill.table_name,
+        billId: bill.id,
+        subtotalPaise: bill.subtotal_paise,
+        taxPaise: bill.tax_paise,
+        totalPaise: bill.total_paise,
+        createdAt: new Date().toISOString()
+      })}\nREPRINT\nReason: ${input.reason}\nRequested by: ${input.requestedBy}\n`;
+
+      const printJobId = this.enqueuePrintJob({
+        targetType: "BILL",
+        targetId: billId,
+        productionUnitId: null,
+        ...this.getReceiptPrinter(),
+        payload
+      });
+
+      this.appendEvent("bill.reprinted", "bill", billId, { ...input, printJobId });
+      return { printJobId };
+    });
+
+    return run();
+  }
+
+  getOpenDay(): ActivePosDayRow | undefined {
+    return this.getOpenPosDay();
   }
 
   generateBill(orderId: string): { billId: string; totalPaise: number } {
@@ -319,8 +382,7 @@ export class OrderService {
         targetType: "BILL",
         targetId: billId,
         productionUnitId: null,
-        printerHost: null,
-        printerPort: null,
+        ...this.getReceiptPrinter(),
         payload
       });
 
@@ -432,7 +494,7 @@ export class OrderService {
   listProductionUnits(): unknown[] {
     return this.db
       .prepare(
-        `SELECT id, name, printer_host, printer_port, kds_enabled
+        `SELECT id, name, printer_mode, printer_name, printer_host, printer_port, kds_enabled
          FROM production_units
          ORDER BY name`
       )
@@ -441,12 +503,21 @@ export class OrderService {
 
   createProductionUnit(input: CreateProductionUnitInput): { id: string } {
     const id = makeId("unit");
+    const printerMode = input.printerMode ?? "system";
     this.db
       .prepare(
-        `INSERT INTO production_units (id, name, printer_host, printer_port, kds_enabled)
-         VALUES (?, ?, ?, ?, ?)`
+        `INSERT INTO production_units (id, name, printer_mode, printer_name, printer_host, printer_port, kds_enabled)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`
       )
-      .run(id, input.name, input.printerHost, input.printerPort, input.kdsEnabled ? 1 : 0);
+      .run(
+        id,
+        input.name,
+        printerMode,
+        input.printerName ?? null,
+        input.printerHost ?? "",
+        input.printerPort,
+        input.kdsEnabled ? 1 : 0
+      );
     this.appendEvent("production_unit.created", "production_unit", id, { ...input, id });
     return { id };
   }
@@ -474,6 +545,31 @@ export class OrderService {
       )
       .run(id, input.name, input.pricePaise, input.productionUnitId, input.active ? 1 : 0);
     this.appendEvent("menu_item.created", "menu_item", id, { ...input, id });
+    return { id };
+  }
+
+  updateMenuItem(id: string, input: UpdateMenuItemInput): { id: string } {
+    if (input.productionUnitId) this.requireProductionUnit(input.productionUnitId);
+    const existing = this.db.prepare("SELECT * FROM menu_items WHERE id = ?").get(id) as
+      | { name: string; price_paise: number; production_unit_id: string; active: number }
+      | undefined;
+    if (!existing) throw new DomainError("Menu item not found", 404);
+
+    this.db
+      .prepare(
+        `UPDATE menu_items
+         SET name = ?, price_paise = ?, production_unit_id = ?, active = ?
+         WHERE id = ?`
+      )
+      .run(
+        input.name ?? existing.name,
+        input.pricePaise ?? existing.price_paise,
+        input.productionUnitId ?? existing.production_unit_id,
+        input.active === undefined ? existing.active : input.active ? 1 : 0,
+        id
+      );
+
+    this.appendEvent("menu_item.updated", "menu_item", id, { id, ...input });
     return { id };
   }
 
@@ -544,7 +640,7 @@ export class OrderService {
   listPrintJobs(limit = 50): unknown[] {
     return this.db
       .prepare(
-        `SELECT id, target_type, target_id, production_unit_id, printer_host, printer_port,
+        `SELECT id, target_type, target_id, production_unit_id, printer_host, printer_port, printer_name,
           status, attempts, last_error, created_at, updated_at
          FROM print_jobs
          ORDER BY created_at DESC
@@ -563,6 +659,35 @@ export class OrderService {
     return { id: printJobId };
   }
 
+  getReceiptPrinter(): { printerHost: string | null; printerPort: number | null; printerName: string | null } {
+    const host = this.getSetting("receipt_printer_host");
+    const port = this.getSetting("receipt_printer_port");
+    const name = this.getSetting("receipt_printer_name");
+    return {
+      printerHost: host || null,
+      printerPort: port ? Number(port) : null,
+      printerName: name || null
+    };
+  }
+
+  updateReceiptPrinter(input: UpdateReceiptPrinterInput): UpdateReceiptPrinterInput {
+    const now = new Date().toISOString();
+    const upsert = this.db.prepare(
+      `INSERT INTO hub_settings (key, value, updated_at)
+       VALUES (?, ?, ?)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`
+    );
+    const run = this.db.transaction(() => {
+      upsert.run("receipt_printer_mode", input.printerMode ?? "system", now);
+      upsert.run("receipt_printer_name", input.printerName ?? "", now);
+      upsert.run("receipt_printer_host", input.printerHost ?? "", now);
+      upsert.run("receipt_printer_port", String(input.printerPort), now);
+      this.appendEvent("receipt_printer.updated", "hub_setting", "receipt_printer", input);
+    });
+    run();
+    return input;
+  }
+
   getSyncStatus(): unknown {
     const rows = this.db
       .prepare("SELECT status, COUNT(*) AS count FROM sync_outbox GROUP BY status ORDER BY status")
@@ -573,6 +698,63 @@ export class OrderService {
     return {
       counts: Object.fromEntries(rows.map((row) => [row.status, row.count])),
       lastEvent: lastEvent ?? null
+    };
+  }
+
+  getCloseSummary(): unknown {
+    const openDay = this.getOpenPosDay();
+    if (!openDay) {
+      return {
+        openDay: null,
+        openOrders: 0,
+        billedOrders: 0,
+        unpaidBills: 0,
+        cashPaymentsPaise: 0,
+        upiPaymentsPaise: 0,
+        cardPaymentsPaise: 0
+      };
+    }
+
+    const orders = this.db
+      .prepare(
+        `SELECT status, COUNT(*) AS count
+         FROM orders
+         WHERE pos_day_id = ?
+         GROUP BY status`
+      )
+      .all(openDay.id) as Array<{ status: string; count: number }>;
+    const bills = this.db
+      .prepare(
+        `SELECT b.status, COUNT(*) AS count
+         FROM bills b
+         JOIN orders o ON o.id = b.order_id
+         WHERE o.pos_day_id = ?
+         GROUP BY b.status`
+      )
+      .all(openDay.id) as Array<{ status: string; count: number }>;
+    const payments = this.db
+      .prepare(
+        `SELECT p.method, COALESCE(SUM(p.amount_paise), 0) AS total
+         FROM payments p
+         JOIN bills b ON b.id = p.bill_id
+         JOIN orders o ON o.id = b.order_id
+         WHERE o.pos_day_id = ?
+         GROUP BY p.method`
+      )
+      .all(openDay.id) as Array<{ method: string; total: number }>;
+
+    const orderCounts = Object.fromEntries(orders.map((row) => [row.status, row.count]));
+    const billCounts = Object.fromEntries(bills.map((row) => [row.status, row.count]));
+    const paymentTotals = Object.fromEntries(payments.map((row) => [row.method, row.total]));
+
+    return {
+      openDay,
+      openOrders: orderCounts.open ?? 0,
+      billedOrders: orderCounts.billed ?? 0,
+      unpaidBills: billCounts.pending ?? 0,
+      cashPaymentsPaise: paymentTotals.cash ?? 0,
+      upiPaymentsPaise: paymentTotals.upi ?? 0,
+      cardPaymentsPaise: paymentTotals.card ?? 0
     };
   }
 
@@ -669,7 +851,8 @@ export class OrderService {
           productionUnitId: menuItem.production_unit_id,
           productionUnitName: menuItem.unit_name,
           printerHost: menuItem.printer_host,
-          printerPort: menuItem.printer_port
+          printerPort: menuItem.printer_port,
+          printerName: menuItem.printer_name
         });
       }
     }
@@ -748,6 +931,7 @@ export class OrderService {
         productionUnitId,
         printerHost: firstItem.printerHost,
         printerPort: firstItem.printerPort,
+        printerName: firstItem.printerName,
         payload
       });
 
@@ -769,6 +953,7 @@ export class OrderService {
     productionUnitId: string | null;
     printerHost: string | null;
     printerPort: number | null;
+    printerName: string | null;
     payload: string;
   }): string {
     const id = makeId("print");
@@ -776,9 +961,9 @@ export class OrderService {
     this.db
       .prepare(
         `INSERT INTO print_jobs
-          (id, target_type, target_id, production_unit_id, printer_host, printer_port,
+          (id, target_type, target_id, production_unit_id, printer_host, printer_port, printer_name,
            status, attempts, payload, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, 'pending', 0, ?, ?, ?)`
+         VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', 0, ?, ?, ?)`
       )
       .run(
         id,
@@ -787,6 +972,7 @@ export class OrderService {
         input.productionUnitId,
         input.printerHost,
         input.printerPort,
+        input.printerName,
         input.payload,
         now,
         now
@@ -868,7 +1054,7 @@ export class OrderService {
     const rows = this.db
       .prepare(
         `SELECT mi.id, mi.name, mi.price_paise, mi.production_unit_id,
-          pu.name AS unit_name, pu.printer_host, pu.printer_port
+          pu.name AS unit_name, pu.printer_host, pu.printer_port, pu.printer_name
          FROM menu_items mi
          JOIN production_units pu ON pu.id = mi.production_unit_id
          WHERE mi.active = 1 AND mi.id IN (${placeholders})`
@@ -882,7 +1068,7 @@ export class OrderService {
     if (ids.length === 0) return new Map();
     const placeholders = ids.map(() => "?").join(", ");
     const rows = this.db
-      .prepare(`SELECT id, name, printer_host, printer_port FROM production_units WHERE id IN (${placeholders})`)
+      .prepare(`SELECT id, name, printer_host, printer_port, printer_name FROM production_units WHERE id IN (${placeholders})`)
       .all(...ids) as UnitRow[];
     return new Map(rows.map((row) => [row.id, row]));
   }
@@ -910,5 +1096,12 @@ export class OrderService {
     this.db
       .prepare("UPDATE restaurant_tables SET status = 'free', current_order_id = NULL, occupied_at = NULL WHERE id = ?")
       .run(tableId);
+  }
+
+  private getSetting(key: string): string | undefined {
+    const row = this.db.prepare("SELECT value FROM hub_settings WHERE key = ?").get(key) as
+      | { value: string }
+      | undefined;
+    return row?.value;
   }
 }

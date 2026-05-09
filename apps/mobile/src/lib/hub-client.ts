@@ -36,7 +36,10 @@ export interface HubOrder {
 }
 
 export class HubClient {
-  constructor(private readonly baseUrl: string) {}
+  constructor(
+    private readonly baseUrl: string,
+    private readonly deviceToken: string
+  ) {}
 
   async health(): Promise<boolean> {
     try {
@@ -62,11 +65,24 @@ export class HubClient {
     });
   }
 
+  async exchangePairingCode(input: { code: string; deviceName: string }): Promise<{
+    deviceId: string;
+    deviceName: string;
+    role: string;
+    token: string;
+  }> {
+    return this.request("/devices/pair/exchange", {
+      method: "POST",
+      body: JSON.stringify(input)
+    });
+  }
+
   private async request<T>(path: string, init: RequestInit = {}): Promise<T> {
     const response = await fetch(`${this.baseUrl}${path}`, {
       ...init,
       headers: {
         "content-type": "application/json",
+        "x-device-token": this.deviceToken,
         ...(init.headers ?? {})
       }
     });

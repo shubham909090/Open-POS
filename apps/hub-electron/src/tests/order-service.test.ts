@@ -124,6 +124,7 @@ describe("OrderService KOT lifecycle", () => {
     const table = orderService.createTable({ floorId: floor.id, name: "R1" });
     const unit = orderService.createProductionUnit({
       name: "Tandoor",
+      printerMode: "network",
       printerHost: "192.168.1.61",
       printerPort: 9100,
       kdsEnabled: true
@@ -137,7 +138,13 @@ describe("OrderService KOT lifecycle", () => {
 
     expect(table.id).toMatch(/^table_/);
     expect(menuItem.id).toMatch(/^menu_/);
-    expect(database.db.prepare("SELECT COUNT(*) AS count FROM sync_outbox").get()).toEqual({ count: 5 });
+    orderService.updateMenuItem(menuItem.id, { name: "Garlic Naan", pricePaise: 7000, active: false });
+    expect(database.db.prepare("SELECT name, price_paise, active FROM menu_items WHERE id = ?").get(menuItem.id)).toEqual({
+      name: "Garlic Naan",
+      price_paise: 7000,
+      active: 0
+    });
+    expect(database.db.prepare("SELECT COUNT(*) AS count FROM sync_outbox").get()).toEqual({ count: 6 });
 
     database.close();
   });
@@ -162,6 +169,52 @@ describe("OrderService KOT lifecycle", () => {
     expect(database.db.prepare("SELECT status, last_error FROM print_jobs WHERE id = ?").get(print.id)).toEqual({
       status: "pending",
       last_error: null
+    });
+
+    database.close();
+  });
+
+  it("routes bill printing to the configured receipt printer", () => {
+    const { database, orderService } = createTestHub();
+    orderService.updateReceiptPrinter({
+      printerMode: "network",
+      printerHost: "192.168.1.70",
+      printerPort: 9100
+    });
+
+    const order = orderService.submitOrder({
+      tableId: "table-t1",
+      captainId: "waiter-1",
+      pax: 1,
+      orderType: "dine_in",
+      items: [{ menuItemId: "item-dal-fry", quantity: 1 }]
+    });
+
+    const bill = orderService.generateBill(order.orderId);
+    expect(database.db.prepare("SELECT printer_host, printer_port FROM print_jobs WHERE target_id = ?").get(bill.billId)).toEqual({
+      printer_host: "192.168.1.70",
+      printer_port: 9100
+    });
+
+    database.close();
+  });
+
+  it("returns cash reconciliation details for day close", () => {
+    const { database, orderService } = createTestHub();
+    const order = orderService.submitOrder({
+      tableId: "table-t1",
+      captainId: "waiter-1",
+      pax: 1,
+      orderType: "dine_in",
+      items: [{ menuItemId: "item-dal-fry", quantity: 1 }]
+    });
+    const bill = orderService.generateBill(order.orderId);
+    orderService.settleBill(bill.billId, { method: "cash", amountPaise: bill.totalPaise, receivedBy: "cashier-1" });
+
+    expect(orderService.getCloseSummary()).toMatchObject({
+      openOrders: 0,
+      unpaidBills: 0,
+      cashPaymentsPaise: bill.totalPaise
     });
 
     database.close();

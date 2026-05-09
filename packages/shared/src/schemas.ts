@@ -49,7 +49,9 @@ export const createTableSchema = z.object({
 
 export const createProductionUnitSchema = z.object({
   name: z.string().trim().min(1).max(80),
-  printerHost: z.string().trim().min(1).max(120),
+  printerMode: z.enum(["system", "network"]).default("system"),
+  printerName: z.string().trim().max(240).optional(),
+  printerHost: z.string().trim().max(120).optional(),
   printerPort: z.number().int().min(1).max(65535).default(9100),
   kdsEnabled: z.boolean().default(true)
 });
@@ -61,12 +63,49 @@ export const createMenuItemSchema = z.object({
   active: z.boolean().default(true)
 });
 
+export const updateMenuItemSchema = z.object({
+  name: z.string().trim().min(1).max(160).optional(),
+  pricePaise: z.number().int().min(0).optional(),
+  productionUnitId: z.string().min(1).optional(),
+  active: z.boolean().optional()
+});
+
 export const updateKotStatusSchema = z.object({
   status: z.enum(["queued", "preparing", "ready", "served", "cancelled"])
 });
 
 export const retryPrintJobSchema = z.object({
   requestedBy: z.string().min(1)
+});
+
+export const updateReceiptPrinterSchema = z.object({
+  printerMode: z.enum(["system", "network"]).default("system"),
+  printerName: z.string().trim().max(240).optional(),
+  printerHost: z.string().trim().max(120).optional(),
+  printerPort: z.number().int().min(1).max(65535).default(9100)
+});
+
+export const createPairingCodeSchema = z.object({
+  deviceName: z.string().trim().min(1).max(120),
+  role: z.enum(["admin", "cashier", "waiter", "kitchen"]),
+  expiresInMinutes: z.number().int().min(1).max(120).default(10)
+});
+
+export const exchangePairingCodeSchema = z.object({
+  code: z.string().trim().min(4).max(12),
+  deviceName: z.string().trim().min(1).max(120)
+});
+
+export const revokeDeviceSchema = z.object({
+  reason: z.string().trim().max(500).optional()
+});
+
+export const createBackupSchema = z.object({
+  label: z.string().trim().max(80).optional()
+});
+
+export const scheduleRestoreSchema = z.object({
+  fileName: z.string().trim().min(1).max(260)
 });
 
 export type SubmitOrderInput = z.infer<typeof submitOrderSchema>;
@@ -78,5 +117,12 @@ export type CreateFloorInput = z.infer<typeof createFloorSchema>;
 export type CreateTableInput = z.infer<typeof createTableSchema>;
 export type CreateProductionUnitInput = z.infer<typeof createProductionUnitSchema>;
 export type CreateMenuItemInput = z.infer<typeof createMenuItemSchema>;
+export type UpdateMenuItemInput = z.infer<typeof updateMenuItemSchema>;
 export type UpdateKotStatusInput = z.infer<typeof updateKotStatusSchema>;
 export type RetryPrintJobInput = z.infer<typeof retryPrintJobSchema>;
+export type UpdateReceiptPrinterInput = z.infer<typeof updateReceiptPrinterSchema>;
+export type CreatePairingCodeInput = z.infer<typeof createPairingCodeSchema>;
+export type ExchangePairingCodeInput = z.infer<typeof exchangePairingCodeSchema>;
+export type RevokeDeviceInput = z.infer<typeof revokeDeviceSchema>;
+export type CreateBackupInput = z.infer<typeof createBackupSchema>;
+export type ScheduleRestoreInput = z.infer<typeof scheduleRestoreSchema>;

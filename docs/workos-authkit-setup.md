@@ -43,6 +43,9 @@ NEXT_PUBLIC_CONVEX_URL=https://....convex.cloud
 # Hub-to-Convex sync HTTP action
 CONVEX_HTTP_URL=https://....convex.site
 POS_SYNC_SECRET=use-a-long-random-value
+
+# Local hub bootstrap admin device token
+HUB_ADMIN_TOKEN=use-a-long-random-value
 ```
 
 Generate `WORKOS_COOKIE_PASSWORD`:
@@ -61,6 +64,7 @@ For production, put equivalent production values in the hosting provider environ
 - `CONVEX_DEPLOY_KEY`
 - `CONVEX_HTTP_URL`
 - `POS_SYNC_SECRET`
+- `HUB_ADMIN_TOKEN`
 
 ## Google-Only AuthKit
 

@@ -3,7 +3,11 @@
 - `packages/shared/src/schemas.ts`: API command validation for hub operations.
 - `packages/shared/src/types.ts`: shared role, order, KOT, print, billing, and event types.
 - `apps/hub-electron/src/db/schema.ts`: SQLite migration source of truth.
+- `apps/hub-electron/src/db/drizzle-schema.ts`: Drizzle ORM table/schema source for typed local SQLite access.
+- `apps/hub-electron/src/db/backup-service.ts`: hot SQLite backup creation and restart-based restore scheduling.
+- `apps/hub-electron/drizzle.config.ts`: Drizzle Kit config for generating SQLite migration snapshots and opening Studio.
 - `apps/hub-electron/src/domain/order-service.ts`: table order, KOT lifecycle, billing, and event/outbox transaction rules.
+- `apps/hub-electron/src/domain/auth-service.ts`: local offline device token auth, pairing code exchange, role sessions, and revocation.
 - `apps/hub-electron/src/api/server.ts`: LAN REST/WebSocket API surface used by hub UI and Android clients.
 - `apps/hub-electron/src/public/*`: current cashier/admin operational UI served by the hub.
 - `apps/hub-electron/src/electron.ts`: desktop shell that starts the hub and opens the UI.
@@ -12,7 +16,10 @@
 - `apps/mobile/src/lib/hub-client.ts`: Android LAN API client.
 - `apps/mobile/src/lib/draft-store.ts`: Android hub URL and draft persistence.
 - `convex/http.ts`: cloud HTTP action for hub event ingestion.
-- `convex/sync.ts`: idempotent event ingestion mutation.
+- `convex/sync.ts`: idempotent event ingestion, installation registration, and cloud-to-hub command pull.
+- `docs/cloud-sync-installations.md`: installation identity and hub command sync notes.
+- `docs/windows-hub-runbook.md`: Windows build/install/startup/printer validation runbook.
+- `docs/architecture-junior-guide.md`: friendly full-system architecture explanation with updated flowcharts.
 - `.agent/pos-context.md`: read first for architecture decisions, current implementation state, auth shape, and open decisions.
 - `.agent/next-steps.md`: execution roadmap for the next implementation phases.
 - `docs/auth-architecture.md`: canonical auth split between WorkOS AuthKit + Convex cloud identity and hub-local offline sessions.

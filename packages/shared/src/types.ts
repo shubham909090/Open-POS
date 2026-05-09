@@ -9,6 +9,7 @@ export type BillStatus = "pending" | "paid" | "void";
 export type PaymentMethod = "cash" | "upi" | "card";
 export type PrintJobStatus = "pending" | "printing" | "printed" | "failed";
 export type SyncStatus = "pending" | "synced" | "failed";
+export type LocalDeviceStatus = "active" | "revoked";
 
 export interface ProductionUnit {
   id: string;

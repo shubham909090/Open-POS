@@ -1,11 +1,18 @@
 {
   "name": "@gaurav-pos/hub-electron",
   "version": "0.1.0",
+  "description": "Offline-first restaurant POS hub for Windows.",
+  "author": "Gaurav POS",
   "private": true,
   "type": "module",
+  "main": "dist/electron.js",
   "scripts": {
+    "build": "tsc -p tsconfig.build.json && node scripts/copy-public.mjs",
     "dev": "tsx src/main.ts",
     "dev:desktop": "electron --no-sandbox --import tsx src/electron.ts",
+    "db:generate": "drizzle-kit generate",
+    "db:studio": "drizzle-kit studio",
+    "package:win": "pnpm build && electron-builder --win nsis --x64",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
@@ -14,13 +21,44 @@
     "@fastify/websocket": "^11.0.1",
     "@gaurav-pos/shared": "workspace:*",
     "better-sqlite3": "^11.10.0",
-    "electron": "^42.0.1",
+    "drizzle-orm": "^0.45.2",
     "fastify": "^5.3.3",
     "zod": "^3.24.4"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
+    "drizzle-kit": "^0.31.10",
+    "electron": "^42.0.1",
+    "electron-builder": "^26.8.1",
     "typescript": "^5.8.3",
     "vitest": "^3.1.3"
+  },
+  "build": {
+    "appId": "in.gaurav.pos.hub",
+    "productName": "Gaurav POS Hub",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "**/*.node"
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "requestedExecutionLevel": "asInvoker"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Gaurav POS Hub"
+    }
   }
 }

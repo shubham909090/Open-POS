@@ -13,12 +13,14 @@ import {
 } from "react-native";
 import type { OrderItemInput } from "@gaurav-pos/shared";
 import { HubClient, type HubBootstrap } from "./lib/hub-client";
-import { clearDraft, getHubUrl, loadDraft, saveDraft, setHubUrl } from "./lib/draft-store";
+import { clearDraft, getDeviceToken, getHubUrl, loadDraft, saveDraft, setDeviceToken, setHubUrl } from "./lib/draft-store";
 
 type ConnectionState = "checking" | "online" | "offline";
 
 export default function App() {
   const [hubUrl, setHubUrlState] = useState("http://192.168.1.10:3737");
+  const [deviceToken, setDeviceTokenState] = useState("dev-admin-token");
+  const [pairingCode, setPairingCode] = useState("");
   const [connection, setConnection] = useState<ConnectionState>("checking");
   const [bootstrap, setBootstrap] = useState<HubBootstrap | null>(null);
   const [selectedTableId, setSelectedTableId] = useState<string | null>(null);
@@ -26,12 +28,15 @@ export default function App() {
   const [pax, setPax] = useState("2");
   const [items, setItems] = useState<OrderItemInput[]>([]);
 
-  const client = useMemo(() => new HubClient(hubUrl), [hubUrl]);
+  const client = useMemo(() => new HubClient(hubUrl, deviceToken), [deviceToken, hubUrl]);
   const selectedTable = bootstrap?.tables.find((table) => table.id === selectedTableId) ?? null;
 
   useEffect(() => {
     void getHubUrl().then((url) => {
       setHubUrlState(url);
+    });
+    void getDeviceToken().then((token) => {
+      setDeviceTokenState(token);
     });
   }, []);
 
@@ -128,7 +133,20 @@ export default function App() {
 
   async function saveHub() {
     await setHubUrl(hubUrl);
+    await setDeviceToken(deviceToken);
     await refresh();
+  }
+
+  async function pairDevice() {
+    const result = await client.exchangePairingCode({
+      code: pairingCode,
+      deviceName: captainId || "Android waiter"
+    });
+    setDeviceTokenState(result.token);
+    await setDeviceToken(result.token);
+    setPairingCode("");
+    await refresh();
+    Alert.alert("Device paired", `${result.deviceName} is ready as ${result.role}.`);
   }
 
   return (
@@ -143,8 +161,21 @@ export default function App() {
 
       <View style={styles.hubRow}>
         <TextInput value={hubUrl} onChangeText={setHubUrlState} style={styles.hubInput} autoCapitalize="none" />
+        <TextInput
+          value={deviceToken}
+          onChangeText={setDeviceTokenState}
+          style={styles.tokenInput}
+          autoCapitalize="none"
+          secureTextEntry
+        />
         <Pressable style={styles.primaryButton} onPress={saveHub}>
           <Text style={styles.primaryButtonText}>Set</Text>
+        </Pressable>
+      </View>
+      <View style={styles.hubRow}>
+        <TextInput value={pairingCode} onChangeText={setPairingCode} style={styles.hubInput} placeholder="Pairing code" />
+        <Pressable style={styles.primaryButton} onPress={() => void pairDevice()}>
+          <Text style={styles.primaryButtonText}>Pair</Text>
         </Pressable>
       </View>
 
@@ -235,6 +266,15 @@ const styles = StyleSheet.create({
   hubRow: { flexDirection: "row", gap: 8, padding: 12, backgroundColor: "#fffdfa" },
   hubInput: {
     flex: 1,
+    minHeight: 42,
+    borderWidth: 1,
+    borderColor: "#cfc8bb",
+    borderRadius: 6,
+    paddingHorizontal: 10,
+    color: "#1d1b18"
+  },
+  tokenInput: {
+    width: 136,
     minHeight: 42,
     borderWidth: 1,
     borderColor: "#cfc8bb",

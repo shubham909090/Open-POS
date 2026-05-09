@@ -2,6 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import type { OrderItemInput } from "@gaurav-pos/shared";
 
 const HUB_URL_KEY = "gaurav-pos:hub-url";
+const DEVICE_TOKEN_KEY = "gaurav-pos:device-token";
 const DRAFT_PREFIX = "gaurav-pos:draft:";
 
 export interface DraftOrder {
@@ -18,6 +19,14 @@ export async function getHubUrl(): Promise<string> {
 
 export async function setHubUrl(url: string): Promise<void> {
   await AsyncStorage.setItem(HUB_URL_KEY, url.trim().replace(/\/$/, ""));
+}
+
+export async function getDeviceToken(): Promise<string> {
+  return (await AsyncStorage.getItem(DEVICE_TOKEN_KEY)) ?? "dev-admin-token";
+}
+
+export async function setDeviceToken(token: string): Promise<void> {
+  await AsyncStorage.setItem(DEVICE_TOKEN_KEY, token.trim());
 }
 
 export async function loadDraft(tableId: string): Promise<DraftOrder | null> {
