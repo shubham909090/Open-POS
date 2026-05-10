@@ -6,6 +6,14 @@
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "assetBundlePatterns": ["**/*"],
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow Gaurav POS to scan hub pairing QR codes."
+        }
+      ]
+    ],
     "android": {
       "package": "com.gauravpos.mobile",
       "usesCleartextTraffic": true

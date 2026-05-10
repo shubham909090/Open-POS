@@ -24,7 +24,16 @@ export async function startHub() {
   authService.seedAdminDevice(config.adminToken);
   const orderService = new OrderService(database.orm);
   const syncBridge = new ConvexSyncBridge(database.orm, config.convexHttpUrl, config.posSyncSecret, config.installationId);
-  const app = createHubServer({ database, backupService, authService, orderService, printJobService, syncBridge, eventBus });
+  const app = createHubServer({
+    database,
+    backupService,
+    authService,
+    orderService,
+    printJobService,
+    syncBridge,
+    eventBus,
+    publicUrl: config.publicUrl
+  });
 
   await app.listen({ host: config.host, port: config.port });
   const syncInterval = setInterval(() => {

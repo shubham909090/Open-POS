@@ -54,4 +54,30 @@ describe("PrintJobService", () => {
 
     database.close();
   });
+
+  it("stops automatic retries after five failed print attempts", async () => {
+    const { database, orderService } = createTestHub();
+    orderService.submitOrder({
+      tableId: "table-t1",
+      captainId: "waiter-1",
+      pax: 1,
+      orderType: "dine_in",
+      items: [{ menuItemId: "item-dal-fry", quantity: 1 }]
+    });
+
+    const service = new PrintJobService(database.orm, new FailingPrinterAdapter());
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      await service.processPending();
+    }
+    const skipped = await service.processPending();
+
+    expect(skipped).toEqual({ printed: 0, failed: 0 });
+    expect(database.db.prepare("SELECT status, attempts, last_error FROM print_jobs LIMIT 1").get()).toEqual({
+      status: "failed",
+      attempts: 5,
+      last_error: "printer offline"
+    });
+
+    database.close();
+  });
 });

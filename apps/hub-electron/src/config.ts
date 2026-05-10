@@ -8,6 +8,7 @@ export interface HubConfig {
   posSyncSecret?: string;
   installationId?: string;
   adminToken?: string;
+  publicUrl?: string;
 }
 
 export function loadHubConfig(env = process.env): HubConfig {
@@ -20,6 +21,7 @@ export function loadHubConfig(env = process.env): HubConfig {
     convexHttpUrl: env.CONVEX_HTTP_URL ?? env.CONVEX_URL,
     posSyncSecret: env.POS_SYNC_SECRET,
     installationId: env.POS_INSTALLATION_ID,
-    adminToken: env.HUB_ADMIN_TOKEN ?? (env.NODE_ENV === "production" ? undefined : "dev-admin-token")
+    adminToken: env.HUB_ADMIN_TOKEN ?? (env.NODE_ENV === "production" ? undefined : "dev-admin-token"),
+    publicUrl: env.HUB_PUBLIC_URL
   };
 }

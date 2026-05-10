@@ -13,6 +13,7 @@
     "@gaurav-pos/shared": "workspace:*",
     "@react-native-async-storage/async-storage": "^3.0.2",
     "expo": "^55.0.23",
+    "expo-camera": "^55.0.18",
     "react": "^19.2.6",
     "react-native": "^0.85.3"
   },

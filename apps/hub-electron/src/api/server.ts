@@ -4,11 +4,16 @@ import { and, eq } from "drizzle-orm";
 import Fastify from "fastify";
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
+import QRCode from "qrcode";
 import {
   closePosDaySchema,
+  assignModifierGroupSchema,
   createBackupSchema,
   createFloorSchema,
   createMenuItemSchema,
+  createModifierGroupSchema,
+  createModifierOptionSchema,
+  createNoteTemplateSchema,
   createPairingCodeSchema,
   createProductionUnitSchema,
   createTableSchema,
@@ -44,6 +49,7 @@ export function createHubServer(input: {
   printJobService: PrintJobService;
   syncBridge?: ConvexSyncBridge;
   eventBus: EventBus<unknown>;
+  publicUrl?: string;
 }) {
   const app = Fastify({ logger: true });
 
@@ -178,6 +184,28 @@ export function createHubServer(input: {
     input.eventBus.publish({ type: "menu_item.updated", result });
     return result;
   });
+  app.get("/modifier-groups", { preHandler: anyRole }, async () => input.orderService.listModifierCatalog());
+  app.post("/modifier-groups", { preHandler: adminOnly }, async (request) => {
+    const result = input.orderService.createModifierGroup(createModifierGroupSchema.parse(request.body));
+    input.eventBus.publish({ type: "modifier_group.created", result });
+    return result;
+  });
+  app.post("/modifier-options", { preHandler: adminOnly }, async (request) => {
+    const result = input.orderService.createModifierOption(createModifierOptionSchema.parse(request.body));
+    input.eventBus.publish({ type: "modifier_option.created", result });
+    return result;
+  });
+  app.post("/menu-item-modifier-groups", { preHandler: adminOnly }, async (request) => {
+    const result = input.orderService.assignModifierGroup(assignModifierGroupSchema.parse(request.body));
+    input.eventBus.publish({ type: "menu_item.modifier_group_assigned", result });
+    return result;
+  });
+  app.get("/note-templates", { preHandler: anyRole }, async () => input.orderService.listNoteTemplates());
+  app.post("/note-templates", { preHandler: adminOnly }, async (request) => {
+    const result = input.orderService.createNoteTemplate(createNoteTemplateSchema.parse(request.body));
+    input.eventBus.publish({ type: "note_template.created", result });
+    return result;
+  });
   app.get("/settings/receipt-printer", { preHandler: cashierOrAdmin }, async () => input.orderService.getReceiptPrinter());
   app.get("/system-printers", { preHandler: adminOnly }, async () => listSystemPrinters());
   app.put("/settings/receipt-printer", { preHandler: adminOnly }, async (request) => {
@@ -186,9 +214,28 @@ export function createHubServer(input: {
     return result;
   });
   app.get("/devices", { preHandler: adminOnly }, async () => input.authService.listDevices());
-  app.post("/devices/pairing-codes", { preHandler: adminOnly }, async (request) =>
-    input.authService.createPairingCode(createPairingCodeSchema.parse(request.body))
-  );
+  app.post("/devices/pairing-codes", { preHandler: adminOnly }, async (request) => {
+    const body = createPairingCodeSchema.parse(request.body);
+    const pairing = input.authService.createPairingCode(body);
+    const host = request.headers.host ?? "localhost:3737";
+    const protocol = request.protocol || "http";
+    const hubUrl = input.publicUrl ?? `${protocol}://${host}`;
+    const payload = {
+      kind: "gaurav-pos-pairing",
+      version: 1,
+      hubUrl,
+      code: pairing.code,
+      deviceName: body.deviceName,
+      role: body.role,
+      expiresAt: pairing.expiresAt
+    };
+    const qrDataUrl = await QRCode.toDataURL(JSON.stringify(payload), {
+      errorCorrectionLevel: "M",
+      margin: 1,
+      width: 240
+    });
+    return { ...pairing, pairingPayload: payload, pairingPayloadText: JSON.stringify(payload), qrDataUrl };
+  });
   app.post("/devices/:id/revoke", { preHandler: adminOnly }, async (request) => {
     const params = request.params as { id: string };
     return input.authService.revokeDevice(params.id, revokeDeviceSchema.parse(request.body));

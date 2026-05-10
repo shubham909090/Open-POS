@@ -79,6 +79,8 @@ export const orderItems = sqliteTable(
     menuItemId: text("menu_item_id").notNull().references(() => menuItems.id),
     nameSnapshot: text("name_snapshot").notNull(),
     unitPricePaise: integer("unit_price_paise").notNull(),
+    modifierTotalPaise: integer("modifier_total_paise").notNull().default(0),
+    modifiersJson: text("modifiers_json").notNull().default("[]"),
     quantity: integer("quantity").notNull(),
     notes: text("notes").notNull().default(""),
     productionUnitId: text("production_unit_id").notNull().references(() => productionUnits.id),
@@ -111,7 +113,49 @@ export const kotItems = sqliteTable("kot_items", {
   menuItemId: text("menu_item_id").notNull(),
   nameSnapshot: text("name_snapshot").notNull(),
   quantityDelta: integer("quantity_delta").notNull(),
+  modifiersJson: text("modifiers_json").notNull().default("[]"),
   notes: text("notes").notNull().default("")
+});
+
+export const modifierGroups = sqliteTable("modifier_groups", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  selectionType: text("selection_type").notNull(),
+  minSelections: integer("min_selections").notNull().default(0),
+  maxSelections: integer("max_selections").notNull().default(1),
+  active: integer("active", { mode: "boolean" }).notNull().default(true),
+  sortOrder: integer("sort_order").notNull().default(0)
+});
+
+export const modifierOptions = sqliteTable(
+  "modifier_options",
+  {
+    id: text("id").primaryKey(),
+    groupId: text("group_id").notNull().references(() => modifierGroups.id),
+    name: text("name").notNull(),
+    priceDeltaPaise: integer("price_delta_paise").notNull().default(0),
+    active: integer("active", { mode: "boolean" }).notNull().default(true),
+    sortOrder: integer("sort_order").notNull().default(0)
+  },
+  (table) => [index("idx_modifier_options_group").on(table.groupId)]
+);
+
+export const menuItemModifierGroups = sqliteTable(
+  "menu_item_modifier_groups",
+  {
+    menuItemId: text("menu_item_id").notNull().references(() => menuItems.id),
+    groupId: text("group_id").notNull().references(() => modifierGroups.id),
+    sortOrder: integer("sort_order").notNull().default(0)
+  },
+  (table) => [primaryKey({ columns: [table.menuItemId, table.groupId] }), index("idx_menu_modifier_group").on(table.groupId)]
+);
+
+export const noteTemplates = sqliteTable("note_templates", {
+  id: text("id").primaryKey(),
+  label: text("label").notNull(),
+  note: text("note").notNull(),
+  active: integer("active", { mode: "boolean" }).notNull().default(true),
+  sortOrder: integer("sort_order").notNull().default(0)
 });
 
 export const bills = sqliteTable("bills", {
@@ -121,6 +165,9 @@ export const bills = sqliteTable("bills", {
   subtotalPaise: integer("subtotal_paise").notNull(),
   taxPaise: integer("tax_paise").notNull(),
   totalPaise: integer("total_paise").notNull(),
+  discountPaise: integer("discount_paise").notNull().default(0),
+  tipPaise: integer("tip_paise").notNull().default(0),
+  finalTotalPaise: integer("final_total_paise").notNull().default(0),
   createdAt: text("created_at").notNull(),
   settledAt: text("settled_at")
 });
@@ -131,6 +178,8 @@ export const payments = sqliteTable("payments", {
   method: text("method").notNull(),
   amountPaise: integer("amount_paise").notNull(),
   receivedBy: text("received_by").notNull(),
+  reference: text("reference"),
+  note: text("note"),
   createdAt: text("created_at").notNull()
 });
 

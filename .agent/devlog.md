@@ -65,9 +65,22 @@
 - Task: Added Drizzle ORM setup and wired the hub runtime to use the Drizzle database handle.
 - Files added or changed: `apps/hub-electron/src/db/drizzle-schema.ts`, `apps/hub-electron/drizzle.config.ts`, generated `apps/hub-electron/drizzle/*`, `HubDatabase`, `AuthService`, `PrintJobService`, `ConvexSyncBridge`, API idempotency middleware, runtime/tests, and context docs.
 - Important modules: `HubDatabase.orm` is the shared Drizzle handle; `drizzle-schema.ts` mirrors the local SQLite schema; `db:generate` and `db:studio` are available in the hub package.
-- Reusable pieces: use Drizzle query builder for new SQLite access; keep `schema.ts` raw migrations and Drizzle schema synchronized until migration ownership is formally switched.
+- Reusable pieces: use Drizzle query builder for SQLite access. This note is superseded by the later full-send Drizzle migration entry; `schema.ts` raw migrations were removed.
 - Verification: `pnpm --filter @gaurav-pos/hub-electron typecheck`, `pnpm --filter @gaurav-pos/hub-electron db:generate`, and `pnpm --filter @gaurav-pos/hub-electron test` pass.
-- Follow-up notes: `OrderService` is now constructed from the Drizzle handle, but its complex KOT/billing transaction internals still use prepared SQLite statements through Drizzle's owned client. Convert that module in small tested slices rather than in one risky rewrite.
+- Follow-up notes: superseded by the later full-send Drizzle migration entry; the write-heavy KOT/billing mutation path was converted to Drizzle query APIs.
+
+## 2026-05-10
+
+- Task: Went full-send on Drizzle because no production hub database exists yet.
+- Files changed: removed `apps/hub-electron/src/db/schema.ts`, switched `HubDatabase.migrate()` to `drizzle-orm/better-sqlite3/migrator`, added `drizzle/**/*` to Electron package files, and converted `OrderService` write-heavy service-hour mutation clusters to Drizzle query APIs.
+- Important behavior: Drizzle migrations are now the startup migration source of truth. Order/KOT/billing writes still run inside local SQLite transactions, but the inserts/updates/select helpers now target the Drizzle schema directly.
+- Verification: hub typecheck and hub test suite passed after the conversion.
+
+## 2026-05-10
+
+- Task: Audited Convex usage against installed Convex AI guidelines and current official Convex AuthKit docs.
+- Fixes: replaced the custom cloud-admin Convex auth bridge with `ConvexProviderWithAuthKit` from `@convex-dev/workos`, bounded remaining Convex admin queries with `.take(100)`, removed redundant in-memory filtering after indexed queries, and capped hub event ingestion batches at 100 events.
+- Verification: `pnpm exec tsc -p convex/tsconfig.json` and `pnpm --filter @gaurav-pos/cloud-admin typecheck` passed.
 
 ## 2026-05-09
 
@@ -84,3 +97,43 @@
 - Files added or changed: `docs/architecture-junior-guide.md`, `.agent/reuse-map.md`, `.agent/devlog.md`.
 - Important modules documented: Windows hub, SQLite/Drizzle, LAN REST/WebSocket, local auth, KOT/print flow, Convex sync, backups, Windows packaging.
 - Follow-up notes: Keep this guide updated whenever the architecture changes so future implementation stays aligned.
+
+## 2026-05-10
+
+- Task: Added basic manual restaurant payment settlement.
+- Files added or changed: shared payment schemas/types, bill/payment migrations and Drizzle schema, `OrderService.settleBill`, bill ticket rendering, hub billing UI, order-service tests, and architecture/context docs.
+- Important behavior: bills now support discount, tip, final total, multiple cashier-entered payment rows, cash/UPI/card/online methods, payment references, and remaining-balance tracking. The bill is marked paid only when entered payments cover the final total.
+- Verification: `pnpm test`, `pnpm typecheck`, `pnpm exec tsc -p convex/tsconfig.json`, `pnpm lint`, and hub build passed.
+- Follow-up notes: This is manual recording only; no payment gateway/API verification is included or intended.
+
+## 2026-05-10
+
+- Task: Finished the next urgent non-hardware gaps around QR/barcode pairing, cloud setup, mobile order notes, and edge tests.
+- Hub additions: pairing-code API now returns a Gaurav POS QR payload, payload text, and QR PNG data URL; hub Setup shows the scan-ready QR plus numeric fallback. `HUB_PUBLIC_URL` can force QR payloads to use the Windows PC LAN URL instead of `localhost`.
+- Mobile additions: `expo-camera` QR scanner, manual QR payload paste fallback, hub URL auto-fill from pairing QR, item-level kitchen notes, and a final KOT review prompt before online submission.
+- Cloud additions: authenticated Convex admin functions and Next.js UI for restaurant creation, installation identity registration, installation/event views, and cloud-to-hub command queueing. Added `memberships` to the Convex schema and locked admin cloud mutations to WorkOS/Convex authenticated restaurant admins.
+- Test additions: API pairing QR assertions, print retry exhaustion test, and unpaid-bill POS day close guard test.
+- Verification: hub tests passed with 28 tests; mobile typecheck, cloud-admin typecheck, and Convex TypeScript check passed. `pnpm exec convex codegen` still requires `WORKOS_CLIENT_ID` in the Convex deployment, so `convex/_generated/api.d.ts` was manually updated for the new `admin` module until env setup is complete.
+
+## 2026-05-10
+
+- Task: Started the production UI cleanup device by device instead of leaving all controls crammed together.
+- Hub UI: improved the Windows hub surface with operational stats, better service/table/ticket layout, clearer billing context, menu search, draft totals, and toast feedback.
+- Android UI: reshaped the waiter app into a device-friendly flow: hub/pairing controls, table grid, order panel, menu search, ticket total, notes, and a clear Send KOT/Save Draft action.
+- Cloud admin UI: rebuilt the dashboard into Setup, Menu & Devices, and Sync Health sections with step-based restaurant/hub setup, guided command fields, installation health, event timeline, and command preview.
+- Verification: `pnpm test`, `pnpm typecheck`, `pnpm lint`, `pnpm exec tsc -p convex/tsconfig.json`, `pnpm --filter @gaurav-pos/hub-electron build`, and `git diff --check` passed. No hub server remains running on port 3737.
+
+## 2026-05-10
+
+- Task: Added staff invitation/member management and richer day-close cash reconciliation.
+- Cloud additions: Convex `memberInvitations`, authenticated invite/accept/list/update/remove/revoke functions, and cloud-admin Staff tab for email-based Google invitations, member role updates, member removal, and invite revoke.
+- Hub additions: `OrderService.getCloseSummary` now returns opening cash, gross/final bill totals, discounts, tips, method-wise payments, total/non-cash payments, expected closing drawer cash, paid bill count, unpaid bill count, and open-order blockers; hub UI calculates typed closing-cash variance live.
+- Verification: `pnpm test`, `pnpm typecheck`, `pnpm lint`, `pnpm exec tsc -p convex/tsconfig.json`, `pnpm --filter @gaurav-pos/hub-electron build`, and `git diff --check` passed.
+
+## 2026-05-10
+
+- Task: Implemented modifier and item-note catalog setup for real restaurant menu customization.
+- Hub additions: Drizzle tables/migration for modifier groups, modifier options, menu-item modifier assignments, note templates, and modifier snapshots on order/KOT items; setup UI to create groups/options, attach groups to dishes, and create note templates; service UI to apply modifier chips and note-template chips.
+- Domain behavior: modifiers are validated against assigned menu items, affect item unit price and bill subtotal, and are rendered into KOT kitchen notes. Seed data now includes a Spice group and common notes like Jain, No Onion, and Less Oil.
+- Android additions: waiter ticket lines can apply hub-provided note templates and assigned modifier chips; ticket total includes modifier price deltas.
+- Verification: full tests/typechecks/lint/Convex TS, hub build, `node --check` for hub UI JS, and fresh Drizzle startup smoke passed.

@@ -18,7 +18,16 @@ export interface HubBootstrap {
     production_unit_id: string;
     production_unit_name: string;
     active: number;
+    modifier_group_ids?: string[];
   }>;
+  modifierGroups: Array<{
+    id: string;
+    name: string;
+    selection_type: "single" | "multiple";
+    active: number;
+    options: Array<{ id: string; name: string; price_delta_paise: number; active: number }>;
+  }>;
+  noteTemplates: Array<{ id: string; label: string; note: string; active: number }>;
   syncStatus: { counts: Record<string, number> };
 }
 
@@ -28,6 +37,7 @@ export interface HubOrder {
     menu_item_id: string;
     name_snapshot: string;
     unit_price_paise: number;
+    modifiers_json?: string;
     quantity: number;
     notes: string;
     status: string;

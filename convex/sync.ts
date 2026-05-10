@@ -1,5 +1,6 @@
 import { v } from "convex/values";
-import { mutation } from "./_generated/server";
+import { mutation, type MutationCtx } from "./_generated/server";
+import type { Id } from "./_generated/dataModel";
 
 const hubCommandType = v.union(
   v.literal("device.revoked"),
@@ -9,6 +10,18 @@ const hubCommandType = v.union(
   v.literal("production_unit.upsert"),
   v.literal("receipt_printer.updated")
 );
+
+async function requireRestaurantAdmin(ctx: MutationCtx, restaurantId: Id<"restaurants">) {
+  const identity = await ctx.auth.getUserIdentity();
+  if (!identity) throw new Error("Not authenticated");
+  const membership = await ctx.db
+    .query("memberships")
+    .withIndex("by_restaurant_and_user", (q) =>
+      q.eq("restaurantId", restaurantId).eq("userTokenIdentifier", identity.tokenIdentifier)
+    )
+    .unique();
+  if (!membership || !["owner", "admin"].includes(membership.role)) throw new Error("Not authorized for this restaurant");
+}
 
 export const ingestEvents = mutation({
   args: {
@@ -28,6 +41,7 @@ export const ingestEvents = mutation({
   },
   returns: v.object({ inserted: v.number() }),
   handler: async (ctx, args) => {
+    if (args.events.length > 100) throw new Error("Too many events in one sync batch");
     const installationId = args.installationId;
     const installation = installationId
       ? await ctx.db
@@ -121,6 +135,7 @@ export const enqueueHubCommand = mutation({
   },
   returns: v.object({ commandId: v.string(), inserted: v.boolean() }),
   handler: async (ctx, args) => {
+    await requireRestaurantAdmin(ctx, args.restaurantId);
     const existing = await ctx.db
       .query("hubCommands")
       .withIndex("by_command_id", (q) => q.eq("commandId", args.commandId))
@@ -143,6 +158,7 @@ export const registerInstallation = mutation({
   },
   returns: v.object({ installationId: v.string() }),
   handler: async (ctx, args) => {
+    await requireRestaurantAdmin(ctx, args.restaurantId);
     const existing = await ctx.db
       .query("installations")
       .withIndex("by_installation_id", (q) => q.eq("installationId", args.installationId))

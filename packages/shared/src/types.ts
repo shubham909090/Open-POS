@@ -6,7 +6,7 @@ export type OrderStatus = "open" | "billed" | "paid" | "cancelled";
 export type KotType = "new" | "modified" | "partial_cancel" | "cancelled" | "reprint";
 export type KotStatus = "queued" | "preparing" | "ready" | "served" | "cancelled";
 export type BillStatus = "pending" | "paid" | "void";
-export type PaymentMethod = "cash" | "upi" | "card";
+export type PaymentMethod = "cash" | "upi" | "card" | "online";
 export type PrintJobStatus = "pending" | "printing" | "printed" | "failed";
 export type SyncStatus = "pending" | "synced" | "failed";
 export type LocalDeviceStatus = "active" | "revoked";
@@ -39,6 +39,12 @@ export interface OrderItemInput {
   menuItemId: string;
   quantity: number;
   notes?: string;
+  modifiers?: ModifierSelectionInput[];
+}
+
+export interface ModifierSelectionInput {
+  groupId: string;
+  optionId: string;
 }
 
 export interface DomainEvent {

@@ -11,7 +11,7 @@
       <aside class="rail">
         <div class="brand">
           <strong>Gaurav POS</strong>
-          <span id="hubHealth">Starting</span>
+          <span>Restaurant hub</span>
         </div>
         <nav class="nav">
           <button class="nav-item active" data-view="setupView" type="button">Setup</button>
@@ -20,6 +20,7 @@
           <button class="nav-item" data-view="billingView" type="button">Billing</button>
         </nav>
         <div class="rail-status">
+          <span id="hubHealth">Starting</span>
           <span id="dayStatus">POS day</span>
           <span id="syncStatus">Sync pending: 0</span>
           <input id="deviceToken" type="password" placeholder="Device token" />
@@ -27,11 +28,30 @@
       </aside>
 
       <section class="content">
+        <section class="ops-strip" id="opsStrip">
+          <article>
+            <span>Tables</span>
+            <strong id="metricTables">0</strong>
+          </article>
+          <article>
+            <span>Occupied</span>
+            <strong id="metricOccupied">0</strong>
+          </article>
+          <article>
+            <span>Failed Prints</span>
+            <strong id="metricFailedPrints">0</strong>
+          </article>
+          <article>
+            <span>Sync Pending</span>
+            <strong id="metricSync">0</strong>
+          </article>
+        </section>
+
         <section id="setupView" class="view active">
           <header class="view-header">
             <div>
               <h1>Setup</h1>
-              <p>Configure the restaurant before service starts.</p>
+              <p>Configure day, printers, tables, kitchen routing, and devices.</p>
             </div>
           </header>
 
@@ -101,6 +121,36 @@
 
             <section class="setup-step">
               <span>Step 5</span>
+              <h2>Modifiers and Notes</h2>
+              <form id="modifierGroupForm" class="form-row">
+                <input id="modifierGroupName" placeholder="Group: Spice, Size" />
+                <select id="modifierGroupType">
+                  <option value="single">single</option>
+                  <option value="multiple">multiple</option>
+                </select>
+                <button type="submit">Add Group</button>
+              </form>
+              <form id="modifierOptionForm" class="form-row">
+                <select id="modifierOptionGroup"></select>
+                <input id="modifierOptionName" placeholder="Option: Spicy" />
+                <input id="modifierOptionPrice" type="number" min="0" step="1" placeholder="+ Price" />
+                <button type="submit">Add Option</button>
+              </form>
+              <form id="modifierAssignForm" class="form-row">
+                <select id="modifierAssignItem"></select>
+                <select id="modifierAssignGroup"></select>
+                <button type="submit">Attach To Item</button>
+              </form>
+              <form id="noteTemplateForm" class="form-row">
+                <input id="noteTemplateLabel" placeholder="Label: Jain" />
+                <input id="noteTemplateNote" placeholder="Kitchen note" />
+                <button type="submit">Add Note</button>
+              </form>
+              <div id="modifierAdminList" class="admin-list"></div>
+            </section>
+
+            <section class="setup-step">
+              <span>Step 6</span>
               <h2>Pair Devices</h2>
               <form id="pairingForm" class="form-row">
                 <input id="pairingName" placeholder="Device name" />
@@ -117,7 +167,7 @@
             </section>
 
             <section class="setup-step">
-              <span>Step 6</span>
+              <span>Step 7</span>
               <h2>Backups and Cloud Pull</h2>
               <form id="backupForm" class="form-row">
                 <input id="backupLabel" placeholder="Backup label" />
@@ -137,7 +187,10 @@
               <h1>Service</h1>
               <p id="orderMeta">Select a table.</p>
             </div>
-            <button id="refresh" type="button" class="secondary">Refresh</button>
+            <div class="header-actions">
+              <input id="menuSearch" placeholder="Search menu" />
+              <button id="refresh" type="button" class="secondary">Refresh</button>
+            </div>
           </header>
           <div class="service-grid">
             <section class="work-pane">
@@ -154,6 +207,7 @@
                 <div class="ticket">
                   <div class="ticket-controls">
                     <label>Pax <input id="pax" type="number" min="1" max="99" value="2" /></label>
+                    <strong id="draftTotal">₹0</strong>
                     <button id="submitOrder" type="button">Send KOT</button>
                   </div>
                   <div id="draftItems" class="draft-items"></div>
@@ -178,15 +232,32 @@
           <header class="view-header">
             <div>
               <h1>Billing and Prints</h1>
-              <p>Generate bills, settle cash, and recover failed prints.</p>
+              <p id="billingMeta">Select a table in Service to bill or settle.</p>
             </div>
             <button id="processPrints" type="button">Run Print Queue</button>
           </header>
+          <section id="billingContext" class="billing-context">No table selected.</section>
           <section class="billing-actions">
             <button id="generateBill" type="button">Generate Bill</button>
             <button id="reprintBill" type="button">Reprint Bill</button>
-            <button id="settleBill" type="button">Settle Cash</button>
             <button id="cancelOrder" type="button" class="danger">Cancel Order</button>
+          </section>
+          <section class="payment-panel">
+            <div class="payment-summary" id="paymentSummary">Select a billed order.</div>
+            <div class="payment-adjustments">
+              <label>Discount <input id="billDiscount" type="number" min="0" step="1" value="0" /></label>
+              <label>Tip <input id="billTip" type="number" min="0" step="1" value="0" /></label>
+            </div>
+            <div class="payment-grid">
+              <label>Cash <input id="payCash" type="number" min="0" step="1" value="0" /></label>
+              <label>UPI <input id="payUpi" type="number" min="0" step="1" value="0" /></label>
+              <label>Card <input id="payCard" type="number" min="0" step="1" value="0" /></label>
+              <label>Online <input id="payOnline" type="number" min="0" step="1" value="0" /></label>
+            </div>
+            <div class="form-row">
+              <input id="paymentReference" placeholder="Reference or note" />
+              <button id="settleBill" type="button">Save Payments</button>
+            </div>
           </section>
           <div id="printJobs" class="print-list"></div>
         </section>
@@ -196,6 +267,7 @@
     <template id="emptyState">
       <div class="empty">No records</div>
     </template>
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
     <script src="/app.js" type="module"></script>
   </body>

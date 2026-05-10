@@ -66,6 +66,51 @@ describe("OrderService KOT lifecycle", () => {
     database.close();
   });
 
+  it("applies menu modifiers and note templates into order, KOT, and bill math", () => {
+    const { database, orderService } = createTestHub();
+    const group = orderService.createModifierGroup({
+      name: "Add-on",
+      selectionType: "multiple",
+      minSelections: 0,
+      maxSelections: 3,
+      active: true
+    });
+    const option = orderService.createModifierOption({
+      groupId: group.id,
+      name: "Extra Malai",
+      priceDeltaPaise: 5_000,
+      active: true
+    });
+    orderService.assignModifierGroup({ menuItemId: "item-lassi", groupId: group.id });
+
+    const order = orderService.submitOrder({
+      tableId: "table-t1",
+      captainId: "waiter-1",
+      pax: 1,
+      orderType: "dine_in",
+      items: [
+        {
+          menuItemId: "item-lassi",
+          quantity: 2,
+          notes: "chilled",
+          modifiers: [{ groupId: group.id, optionId: option.id }]
+        }
+      ]
+    });
+
+    expect(database.db.prepare("SELECT unit_price_paise, modifier_total_paise, notes FROM order_items").get()).toEqual({
+      unit_price_paise: 14_000,
+      modifier_total_paise: 5_000,
+      notes: "Add-on: Extra Malai | chilled"
+    });
+    expect(database.db.prepare("SELECT notes FROM kot_items").get()).toEqual({ notes: "Add-on: Extra Malai | chilled" });
+
+    const bill = orderService.generateBill(order.orderId);
+    expect(bill.totalPaise).toBe(29_400);
+
+    database.close();
+  });
+
   it("creates cancelled KOTs and frees the table when an order is cancelled", () => {
     const { database, orderService } = createTestHub();
 
@@ -113,6 +158,67 @@ describe("OrderService KOT lifecycle", () => {
     expect(database.db.prepare("SELECT status FROM restaurant_tables WHERE id = 'table-t1'").get()).toEqual({
       status: "free"
     });
+
+    database.close();
+  });
+
+  it("supports manual split payments with discount and tip", () => {
+    const { database, orderService } = createTestHub();
+
+    const order = orderService.submitOrder({
+      tableId: "table-t1",
+      captainId: "waiter-1",
+      pax: 1,
+      orderType: "dine_in",
+      items: [{ menuItemId: "item-dal-fry", quantity: 2 }]
+    });
+
+    const bill = orderService.generateBill(order.orderId);
+    const partPaid = orderService.settleBill(bill.billId, {
+      receivedBy: "cashier-1",
+      discountPaise: 1000,
+      tipPaise: 500,
+      payments: [
+        { method: "cash", amountPaise: 10000 },
+        { method: "online", amountPaise: 5000, reference: "manual-upi-note" }
+      ]
+    });
+
+    expect(partPaid.status).toBe("pending");
+    expect(partPaid.remainingPaise).toBeGreaterThan(0);
+
+    const final = orderService.settleBill(bill.billId, {
+      receivedBy: "cashier-1",
+      discountPaise: 1000,
+      tipPaise: 500,
+      payments: [{ method: "card", amountPaise: partPaid.remainingPaise }]
+    });
+
+    expect(final.status).toBe("paid");
+    expect(database.db.prepare("SELECT status, discount_paise, tip_paise FROM bills WHERE id = ?").get(bill.billId)).toEqual({
+      status: "paid",
+      discount_paise: 1000,
+      tip_paise: 500
+    });
+    expect(database.db.prepare("SELECT COUNT(*) AS count FROM payments WHERE bill_id = ?").get(bill.billId)).toEqual({ count: 3 });
+
+    database.close();
+  });
+
+  it("blocks day close while a generated bill is still unpaid", () => {
+    const { database, orderService } = createTestHub();
+    const order = orderService.submitOrder({
+      tableId: "table-t1",
+      captainId: "waiter-1",
+      pax: 1,
+      orderType: "dine_in",
+      items: [{ menuItemId: "item-dal-fry", quantity: 1 }]
+    });
+    orderService.generateBill(order.orderId);
+
+    expect(() => orderService.closePosDay({ closingCashPaise: 0, closedBy: "cashier-1" })).toThrow(
+      "Cannot close POS day while orders are open or billed"
+    );
 
     database.close();
   });
@@ -209,12 +315,32 @@ describe("OrderService KOT lifecycle", () => {
       items: [{ menuItemId: "item-dal-fry", quantity: 1 }]
     });
     const bill = orderService.generateBill(order.orderId);
-    orderService.settleBill(bill.billId, { method: "cash", amountPaise: bill.totalPaise, receivedBy: "cashier-1" });
+    const discountPaise = 1_000;
+    const tipPaise = 500;
+    const finalTotalPaise = bill.totalPaise - discountPaise + tipPaise;
+    orderService.settleBill(bill.billId, {
+      receivedBy: "cashier-1",
+      discountPaise,
+      tipPaise,
+      payments: [
+        { method: "cash", amountPaise: 10_000 },
+        { method: "upi", amountPaise: finalTotalPaise - 10_000 }
+      ]
+    });
 
     expect(orderService.getCloseSummary()).toMatchObject({
       openOrders: 0,
       unpaidBills: 0,
-      cashPaymentsPaise: bill.totalPaise
+      paidBills: 1,
+      openingCashPaise: 100_000,
+      grossSalesPaise: bill.totalPaise,
+      discountPaise,
+      tipPaise,
+      finalSalesPaise: finalTotalPaise,
+      cashPaymentsPaise: 10_000,
+      upiPaymentsPaise: finalTotalPaise - 10_000,
+      totalPaymentsPaise: finalTotalPaise,
+      expectedClosingCashPaise: 110_000
     });
 
     database.close();

@@ -23,6 +23,9 @@ export interface BillTicket {
   subtotalPaise: number;
   taxPaise: number;
   totalPaise: number;
+  discountPaise?: number;
+  tipPaise?: number;
+  finalTotalPaise?: number;
   createdAt: string;
 }
 
@@ -50,14 +53,22 @@ export function renderKotTicket(ticket: KotTicket): string {
 }
 
 export function renderBillTicket(ticket: BillTicket): string {
-  return [
+  const lines = [
     `BILL ${ticket.billId}`,
     `Table: ${ticket.tableName}`,
     `Time: ${ticket.createdAt}`,
     "-".repeat(32),
     `Subtotal: ${formatInr(ticket.subtotalPaise)}`,
     `Tax: ${formatInr(ticket.taxPaise)}`,
-    `Total: ${formatInr(ticket.totalPaise)}`,
-    "\n\n"
-  ].join("\n");
+    `Total: ${formatInr(ticket.totalPaise)}`
+  ];
+
+  if (ticket.discountPaise) lines.push(`Discount: -${formatInr(ticket.discountPaise)}`);
+  if (ticket.tipPaise) lines.push(`Tip: ${formatInr(ticket.tipPaise)}`);
+  if (ticket.finalTotalPaise && ticket.finalTotalPaise !== ticket.totalPaise) {
+    lines.push(`Final: ${formatInr(ticket.finalTotalPaise)}`);
+  }
+
+  lines.push("\n\n");
+  return lines.join("\n");
 }

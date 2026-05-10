@@ -1,9 +1,15 @@
 import { z } from "zod";
 
+export const modifierSelectionInputSchema = z.object({
+  groupId: z.string().min(1),
+  optionId: z.string().min(1)
+});
+
 export const orderItemInputSchema = z.object({
   menuItemId: z.string().min(1),
   quantity: z.number().int().min(0),
-  notes: z.string().trim().max(500).optional()
+  notes: z.string().trim().max(500).optional(),
+  modifiers: z.array(modifierSelectionInputSchema).max(20).optional()
 });
 
 export const submitOrderSchema = z.object({
@@ -27,10 +33,20 @@ export const closePosDaySchema = z.object({
   closedBy: z.string().min(1)
 });
 
-export const settleBillSchema = z.object({
-  method: z.enum(["cash", "upi", "card"]).default("cash"),
+export const paymentInputSchema = z.object({
+  method: z.enum(["cash", "upi", "card", "online"]).default("cash"),
   amountPaise: z.number().int().min(0),
-  receivedBy: z.string().min(1)
+  reference: z.string().trim().max(120).optional(),
+  note: z.string().trim().max(240).optional()
+});
+
+export const settleBillSchema = z.object({
+  method: z.enum(["cash", "upi", "card", "online"]).default("cash").optional(),
+  amountPaise: z.number().int().min(0).optional(),
+  receivedBy: z.string().min(1),
+  discountPaise: z.number().int().min(0).default(0),
+  tipPaise: z.number().int().min(0).default(0),
+  payments: z.array(paymentInputSchema).optional()
 });
 
 export const reprintKotSchema = z.object({
@@ -68,6 +84,32 @@ export const updateMenuItemSchema = z.object({
   pricePaise: z.number().int().min(0).optional(),
   productionUnitId: z.string().min(1).optional(),
   active: z.boolean().optional()
+});
+
+export const createModifierGroupSchema = z.object({
+  name: z.string().trim().min(1).max(80),
+  selectionType: z.enum(["single", "multiple"]).default("single"),
+  minSelections: z.number().int().min(0).max(20).default(0),
+  maxSelections: z.number().int().min(1).max(20).default(1),
+  active: z.boolean().default(true)
+});
+
+export const createModifierOptionSchema = z.object({
+  groupId: z.string().min(1),
+  name: z.string().trim().min(1).max(80),
+  priceDeltaPaise: z.number().int().min(0).default(0),
+  active: z.boolean().default(true)
+});
+
+export const assignModifierGroupSchema = z.object({
+  menuItemId: z.string().min(1),
+  groupId: z.string().min(1)
+});
+
+export const createNoteTemplateSchema = z.object({
+  label: z.string().trim().min(1).max(80),
+  note: z.string().trim().min(1).max(240),
+  active: z.boolean().default(true)
 });
 
 export const updateKotStatusSchema = z.object({
@@ -111,13 +153,17 @@ export const scheduleRestoreSchema = z.object({
 export type SubmitOrderInput = z.infer<typeof submitOrderSchema>;
 export type OpenPosDayInput = z.infer<typeof openPosDaySchema>;
 export type ClosePosDayInput = z.infer<typeof closePosDaySchema>;
-export type SettleBillInput = z.infer<typeof settleBillSchema>;
+export type SettleBillInput = z.input<typeof settleBillSchema>;
 export type ReprintKotInput = z.infer<typeof reprintKotSchema>;
 export type CreateFloorInput = z.infer<typeof createFloorSchema>;
 export type CreateTableInput = z.infer<typeof createTableSchema>;
 export type CreateProductionUnitInput = z.infer<typeof createProductionUnitSchema>;
 export type CreateMenuItemInput = z.infer<typeof createMenuItemSchema>;
 export type UpdateMenuItemInput = z.infer<typeof updateMenuItemSchema>;
+export type CreateModifierGroupInput = z.infer<typeof createModifierGroupSchema>;
+export type CreateModifierOptionInput = z.infer<typeof createModifierOptionSchema>;
+export type AssignModifierGroupInput = z.infer<typeof assignModifierGroupSchema>;
+export type CreateNoteTemplateInput = z.infer<typeof createNoteTemplateSchema>;
 export type UpdateKotStatusInput = z.infer<typeof updateKotStatusSchema>;
 export type RetryPrintJobInput = z.infer<typeof retryPrintJobSchema>;
 export type UpdateReceiptPrinterInput = z.infer<typeof updateReceiptPrinterSchema>;

@@ -18,6 +18,7 @@ Set these on the Windows hub machine before launching the packaged app:
 ```bash
 HUB_HOST=0.0.0.0
 HUB_PORT=3737
+HUB_PUBLIC_URL=http://<windows-lan-ip>:3737
 HUB_DATABASE_PATH=C:\GauravPOS\data\hub.sqlite
 HUB_BACKUP_DIR=C:\GauravPOS\backups
 HUB_PRINTER_DRY_RUN=false

@@ -1,10 +1,10 @@
 import Database from "better-sqlite3";
 import { drizzle, type BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
-import { eq } from "drizzle-orm";
+import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { dirname } from "node:path";
 import { mkdirSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import * as schema from "./drizzle-schema.js";
-import { migrations } from "./schema.js";
 
 export type SqliteDatabase = Database.Database;
 export type HubOrm = BetterSQLite3Database<typeof schema> & { $client: SqliteDatabase };
@@ -24,32 +24,8 @@ export class HubDatabase {
   }
 
   migrate(): void {
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS migrations (
-        id TEXT PRIMARY KEY,
-        applied_at TEXT NOT NULL
-      );
-    `);
-
-    for (const migration of migrations) {
-      const applied = this.orm
-        .select({ id: schema.migrationsTable.id })
-        .from(schema.migrationsTable)
-        .where(eq(schema.migrationsTable.id, migration.id))
-        .get();
-
-      if (applied) continue;
-
-      const runMigration = this.db.transaction(() => {
-        this.db.exec(migration.sql);
-        this.orm.insert(schema.migrationsTable).values({
-          id: migration.id,
-          appliedAt: new Date().toISOString()
-        }).run();
-      });
-
-      runMigration();
-    }
+    const migrationsFolder = fileURLToPath(new URL("../../drizzle", import.meta.url));
+    migrate(this.orm, { migrationsFolder });
   }
 
   seedDemoData(): void {
@@ -105,6 +81,41 @@ export class HubDatabase {
             productionUnitId: item[3],
             active: true
           })
+          .onConflictDoNothing()
+          .run();
+      }
+
+      this.orm
+        .insert(schema.modifierGroups)
+        .values({ id: "mod-spice", name: "Spice", selectionType: "single", minSelections: 0, maxSelections: 1, active: true })
+        .onConflictDoNothing()
+        .run();
+      for (const option of [
+        ["mod-spice-mild", "Mild"],
+        ["mod-spice-medium", "Medium"],
+        ["mod-spice-spicy", "Spicy"]
+      ] as const) {
+        this.orm
+          .insert(schema.modifierOptions)
+          .values({ id: option[0], groupId: "mod-spice", name: option[1], priceDeltaPaise: 0, active: true })
+          .onConflictDoNothing()
+          .run();
+      }
+      for (const menuItemId of ["item-paneer-tikka", "item-dal-fry"]) {
+        this.orm
+          .insert(schema.menuItemModifierGroups)
+          .values({ menuItemId, groupId: "mod-spice", sortOrder: 0 })
+          .onConflictDoNothing()
+          .run();
+      }
+      for (const note of [
+        ["note-jain", "Jain", "Jain preparation"],
+        ["note-no-onion", "No Onion", "No onion"],
+        ["note-less-oil", "Less Oil", "Less oil"]
+      ] as const) {
+        this.orm
+          .insert(schema.noteTemplates)
+          .values({ id: note[0], label: note[1], note: note[2], active: true })
           .onConflictDoNothing()
           .run();
       }

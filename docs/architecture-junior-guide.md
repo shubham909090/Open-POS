@@ -8,14 +8,14 @@ The system has three major areas:
 
 - The Windows hub app inside the restaurant.
 - Android devices used by waiters/cashiers/kitchen staff.
-- Convex cloud used for account management, backup sync, and reporting.
+- Convex cloud used for account management, event sync, command sync, and reporting.
 
 The Windows hub is the most important part during service hours. Orders, KOTs, billing, table status, local device tokens, print jobs, and the SQLite database all live there.
 
 ```mermaid
 flowchart TD
   owner["Owner/Admin opens Cloud Admin"] --> workos["WorkOS AuthKit<br/>Google login only"]
-  workos --> convex["Convex Cloud<br/>restaurants, installs, users, reports"]
+  workos --> convex["Convex Cloud<br/>restaurants, memberships, installs, commands, reports"]
 
   convex -->|installation commands| hubPull["Hub Cloud Pull<br/>/sync/pull"]
   hubPull --> hub["Windows Electron Hub<br/>Fastify API + local UI"]
@@ -24,7 +24,7 @@ flowchart TD
   cashierPhone["Android Cashier Device"] -->|LAN REST commands| hub
   kitchenScreen["Kitchen/KDS Screen"] -->|LAN REST + WebSocket| hub
 
-  hub --> sqlite["Local SQLite DB<br/>Drizzle schema + custom migrations"]
+  hub --> sqlite["Local SQLite DB<br/>Drizzle schema + migrations"]
   hub --> ws["WebSocket Events<br/>table/order/KOT updates"]
   ws --> waiter
   ws --> kitchenScreen
@@ -54,6 +54,66 @@ All other local devices talk to the hub over the restaurant LAN:
 
 The hub is the service-hour source of truth.
 
+## Device-By-Device App Scope
+
+Think of each app as one job, not one giant shared screen.
+
+### 1. Windows Hub App
+
+This runs on the cashier/admin PC. It is the local server, local database owner, printer owner, and main admin screen.
+
+It has four main areas:
+
+- Setup: POS day, printers, rooms/tables, kitchens, menu, device pairing, backups, and sync.
+- Service: live table order entry, menu search, draft totals, and KOT submission.
+- Kitchen: KOT/KDS status and print queue handling.
+- Billing: bill generation, receipt reprint, discounts, tips, split payments, and settlement.
+
+If the internet is down, this app still runs the restaurant.
+
+### 2. Android Waiter App
+
+This is for the waiter on the floor.
+
+It does a smaller set of tasks:
+
+- pair with the hub by QR/manual code
+- show LAN connection status
+- choose a table
+- search menu items
+- add item quantities, modifier chips, note templates, and kitchen notes
+- review the KOT before sending
+- save a draft if the hub is temporarily unreachable
+
+It does not write directly to SQLite. It sends final orders to the hub.
+
+## Menu Modifiers And Notes
+
+Modifiers are structured dish customizations. Instead of the waiter typing everything manually, the admin can create reusable groups and options.
+
+Examples:
+
+- Spice: mild, medium, spicy
+- Size: half, full
+- Add-on: extra cheese, extra malai, extra chutney
+- Preparation: Jain, no onion garlic
+
+Each menu item can be linked to the modifier groups it supports. When a waiter selects a modifier, the hub stores the selected option snapshot, adds any price delta to that item, and prints the modifier text on the KOT. Reusable note templates like Jain, No Onion, and Less Oil remain available for quick kitchen instructions.
+
+### 3. Cloud Admin App
+
+This is for owner/admin work when internet exists.
+
+It does cloud setup and sync control:
+
+- create the restaurant cloud record
+- register the Windows hub installation id/secret
+- invite staff by Google email and manage cloud roles
+- queue safe changes for menu, printer, production units, and device revoke/update
+- see hub installation health and recent synced events
+
+It is not in the live restaurant order path.
+
 ## Local Database
 
 The hub uses SQLite. SQLite is stored only on the Windows hub machine.
@@ -65,9 +125,10 @@ All devices access data through the hub API. That keeps writes controlled and av
 Current database approach:
 
 - `apps/hub-electron/src/db/drizzle-schema.ts` defines the Drizzle ORM schema.
-- `apps/hub-electron/src/db/schema.ts` still contains the custom SQL migration runner.
+- `apps/hub-electron/drizzle` contains the generated Drizzle migrations.
 - `HubDatabase.orm` is the main database handle.
-- Some dense `OrderService` internals still use prepared SQLite statements through Drizzle's owned SQLite client. That code is intentionally being converted slowly because KOT/billing transactions are high-risk.
+- Hub startup runs Drizzle migrations directly with `drizzle-orm/better-sqlite3/migrator`.
+- The service-hour write path in `OrderService` uses Drizzle query APIs for POS days, order item diffs, KOT creation, billing, payments, print jobs, and event/outbox writes.
 
 ## Local API
 
@@ -117,7 +178,12 @@ This split is deliberate. Cloud auth can require internet. Restaurant service ca
 
 The admin creates a pairing code from the hub UI.
 
-The Android device enters that code. The hub then creates a local device token with a role:
+The hub shows both:
+
+- a six-digit manual code
+- a QR code containing the hub URL, pairing code, device name, role, and expiry
+
+The Android device can scan the QR code with the camera, paste the QR payload manually, or enter the six-digit code. The hub then creates a local device token with a role:
 
 - admin
 - cashier
@@ -145,6 +211,8 @@ sequenceDiagram
   Hub->>Printer: Print queue sends KOT
   Hub->>Cloud: Upload event later if internet exists
 ```
+
+On Android, the waiter can add kitchen notes to ticket lines. Before the app sends the KOT, it shows a review prompt with the item quantities and notes so the waiter can catch mistakes before kitchen printing starts.
 
 The key rule is atomic local writing. When an order is finalized, the hub writes all important local records together:
 
@@ -189,9 +257,32 @@ flowchart LR
   paid --> closeSummary["Included in day close summary"]
 ```
 
-Current billing supports cash, UPI, and card payment methods at the data level. The UI currently focuses on cash settlement first.
+Current billing supports manual cashier-entered payments. This does not call any payment gateway. If the guest pays by UPI/card/online, the cashier enters the method and amount after seeing the payment externally.
+
+Supported settlement basics:
+
+- full cash
+- full UPI
+- full card
+- full online/manual external payment
+- split payments, such as half cash and half UPI
+- discount amount
+- tip amount
+- remaining balance tracking
+
+The bill becomes paid only when total entered payments cover the final bill amount after discount and tip.
 
 Tax is currently a simple default GST calculation. Real GST/service charge rules still need the restaurant's final billing policy.
+
+Before closing the POS day, the hub shows a richer reconciliation summary:
+
+- opening cash
+- cash sales
+- expected drawer cash
+- typed closing-cash variance
+- UPI/card/online totals
+- gross sales, discounts, tips, and final sales
+- paid bills, unpaid bills, and open-order blockers
 
 ## Cloud Sync
 
@@ -201,6 +292,8 @@ Convex is used for:
 
 - cloud admin login/session
 - restaurant records
+- restaurant memberships
+- member invitations
 - installation identity
 - synced local events
 - reports
@@ -215,6 +308,8 @@ The hub also pulls commands from Convex:
 - create/update production units
 - create/update/disable menu items
 - update receipt printer settings
+
+The cloud admin UI currently supports creating restaurants, registering hub installations, viewing recent synced events, and queueing these commands. WorkOS/Convex auth is required for those actions.
 
 ## Installation Identity
 
@@ -258,4 +353,3 @@ These items need the actual restaurant environment:
 - Run the Windows installer build on Windows hardware or CI.
 
 Everything else should continue through normal code implementation and tests.
-

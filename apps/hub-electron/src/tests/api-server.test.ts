@@ -49,7 +49,12 @@ describe("Hub API auth and service flow", () => {
       headers: adminHeaders,
       payload: { deviceName: "Waiter phone", role: "waiter", expiresInMinutes: 10 }
     });
-    const pairing = pairingResponse.json<{ code: string }>();
+    const pairing = pairingResponse.json<{
+      code: string;
+      qrDataUrl: string;
+      pairingPayload: { kind: string; hubUrl: string; code: string; role: string };
+      pairingPayloadText: string;
+    }>();
     const exchangeResponse = await app.inject({
       method: "POST",
       url: "/devices/pair/exchange",
@@ -76,6 +81,13 @@ describe("Hub API auth and service flow", () => {
       payload: { method: "cash", amountPaise: 1, receivedBy: "cashier-1" }
     });
 
+    expect(pairing.qrDataUrl).toMatch(/^data:image\/png;base64,/);
+    expect(pairing.pairingPayload).toMatchObject({
+      kind: "gaurav-pos-pairing",
+      code: pairing.code,
+      role: "waiter"
+    });
+    expect(JSON.parse(pairing.pairingPayloadText).hubUrl).toContain("localhost");
     expect(exchangeResponse.statusCode).toBe(200);
     expect(orderResponse.statusCode).toBe(200);
     expect(settleResponse.statusCode).toBe(403);

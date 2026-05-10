@@ -6,12 +6,15 @@ const state = {
   systemPrinters: [],
   devices: [],
   backups: [],
-  closeSummary: null
+  closeSummary: null,
+  menuSearch: ""
 };
 
 const $ = (id) => document.getElementById(id);
 const money = (paise) =>
   new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR" }).format((paise ?? 0) / 100);
+const escapeHtml = (value) =>
+  String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
 
 async function api(path, options = {}) {
   const token = $("deviceToken")?.value || localStorage.getItem("deviceToken") || "dev-admin-token";
@@ -38,6 +41,7 @@ async function loadBootstrap() {
   $("hubHealth").textContent = "LAN hub online";
   const pending = state.bootstrap.syncStatus?.counts?.pending ?? 0;
   $("syncStatus").textContent = `Sync pending: ${pending}`;
+  renderOperationalStats();
   renderDay();
   renderTables();
   renderMenu();
@@ -47,6 +51,38 @@ async function loadBootstrap() {
   await renderReceiptPrinter();
   await loadAdminPanels();
   await loadKds();
+}
+
+function showToast(message, type = "ok") {
+  const toast = $("toast");
+  if (!toast) return;
+  toast.textContent = message;
+  toast.className = `toast show ${type === "error" ? "error" : ""}`;
+  clearTimeout(showToast.timer);
+  showToast.timer = setTimeout(() => {
+    toast.className = "toast";
+  }, 2600);
+}
+
+async function runAction(action, successMessage) {
+  try {
+    const result = await action();
+    if (successMessage) showToast(successMessage);
+    return result;
+  } catch (error) {
+    showToast(error.message ?? "Action failed", "error");
+    return undefined;
+  }
+}
+
+function renderOperationalStats() {
+  const tables = state.bootstrap?.tables ?? [];
+  const printJobs = state.bootstrap?.printJobs ?? [];
+  const pending = state.bootstrap?.syncStatus?.counts?.pending ?? 0;
+  $("metricTables").textContent = String(tables.length);
+  $("metricOccupied").textContent = String(tables.filter((table) => table.status !== "free").length);
+  $("metricFailedPrints").textContent = String(printJobs.filter((job) => job.status === "failed").length);
+  $("metricSync").textContent = String(pending);
 }
 
 async function loadAdminPanels() {
@@ -81,12 +117,27 @@ function renderCloseSummary() {
     target.textContent = "No open day.";
     return;
   }
+  const closingCashPaise = Number($("closingCash")?.value || 0) * 100;
+  const hasClosingCash = $("closingCash")?.value !== "";
+  const variancePaise = hasClosingCash ? closingCashPaise - summary.expectedClosingCashPaise : 0;
+  const canClose = summary.openOrders === 0 && summary.unpaidBills === 0;
   target.innerHTML = `
-    <span>Open orders: <strong>${summary.openOrders}</strong></span>
-    <span>Unpaid bills: <strong>${summary.unpaidBills}</strong></span>
-    <span>Cash: <strong>${money(summary.cashPaymentsPaise)}</strong></span>
-    <span>UPI: <strong>${money(summary.upiPaymentsPaise)}</strong></span>
-    <span>Card: <strong>${money(summary.cardPaymentsPaise)}</strong></span>
+    <span>Opening cash <strong>${money(summary.openingCashPaise)}</strong></span>
+    <span>Cash sales <strong>${money(summary.cashPaymentsPaise)}</strong></span>
+    <span>Expected drawer <strong>${money(summary.expectedClosingCashPaise)}</strong></span>
+    <span>Typed variance <strong class="${variancePaise === 0 ? "" : variancePaise > 0 ? "positive" : "negative"}">${hasClosingCash ? money(variancePaise) : "Enter closing cash"}</strong></span>
+    <span>UPI <strong>${money(summary.upiPaymentsPaise)}</strong></span>
+    <span>Card <strong>${money(summary.cardPaymentsPaise)}</strong></span>
+    <span>Online <strong>${money(summary.onlinePaymentsPaise)}</strong></span>
+    <span>Total payments <strong>${money(summary.totalPaymentsPaise)}</strong></span>
+    <span>Gross bills <strong>${money(summary.grossSalesPaise)}</strong></span>
+    <span>Discounts <strong>${money(summary.discountPaise)}</strong></span>
+    <span>Tips <strong>${money(summary.tipPaise)}</strong></span>
+    <span>Final sales <strong>${money(summary.finalSalesPaise)}</strong></span>
+    <span>Paid bills <strong>${summary.paidBills}</strong></span>
+    <span>Open orders <strong class="${summary.openOrders ? "negative" : ""}">${summary.openOrders}</strong></span>
+    <span>Unpaid bills <strong class="${summary.unpaidBills ? "negative" : ""}">${summary.unpaidBills}</strong></span>
+    <span>Close status <strong class="${canClose ? "positive" : "negative"}">${canClose ? "Ready" : "Blocked"}</strong></span>
   `;
 }
 
@@ -165,6 +216,40 @@ function renderMenuAdmin() {
   }
 }
 
+function renderModifierAdmin() {
+  const list = $("modifierAdminList");
+  if (!list) return;
+  list.textContent = "";
+  const groups = state.bootstrap?.modifierGroups ?? [];
+  const notes = state.bootstrap?.noteTemplates ?? [];
+  if (groups.length === 0 && notes.length === 0) return list.append(emptyNode());
+  for (const group of groups) {
+    const row = document.createElement("div");
+    row.className = "admin-row";
+    const options = (group.options ?? [])
+      .map((option) => `${option.name}${option.price_delta_paise ? ` +${money(option.price_delta_paise)}` : ""}`)
+      .join(", ");
+    row.innerHTML = `
+      <div>
+        <strong>${group.name}</strong><br />
+        <small>${group.selection_type} · ${options || "No options yet"}</small>
+      </div>
+    `;
+    list.append(row);
+  }
+  for (const note of notes) {
+    const row = document.createElement("div");
+    row.className = "admin-row";
+    row.innerHTML = `
+      <div>
+        <strong>Note: ${note.label}</strong><br />
+        <small>${note.note}</small>
+      </div>
+    `;
+    list.append(row);
+  }
+}
+
 function renderBackups() {
   const list = $("backupList");
   if (!list) return;
@@ -210,7 +295,7 @@ function renderTables() {
     const tile = document.createElement("button");
     tile.type = "button";
     tile.className = `table-tile ${table.status} ${table.id === state.selectedTableId ? "selected" : ""}`;
-    tile.innerHTML = `<strong>${table.name}</strong><span>${table.floor_name} · ${table.status}</span>`;
+    tile.innerHTML = `<strong>${table.name}</strong><span>${table.floor_name} · ${table.status.replaceAll("_", " ")}</span>`;
     tile.addEventListener("click", () => selectTable(table.id));
     tables.append(tile);
   }
@@ -219,8 +304,10 @@ function renderTables() {
 function renderMenu() {
   const menu = $("menu");
   menu.textContent = "";
+  const query = state.menuSearch.trim().toLowerCase();
   for (const item of state.bootstrap?.menuItems ?? []) {
     if (!item.active) continue;
+    if (query && !`${item.name} ${item.production_unit_name}`.toLowerCase().includes(query)) continue;
     const row = document.createElement("div");
     row.className = "menu-item";
     row.innerHTML = `
@@ -255,10 +342,19 @@ function renderUnits() {
 function renderSetupOptions() {
   const tableFloor = $("tableFloor");
   const menuItemUnit = $("menuItemUnit");
+  const modifierOptionGroup = $("modifierOptionGroup");
+  const modifierAssignItem = $("modifierAssignItem");
+  const modifierAssignGroup = $("modifierAssignGroup");
   const selectedFloor = tableFloor.value;
   const selectedUnit = menuItemUnit.value;
+  const selectedOptionGroup = modifierOptionGroup?.value;
+  const selectedAssignItem = modifierAssignItem?.value;
+  const selectedAssignGroup = modifierAssignGroup?.value;
   tableFloor.textContent = "";
   menuItemUnit.textContent = "";
+  if (modifierOptionGroup) modifierOptionGroup.textContent = "";
+  if (modifierAssignItem) modifierAssignItem.textContent = "";
+  if (modifierAssignGroup) modifierAssignGroup.textContent = "";
 
   for (const floor of state.bootstrap?.floors ?? []) {
     const option = document.createElement("option");
@@ -274,9 +370,28 @@ function renderSetupOptions() {
     menuItemUnit.append(option);
   }
 
+  for (const group of state.bootstrap?.modifierGroups ?? []) {
+    const option = document.createElement("option");
+    option.value = group.id;
+    option.textContent = group.name;
+    modifierOptionGroup?.append(option.cloneNode(true));
+    modifierAssignGroup?.append(option);
+  }
+
+  for (const item of state.bootstrap?.menuItems ?? []) {
+    const option = document.createElement("option");
+    option.value = item.id;
+    option.textContent = item.name;
+    modifierAssignItem?.append(option);
+  }
+
   if (selectedFloor) tableFloor.value = selectedFloor;
   if (selectedUnit) menuItemUnit.value = selectedUnit;
+  if (selectedOptionGroup && modifierOptionGroup) modifierOptionGroup.value = selectedOptionGroup;
+  if (selectedAssignItem && modifierAssignItem) modifierAssignItem.value = selectedAssignItem;
+  if (selectedAssignGroup && modifierAssignGroup) modifierAssignGroup.value = selectedAssignGroup;
   renderPrinterOptions();
+  renderModifierAdmin();
 }
 
 function renderPrinterOptions() {
@@ -343,6 +458,7 @@ async function selectTable(tableId) {
   hydrateDraftFromOrder();
   renderTables();
   renderOrder();
+  renderPaymentPanel();
 }
 
 function hydrateDraftFromOrder() {
@@ -350,26 +466,46 @@ function hydrateDraftFromOrder() {
   const items = state.selectedOrder?.items ?? [];
   for (const item of items) {
     if (item.status === "cancelled") continue;
-    state.draft.set(`${item.menu_item_id}::${item.notes ?? ""}`, {
+    const modifiers = JSON.parse(item.modifiers_json || "[]");
+    state.draft.set(draftKey(item.menu_item_id, item.notes ?? "", modifiers), {
       menuItemId: item.menu_item_id,
       name: item.name_snapshot,
       quantity: item.quantity,
       notes: item.notes ?? "",
-      pricePaise: item.unit_price_paise
+      basePricePaise: item.unit_price_paise - (item.modifier_total_paise ?? 0),
+      pricePaise: item.unit_price_paise,
+      modifiers
     });
   }
 }
 
+function draftKey(menuItemId, notes = "", modifiers = []) {
+  return `${menuItemId}::${notes.trim()}::${JSON.stringify(modifiers)}`;
+}
+
+function modifierGroupsForItem(menuItemId) {
+  const item = state.bootstrap?.menuItems?.find((entry) => entry.id === menuItemId);
+  const ids = new Set(item?.modifier_group_ids ?? []);
+  return (state.bootstrap?.modifierGroups ?? []).filter((group) => ids.has(group.id) && group.active);
+}
+
+function priceWithModifiers(menuItem, modifiers) {
+  return menuItem.price_paise + modifiers.reduce((total, modifier) => total + (modifier.priceDeltaPaise ?? modifier.price_delta_paise ?? 0), 0);
+}
+
 function addDraftItem(menuItem) {
   if (!state.selectedTableId) return;
-  const key = `${menuItem.id}::`;
+  const modifiers = [];
+  const key = draftKey(menuItem.id, "", modifiers);
   const current = state.draft.get(key);
   state.draft.set(key, {
     menuItemId: menuItem.id,
     name: menuItem.name,
     quantity: (current?.quantity ?? 0) + 1,
     notes: "",
-    pricePaise: menuItem.price_paise
+    basePricePaise: menuItem.price_paise,
+    pricePaise: menuItem.price_paise,
+    modifiers
   });
   renderOrder();
 }
@@ -381,6 +517,46 @@ function changeDraftQty(key, delta) {
   if (quantity === 0) state.draft.delete(key);
   else state.draft.set(key, { ...current, quantity });
   renderOrder();
+}
+
+function replaceDraftItem(key, next) {
+  state.draft.delete(key);
+  const menuItem = state.bootstrap?.menuItems?.find((item) => item.id === next.menuItemId);
+  const pricePaise = menuItem ? priceWithModifiers(menuItem, next.modifiers ?? []) : next.pricePaise;
+  const updated = { ...next, pricePaise };
+  const nextKey = draftKey(updated.menuItemId, updated.notes, updated.modifiers ?? []);
+  const existing = state.draft.get(nextKey);
+  state.draft.set(nextKey, existing ? { ...updated, quantity: existing.quantity + updated.quantity } : updated);
+  renderOrder();
+}
+
+function toggleModifier(key, group, option) {
+  const current = state.draft.get(key);
+  if (!current) return;
+  const existing = current.modifiers ?? [];
+  const withoutGroupOption = existing.filter((modifier) =>
+    group.selection_type === "single" ? modifier.groupId !== group.id : modifier.optionId !== option.id
+  );
+  const isSelected = existing.some((modifier) => modifier.groupId === group.id && modifier.optionId === option.id);
+  const nextModifiers = isSelected
+    ? withoutGroupOption
+    : [
+        ...withoutGroupOption,
+        {
+          groupId: group.id,
+          groupName: group.name,
+          optionId: option.id,
+          optionName: option.name,
+          priceDeltaPaise: option.price_delta_paise
+        }
+      ].sort((left, right) => `${left.groupName}:${left.optionName}`.localeCompare(`${right.groupName}:${right.optionName}`));
+  replaceDraftItem(key, { ...current, modifiers: nextModifiers });
+}
+
+function updateDraftNotes(key, notes) {
+  const current = state.draft.get(key);
+  if (!current) return;
+  replaceDraftItem(key, { ...current, notes });
 }
 
 function renderOrder() {
@@ -395,12 +571,69 @@ function renderOrder() {
   const list = $("draftItems");
   list.textContent = "";
   const entries = [...state.draft.entries()];
-  if (entries.length === 0) return list.append(emptyNode());
+  const total = entries.reduce((sum, [, item]) => sum + item.pricePaise * item.quantity, 0);
+  if ($("draftTotal")) $("draftTotal").textContent = money(total);
+  if (entries.length === 0) {
+    renderBillingContext();
+    return list.append(emptyNode());
+  }
 
   for (const [key, item] of entries) {
     const row = document.createElement("div");
     row.className = "draft-item";
-    row.innerHTML = `<div><strong>${item.name}</strong><br /><small>${money(item.pricePaise)} each</small></div><span>${item.quantity}</span>`;
+    const groups = modifierGroupsForItem(item.menuItemId);
+    const selected = new Set((item.modifiers ?? []).map((modifier) => `${modifier.groupId}:${modifier.optionId}`));
+    const modifierHtml = groups
+      .map(
+        (group) => `
+          <div class="modifier-line">
+            <span>${group.name}</span>
+            <div>
+              ${(group.options ?? [])
+                .filter((option) => option.active)
+                .map(
+                  (option) => `
+                    <button type="button" class="modifier-chip ${selected.has(`${group.id}:${option.id}`) ? "active" : ""}"
+                      data-group="${group.id}" data-option="${option.id}">
+                      ${option.name}${option.price_delta_paise ? ` +${money(option.price_delta_paise)}` : ""}
+                    </button>
+                  `
+                )
+                .join("")}
+            </div>
+          </div>
+        `
+      )
+      .join("");
+    const noteButtons = (state.bootstrap?.noteTemplates ?? [])
+      .map((note) => `<button type="button" class="note-chip" data-note="${note.note}">${note.label}</button>`)
+      .join("");
+    row.innerHTML = `
+      <div class="draft-main">
+        <strong>${item.name}</strong>
+        <small>${money(item.pricePaise)} each</small>
+        ${modifierHtml ? `<div class="modifier-list">${modifierHtml}</div>` : ""}
+        ${noteButtons ? `<div class="note-chip-row">${noteButtons}</div>` : ""}
+        <input class="draft-note" value="${escapeHtml(item.notes ?? "")}" placeholder="Kitchen note" />
+      </div>
+      <span>${item.quantity}</span>
+    `;
+    for (const chip of row.querySelectorAll(".modifier-chip")) {
+      chip.addEventListener("click", () => {
+        const group = groups.find((entry) => entry.id === chip.dataset.group);
+        const option = group?.options?.find((entry) => entry.id === chip.dataset.option);
+        if (group && option) toggleModifier(key, group, option);
+      });
+    }
+    for (const chip of row.querySelectorAll(".note-chip")) {
+      chip.addEventListener("click", () => {
+        const current = state.draft.get(key);
+        const note = chip.dataset.note ?? "";
+        const next = [current?.notes, note].filter(Boolean).join(" | ");
+        updateDraftNotes(key, next);
+      });
+    }
+    row.querySelector(".draft-note")?.addEventListener("change", (event) => updateDraftNotes(key, event.target.value));
     const minus = document.createElement("button");
     minus.type = "button";
     minus.className = "qty-btn secondary";
@@ -414,6 +647,58 @@ function renderOrder() {
     row.append(minus, plus);
     list.append(row);
   }
+  renderPaymentPanel();
+  renderBillingContext();
+}
+
+function renderBillingContext() {
+  const target = $("billingContext");
+  if (!target) return;
+  const order = state.selectedOrder?.order;
+  const table = state.bootstrap?.tables?.find((item) => item.id === state.selectedTableId);
+  if (!table) {
+    target.textContent = "No table selected.";
+    $("billingMeta").textContent = "Select a table in Service to bill or settle.";
+    return;
+  }
+  const bill = state.selectedOrder?.bill;
+  target.innerHTML = `
+    <strong>Table ${table.name}</strong>
+    <span>${order ? `${order.status} order ${order.id}` : "No active order"}</span>
+    <span>${bill ? `Bill ${bill.status} · ${money(bill.final_total_paise || bill.total_paise)}` : "No bill generated"}</span>
+  `;
+  $("billingMeta").textContent = bill ? `Bill ${bill.status}` : order ? `Order ${order.status}` : "No active order";
+}
+
+function renderPaymentPanel() {
+  const bill = state.selectedOrder?.bill;
+  const payments = state.selectedOrder?.payments ?? [];
+  const summary = $("paymentSummary");
+  if (!summary) return;
+
+  if (!bill) {
+    summary.textContent = "Select a billed order.";
+    for (const id of ["billDiscount", "billTip", "payCash", "payUpi", "payCard", "payOnline", "paymentReference"]) {
+      if ($(id)) $(id).value = id === "paymentReference" ? "" : "0";
+    }
+    renderBillingContext();
+    return;
+  }
+
+  const paid = bill.paid_paise ?? payments.reduce((total, payment) => total + (payment.amount_paise ?? 0), 0);
+  const finalTotal = bill.final_total_paise || bill.total_paise;
+  const remaining = Math.max(0, finalTotal - paid);
+  summary.innerHTML = `
+    <span>Bill <strong>${bill.id}</strong></span>
+    <span>Total <strong>${money(finalTotal)}</strong></span>
+    <span>Paid <strong>${money(paid)}</strong></span>
+    <span>Remaining <strong>${money(remaining)}</strong></span>
+  `;
+  $("billDiscount").value = String((bill.discount_paise ?? 0) / 100);
+  $("billTip").value = String((bill.tip_paise ?? 0) / 100);
+  for (const id of ["payCash", "payUpi", "payCard", "payOnline"]) $(id).value = "0";
+  $("paymentReference").value = "";
+  renderBillingContext();
 }
 
 async function loadKds() {
@@ -433,7 +718,12 @@ async function loadKds() {
         <span class="badge">${kot.captain_id}</span>
       </div>
       <ul class="kot-items">
-        ${(kot.items ?? []).map((item) => `<li>${item.quantity_delta} x ${item.name_snapshot}</li>`).join("")}
+        ${(kot.items ?? [])
+          .map(
+            (item) =>
+              `<li>${item.quantity_delta} x ${escapeHtml(item.name_snapshot)}${item.notes ? `<br /><small>${escapeHtml(item.notes)}</small>` : ""}</li>`
+          )
+          .join("")}
       </ul>
     `;
     const actions = document.createElement("div");
@@ -472,197 +762,326 @@ function emptyNode() {
 $("openDayForm").addEventListener("submit", async (event) => {
   event.preventDefault();
   const today = new Date().toISOString().slice(0, 10);
-  await api("/pos-days/open", {
-    method: "POST",
-    body: JSON.stringify({
-      outletId: "outlet-main",
-      businessDate: today,
-      openingCashPaise: Number($("openingCash").value || 0) * 100,
-      openedBy: "cashier-1"
-    })
-  });
-  await loadBootstrap();
+  await runAction(async () => {
+    await api("/pos-days/open", {
+      method: "POST",
+      body: JSON.stringify({
+        outletId: "outlet-main",
+        businessDate: today,
+        openingCashPaise: Number($("openingCash").value || 0) * 100,
+        openedBy: "cashier-1"
+      })
+    });
+    await loadBootstrap();
+  }, "POS day opened");
 });
 
 $("closeDayForm").addEventListener("submit", async (event) => {
   event.preventDefault();
-  await api("/pos-days/close", {
-    method: "POST",
-    body: JSON.stringify({
-      closingCashPaise: Number($("closingCash").value || 0) * 100,
-      closedBy: "cashier-1"
-    })
-  });
-  state.selectedOrder = null;
-  state.draft.clear();
-  await loadBootstrap();
-  renderOrder();
+  await runAction(async () => {
+    await api("/pos-days/close", {
+      method: "POST",
+      body: JSON.stringify({
+        closingCashPaise: Number($("closingCash").value || 0) * 100,
+        closedBy: "cashier-1"
+      })
+    });
+    state.selectedOrder = null;
+    state.draft.clear();
+    await loadBootstrap();
+    renderOrder();
+  }, "POS day closed");
 });
 
 $("submitOrder").addEventListener("click", async () => {
   if (!state.selectedTableId) return;
-  await api("/orders/submit", {
-    method: "POST",
-    body: JSON.stringify({
-      tableId: state.selectedTableId,
-      captainId: $("captainId").value || "waiter-1",
-      pax: Number($("pax").value || 1),
-      orderType: "dine_in",
-      items: [...state.draft.values()].map((item) => ({
-        menuItemId: item.menuItemId,
-        quantity: item.quantity,
-        notes: item.notes
-      }))
-    })
-  });
-  await loadBootstrap();
-  await selectTable(state.selectedTableId);
+  await runAction(async () => {
+    await api("/orders/submit", {
+      method: "POST",
+      body: JSON.stringify({
+        tableId: state.selectedTableId,
+        captainId: $("captainId").value || "waiter-1",
+        pax: Number($("pax").value || 1),
+        orderType: "dine_in",
+        items: [...state.draft.values()].map((item) => ({
+          menuItemId: item.menuItemId,
+          quantity: item.quantity,
+          notes: item.notes,
+          modifiers: (item.modifiers ?? []).map((modifier) => ({
+            groupId: modifier.groupId,
+            optionId: modifier.optionId
+          }))
+        }))
+      })
+    });
+    await loadBootstrap();
+    await selectTable(state.selectedTableId);
+  }, "KOT sent");
 });
 
 $("generateBill").addEventListener("click", async () => {
   const orderId = state.selectedOrder?.order?.id;
   if (!orderId) return;
-  await api(`/bills/${orderId}/generate`, { method: "POST" });
-  await selectTable(state.selectedTableId);
-  await loadBootstrap();
+  await runAction(async () => {
+    await api(`/bills/${orderId}/generate`, { method: "POST" });
+    await selectTable(state.selectedTableId);
+    await loadBootstrap();
+  }, "Bill generated");
 });
 
 $("reprintBill").addEventListener("click", async () => {
   const bill = state.selectedOrder?.bill;
   if (!bill) return;
-  await api(`/bills/${bill.id}/reprint`, {
-    method: "POST",
-    body: JSON.stringify({ reason: "Cashier reprint", requestedBy: "cashier-1" })
-  });
-  await loadBootstrap();
+  await runAction(async () => {
+    await api(`/bills/${bill.id}/reprint`, {
+      method: "POST",
+      body: JSON.stringify({ reason: "Cashier reprint", requestedBy: "cashier-1" })
+    });
+    await loadBootstrap();
+  }, "Bill reprint queued");
 });
 
 $("settleBill").addEventListener("click", async () => {
   const bill = state.selectedOrder?.bill;
   if (!bill) return;
-  await api(`/bills/${bill.id}/settle`, {
-    method: "POST",
-    body: JSON.stringify({ method: "cash", amountPaise: bill.total_paise, receivedBy: "cashier-1" })
-  });
-  state.selectedOrder = null;
-  state.draft.clear();
-  await loadBootstrap();
-  renderOrder();
+  const payments = [
+    { method: "cash", amountPaise: Number($("payCash").value || 0) * 100 },
+    { method: "upi", amountPaise: Number($("payUpi").value || 0) * 100 },
+    { method: "card", amountPaise: Number($("payCard").value || 0) * 100 },
+    { method: "online", amountPaise: Number($("payOnline").value || 0) * 100 }
+  ]
+    .filter((payment) => payment.amountPaise > 0)
+    .map((payment) => ({
+      ...payment,
+      reference: $("paymentReference").value || undefined
+    }));
+  await runAction(async () => {
+    await api(`/bills/${bill.id}/settle`, {
+      method: "POST",
+      body: JSON.stringify({
+        discountPaise: Number($("billDiscount").value || 0) * 100,
+        tipPaise: Number($("billTip").value || 0) * 100,
+        payments,
+        receivedBy: "cashier-1"
+      })
+    });
+    await loadBootstrap();
+    if (state.selectedTableId) await selectTable(state.selectedTableId);
+    renderOrder();
+  }, "Payment saved");
 });
 
 $("cancelOrder").addEventListener("click", async () => {
   const orderId = state.selectedOrder?.order?.id;
   if (!orderId) return;
-  await api(`/orders/${orderId}/cancel`, { method: "POST", body: JSON.stringify({ reason: "Cancelled from cashier" }) });
-  state.selectedOrder = null;
-  state.draft.clear();
-  await loadBootstrap();
-  renderOrder();
+  await runAction(async () => {
+    await api(`/orders/${orderId}/cancel`, { method: "POST", body: JSON.stringify({ reason: "Cancelled from cashier" }) });
+    state.selectedOrder = null;
+    state.draft.clear();
+    await loadBootstrap();
+    renderOrder();
+  }, "Order cancelled");
 });
 
 $("refresh").addEventListener("click", loadBootstrap);
+$("menuSearch").addEventListener("input", () => {
+  state.menuSearch = $("menuSearch").value;
+  renderMenu();
+});
+$("closingCash").addEventListener("input", renderCloseSummary);
 $("deviceToken").addEventListener("change", () => {
   localStorage.setItem("deviceToken", $("deviceToken").value);
   void loadBootstrap();
 });
 $("kdsUnit").addEventListener("change", loadKds);
 $("processPrints").addEventListener("click", async () => {
-  await api("/print-jobs/process", { method: "POST" });
-  await loadBootstrap();
+  await runAction(async () => {
+    await api("/print-jobs/process", { method: "POST" });
+    await loadBootstrap();
+  }, "Print queue processed");
 });
 $("loadPrinters").addEventListener("click", loadSystemPrinters);
 $("receiptPrinterForm").addEventListener("submit", async (event) => {
   event.preventDefault();
-  await api("/settings/receipt-printer", {
-    method: "PUT",
-    body: JSON.stringify({
-      printerMode: $("receiptPrinterName").value ? "system" : "network",
-      printerName: $("receiptPrinterName").value || undefined,
-      printerHost: $("receiptHost").value,
-      printerPort: Number($("receiptPort").value || 9100)
-    })
-  });
-  await loadBootstrap();
+  await runAction(async () => {
+    await api("/settings/receipt-printer", {
+      method: "PUT",
+      body: JSON.stringify({
+        printerMode: $("receiptPrinterName").value ? "system" : "network",
+        printerName: $("receiptPrinterName").value || undefined,
+        printerHost: $("receiptHost").value,
+        printerPort: Number($("receiptPort").value || 9100)
+      })
+    });
+    await loadBootstrap();
+  }, "Receipt printer saved");
 });
 $("floorForm").addEventListener("submit", async (event) => {
   event.preventDefault();
-  await api("/floors", {
-    method: "POST",
-    body: JSON.stringify({ name: $("floorName").value })
-  });
-  $("floorName").value = "";
-  await loadBootstrap();
+  await runAction(async () => {
+    await api("/floors", {
+      method: "POST",
+      body: JSON.stringify({ name: $("floorName").value })
+    });
+    $("floorName").value = "";
+    await loadBootstrap();
+  }, "Floor added");
 });
 $("tableForm").addEventListener("submit", async (event) => {
   event.preventDefault();
-  await api("/tables", {
-    method: "POST",
-    body: JSON.stringify({ floorId: $("tableFloor").value, name: $("tableName").value })
-  });
-  $("tableName").value = "";
-  await loadBootstrap();
+  await runAction(async () => {
+    await api("/tables", {
+      method: "POST",
+      body: JSON.stringify({ floorId: $("tableFloor").value, name: $("tableName").value })
+    });
+    $("tableName").value = "";
+    await loadBootstrap();
+  }, "Table added");
 });
 $("unitForm").addEventListener("submit", async (event) => {
   event.preventDefault();
-  await api("/production-units", {
-    method: "POST",
-    body: JSON.stringify({
-      name: $("unitName").value,
-      printerMode: $("unitPrinterName").value ? "system" : "network",
-      printerName: $("unitPrinterName").value || undefined,
-      printerHost: $("unitHost").value,
-      printerPort: Number($("unitPort").value || 9100),
-      kdsEnabled: true
-    })
-  });
-  $("unitName").value = "";
-  $("unitHost").value = "";
-  $("unitPort").value = "9100";
-  await loadBootstrap();
+  await runAction(async () => {
+    await api("/production-units", {
+      method: "POST",
+      body: JSON.stringify({
+        name: $("unitName").value,
+        printerMode: $("unitPrinterName").value ? "system" : "network",
+        printerName: $("unitPrinterName").value || undefined,
+        printerHost: $("unitHost").value,
+        printerPort: Number($("unitPort").value || 9100),
+        kdsEnabled: true
+      })
+    });
+    $("unitName").value = "";
+    $("unitHost").value = "";
+    $("unitPort").value = "9100";
+    await loadBootstrap();
+  }, "Production unit added");
 });
 $("menuItemForm").addEventListener("submit", async (event) => {
   event.preventDefault();
-  await api("/menu-items", {
-    method: "POST",
-    body: JSON.stringify({
-      name: $("menuItemName").value,
-      pricePaise: Number($("menuItemPrice").value || 0) * 100,
-      productionUnitId: $("menuItemUnit").value,
-      active: true
-    })
-  });
-  $("menuItemName").value = "";
-  $("menuItemPrice").value = "";
-  await loadBootstrap();
+  await runAction(async () => {
+    await api("/menu-items", {
+      method: "POST",
+      body: JSON.stringify({
+        name: $("menuItemName").value,
+        pricePaise: Number($("menuItemPrice").value || 0) * 100,
+        productionUnitId: $("menuItemUnit").value,
+        active: true
+      })
+    });
+    $("menuItemName").value = "";
+    $("menuItemPrice").value = "";
+    await loadBootstrap();
+  }, "Menu item added");
+});
+$("modifierGroupForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  await runAction(async () => {
+    const selectionType = $("modifierGroupType").value;
+    await api("/modifier-groups", {
+      method: "POST",
+      body: JSON.stringify({
+        name: $("modifierGroupName").value,
+        selectionType,
+        minSelections: 0,
+        maxSelections: selectionType === "single" ? 1 : 20,
+        active: true
+      })
+    });
+    $("modifierGroupName").value = "";
+    await loadBootstrap();
+  }, "Modifier group added");
+});
+$("modifierOptionForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  await runAction(async () => {
+    await api("/modifier-options", {
+      method: "POST",
+      body: JSON.stringify({
+        groupId: $("modifierOptionGroup").value,
+        name: $("modifierOptionName").value,
+        priceDeltaPaise: Number($("modifierOptionPrice").value || 0) * 100,
+        active: true
+      })
+    });
+    $("modifierOptionName").value = "";
+    $("modifierOptionPrice").value = "";
+    await loadBootstrap();
+  }, "Modifier option added");
+});
+$("modifierAssignForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  await runAction(async () => {
+    await api("/menu-item-modifier-groups", {
+      method: "POST",
+      body: JSON.stringify({
+        menuItemId: $("modifierAssignItem").value,
+        groupId: $("modifierAssignGroup").value
+      })
+    });
+    await loadBootstrap();
+  }, "Modifier attached to item");
+});
+$("noteTemplateForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  await runAction(async () => {
+    await api("/note-templates", {
+      method: "POST",
+      body: JSON.stringify({
+        label: $("noteTemplateLabel").value,
+        note: $("noteTemplateNote").value,
+        active: true
+      })
+    });
+    $("noteTemplateLabel").value = "";
+    $("noteTemplateNote").value = "";
+    await loadBootstrap();
+  }, "Note template added");
 });
 $("pairingForm").addEventListener("submit", async (event) => {
   event.preventDefault();
-  const result = await api("/devices/pairing-codes", {
-    method: "POST",
-    body: JSON.stringify({
-      deviceName: $("pairingName").value || "New device",
-      role: $("pairingRole").value,
-      expiresInMinutes: 10
-    })
-  });
-  $("pairingResult").textContent = `Code ${result.code} expires ${new Date(result.expiresAt).toLocaleTimeString()}`;
-  await loadAdminPanels();
+  await runAction(async () => {
+    const result = await api("/devices/pairing-codes", {
+      method: "POST",
+      body: JSON.stringify({
+        deviceName: $("pairingName").value || "New device",
+        role: $("pairingRole").value,
+        expiresInMinutes: 10
+      })
+    });
+    $("pairingResult").innerHTML = `
+      <div class="pairing-card">
+        <img src="${result.qrDataUrl}" alt="Device pairing QR code" />
+        <div>
+          <strong>Code ${result.code}</strong>
+          <span>Scan QR or enter code manually. Expires ${new Date(result.expiresAt).toLocaleTimeString()}.</span>
+          <textarea readonly>${result.pairingPayloadText}</textarea>
+        </div>
+      </div>
+    `;
+    await loadAdminPanels();
+  }, "Pairing code created");
 });
 
 $("backupForm").addEventListener("submit", async (event) => {
   event.preventDefault();
-  await api("/backups", {
-    method: "POST",
-    body: JSON.stringify({ label: $("backupLabel").value || "manual" })
-  });
-  $("backupLabel").value = "";
-  await loadAdminPanels();
+  await runAction(async () => {
+    await api("/backups", {
+      method: "POST",
+      body: JSON.stringify({ label: $("backupLabel").value || "manual" })
+    });
+    $("backupLabel").value = "";
+    await loadAdminPanels();
+  }, "Backup created");
 });
 
 $("pullCloud").addEventListener("click", async () => {
-  const result = await api("/sync/pull", { method: "POST" });
-  alert(result.skipped ? "Cloud pull skipped. Check Convex URL, POS secret, and installation id." : `Applied ${result.applied} cloud changes.`);
-  await loadBootstrap();
+  await runAction(async () => {
+    const result = await api("/sync/pull", { method: "POST" });
+    showToast(result.skipped ? "Cloud pull skipped. Check Convex env." : `Applied ${result.applied} cloud changes.`);
+    await loadBootstrap();
+  });
 });
 
 const protocol = location.protocol === "https:" ? "wss:" : "ws:";

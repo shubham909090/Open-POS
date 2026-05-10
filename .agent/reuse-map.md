@@ -2,8 +2,8 @@
 
 - `packages/shared/src/schemas.ts`: API command validation for hub operations.
 - `packages/shared/src/types.ts`: shared role, order, KOT, print, billing, and event types.
-- `apps/hub-electron/src/db/schema.ts`: SQLite migration source of truth.
 - `apps/hub-electron/src/db/drizzle-schema.ts`: Drizzle ORM table/schema source for typed local SQLite access.
+- `apps/hub-electron/drizzle`: generated Drizzle migration source of truth used at hub startup.
 - `apps/hub-electron/src/db/backup-service.ts`: hot SQLite backup creation and restart-based restore scheduling.
 - `apps/hub-electron/drizzle.config.ts`: Drizzle Kit config for generating SQLite migration snapshots and opening Studio.
 - `apps/hub-electron/src/domain/order-service.ts`: table order, KOT lifecycle, billing, and event/outbox transaction rules.
