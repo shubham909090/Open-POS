@@ -15,7 +15,7 @@ Official docs used:
 
 - `convex.json` configures AuthKit for local dev at `http://localhost:3000`.
 - `convex/auth.config.ts` validates WorkOS-issued JWTs in Convex.
-- `apps/cloud-admin/src/middleware.ts` enables AuthKit middleware.
+- `apps/cloud-admin/src/proxy.ts` enables AuthKit request protection for Next.js.
 - `apps/cloud-admin/src/app/callback/route.ts` handles the WorkOS callback.
 - `apps/cloud-admin/src/app/sign-in/route.ts` redirects to hosted AuthKit.
 - `apps/cloud-admin/src/components/convex-client-provider.tsx` bridges WorkOS AuthKit tokens into Convex.
