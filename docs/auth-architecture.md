@@ -45,5 +45,5 @@ Only Google sign-in should be enabled in WorkOS AuthKit. Disable password, OTP/m
 - Local hub REST endpoints and realtime WebSocket are protected by local device tokens.
 - Hub pairing APIs can create one-time pairing codes, exchange them for long-lived local device tokens, list devices, and revoke paired devices.
 - Development seeds `dev-admin-token`; production should set `HUB_ADMIN_TOKEN`.
-- Convex event ingestion HTTP route requires `POS_SYNC_SECRET`.
+- Convex event ingestion requires the hub to send its `POS_INSTALLATION_ID` and matching `POS_SYNC_SECRET`. The secret is stored on the Convex `installations` record and in the local hub env, not as a Convex deployment env var.
 - Cloud-to-hub role snapshots are still pending; current hub roles are stored locally.

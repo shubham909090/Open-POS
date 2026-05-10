@@ -2,6 +2,8 @@
 
 The hub now identifies itself to Convex with a restaurant installation id.
 
+These are **hub-local envs**. Do not set `POS_INSTALLATION_ID` or `POS_SYNC_SECRET` as Convex deployment environment variables. The cloud Owner Portal creates the installation record in Convex automatically, then the same values are pasted into the hub PC env.
+
 ## Hub Envs
 
 ```bash

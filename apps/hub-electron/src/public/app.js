@@ -7,7 +7,10 @@ const state = {
   devices: [],
   backups: [],
   closeSummary: null,
-  menuSearch: ""
+  menuSearch: "",
+  receiptPrinter: null,
+  activeSetupStep: null,
+  manualSetupStep: false
 };
 
 const $ = (id) => document.getElementById(id);
@@ -37,7 +40,15 @@ async function loadBootstrap() {
   if ($("deviceToken") && !$("deviceToken").value) {
     $("deviceToken").value = localStorage.getItem("deviceToken") || "dev-admin-token";
   }
-  state.bootstrap = await api("/sync/bootstrap");
+  if ($("setupDeviceToken")) {
+    $("setupDeviceToken").value = $("deviceToken")?.value || localStorage.getItem("deviceToken") || "";
+  }
+  try {
+    state.bootstrap = await api("/sync/bootstrap");
+  } catch (error) {
+    renderLockedHub(error);
+    return;
+  }
   $("hubHealth").textContent = "LAN hub online";
   const pending = state.bootstrap.syncStatus?.counts?.pending ?? 0;
   $("syncStatus").textContent = `Sync pending: ${pending}`;
@@ -51,6 +62,34 @@ async function loadBootstrap() {
   await renderReceiptPrinter();
   await loadAdminPanels();
   await loadKds();
+  renderSetupProgress();
+}
+
+function renderLockedHub(error) {
+  localStorage.removeItem("deviceToken");
+  if ($("deviceToken")) $("deviceToken").value = "";
+  if ($("setupDeviceToken")) $("setupDeviceToken").value = "";
+  state.bootstrap = null;
+  state.selectedTableId = null;
+  state.selectedOrder = null;
+  state.draft.clear();
+  state.devices = [];
+  state.backups = [];
+  state.closeSummary = null;
+  $("hubHealth").textContent = "Hub locked";
+  $("syncStatus").textContent = "Enter hub password";
+  $("dayStatus").textContent = "POS day locked";
+  renderOperationalStats();
+  renderTables();
+  renderMenu();
+  renderUnits();
+  renderPrinterOptions();
+  renderPrintJobs();
+  renderSetupProgress();
+  const message = error instanceof Error && error.message.includes("Invalid or revoked")
+    ? "Enter the current HUB_ADMIN_TOKEN from the hub env file."
+    : error?.message || "Enter the hub password to continue.";
+  showToast(message, "error");
 }
 
 function showToast(message, type = "ok") {
@@ -85,6 +124,103 @@ function renderOperationalStats() {
   $("metricSync").textContent = String(pending);
 }
 
+function setupSteps() {
+  const hasToken = Boolean(($("deviceToken")?.value || localStorage.getItem("deviceToken") || "").trim());
+  const hasDay = Boolean(state.bootstrap?.openDay);
+  const hasPrinter = Boolean(state.receiptPrinter?.printerName || state.receiptPrinter?.printerHost);
+  const hasKitchens = (state.bootstrap?.productionUnits ?? []).length > 0;
+  const hasTables = (state.bootstrap?.tables ?? []).length > 0;
+  const hasMenu = (state.bootstrap?.menuItems ?? []).length > 0;
+  const pairedDevices = (state.devices ?? []).filter((device) => device.id !== "device-local-admin" && device.status !== "revoked");
+  const hasDevices = pairedDevices.length > 0;
+  const coreReady = hasToken && hasDay && hasPrinter && hasKitchens && hasTables && hasMenu && hasDevices;
+  return [
+    { key: "unlock", label: "Unlock Hub", done: hasToken, hint: hasToken ? "Hub unlocked" : "Enter the hub password" },
+    { key: "day", label: "Open Today's POS Day", done: hasDay, hint: hasDay ? "Day is open" : "Open the day before orders" },
+    {
+      key: "printer",
+      label: "Choose Cash Counter Printer",
+      done: hasPrinter,
+      hint: hasPrinter ? "Bill printer saved" : "Pick the bill printer"
+    },
+    {
+      key: "kitchens",
+      label: "Add Kitchens / Bar Counters",
+      done: hasKitchens,
+      hint: hasKitchens ? `${state.bootstrap.productionUnits.length} ready` : "Add at least one kitchen or counter"
+    },
+    { key: "tables", label: "Add Tables", done: hasTables, hint: hasTables ? `${state.bootstrap.tables.length} tables` : "Add your first table" },
+    { key: "menu", label: "Add Menu Items", done: hasMenu, hint: hasMenu ? `${state.bootstrap.menuItems.length} dishes` : "Add dishes and routing" },
+    { key: "devices", label: "Pair Devices", done: hasDevices, hint: hasDevices ? `${pairedDevices.length} paired` : "Pair waiter or kitchen devices" },
+    { key: "ready", label: "Ready For Service", done: coreReady, hint: coreReady ? "Service can start" : "Finish the required setup" }
+  ];
+}
+
+function setActiveSetupStep(stepKey) {
+  state.activeSetupStep = stepKey;
+  state.manualSetupStep = true;
+  renderSetupProgress();
+}
+
+function switchView(viewId) {
+  const protectedViews = new Set(["serviceView", "kitchenView", "billingView"]);
+  const ready = setupSteps().find((step) => step.key === "ready")?.done;
+  if (protectedViews.has(viewId) && !ready) {
+    const nextStep = setupSteps().find((step) => !step.done)?.key ?? "ready";
+    state.activeSetupStep = nextStep;
+    state.manualSetupStep = false;
+    renderSetupProgress();
+    showToast("Finish setup before starting service.", "error");
+    viewId = "setupView";
+  }
+  document.querySelectorAll(".nav-item").forEach((button) => button.classList.toggle("active", button.dataset.view === viewId));
+  document.querySelectorAll(".view").forEach((view) => view.classList.toggle("active", view.id === viewId));
+}
+
+function renderSetupProgress() {
+  const steps = setupSteps();
+  const firstIncomplete = steps.find((step) => !step.done)?.key ?? "ready";
+  if (!steps.some((step) => step.key === state.activeSetupStep)) state.activeSetupStep = firstIncomplete;
+  if (!state.manualSetupStep && state.activeSetupStep !== "ready" && steps.find((step) => step.key === state.activeSetupStep)?.done) {
+    state.activeSetupStep = firstIncomplete;
+  }
+
+  const checklist = $("setupChecklist");
+  if (checklist) {
+    checklist.textContent = "";
+    for (const [index, step] of steps.entries()) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = `check-step ${step.done ? "done" : ""} ${step.key === state.activeSetupStep ? "active" : ""}`;
+      button.innerHTML = `
+        <span>${step.done ? "Done" : `Step ${index + 1}`}</span>
+        <strong>${step.label}</strong>
+        <small>${step.hint}</small>
+      `;
+      button.addEventListener("click", () => setActiveSetupStep(step.key));
+      checklist.append(button);
+    }
+  }
+
+  for (const step of document.querySelectorAll("[data-setup-step]")) {
+    const key = step.dataset.setupStep;
+    const model = steps.find((entry) => entry.key === key);
+    step.classList.toggle("active", key === state.activeSetupStep);
+    step.classList.toggle("complete", Boolean(model?.done));
+    step.classList.toggle("collapsed", Boolean(model?.done) && key !== state.activeSetupStep);
+    step.classList.toggle("locked", !model?.done && key !== state.activeSetupStep);
+  }
+
+  const readyMessage = $("readyMessage");
+  if (readyMessage) {
+    const ready = steps.find((step) => step.key === "ready")?.done;
+    readyMessage.textContent = ready
+      ? "The basics are ready. You can take orders, use kitchen tickets, and settle bills."
+      : "Finish the required setup steps before taking orders.";
+  }
+  if ($("goService")) $("goService").disabled = !steps.find((step) => step.key === "ready")?.done;
+}
+
 async function loadAdminPanels() {
   const [devices, backups, closeSummary] = await Promise.all([
     api("/devices").catch(() => []),
@@ -107,21 +243,22 @@ async function loadSystemPrinters() {
     state.systemPrinters = [];
   }
   renderPrinterOptions();
+  renderSetupProgress();
 }
 
 function renderCloseSummary() {
-  const target = $("closeSummary");
-  if (!target) return;
+  const targets = [$("closeSummary"), $("closeSummaryReport")].filter(Boolean);
+  if (!targets.length) return;
   const summary = state.closeSummary;
   if (!summary?.openDay) {
-    target.textContent = "No open day.";
+    for (const target of targets) target.textContent = "No open day.";
     return;
   }
   const closingCashPaise = Number($("closingCash")?.value || 0) * 100;
   const hasClosingCash = $("closingCash")?.value !== "";
   const variancePaise = hasClosingCash ? closingCashPaise - summary.expectedClosingCashPaise : 0;
   const canClose = summary.openOrders === 0 && summary.unpaidBills === 0;
-  target.innerHTML = `
+  const markup = `
     <span>Opening cash <strong>${money(summary.openingCashPaise)}</strong></span>
     <span>Cash sales <strong>${money(summary.cashPaymentsPaise)}</strong></span>
     <span>Expected drawer <strong>${money(summary.expectedClosingCashPaise)}</strong></span>
@@ -139,13 +276,14 @@ function renderCloseSummary() {
     <span>Unpaid bills <strong class="${summary.unpaidBills ? "negative" : ""}">${summary.unpaidBills}</strong></span>
     <span>Close status <strong class="${canClose ? "positive" : "negative"}">${canClose ? "Ready" : "Blocked"}</strong></span>
   `;
+  for (const target of targets) target.innerHTML = markup;
 }
 
 function renderDevices() {
   const list = $("deviceList");
   if (!list) return;
   list.textContent = "";
-  if (state.devices.length === 0) return list.append(emptyNode());
+  if (state.devices.length === 0) return list.append(emptyNode("No paired devices", "Create a QR code when you are ready to connect waiter or kitchen devices."));
   for (const device of state.devices) {
     const row = document.createElement("div");
     row.className = "admin-row";
@@ -177,7 +315,9 @@ function renderMenuAdmin() {
   const list = $("menuAdminList");
   if (!list) return;
   list.textContent = "";
-  for (const item of state.bootstrap?.menuItems ?? []) {
+  const menuItems = state.bootstrap?.menuItems ?? [];
+  if (menuItems.length === 0) return list.append(emptyNode("No dishes yet", "Add dishes and choose where they print."));
+  for (const item of menuItems) {
     const row = document.createElement("div");
     row.className = "admin-row";
     row.innerHTML = `
@@ -222,7 +362,9 @@ function renderModifierAdmin() {
   list.textContent = "";
   const groups = state.bootstrap?.modifierGroups ?? [];
   const notes = state.bootstrap?.noteTemplates ?? [];
-  if (groups.length === 0 && notes.length === 0) return list.append(emptyNode());
+  if (groups.length === 0 && notes.length === 0) {
+    return list.append(emptyNode("No modifiers or notes", "Add spice levels, portion choices, or common kitchen notes when the menu needs them."));
+  }
   for (const group of groups) {
     const row = document.createElement("div");
     row.className = "admin-row";
@@ -254,7 +396,7 @@ function renderBackups() {
   const list = $("backupList");
   if (!list) return;
   list.textContent = "";
-  if (state.backups.length === 0) return list.append(emptyNode());
+  if (state.backups.length === 0) return list.append(emptyNode("No backups yet", "Create a local backup before major menu changes or after closing the day."));
   for (const backup of state.backups) {
     const row = document.createElement("div");
     row.className = "admin-row";
@@ -283,7 +425,7 @@ function renderBackups() {
 
 function renderDay() {
   const day = state.bootstrap?.openDay;
-  $("dayStatus").textContent = day ? `POS day open: ${day.id}` : "POS day closed";
+  $("dayStatus").textContent = day ? "POS day open" : "POS day closed";
   $("openDayForm").style.display = day ? "none" : "flex";
   $("closeDayForm").style.display = day ? "flex" : "none";
 }
@@ -291,7 +433,15 @@ function renderDay() {
 function renderTables() {
   const tables = $("tables");
   tables.textContent = "";
-  for (const table of state.bootstrap?.tables ?? []) {
+  const rows = state.bootstrap?.tables ?? [];
+  if (rows.length === 0) {
+    tables.append(emptyNode("No tables yet", "Add your first table in Setup before taking orders."));
+    return;
+  }
+  if (!state.bootstrap?.openDay) {
+    tables.append(emptyNode("Open today's POS day", "Open the day in Setup before taking orders."));
+  }
+  for (const table of rows) {
     const tile = document.createElement("button");
     tile.type = "button";
     tile.className = `table-tile ${table.status} ${table.id === state.selectedTableId ? "selected" : ""}`;
@@ -304,10 +454,20 @@ function renderTables() {
 function renderMenu() {
   const menu = $("menu");
   menu.textContent = "";
+  if ((state.bootstrap?.productionUnits ?? []).length === 0) {
+    menu.append(emptyNode("No kitchens yet", "Add at least one kitchen or counter before adding dishes."));
+    return;
+  }
+  if ((state.bootstrap?.menuItems ?? []).length === 0) {
+    menu.append(emptyNode("No dishes yet", "Add dishes in Setup and choose where they print."));
+    return;
+  }
   const query = state.menuSearch.trim().toLowerCase();
+  let visible = 0;
   for (const item of state.bootstrap?.menuItems ?? []) {
     if (!item.active) continue;
     if (query && !`${item.name} ${item.production_unit_name}`.toLowerCase().includes(query)) continue;
+    visible += 1;
     const row = document.createElement("div");
     row.className = "menu-item";
     row.innerHTML = `
@@ -324,6 +484,7 @@ function renderMenu() {
     row.append(button);
     menu.append(row);
   }
+  if (visible === 0) menu.append(emptyNode("No matching dishes", "Try a different search."));
 }
 
 function renderUnits() {
@@ -417,16 +578,18 @@ function renderPrintJobs() {
   const list = $("printJobs");
   list.textContent = "";
   const jobs = state.bootstrap?.printJobs ?? [];
-  if (jobs.length === 0) return list.append(emptyNode());
+  if (jobs.length === 0) return list.append(emptyNode("No pending prints", "Kitchen tickets and bills will appear here if they need attention."));
   for (const job of jobs) {
     const row = document.createElement("div");
     row.className = "print-job";
+    const label = job.target_type === "kot" ? "Kitchen ticket" : job.target_type === "bill" ? "Bill print" : "Print job";
+    const printerLabel = job.printer_name || job.printer_host || "Cash counter";
     row.innerHTML = `
       <div>
-        <strong>${job.target_type} ${job.target_id}</strong><br />
+        <strong>${label}</strong><br />
         <small>${job.status} · attempts ${job.attempts}${job.last_error ? ` · ${job.last_error}` : ""}</small>
       </div>
-      <span class="badge">${job.printer_host ?? "cashier"}</span>
+      <span class="badge">${escapeHtml(printerLabel)}</span>
     `;
     if (job.status === "failed") {
       const retry = document.createElement("button");
@@ -447,6 +610,7 @@ function renderPrintJobs() {
 
 async function renderReceiptPrinter() {
   const settings = await api("/settings/receipt-printer");
+  state.receiptPrinter = settings;
   $("receiptPrinterName").value = settings.printerName ?? "";
   $("receiptHost").value = settings.printerHost ?? "";
   $("receiptPort").value = settings.printerPort ?? 9100;
@@ -575,7 +739,7 @@ function renderOrder() {
   if ($("draftTotal")) $("draftTotal").textContent = money(total);
   if (entries.length === 0) {
     renderBillingContext();
-    return list.append(emptyNode());
+    return list.append(emptyNode("No dishes selected", "Choose dishes from the menu, then send them to the kitchen."));
   }
 
   for (const [key, item] of entries) {
@@ -664,7 +828,7 @@ function renderBillingContext() {
   const bill = state.selectedOrder?.bill;
   target.innerHTML = `
     <strong>Table ${table.name}</strong>
-    <span>${order ? `${order.status} order ${order.id}` : "No active order"}</span>
+    <span>${order ? `${order.status.replaceAll("_", " ")} order` : "No active order"}</span>
     <span>${bill ? `Bill ${bill.status} · ${money(bill.final_total_paise || bill.total_paise)}` : "No bill generated"}</span>
   `;
   $("billingMeta").textContent = bill ? `Bill ${bill.status}` : order ? `Order ${order.status}` : "No active order";
@@ -689,7 +853,7 @@ function renderPaymentPanel() {
   const finalTotal = bill.final_total_paise || bill.total_paise;
   const remaining = Math.max(0, finalTotal - paid);
   summary.innerHTML = `
-    <span>Bill <strong>${bill.id}</strong></span>
+    <span>Bill <strong>Current bill</strong></span>
     <span>Total <strong>${money(finalTotal)}</strong></span>
     <span>Paid <strong>${money(paid)}</strong></span>
     <span>Remaining <strong>${money(remaining)}</strong></span>
@@ -703,18 +867,21 @@ function renderPaymentPanel() {
 
 async function loadKds() {
   const unitId = $("kdsUnit").value || state.bootstrap?.productionUnits?.[0]?.id;
-  if (!unitId) return;
-  $("kdsUnit").value = unitId;
-  const rows = await api(`/kds/${unitId}`);
   const list = $("kds");
   list.textContent = "";
-  if (rows.length === 0) return list.append(emptyNode());
+  if (!unitId) {
+    list.append(emptyNode("No kitchen or counter yet", "Add at least one kitchen or counter in Setup before using the kitchen screen."));
+    return;
+  }
+  $("kdsUnit").value = unitId;
+  const rows = await api(`/kds/${unitId}`);
+  if (rows.length === 0) return list.append(emptyNode("No kitchen tickets", "New orders for this kitchen or counter will appear here."));
   for (const kot of rows) {
     const node = document.createElement("div");
     node.className = "kot";
     node.innerHTML = `
       <div class="kot-title">
-        <div><strong>#${kot.sequence} ${kot.table_name}</strong><br /><small>${kot.type} · ${kot.status}</small></div>
+        <div><strong>#${kot.sequence} ${kot.table_name}</strong><br /><small>Kitchen ticket · ${kot.status}</small></div>
         <span class="badge">${kot.captain_id}</span>
       </div>
       <ul class="kot-items">
@@ -741,7 +908,7 @@ async function loadKds() {
     }
     const reprint = document.createElement("button");
     reprint.type = "button";
-    reprint.textContent = "reprint";
+    reprint.textContent = "Reprint";
     reprint.addEventListener("click", async () => {
       await api(`/kot/${kot.id}/reprint`, {
         method: "POST",
@@ -755,8 +922,10 @@ async function loadKds() {
   }
 }
 
-function emptyNode() {
-  return $("emptyState").content.firstElementChild.cloneNode(true);
+function emptyNode(title = "Nothing here yet", text = "") {
+  const node = $("emptyState").content.firstElementChild.cloneNode(true);
+  node.innerHTML = `<strong>${escapeHtml(title)}</strong>${text ? `<span>${escapeHtml(text)}</span>` : ""}`;
+  return node;
 }
 
 $("openDayForm").addEventListener("submit", async (event) => {
@@ -816,7 +985,7 @@ $("submitOrder").addEventListener("click", async () => {
     });
     await loadBootstrap();
     await selectTable(state.selectedTableId);
-  }, "KOT sent");
+  }, "Kitchen ticket sent");
 });
 
 $("generateBill").addEventListener("click", async () => {
@@ -891,8 +1060,26 @@ $("menuSearch").addEventListener("input", () => {
 $("closingCash").addEventListener("input", renderCloseSummary);
 $("deviceToken").addEventListener("change", () => {
   localStorage.setItem("deviceToken", $("deviceToken").value);
+  if ($("setupDeviceToken")) $("setupDeviceToken").value = $("deviceToken").value;
   void loadBootstrap();
 });
+$("saveHubToken").addEventListener("click", async () => {
+  const token = $("setupDeviceToken").value.trim();
+  $("deviceToken").value = token;
+  localStorage.setItem("deviceToken", token);
+  await loadBootstrap();
+  if (state.bootstrap) showToast("Hub unlocked. Setup can continue.");
+});
+$("toggleHubToken").addEventListener("click", () => {
+  const input = $("setupDeviceToken");
+  const nextType = input.type === "password" ? "text" : "password";
+  input.type = nextType;
+  $("toggleHubToken").textContent = nextType === "password" ? "Show" : "Hide";
+});
+$("goService").addEventListener("click", () => switchView("serviceView"));
+for (const button of document.querySelectorAll(".setup-edit")) {
+  button.addEventListener("click", () => setActiveSetupStep(button.dataset.goStep));
+}
 $("kdsUnit").addEventListener("change", loadKds);
 $("processPrints").addEventListener("click", async () => {
   await runAction(async () => {
@@ -914,27 +1101,29 @@ $("receiptPrinterForm").addEventListener("submit", async (event) => {
       })
     });
     await loadBootstrap();
-  }, "Receipt printer saved");
+  }, "Cash counter printer saved");
 });
 $("floorForm").addEventListener("submit", async (event) => {
   event.preventDefault();
   await runAction(async () => {
     await api("/floors", {
       method: "POST",
-      body: JSON.stringify({ name: $("floorName").value })
+      body: JSON.stringify({ name: $("floorName").value, customId: $("floorCustomId").value || undefined })
     });
     $("floorName").value = "";
+    $("floorCustomId").value = "";
     await loadBootstrap();
-  }, "Floor added");
+  }, "Room added");
 });
 $("tableForm").addEventListener("submit", async (event) => {
   event.preventDefault();
   await runAction(async () => {
     await api("/tables", {
       method: "POST",
-      body: JSON.stringify({ floorId: $("tableFloor").value, name: $("tableName").value })
+      body: JSON.stringify({ floorId: $("tableFloor").value, name: $("tableName").value, customId: $("tableCustomId").value || undefined })
     });
     $("tableName").value = "";
+    $("tableCustomId").value = "";
     await loadBootstrap();
   }, "Table added");
 });
@@ -949,14 +1138,16 @@ $("unitForm").addEventListener("submit", async (event) => {
         printerName: $("unitPrinterName").value || undefined,
         printerHost: $("unitHost").value,
         printerPort: Number($("unitPort").value || 9100),
-        kdsEnabled: true
+        kdsEnabled: true,
+        customId: $("unitCustomId").value || undefined
       })
     });
     $("unitName").value = "";
+    $("unitCustomId").value = "";
     $("unitHost").value = "";
     $("unitPort").value = "9100";
     await loadBootstrap();
-  }, "Production unit added");
+  }, "Kitchen / counter added");
 });
 $("menuItemForm").addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -967,13 +1158,15 @@ $("menuItemForm").addEventListener("submit", async (event) => {
         name: $("menuItemName").value,
         pricePaise: Number($("menuItemPrice").value || 0) * 100,
         productionUnitId: $("menuItemUnit").value,
-        active: true
+        active: true,
+        customId: $("menuItemCustomId").value || undefined
       })
     });
     $("menuItemName").value = "";
     $("menuItemPrice").value = "";
+    $("menuItemCustomId").value = "";
     await loadBootstrap();
-  }, "Menu item added");
+  }, "Dish added");
 });
 $("modifierGroupForm").addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -986,10 +1179,12 @@ $("modifierGroupForm").addEventListener("submit", async (event) => {
         selectionType,
         minSelections: 0,
         maxSelections: selectionType === "single" ? 1 : 20,
-        active: true
+        active: true,
+        customId: $("modifierGroupCustomId").value || undefined
       })
     });
     $("modifierGroupName").value = "";
+    $("modifierGroupCustomId").value = "";
     await loadBootstrap();
   }, "Modifier group added");
 });
@@ -1002,11 +1197,13 @@ $("modifierOptionForm").addEventListener("submit", async (event) => {
         groupId: $("modifierOptionGroup").value,
         name: $("modifierOptionName").value,
         priceDeltaPaise: Number($("modifierOptionPrice").value || 0) * 100,
-        active: true
+        active: true,
+        customId: $("modifierOptionCustomId").value || undefined
       })
     });
     $("modifierOptionName").value = "";
     $("modifierOptionPrice").value = "";
+    $("modifierOptionCustomId").value = "";
     await loadBootstrap();
   }, "Modifier option added");
 });
@@ -1031,11 +1228,13 @@ $("noteTemplateForm").addEventListener("submit", async (event) => {
       body: JSON.stringify({
         label: $("noteTemplateLabel").value,
         note: $("noteTemplateNote").value,
-        active: true
+        active: true,
+        customId: $("noteTemplateCustomId").value || undefined
       })
     });
     $("noteTemplateLabel").value = "";
     $("noteTemplateNote").value = "";
+    $("noteTemplateCustomId").value = "";
     await loadBootstrap();
   }, "Note template added");
 });
@@ -1061,6 +1260,7 @@ $("pairingForm").addEventListener("submit", async (event) => {
       </div>
     `;
     await loadAdminPanels();
+    renderSetupProgress();
   }, "Pairing code created");
 });
 
@@ -1079,7 +1279,7 @@ $("backupForm").addEventListener("submit", async (event) => {
 $("pullCloud").addEventListener("click", async () => {
   await runAction(async () => {
     const result = await api("/sync/pull", { method: "POST" });
-    showToast(result.skipped ? "Cloud pull skipped. Check Convex env." : `Applied ${result.applied} cloud changes.`);
+    showToast(result.skipped ? "Could not get cloud updates. Check hub connection settings." : `Applied ${result.applied} cloud updates.`);
     await loadBootstrap();
   });
 });
@@ -1097,9 +1297,6 @@ loadBootstrap().catch((error) => {
 
 for (const item of document.querySelectorAll(".nav-item")) {
   item.addEventListener("click", () => {
-    document.querySelectorAll(".nav-item").forEach((button) => button.classList.remove("active"));
-    document.querySelectorAll(".view").forEach((view) => view.classList.remove("active"));
-    item.classList.add("active");
-    $(item.dataset.view).classList.add("active");
+    switchView(item.dataset.view);
   });
 }

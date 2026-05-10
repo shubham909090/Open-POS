@@ -255,6 +255,21 @@ describe("OrderService KOT lifecycle", () => {
     database.close();
   });
 
+  it("generates catalog IDs by default and protects advanced custom IDs", () => {
+    const { database, orderService } = createTestHub();
+
+    const floor = orderService.createFloor({ name: "Family Room" });
+    const customFloor = orderService.createFloor({ name: "Garden", customId: "room-garden" });
+
+    expect(floor.id).toMatch(/^floor_/);
+    expect(customFloor.id).toBe("room-garden");
+    expect(() => orderService.createFloor({ name: "Duplicate Garden", customId: "room-garden" })).toThrow(
+      "That custom ID is already used. Choose another one."
+    );
+
+    database.close();
+  });
+
   it("updates KDS status and allows print job retry", () => {
     const { database, orderService } = createTestHub();
     const order = orderService.submitOrder({

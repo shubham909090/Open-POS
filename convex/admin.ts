@@ -23,6 +23,12 @@ function normalizeEmail(email: string) {
   return email.trim().toLowerCase();
 }
 
+function randomHex(bytes: number) {
+  const values = new Uint8Array(bytes);
+  crypto.getRandomValues(values);
+  return Array.from(values, (value) => value.toString(16).padStart(2, "0")).join("");
+}
+
 async function requireRestaurantAdmin(ctx: QueryCtx | MutationCtx, restaurantId: Id<"restaurants">) {
   const identity = await requireIdentity(ctx);
   const membership = await ctx.db
@@ -388,8 +394,7 @@ export const registerInstallation = mutation({
       await ctx.db.patch(existing._id, {
         restaurantId: args.restaurantId,
         syncSecret,
-        status: "active",
-        lastSeenAt: now
+        status: "active"
       });
       return { installationId, updated: true };
     }
@@ -399,11 +404,58 @@ export const registerInstallation = mutation({
       installationId,
       syncSecret,
       status: "active",
-      createdAt: now,
-      lastSeenAt: now
+      createdAt: now
     });
 
     return { installationId, updated: false };
+  }
+});
+
+export const createHubConnection = mutation({
+  args: {
+    restaurantId: v.id("restaurants"),
+    label: v.optional(v.string())
+  },
+  returns: v.object({
+    installationId: v.string(),
+    syncSecret: v.string(),
+    envBlock: v.string()
+  }),
+  handler: async (ctx, args) => {
+    await requireRestaurantOwner(ctx, args.restaurantId);
+    const now = new Date().toISOString();
+    let installationId = "";
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const suffix = randomHex(4);
+      const label = args.label?.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "main-hub";
+      installationId = `${label}-${suffix}`;
+      const existing = await ctx.db
+        .query("installations")
+        .withIndex("by_installation_id", (q) => q.eq("installationId", installationId))
+        .unique();
+      if (!existing) break;
+      installationId = "";
+    }
+    if (!installationId) throw new Error("Could not create a hub connection. Please try again.");
+
+    const syncSecret = randomHex(32);
+    await ctx.db.insert("installations", {
+      restaurantId: args.restaurantId,
+      installationId,
+      syncSecret,
+      status: "active",
+      createdAt: now
+    });
+
+    return {
+      installationId,
+      syncSecret,
+      envBlock: [
+        `POS_INSTALLATION_ID=${installationId}`,
+        `POS_SYNC_SECRET=${syncSecret}`,
+        "CONVEX_HTTP_URL=<your Convex site URL>"
+      ].join("\n")
+    };
   }
 });
 

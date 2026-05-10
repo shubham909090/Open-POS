@@ -1,5 +1,11 @@
 import { z } from "zod";
 
+const customIdSchema = z
+  .string()
+  .trim()
+  .regex(/^[a-zA-Z0-9_-]{3,80}$/, "Use 3-80 letters, numbers, dashes, or underscores")
+  .optional();
+
 export const modifierSelectionInputSchema = z.object({
   groupId: z.string().min(1),
   optionId: z.string().min(1)
@@ -55,12 +61,14 @@ export const reprintKotSchema = z.object({
 });
 
 export const createFloorSchema = z.object({
-  name: z.string().trim().min(1).max(80)
+  name: z.string().trim().min(1).max(80),
+  customId: customIdSchema
 });
 
 export const createTableSchema = z.object({
   floorId: z.string().min(1),
-  name: z.string().trim().min(1).max(40)
+  name: z.string().trim().min(1).max(40),
+  customId: customIdSchema
 });
 
 export const createProductionUnitSchema = z.object({
@@ -69,14 +77,16 @@ export const createProductionUnitSchema = z.object({
   printerName: z.string().trim().max(240).optional(),
   printerHost: z.string().trim().max(120).optional(),
   printerPort: z.number().int().min(1).max(65535).default(9100),
-  kdsEnabled: z.boolean().default(true)
+  kdsEnabled: z.boolean().default(true),
+  customId: customIdSchema
 });
 
 export const createMenuItemSchema = z.object({
   name: z.string().trim().min(1).max(160),
   pricePaise: z.number().int().min(0),
   productionUnitId: z.string().min(1),
-  active: z.boolean().default(true)
+  active: z.boolean().default(true),
+  customId: customIdSchema
 });
 
 export const updateMenuItemSchema = z.object({
@@ -91,14 +101,16 @@ export const createModifierGroupSchema = z.object({
   selectionType: z.enum(["single", "multiple"]).default("single"),
   minSelections: z.number().int().min(0).max(20).default(0),
   maxSelections: z.number().int().min(1).max(20).default(1),
-  active: z.boolean().default(true)
+  active: z.boolean().default(true),
+  customId: customIdSchema
 });
 
 export const createModifierOptionSchema = z.object({
   groupId: z.string().min(1),
   name: z.string().trim().min(1).max(80),
   priceDeltaPaise: z.number().int().min(0).default(0),
-  active: z.boolean().default(true)
+  active: z.boolean().default(true),
+  customId: customIdSchema
 });
 
 export const assignModifierGroupSchema = z.object({
@@ -109,7 +121,8 @@ export const assignModifierGroupSchema = z.object({
 export const createNoteTemplateSchema = z.object({
   label: z.string().trim().min(1).max(80),
   note: z.string().trim().min(1).max(240),
-  active: z.boolean().default(true)
+  active: z.boolean().default(true),
+  customId: customIdSchema
 });
 
 export const updateKotStatusSchema = z.object({

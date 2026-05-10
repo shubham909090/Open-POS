@@ -604,7 +604,9 @@ export class OrderService {
   }
 
   createFloor(input: CreateFloorInput): { id: string } {
-    const id = makeId("floor");
+    const id = this.createEntityId("floor", input.customId, (candidate) =>
+      Boolean(this.orm.select({ id: floors.id }).from(floors).where(eq(floors.id, candidate)).get())
+    );
     this.orm.insert(floors).values({ id, name: input.name }).run();
     this.appendEvent("floor.created", "floor", id, { ...input, id });
     return { id };
@@ -612,7 +614,9 @@ export class OrderService {
 
   createTable(input: CreateTableInput): { id: string } {
     this.requireFloor(input.floorId);
-    const id = makeId("table");
+    const id = this.createEntityId("table", input.customId, (candidate) =>
+      Boolean(this.orm.select({ id: restaurantTables.id }).from(restaurantTables).where(eq(restaurantTables.id, candidate)).get())
+    );
     this.orm
       .insert(restaurantTables)
       .values({
@@ -639,7 +643,9 @@ export class OrderService {
   }
 
   createProductionUnit(input: CreateProductionUnitInput): { id: string } {
-    const id = makeId("unit");
+    const id = this.createEntityId("unit", input.customId, (candidate) =>
+      Boolean(this.orm.select({ id: productionUnits.id }).from(productionUnits).where(eq(productionUnits.id, candidate)).get())
+    );
     const printerMode = input.printerMode ?? "system";
     this.orm
       .insert(productionUnits)
@@ -681,7 +687,9 @@ export class OrderService {
 
   createMenuItem(input: CreateMenuItemInput): { id: string } {
     this.requireProductionUnit(input.productionUnitId);
-    const id = makeId("menu");
+    const id = this.createEntityId("menu", input.customId, (candidate) =>
+      Boolean(this.orm.select({ id: menuItems.id }).from(menuItems).where(eq(menuItems.id, candidate)).get())
+    );
     this.orm
       .insert(menuItems)
       .values({
@@ -759,7 +767,9 @@ export class OrderService {
       throw new DomainError("Single-select modifier groups must allow exactly one option");
     }
     if (input.minSelections > input.maxSelections) throw new DomainError("Minimum selections cannot exceed maximum selections");
-    const id = makeId("modgrp");
+    const id = this.createEntityId("modgrp", input.customId, (candidate) =>
+      Boolean(this.orm.select({ id: modifierGroups.id }).from(modifierGroups).where(eq(modifierGroups.id, candidate)).get())
+    );
     this.orm
       .insert(modifierGroups)
       .values({
@@ -779,7 +789,9 @@ export class OrderService {
   createModifierOption(input: CreateModifierOptionInput): { id: string } {
     const group = this.orm.select({ id: modifierGroups.id }).from(modifierGroups).where(eq(modifierGroups.id, input.groupId)).get();
     if (!group) throw new DomainError("Modifier group not found", 404);
-    const id = makeId("modopt");
+    const id = this.createEntityId("modopt", input.customId, (candidate) =>
+      Boolean(this.orm.select({ id: modifierOptions.id }).from(modifierOptions).where(eq(modifierOptions.id, candidate)).get())
+    );
     this.orm
       .insert(modifierOptions)
       .values({
@@ -822,7 +834,9 @@ export class OrderService {
   }
 
   createNoteTemplate(input: CreateNoteTemplateInput): { id: string } {
-    const id = makeId("note");
+    const id = this.createEntityId("note", input.customId, (candidate) =>
+      Boolean(this.orm.select({ id: noteTemplates.id }).from(noteTemplates).where(eq(noteTemplates.id, candidate)).get())
+    );
     this.orm
       .insert(noteTemplates)
       .values({ id, label: input.label, note: input.note, active: input.active, sortOrder: 0 })
@@ -1365,6 +1379,21 @@ export class OrderService {
       .run();
 
     return event;
+  }
+
+  private createEntityId(prefix: string, customId: string | undefined, exists: (id: string) => boolean): string {
+    const requestedId = customId?.trim();
+    if (requestedId) {
+      if (exists(requestedId)) throw new DomainError("That custom ID is already used. Choose another one.", 409);
+      return requestedId;
+    }
+
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const generatedId = makeId(prefix);
+      if (!exists(generatedId)) return generatedId;
+    }
+
+    throw new DomainError("Could not create a unique ID. Please try again.", 500);
   }
 
   private getOpenPosDay(): ActivePosDayRow | undefined {

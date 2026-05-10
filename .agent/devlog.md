@@ -145,3 +145,32 @@
 - Hub hardening: kitchen devices can still access KDS/KOT status paths, but can no longer read full table-order or order-detail endpoints. Waiter/cashier/admin roles keep those reads.
 - Test additions: API integration test confirms a paired kitchen device is blocked from full order reads while still allowed to load KDS.
 - Verification: hub test suite, full workspace typecheck, Convex TypeScript check, and lint passed.
+
+## 2026-05-11
+
+- Task: Reworked beginner onboarding and removed raw technical wording from the main cloud/hub flows.
+- Cloud UI: Owner Portal setup is now Create Restaurant -> Connect the hub PC -> Start the hub app -> Confirm sync -> Invite staff. Hub connection generation creates the internal hub ID/secret automatically and shows a copyable env block; manual connection details and raw support commands live in Advanced.
+- Hub UI: setup is now a guided checklist for unlocking the hub, opening today's POS day, choosing the cash counter printer, adding kitchens/counters, adding tables, adding dishes, pairing devices, and starting service. Reports & Backups and Advanced now hold backup/reconciliation, modifiers, note templates, and cloud update tools instead of cramming everything into Setup.
+- Domain/API behavior: shared create schemas accept optional support-only `customId`; hub catalog creation generates IDs by default, retries generated collisions, and returns a friendly duplicate custom-ID error.
+- Verification: `pnpm exec convex codegen`, `node --check apps/hub-electron/src/public/app.js`, hub tests, full workspace typecheck, and lint passed.
+
+## 2026-05-11
+
+- Task: Fixed confusing hub unlock failure after the user set real env values.
+- Root cause: changing `HUB_ADMIN_TOKEN` did not rotate the existing `device-local-admin` token hash in the dev SQLite DB because admin seed used insert-ignore. The browser could also keep an old `dev-admin-token` in localStorage.
+- Fix: hub startup now upserts the local admin device token when `HUB_ADMIN_TOKEN` changes, and the hub UI now shows a friendly locked state asking for the current hub password instead of leaving `Invalid or revoked device token` in the side panel.
+- Verification: hub UI JS syntax check, hub tests, full workspace typecheck, and lint passed.
+
+## 2026-05-11
+
+- Task: Cleaned up secret-entry UX and responsive breakpoints after user testing.
+- Hub UI: removed the duplicate password field from the sidebar, kept hub unlock only in Setup step 1, added Show/Hide for the hub password, added success feedback after unlock, and tightened small-screen form/grid behavior.
+- Cloud UI: advanced existing-connection secret now has Show/Hide and no longer clears after save; success copy tells the user to reuse the same values in the hub PC env file.
+- Verification: hub UI JS syntax check, hub tests, full workspace typecheck, and lint passed.
+
+## 2026-05-11
+
+- Task: Audited env placement between Convex, cloud web, and local hub.
+- Result: Convex dev deployment now only has `WORKOS_CLIENT_ID` and `WORKOS_API_KEY`, which are the WorkOS/AuthKit values Convex needs. Removed misplaced `WORKOS_COOKIE_PASSWORD` from Convex; it belongs to the Next.js/cloud-web environment.
+- Local env audit: root `.env.local` has no duplicate keys and includes the needed local web and local hub values. `POS_INSTALLATION_ID` and `POS_SYNC_SECRET` are hub-local envs whose matching values are stored in Convex installation records, not Convex deployment env vars.
+- Docs updated: `docs/workos-authkit-setup.md`, `docs/auth-architecture.md`, and `docs/cloud-sync-installations.md` now describe the correct placement.

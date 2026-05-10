@@ -34,10 +34,15 @@ async function listWindowsPrinters(): Promise<SystemPrinterInfo[]> {
 }
 
 async function listUnixPrinters(): Promise<SystemPrinterInfo[]> {
-  const [{ stdout: printersStdout }, defaultResult] = await Promise.all([
-    execFileAsync("lpstat", ["-p"]),
+  const [printersResult, defaultResult] = await Promise.all([
+    execFileAsync("lpstat", ["-p"]).catch((error: { stderr?: string; message?: string }) => {
+      const output = `${error.stderr ?? ""}\n${error.message ?? ""}`;
+      if (output.includes("No destinations added")) return { stdout: "" };
+      throw error;
+    }),
     execFileAsync("lpstat", ["-d"]).catch(() => ({ stdout: "" }))
   ]);
+  const printersStdout = printersResult.stdout;
   const defaultName = defaultResult.stdout.match(/system default destination:\s+(.+)/)?.[1]?.trim();
   return printersStdout
     .split("\n")

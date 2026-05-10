@@ -298,7 +298,7 @@ code {
 }
 
 .setup-flow {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: 1fr;
 }
 
 .command-layout {
@@ -327,8 +327,22 @@ code {
   display: grid;
   align-content: start;
   gap: 18px;
-  min-height: 360px;
+  min-height: auto;
   padding-top: 48px;
+}
+
+.step-panel.locked {
+  opacity: 0.66;
+}
+
+.step-panel.complete {
+  border-color: #a8d8b5;
+  background: #fbfffc;
+}
+
+.step-panel.active {
+  border-color: #9ab7a7;
+  box-shadow: 0 0 0 3px rgba(58, 118, 100, 0.11);
 }
 
 .step-number {
@@ -380,6 +394,35 @@ code {
 
 .advanced-json .field-label {
   margin-top: 12px;
+}
+
+.connection-box {
+  display: grid;
+  gap: 12px;
+  border: 1px solid #d7e5db;
+  border-radius: 8px;
+  background: #f6fbf8;
+  padding: 14px;
+}
+
+.connection-box pre {
+  max-width: 100%;
+  overflow: auto;
+  border-radius: 8px;
+  background: #17231f;
+  color: #ffffff;
+  padding: 12px;
+  white-space: pre-wrap;
+}
+
+.secret-input {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.secret-input button {
+  min-width: 82px;
 }
 
 .soft-note {
@@ -537,7 +580,6 @@ code {
 }
 
 @media (max-width: 1180px) {
-  .setup-flow,
   .preset-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -561,8 +603,15 @@ code {
   .sync-grid,
   .preset-grid,
   .field-grid,
-  .compact-list {
+  .compact-list,
+  .secret-input {
     grid-template-columns: 1fr;
+  }
+
+  button,
+  .button-link,
+  .secret-input button {
+    width: 100%;
   }
 
   .admin-topbar {

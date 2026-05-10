@@ -107,10 +107,10 @@ This is for owner/admin work when internet exists.
 It does cloud setup and sync control:
 
 - create the restaurant cloud record
-- register the Windows hub installation id/secret
+- create the Windows hub connection without asking the owner to invent IDs or secrets
 - invite staff by Google email and manage cloud roles
-- queue safe changes for menu, printer, production units, and device revoke/update
-- see hub installation health and recent synced events
+- queue advanced/support changes for menu, printer, kitchens/counters, and device revoke/update
+- see connected hub health and recent synced events
 
 It is not in the live restaurant order path.
 
@@ -227,7 +227,7 @@ If a printer is offline, the order is still saved. The print job remains failed/
 
 ## Printer Routing
 
-Menu items belong to production units.
+Menu items belong to kitchens/counters.
 
 Examples:
 
@@ -235,7 +235,7 @@ Examples:
 - Bar
 - Tandoor
 
-Each production unit can have its own printer. A KOT is printed only to the printer for the production unit that owns those items.
+Internally the database calls these "production units," but the UI should say kitchen/counter. Each kitchen/counter can have its own printer. A KOT is printed only to the printer for the kitchen/counter that owns those items.
 
 The hub supports:
 
@@ -294,7 +294,7 @@ Convex is used for:
 - restaurant records
 - restaurant memberships
 - member invitations
-- installation identity
+- hub connection identity
 - synced local events
 - reports
 - cloud-to-hub command queue
@@ -305,22 +305,24 @@ The hub also pulls commands from Convex:
 
 - revoke device
 - update device role/name/status
-- create/update production units
+- create/update kitchens/counters
 - create/update/disable menu items
 - update receipt printer settings
 
-The cloud admin UI currently supports creating restaurants, registering hub installations, viewing recent synced events, and queueing these commands. WorkOS/Convex auth is required for those actions.
+The cloud admin UI currently supports creating restaurants, generating hub connections, viewing sync health, inviting staff, and queueing advanced support commands. WorkOS/Convex auth is required for those actions.
 
-## Installation Identity
+## Hub Connection Identity
 
 Each physical restaurant hub should have:
 
 - `POS_INSTALLATION_ID`
 - `POS_SYNC_SECRET`
 
-Convex maps that installation id to a restaurant. This means the hub does not get to decide which restaurant it belongs to by sending a random restaurant id in each event.
+Convex maps that internal hub id to a restaurant. This means the hub does not get to decide which restaurant it belongs to by sending a random restaurant id in each event.
 
 That is safer for SaaS later.
+
+Normal users should see this as "Connect the hub PC." Raw IDs, secrets, command payloads, and Convex terminology belong in Advanced/support screens only.
 
 ## Backup And Restore
 

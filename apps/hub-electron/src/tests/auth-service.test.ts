@@ -13,6 +13,20 @@ describe("AuthService local device sessions", () => {
     database.close();
   });
 
+  it("rotates the seeded admin token when env changes", () => {
+    const { authService, database } = createTestHub();
+
+    authService.seedAdminDevice("rotated-admin-token");
+
+    expect(authService.authenticate("rotated-admin-token")).toMatchObject({
+      id: "device-local-admin",
+      role: "admin"
+    });
+    expect(() => authService.authenticate("test-admin-token")).toThrow("Invalid or revoked device token");
+
+    database.close();
+  });
+
   it("exchanges a pairing code once and rejects reuse", () => {
     const { authService, database } = createTestHub();
 

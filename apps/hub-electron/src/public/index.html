@@ -15,19 +15,21 @@
         </div>
         <nav class="nav">
           <button class="nav-item active" data-view="setupView" type="button">Setup</button>
-          <button class="nav-item" data-view="serviceView" type="button">Service</button>
+          <button class="nav-item" data-view="serviceView" type="button">Take Orders</button>
           <button class="nav-item" data-view="kitchenView" type="button">Kitchen</button>
           <button class="nav-item" data-view="billingView" type="button">Billing</button>
+          <button class="nav-item" data-view="reportsView" type="button">Reports & Backups</button>
+          <button class="nav-item" data-view="advancedView" type="button">Advanced</button>
         </nav>
         <div class="rail-status">
           <span id="hubHealth">Starting</span>
           <span id="dayStatus">POS day</span>
           <span id="syncStatus">Sync pending: 0</span>
-          <input id="deviceToken" type="password" placeholder="Device token" />
         </div>
       </aside>
 
       <section class="content">
+        <input id="deviceToken" type="hidden" />
         <section class="ops-strip" id="opsStrip">
           <article>
             <span>Tables</span>
@@ -51,14 +53,36 @@
           <header class="view-header">
             <div>
               <h1>Setup</h1>
-              <p>Configure day, printers, tables, kitchen routing, and devices.</p>
+              <p>Follow the steps in order. The hub will open the daily POS once the basics are ready.</p>
             </div>
           </header>
 
-          <div class="setup-grid">
-            <section class="setup-step">
-              <span>Step 1</span>
-              <h2>Business Day</h2>
+          <div id="setupChecklist" class="setup-checklist"></div>
+
+          <div class="setup-flow">
+            <section class="setup-step active" data-setup-step="unlock">
+              <div class="step-heading">
+                <span>Step 1</span>
+                <button class="secondary setup-edit" data-go-step="unlock" type="button">Edit</button>
+              </div>
+              <h2>Unlock Hub</h2>
+              <p>Enter the hub password once on this PC. It stays saved for this browser.</p>
+              <div class="secret-input">
+                <input id="setupDeviceToken" type="password" placeholder="Paste HUB_ADMIN_TOKEN" autocomplete="current-password" />
+                <button id="toggleHubToken" class="secondary" type="button">Show</button>
+              </div>
+              <div class="form-row">
+                <button id="saveHubToken" type="button">Unlock</button>
+              </div>
+            </section>
+
+            <section class="setup-step" data-setup-step="day">
+              <div class="step-heading">
+                <span>Step 2</span>
+                <button class="secondary setup-edit" data-go-step="day" type="button">Edit</button>
+              </div>
+              <h2>Open Today's POS Day</h2>
+              <p>Open the day before waiters can send orders or the cashier can make bills.</p>
               <form id="openDayForm" class="form-row">
                 <input id="openingCash" type="number" min="0" step="1" placeholder="Opening cash" />
                 <button type="submit">Open Day</button>
@@ -70,95 +94,109 @@
               <div id="closeSummary" class="summary-strip"></div>
             </section>
 
-            <section class="setup-step">
-              <span>Step 2</span>
-              <h2>Printers</h2>
+            <section class="setup-step" data-setup-step="printer">
+              <div class="step-heading">
+                <span>Step 3</span>
+                <button class="secondary setup-edit" data-go-step="printer" type="button">Edit</button>
+              </div>
+              <h2>Choose Cash Counter Printer</h2>
+              <p>This printer is used for final bills and payment receipts.</p>
               <button id="loadPrinters" type="button" class="secondary">Load PC Printers</button>
               <form id="receiptPrinterForm" class="form-stack">
                 <select id="receiptPrinterName"></select>
-                <div class="two-col">
-                  <input id="receiptHost" placeholder="LAN fallback IP" />
-                  <input id="receiptPort" type="number" value="9100" min="1" max="65535" />
-                </div>
-                <button type="submit">Save Receipt Printer</button>
+                <details class="advanced-fields">
+                  <summary>Advanced: LAN fallback</summary>
+                  <div class="two-col">
+                    <input id="receiptHost" placeholder="Printer IP address" />
+                    <input id="receiptPort" type="number" value="9100" min="1" max="65535" />
+                  </div>
+                </details>
+                <button type="submit">Save Cash Counter Printer</button>
               </form>
             </section>
 
-            <section class="setup-step">
-              <span>Step 3</span>
-              <h2>Rooms and Tables</h2>
-              <form id="floorForm" class="form-row">
-                <input id="floorName" placeholder="Floor or room" />
-                <button type="submit">Add Floor</button>
-              </form>
-              <form id="tableForm" class="form-row">
-                <select id="tableFloor"></select>
-                <input id="tableName" placeholder="Table" />
-                <button type="submit">Add Table</button>
-              </form>
-            </section>
-
-            <section class="setup-step">
-              <span>Step 4</span>
-              <h2>Kitchens and Menu</h2>
+            <section class="setup-step" data-setup-step="kitchens">
+              <div class="step-heading">
+                <span>Step 4</span>
+                <button class="secondary setup-edit" data-go-step="kitchens" type="button">Edit</button>
+              </div>
+              <h2>Add Kitchens / Bar Counters</h2>
+              <p>Add each place that prepares items. Dishes will print only at the selected kitchen or counter.</p>
               <form id="unitForm" class="form-stack">
                 <input id="unitName" placeholder="Kitchen, bar, tandoor" />
                 <select id="unitPrinterName"></select>
-                <div class="two-col">
-                  <input id="unitHost" placeholder="LAN fallback IP" />
-                  <input id="unitPort" type="number" value="9100" min="1" max="65535" />
-                </div>
-                <button type="submit">Add Production Unit</button>
+                <details class="advanced-fields">
+                  <summary>Advanced: custom ID or LAN fallback</summary>
+                  <input id="unitCustomId" placeholder="Custom kitchen ID (optional)" />
+                  <div class="two-col">
+                    <input id="unitHost" placeholder="Printer IP address" />
+                    <input id="unitPort" type="number" value="9100" min="1" max="65535" />
+                  </div>
+                </details>
+                <button type="submit">Add Kitchen / Counter</button>
               </form>
+            </section>
+
+            <section class="setup-step" data-setup-step="tables">
+              <div class="step-heading">
+                <span>Step 5</span>
+                <button class="secondary setup-edit" data-go-step="tables" type="button">Edit</button>
+              </div>
+              <h2>Add Tables</h2>
+              <p>Create rooms first, then add the tables waiters will select during service.</p>
+              <form id="floorForm" class="form-row">
+                <input id="floorName" placeholder="Floor or room" />
+                <button type="submit">Add Room</button>
+              </form>
+              <details class="advanced-fields">
+                <summary>Advanced: custom room ID</summary>
+                <input id="floorCustomId" placeholder="Custom room ID (optional)" />
+              </details>
+              <form id="tableForm" class="form-row">
+                <select id="tableFloor"></select>
+                <input id="tableName" placeholder="Table name or number" />
+                <button type="submit">Add Table</button>
+              </form>
+              <details class="advanced-fields">
+                <summary>Advanced: custom table ID</summary>
+                <input id="tableCustomId" placeholder="Custom table ID (optional)" />
+              </details>
+            </section>
+
+            <section class="setup-step" data-setup-step="menu">
+              <div class="step-heading">
+                <span>Step 6</span>
+                <button class="secondary setup-edit" data-go-step="menu" type="button">Edit</button>
+              </div>
+              <h2>Add Menu Items</h2>
+              <p>Add dishes and choose where each one should print.</p>
               <form id="menuItemForm" class="form-row">
-                <input id="menuItemName" placeholder="Item" />
+                <input id="menuItemName" placeholder="Dish name" />
                 <input id="menuItemPrice" type="number" min="0" step="1" placeholder="Price" />
                 <select id="menuItemUnit"></select>
-                <button type="submit">Add Item</button>
+                <button type="submit">Add Dish</button>
               </form>
+              <details class="advanced-fields">
+                <summary>Advanced: custom dish ID</summary>
+                <input id="menuItemCustomId" placeholder="Custom dish ID (optional)" />
+              </details>
               <div id="menuAdminList" class="admin-list"></div>
             </section>
 
-            <section class="setup-step">
-              <span>Step 5</span>
-              <h2>Modifiers and Notes</h2>
-              <form id="modifierGroupForm" class="form-row">
-                <input id="modifierGroupName" placeholder="Group: Spice, Size" />
-                <select id="modifierGroupType">
-                  <option value="single">single</option>
-                  <option value="multiple">multiple</option>
-                </select>
-                <button type="submit">Add Group</button>
-              </form>
-              <form id="modifierOptionForm" class="form-row">
-                <select id="modifierOptionGroup"></select>
-                <input id="modifierOptionName" placeholder="Option: Spicy" />
-                <input id="modifierOptionPrice" type="number" min="0" step="1" placeholder="+ Price" />
-                <button type="submit">Add Option</button>
-              </form>
-              <form id="modifierAssignForm" class="form-row">
-                <select id="modifierAssignItem"></select>
-                <select id="modifierAssignGroup"></select>
-                <button type="submit">Attach To Item</button>
-              </form>
-              <form id="noteTemplateForm" class="form-row">
-                <input id="noteTemplateLabel" placeholder="Label: Jain" />
-                <input id="noteTemplateNote" placeholder="Kitchen note" />
-                <button type="submit">Add Note</button>
-              </form>
-              <div id="modifierAdminList" class="admin-list"></div>
-            </section>
-
-            <section class="setup-step">
-              <span>Step 6</span>
+            <section class="setup-step" data-setup-step="devices">
+              <div class="step-heading">
+                <span>Step 7</span>
+                <button class="secondary setup-edit" data-go-step="devices" type="button">Edit</button>
+              </div>
               <h2>Pair Devices</h2>
+              <p>Create a QR code for a waiter, kitchen, cashier, or admin device.</p>
               <form id="pairingForm" class="form-row">
                 <input id="pairingName" placeholder="Device name" />
                 <select id="pairingRole">
-                  <option value="waiter">waiter</option>
-                  <option value="kitchen">kitchen</option>
-                  <option value="cashier">cashier</option>
-                  <option value="admin">admin</option>
+                  <option value="waiter">Waiter</option>
+                  <option value="kitchen">Kitchen</option>
+                  <option value="cashier">Cashier</option>
+                  <option value="admin">Admin</option>
                 </select>
                 <button type="submit">Create Code</button>
               </form>
@@ -166,17 +204,14 @@
               <div id="deviceList" class="admin-list"></div>
             </section>
 
-            <section class="setup-step">
-              <span>Step 7</span>
-              <h2>Backups and Cloud Pull</h2>
-              <form id="backupForm" class="form-row">
-                <input id="backupLabel" placeholder="Backup label" />
-                <button type="submit">Create Backup</button>
-              </form>
-              <div class="form-row">
-                <button id="pullCloud" type="button" class="secondary">Pull Cloud Changes</button>
+            <section class="setup-step" data-setup-step="ready">
+              <div class="step-heading">
+                <span>Step 8</span>
+                <button class="secondary setup-edit" data-go-step="ready" type="button">View</button>
               </div>
-              <div id="backupList" class="admin-list"></div>
+              <h2>Ready For Service</h2>
+              <p id="readyMessage">Complete the required steps above before taking orders.</p>
+              <button id="goService" type="button">Go To Take Orders</button>
             </section>
           </div>
         </section>
@@ -184,7 +219,7 @@
         <section id="serviceView" class="view">
           <header class="view-header">
             <div>
-              <h1>Service</h1>
+              <h1>Take Orders</h1>
               <p id="orderMeta">Select a table.</p>
             </div>
             <div class="header-actions">
@@ -208,7 +243,7 @@
                   <div class="ticket-controls">
                     <label>Pax <input id="pax" type="number" min="1" max="99" value="2" /></label>
                     <strong id="draftTotal">₹0</strong>
-                    <button id="submitOrder" type="button">Send KOT</button>
+                    <button id="submitOrder" type="button">Send To Kitchen</button>
                   </div>
                   <div id="draftItems" class="draft-items"></div>
                 </div>
@@ -220,8 +255,8 @@
         <section id="kitchenView" class="view">
           <header class="view-header">
             <div>
-              <h1>Kitchen Display</h1>
-              <p>Work by production unit.</p>
+              <h1>Kitchen</h1>
+              <p>Each kitchen or counter sees only the dishes assigned to it.</p>
             </div>
             <select id="kdsUnit"></select>
           </header>
@@ -231,7 +266,7 @@
         <section id="billingView" class="view">
           <header class="view-header">
             <div>
-              <h1>Billing and Prints</h1>
+              <h1>Billing</h1>
               <p id="billingMeta">Select a table in Service to bill or settle.</p>
             </div>
             <button id="processPrints" type="button">Run Print Queue</button>
@@ -260,6 +295,85 @@
             </div>
           </section>
           <div id="printJobs" class="print-list"></div>
+        </section>
+
+        <section id="reportsView" class="view">
+          <header class="view-header">
+            <div>
+              <h1>Reports & Backups</h1>
+              <p>Check day close numbers and keep a local backup of this hub database.</p>
+            </div>
+          </header>
+          <section class="report-grid">
+            <article class="work-pane">
+              <h2>Cash Reconciliation</h2>
+              <div id="closeSummaryReport" class="summary-strip"></div>
+            </article>
+            <article class="work-pane">
+              <h2>Local Backups</h2>
+              <form id="backupForm" class="form-row">
+                <input id="backupLabel" placeholder="Backup label" />
+                <button type="submit">Create Backup</button>
+              </form>
+              <div id="backupList" class="admin-list"></div>
+            </article>
+          </section>
+        </section>
+
+        <section id="advancedView" class="view">
+          <header class="view-header">
+            <div>
+              <h1>Advanced</h1>
+              <p>Support tools for modifiers, kitchen notes, cloud updates, and recovery.</p>
+            </div>
+            <button id="pullCloud" type="button" class="secondary">Get Cloud Updates</button>
+          </header>
+          <section class="advanced-grid">
+            <article class="work-pane">
+              <h2>Modifiers</h2>
+              <form id="modifierGroupForm" class="form-row">
+                <input id="modifierGroupName" placeholder="Group: Spice, Size" />
+                <select id="modifierGroupType">
+                  <option value="single">single</option>
+                  <option value="multiple">multiple</option>
+                </select>
+                <button type="submit">Add Group</button>
+              </form>
+              <details class="advanced-fields">
+                <summary>Advanced: custom group ID</summary>
+                <input id="modifierGroupCustomId" placeholder="Custom group ID (optional)" />
+              </details>
+              <form id="modifierOptionForm" class="form-row">
+                <select id="modifierOptionGroup"></select>
+                <input id="modifierOptionName" placeholder="Option: Spicy" />
+                <input id="modifierOptionPrice" type="number" min="0" step="1" placeholder="+ Price" />
+                <button type="submit">Add Option</button>
+              </form>
+              <details class="advanced-fields">
+                <summary>Advanced: custom option ID</summary>
+                <input id="modifierOptionCustomId" placeholder="Custom option ID (optional)" />
+              </details>
+              <form id="modifierAssignForm" class="form-row">
+                <select id="modifierAssignItem"></select>
+                <select id="modifierAssignGroup"></select>
+                <button type="submit">Attach To Dish</button>
+              </form>
+            </article>
+
+            <article class="work-pane">
+              <h2>Kitchen Notes</h2>
+              <form id="noteTemplateForm" class="form-row">
+                <input id="noteTemplateLabel" placeholder="Label: Jain" />
+                <input id="noteTemplateNote" placeholder="Kitchen note" />
+                <button type="submit">Add Note</button>
+              </form>
+              <details class="advanced-fields">
+                <summary>Advanced: custom note ID</summary>
+                <input id="noteTemplateCustomId" placeholder="Custom note ID (optional)" />
+              </details>
+              <div id="modifierAdminList" class="admin-list"></div>
+            </article>
+          </section>
         </section>
       </section>
     </main>

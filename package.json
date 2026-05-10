@@ -15,6 +15,7 @@
   "devDependencies": {
     "@types/node": "^22.15.17",
     "convex": "^1.38.0",
+    "dotenv-cli": "^11.0.0",
     "tsx": "^4.19.4",
     "typescript": "^5.8.3",
     "vitest": "^3.1.3"

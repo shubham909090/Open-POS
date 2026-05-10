@@ -8,8 +8,8 @@
   "main": "dist/electron.js",
   "scripts": {
     "build": "tsc -p tsconfig.build.json && node scripts/copy-public.mjs",
-    "dev": "node --env-file-if-exists=../../.env.local --import tsx src/main.ts",
-    "dev:desktop": "node --env-file-if-exists=../../.env.local ./node_modules/electron/cli.js --no-sandbox --import tsx src/electron.ts",
+    "dev": "dotenv -e ../../.env.local -- tsx src/main.ts",
+    "dev:desktop": "dotenv -e ../../.env.local -- electron --no-sandbox --import tsx src/electron.ts",
     "db:generate": "drizzle-kit generate",
     "db:studio": "drizzle-kit studio",
     "package:win": "pnpm build && electron-builder --win nsis --x64",

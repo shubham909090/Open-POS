@@ -1,6 +1,6 @@
 # POS Context
 
-Last updated: 2026-05-10
+Last updated: 2026-05-11
 
 ## Product Goal
 
@@ -56,12 +56,13 @@ The hub currently implements:
 - POS day open/close.
 - Static cashier/admin UI served at the hub root.
 - Electron desktop shell via `pnpm --filter @gaurav-pos/hub-electron dev:desktop`.
-- Hub UI is split into Setup, Service, Kitchen, and Billing screens instead of one crammed dashboard.
+- Hub UI is split into Setup, Take Orders, Kitchen, Billing, Reports & Backups, and Advanced screens.
 - Floor/table setup APIs.
-- Production-unit and menu setup APIs.
+- Kitchen/counter and menu setup APIs. Internally these are still production units for printer routing.
 - Modifier group, modifier option, menu-item modifier assignment, and note-template setup APIs.
-- In-app setup forms for floors, tables, production units, menu items, receipt printer, and device pairing codes.
-- In-app setup forms for modifier groups/options, attaching modifiers to dishes, and reusable kitchen note templates.
+- Guided setup checklist for unlocking the hub, opening today's POS day, choosing the cash counter printer, adding kitchens/counters, adding tables, adding dishes, pairing devices, and starting service.
+- Beginner setup forms hide internal IDs and LAN fallback fields behind Advanced sections. Custom IDs remain available only for support/import use.
+- Advanced forms for modifier groups/options, attaching modifiers to dishes, reusable kitchen note templates, and cloud update pull.
 - Pairing-code creation returns a six-digit fallback code plus a QR data URL/payload for Android scanner pairing.
 - Receipt/cashier printer setting and bill print routing.
 - System printer discovery endpoint lists printers installed on the hub PC; selected OS printer names are stored for receipt and production-unit routing.
@@ -84,7 +85,7 @@ The hub currently implements:
 - Bill reprint, KOT reprint, and POS day close from the hub UI.
 - Append-only `event_log` and `sync_outbox` for Convex sync.
 - Convex HTTP sync bridge route at `/sync/push`; background push attempts every 60 seconds when `CONVEX_HTTP_URL` and `POS_SYNC_SECRET` are set.
-- Convex installation identity and `/sync/pull` cloud-to-hub command pull for device, menu, production-unit, and printer-setting changes.
+- Convex hub connection and `/sync/pull` cloud-to-hub update pull for device, menu, kitchen/counter, and printer-setting changes.
 - Convex event ingestion requires `POS_INSTALLATION_ID` plus `POS_SYNC_SECRET`; Convex resolves the restaurant from the registered installation.
 - Fastify REST API plus token-protected WebSocket realtime endpoint.
 - Drizzle-backed auth, idempotency, print queue processing, Convex outbox reads/updates, seed data, schema generation, POS-day writes, order/KOT write clusters, billing/payment writes, print-job enqueue, and event/outbox appends.
@@ -108,18 +109,21 @@ The cloud admin currently implements:
 - Next.js App Router shell.
 - WorkOS AuthKit client session and Convex auth provider bridge.
 - Google-only sign-in route expectation.
-- Authenticated cloud admin dashboard split into Setup, Staff, Menu & Devices, and Sync Health sections.
+- Authenticated cloud admin dashboard split into Setup, Staff, Sync Health, and Advanced sections.
 - Convex schema for restaurants, memberships, member invitations, devices, installations, hub commands, synced events, and daily reports.
-- Authenticated cloud UI for creating restaurants, registering hub installation identities, inviting/removing staff, accepting staff invitations, listing installations/recent events, and queueing guided cloud-to-hub commands.
-- Hub installation registration is owner-only and an existing installation id cannot be reassigned to a different restaurant.
+- Beginner cloud setup wizard for creating a restaurant, creating a hub connection, starting the hub app, confirming sync, and inviting staff.
+- Hub connection creation generates the internal hub ID and secret automatically and gives the user a copyable env block. Manual IDs/secrets are hidden in Advanced support details.
+- Authenticated cloud UI for creating restaurants, connecting hub PCs, inviting/removing staff, accepting staff invitations, listing sync health, and queueing guided cloud-to-hub commands from Advanced.
+- Hub connection registration is owner-only and an existing internal hub ID cannot be reassigned to a different restaurant.
 - Convex HTTP event ingestion boundary protected by registered installation id/secret.
 
 ## Device-By-Device UX Scope
 
 Windows hub/cashier/admin:
 
-- Setup tab handles POS day, printer selection, room/table setup, kitchen/menu setup, device pairing/revoke, backups, and cloud sync controls.
-- Setup tab also handles modifier groups/options, assigning modifiers to dishes, and reusable note templates.
+- Setup tab is a guided checklist: unlock hub, open today's POS day, choose cash counter printer, add kitchens/counters, add rooms/tables, add dishes, pair devices, then start service.
+- Reports & Backups handles close reconciliation and local backups.
+- Advanced handles modifier groups/options, assigning modifiers to dishes, reusable note templates, and cloud update pull.
 - Business day setup includes close reconciliation with opening cash, cash sales, expected drawer cash, typed cash variance, UPI/card/online totals, gross/final sales, discounts, tips, paid bills, unpaid bills, and open-order blockers.
 - Service tab handles table status, waiter-style order entry, menu search, ticket total, and KOT submission.
 - Kitchen tab shows KOT/KDS work and print queue actions.
@@ -134,10 +138,10 @@ Android waiter device:
 
 Cloud admin:
 
-- Setup section creates the restaurant and registers the Windows hub installation identity.
+- Setup section creates the restaurant and connects the Windows hub PC without asking the user to type raw IDs/secrets.
 - Staff section creates email-based invitations, accepts pending invites for the signed-in Google email, updates member roles, removes non-owner members, and revokes pending invites.
-- Menu & Devices section queues guided cloud-to-hub changes for menu items, production units, receipt printer, device role/name updates, and device revoke.
-- Sync Health section shows registered hubs, recent synced events, and the next command the hub will pull.
+- Sync Health section shows connected hub PCs, recent synced events, and pending cloud updates while hiding raw IDs behind Advanced details.
+- Advanced section queues support/cloud-to-hub changes for menu items, kitchens/counters, receipt printer, device role/name updates, and device revoke.
 
 ## Important Commands
 
@@ -188,7 +192,8 @@ Do not blindly copy AGPL/MRPL code into this product. Use those repos as behavio
 - Every finalized local mutation must write domain state, `event_log`, and `sync_outbox` in one SQLite transaction.
 - Print jobs are durable and retryable; printing failure must not erase order/KOT state.
 - Android devices may cache menu/table data and save drafts when disconnected from the hub, but final order/KOT/bill actions require hub confirmation.
-- Printer routing is via production units: kitchen, bar, tandoor, etc.
+- Printer routing is via internal production units, presented to users as kitchens/counters: kitchen, bar, tandoor, etc.
+- Do not expose generated IDs, sync secrets, payload JSON, Convex terminology, or production-unit wording in beginner flows. Put them inside Advanced details only.
 - Prefer simple, direct modules over abstract architecture layers.
 
 ## Auth Decision

@@ -178,8 +178,7 @@ export const registerInstallation = mutation({
       await ctx.db.patch(existing._id, {
         restaurantId: args.restaurantId,
         syncSecret,
-        status: "active",
-        lastSeenAt: now
+        status: "active"
       });
       return { installationId };
     }
@@ -189,8 +188,7 @@ export const registerInstallation = mutation({
       installationId,
       syncSecret,
       status: "active",
-      createdAt: now,
-      lastSeenAt: now
+      createdAt: now
     });
     return { installationId };
   }

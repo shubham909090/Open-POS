@@ -17,7 +17,7 @@ const commandTypes = [
 ] as const;
 
 type CommandType = (typeof commandTypes)[number];
-type DashboardSection = "setup" | "staff" | "commands" | "sync";
+type DashboardSection = "setup" | "staff" | "sync" | "advanced";
 type StaffRole = "owner" | "admin" | "reporting";
 type InviteRole = "admin" | "reporting";
 type CommandFieldKey =
@@ -58,7 +58,7 @@ const commandCatalog: Record<CommandType, { label: string; help: string; payload
   },
   "production_unit.upsert": {
     label: "Kitchen or bar station",
-    help: "Create a production unit and bind it to a system printer on the Windows hub.",
+    help: "Create a kitchen or counter and bind it to a system printer on the Windows hub.",
     payload: JSON.stringify(
       { id: "unit_bar", name: "Bar", printerMode: "system", printerName: "Bar Printer", kdsEnabled: true },
       null,
@@ -208,8 +208,8 @@ export default function CloudAdminHome() {
       <header className="admin-topbar">
         <div>
           <span className="product-mark">Gaurav POS</span>
-          <h1>Cloud Admin</h1>
-          <p>Set up restaurant identity, send safe hub changes, and watch sync health.</p>
+          <h1>Owner Portal</h1>
+          <p>Create the restaurant account, connect the hub PC, invite staff, and check sync health.</p>
         </div>
         {user ? (
           <div className="topbar-actions">
@@ -234,7 +234,7 @@ export default function CloudAdminHome() {
           <div>
             <span className="eyebrow">Authentication</span>
             <h2>Google sign-in required</h2>
-            <p>WorkOS AuthKit handles login. Convex receives the identity token and applies restaurant access rules.</p>
+            <p>Sign in with the Google account that will own or manage this restaurant.</p>
           </div>
           <Link href="/sign-in" className="button-link">
             Continue with Google
@@ -252,6 +252,7 @@ export default function CloudAdminHome() {
 function CloudDashboard({ userLabel }: { userLabel: string }) {
   const restaurants = useQuery(api.admin.listRestaurants);
   const createRestaurant = useMutation(api.admin.createRestaurant);
+  const createHubConnection = useMutation(api.admin.createHubConnection);
   const registerInstallation = useMutation(api.admin.registerInstallation);
   const enqueueHubCommand = useMutation(api.admin.enqueueHubCommand);
   const acceptInvitation = useMutation(api.admin.acceptInvitation);
@@ -264,8 +265,9 @@ function CloudDashboard({ userLabel }: { userLabel: string }) {
   const [selectedRestaurantId, setSelectedRestaurantId] = useState("");
   const [restaurantName, setRestaurantName] = useState("");
   const [timezone, setTimezone] = useState("Asia/Kolkata");
-  const [installationId, setInstallationId] = useState("hub-main");
+  const [installationId, setInstallationId] = useState("");
   const [syncSecret, setSyncSecret] = useState("");
+  const [hubConnection, setHubConnection] = useState<{ installationId: string; syncSecret: string; envBlock: string } | null>(null);
   const [staffEmail, setStaffEmail] = useState("");
   const [staffRole, setStaffRole] = useState<InviteRole>("admin");
   const [commandType, setCommandType] = useState<CommandType>("menu_item.upsert");
@@ -289,7 +291,8 @@ function CloudDashboard({ userLabel }: { userLabel: string }) {
   const commands = useQuery(api.admin.listHubCommands, restaurantId ? { restaurantId } : "skip");
   const events = useQuery(api.admin.listRecentEvents, restaurantId ? { restaurantId } : "skip");
 
-  const activeInstallations = (installations ?? []).filter((installation) => installation.status === "active").length;
+  const registeredInstallations = (installations ?? []).filter((installation) => installation.status === "active").length;
+  const activeInstallations = (installations ?? []).filter((installation) => installation.status === "active" && installation.lastSeenAt).length;
   const lastSeen = installations?.find((installation) => installation.lastSeenAt)?.lastSeenAt;
   const latestCommand = commands?.[0];
   const latestEvent = events?.[0];
@@ -302,9 +305,21 @@ function CloudDashboard({ userLabel }: { userLabel: string }) {
       const result = await createRestaurant({ name: restaurantName, timezone });
       setSelectedRestaurantId(result.restaurantId);
       setRestaurantName("");
-      setStatus({ tone: "good", text: "Restaurant created. Register the Windows hub next." });
+      setStatus({ tone: "good", text: "Restaurant created. Next, connect the hub PC." });
     } catch (error) {
       setStatus({ tone: "bad", text: error instanceof Error ? error.message : "Could not create restaurant." });
+    }
+  }
+
+  async function onCreateHubConnection() {
+    if (!restaurantId) return;
+    setStatus(null);
+    try {
+      const result = await createHubConnection({ restaurantId, label: selectedRestaurant?.name ?? "main-hub" });
+      setHubConnection(result);
+      setStatus({ tone: "good", text: "Hub connection created. Paste the setup block into the hub PC env file." });
+    } catch (error) {
+      setStatus({ tone: "bad", text: error instanceof Error ? error.message : "Could not create hub connection." });
     }
   }
 
@@ -314,8 +329,7 @@ function CloudDashboard({ userLabel }: { userLabel: string }) {
     setStatus(null);
     try {
       await registerInstallation({ restaurantId, installationId, syncSecret });
-      setSyncSecret("");
-      setStatus({ tone: "good", text: "Installation saved. Put the id and secret in the hub env." });
+      setStatus({ tone: "good", text: "Hub connection saved. Use the same values in the hub PC env file." });
     } catch (error) {
       setStatus({ tone: "bad", text: error instanceof Error ? error.message : "Could not register installation." });
     }
@@ -410,7 +424,7 @@ function CloudDashboard({ userLabel }: { userLabel: string }) {
         <div className="identity-card">
           <span className="eyebrow">Signed in</span>
           <strong>{userLabel}</strong>
-          <p>Cloud changes sync down when the hub has internet. Restaurant service keeps running locally.</p>
+          <p>Use this portal for owner setup. Daily restaurant work happens in the hub app.</p>
         </div>
 
         <label className="field-label">
@@ -434,10 +448,10 @@ function CloudDashboard({ userLabel }: { userLabel: string }) {
           </button>
           <button
             type="button"
-            className={section === "commands" ? "rail-button active" : "rail-button"}
-            onClick={() => setSection("commands")}
+            className={section === "advanced" ? "rail-button active" : "rail-button"}
+            onClick={() => setSection("advanced")}
           >
-            Menu & Devices
+            Advanced
           </button>
           <button type="button" className={section === "sync" ? "rail-button active" : "rail-button"} onClick={() => setSection("sync")}>
             Sync Health
@@ -469,16 +483,20 @@ function CloudDashboard({ userLabel }: { userLabel: string }) {
         {section === "setup" ? (
           <SetupSection
             restaurantsReady={Boolean(restaurants?.length)}
+            hubReady={registeredInstallations > 0}
+            hubConnected={activeInstallations > 0}
             restaurantName={restaurantName}
             timezone={timezone}
             installationId={installationId}
             syncSecret={syncSecret}
+            hubConnection={hubConnection}
             canRegister={Boolean(restaurantId)}
             onRestaurantNameChange={setRestaurantName}
             onTimezoneChange={setTimezone}
             onInstallationIdChange={setInstallationId}
             onSyncSecretChange={setSyncSecret}
             onCreateRestaurant={(event) => void onCreateRestaurant(event)}
+            onCreateHubConnection={() => void onCreateHubConnection()}
             onRegisterInstallation={(event) => void onRegisterInstallation(event)}
           />
         ) : null}
@@ -499,7 +517,7 @@ function CloudDashboard({ userLabel }: { userLabel: string }) {
           />
         ) : null}
 
-        {section === "commands" ? (
+        {section === "advanced" ? (
           <CommandsSection
             commandType={commandType}
             commandFields={commandFields}
@@ -523,89 +541,155 @@ function CloudDashboard({ userLabel }: { userLabel: string }) {
 
 function SetupSection({
   restaurantsReady,
+  hubReady,
+  hubConnected,
   restaurantName,
   timezone,
   installationId,
   syncSecret,
+  hubConnection,
   canRegister,
   onRestaurantNameChange,
   onTimezoneChange,
   onInstallationIdChange,
   onSyncSecretChange,
   onCreateRestaurant,
+  onCreateHubConnection,
   onRegisterInstallation
 }: {
   restaurantsReady: boolean;
+  hubReady: boolean;
+  hubConnected: boolean;
   restaurantName: string;
   timezone: string;
   installationId: string;
   syncSecret: string;
+  hubConnection: { installationId: string; syncSecret: string; envBlock: string } | null;
   canRegister: boolean;
   onRestaurantNameChange: (value: string) => void;
   onTimezoneChange: (value: string) => void;
   onInstallationIdChange: (value: string) => void;
   onSyncSecretChange: (value: string) => void;
   onCreateRestaurant: (event: FormEvent<HTMLFormElement>) => void;
+  onCreateHubConnection: () => void;
   onRegisterInstallation: (event: FormEvent<HTMLFormElement>) => void;
 }) {
+  const [showExistingSecret, setShowExistingSecret] = useState(false);
+  const copyHubBlock = () => {
+    if (!hubConnection) return;
+    void navigator.clipboard?.writeText(hubConnection.envBlock);
+  };
+
   return (
     <div className="setup-flow">
-      <section className="admin-panel step-panel">
+      <section className={restaurantsReady ? "admin-panel step-panel complete" : "admin-panel step-panel active"}>
         <span className="step-number">1</span>
         <div>
-          <span className="eyebrow">Restaurant record</span>
-          <h2>Create the cloud restaurant</h2>
-          <p>This gives Convex one restaurant id for reports, hub commands, and owner access.</p>
+          <span className="eyebrow">{restaurantsReady ? "Done" : "Step 1"}</span>
+          <h2>Create your restaurant</h2>
+          <p>Name the restaurant account. Daily billing and orders still happen in the hub app.</p>
         </div>
-        <form className="admin-form" onSubmit={onCreateRestaurant}>
-          <label className="field-label">
-            Restaurant name
-            <input value={restaurantName} onChange={(event) => onRestaurantNameChange(event.target.value)} placeholder="Example: Gaurav Restaurant" />
-          </label>
-          <label className="field-label">
-            Timezone
-            <input value={timezone} onChange={(event) => onTimezoneChange(event.target.value)} placeholder="Asia/Kolkata" />
-          </label>
-          <button type="submit">Create restaurant</button>
-        </form>
+        {restaurantsReady ? (
+          <p className="soft-note">Restaurant account is ready.</p>
+        ) : (
+          <form className="admin-form" onSubmit={onCreateRestaurant}>
+            <label className="field-label">
+              Restaurant name
+              <input value={restaurantName} onChange={(event) => onRestaurantNameChange(event.target.value)} placeholder="Example: Gaurav Restaurant" />
+            </label>
+            <details className="advanced-json">
+              <summary>Advanced settings</summary>
+              <label className="field-label">
+                Timezone
+                <input value={timezone} onChange={(event) => onTimezoneChange(event.target.value)} placeholder="Asia/Kolkata" />
+              </label>
+            </details>
+            <button type="submit">Create restaurant</button>
+          </form>
+        )}
       </section>
 
-      <section className="admin-panel step-panel">
+      <section className={hubReady || hubConnection ? "admin-panel step-panel complete" : restaurantsReady ? "admin-panel step-panel active" : "admin-panel step-panel locked"}>
         <span className="step-number">2</span>
         <div>
-          <span className="eyebrow">Windows hub</span>
-          <h2>Register installation identity</h2>
-          <p>The hub uses this id and secret when it uploads local events and pulls cloud commands.</p>
+          <span className="eyebrow">{hubReady || hubConnection ? "Done" : "Step 2"}</span>
+          <h2>Connect the hub PC</h2>
+          <p>Create a secure connection for the restaurant computer that runs the local POS.</p>
         </div>
-        <form className="admin-form" onSubmit={onRegisterInstallation}>
-          <label className="field-label">
-            Installation id
-            <input value={installationId} onChange={(event) => onInstallationIdChange(event.target.value)} placeholder="hub-main" />
-          </label>
-          <label className="field-label">
-            Sync secret
-            <input
-              value={syncSecret}
-              onChange={(event) => onSyncSecretChange(event.target.value)}
-              placeholder="Long random secret"
-              type="password"
-            />
-          </label>
-          <button type="submit" disabled={!canRegister}>
-            Save hub identity
+        {hubConnection ? (
+          <div className="connection-box">
+            <p>Paste this block into the hub PC env file, then start the hub app.</p>
+            <pre>{hubConnection.envBlock}</pre>
+            <button type="button" onClick={copyHubBlock}>Copy setup block</button>
+            <details className="advanced-json">
+              <summary>Advanced details</summary>
+              <code>{hubConnection.installationId}</code>
+            </details>
+          </div>
+        ) : hubReady ? (
+          <p className="soft-note">Hub connection is ready. Start the hub app on the restaurant PC next.</p>
+        ) : (
+          <button type="button" disabled={!canRegister} onClick={onCreateHubConnection}>
+            Create hub connection
           </button>
-        </form>
+        )}
+        <details className="advanced-json">
+          <summary>Advanced: enter existing connection details</summary>
+          <form className="admin-form" onSubmit={onRegisterInstallation}>
+            <label className="field-label">
+              Custom hub ID
+              <input value={installationId} onChange={(event) => onInstallationIdChange(event.target.value)} placeholder="Only for support or imports" />
+            </label>
+            <label className="field-label">
+              Connection secret
+              <span className="secret-input">
+                <input
+                  value={syncSecret}
+                  onChange={(event) => onSyncSecretChange(event.target.value)}
+                  placeholder="Long random secret"
+                  type={showExistingSecret ? "text" : "password"}
+                />
+                <button type="button" className="ghost-button" onClick={() => setShowExistingSecret((value) => !value)}>
+                  {showExistingSecret ? "Hide" : "Show"}
+                </button>
+              </span>
+            </label>
+            <button type="submit" disabled={!canRegister}>
+              Save advanced connection
+            </button>
+          </form>
+        </details>
         {!restaurantsReady ? <p className="soft-note">Create a restaurant first, then this step unlocks.</p> : null}
       </section>
 
-      <section className="admin-panel step-panel">
+      <section className={hubConnected ? "admin-panel step-panel complete" : hubReady || hubConnection ? "admin-panel step-panel active" : "admin-panel step-panel locked"}>
         <span className="step-number">3</span>
         <div>
-          <span className="eyebrow">Device pairing</span>
-          <h2>Pair local Android devices from the hub</h2>
+          <span className="eyebrow">Step 3</span>
+          <h2>Start the hub app</h2>
+          <p>Open the hub on the restaurant PC. That is where you add printers, tables, dishes, and take orders.</p>
+        </div>
+      </section>
+
+      <section className={hubConnected ? "admin-panel step-panel complete" : hubReady || hubConnection ? "admin-panel step-panel active" : "admin-panel step-panel locked"}>
+        <span className="step-number">4</span>
+        <div>
+          <span className="eyebrow">Step 4</span>
+          <h2>Confirm sync is working</h2>
           <p>
-            Use the Windows hub setup screen to create a pairing QR. Waiter and cashier devices scan that QR, then use the hub on LAN without depending on
-            internet.
+            Once the hub is running, this portal will show the hub as active. Use Sync Health only when you want to check the connection.
+          </p>
+        </div>
+        <p className="soft-note">{hubConnected ? "The hub has checked in." : "Waiting for the hub PC to check in."}</p>
+      </section>
+
+      <section className={hubConnected ? "admin-panel step-panel active" : "admin-panel step-panel locked"}>
+        <span className="step-number">5</span>
+        <div>
+          <span className="eyebrow">Step 5</span>
+          <h2>Invite staff</h2>
+          <p>
+            After the hub is connected, invite managers or reporting users from the Staff tab. Android waiter devices are paired from the hub app.
           </p>
         </div>
       </section>
@@ -769,9 +853,9 @@ function CommandsSection({
     <div className="command-layout">
       <section className="admin-panel command-builder">
         <div>
-          <span className="eyebrow">Cloud to hub</span>
-          <h2>Queue a controlled change</h2>
-          <p>The hub pulls these commands and applies them locally inside its SQLite transaction flow.</p>
+          <span className="eyebrow">Advanced</span>
+          <h2>Send a support command</h2>
+          <p>Use this only for support, imports, or recovery. Normal restaurant setup belongs in the hub app.</p>
         </div>
         <div className="preset-grid">
           {commandTypes.map((type) => (
@@ -794,9 +878,9 @@ function CommandsSection({
           </label>
           <CommandFieldsPanel type={commandType} fields={commandFields} onChange={onCommandFieldChange} />
           <details className="advanced-json">
-            <summary>Advanced payload preview</summary>
+            <summary>Raw command preview</summary>
             <label className="field-label">
-              Payload JSON
+              Raw support payload
               <textarea value={payloadJson} onChange={(event) => onPayloadChange(event.target.value)} spellCheck={false} />
             </label>
           </details>
@@ -808,7 +892,7 @@ function CommandsSection({
 
       <section className="admin-panel">
         <span className="eyebrow">History</span>
-        <h2>Last queued commands</h2>
+        <h2>Recent support commands</h2>
         <div className="stack-list">
           {commands.length ? (
             commands.map((command) => (
@@ -821,7 +905,7 @@ function CommandsSection({
               </article>
             ))
           ) : (
-            <EmptyState title="No commands queued" text="Use a preset to send the first menu, printer, or device change." />
+            <EmptyState title="No support commands sent" text="Most restaurants never need this section." />
           )}
         </div>
       </section>
@@ -841,10 +925,10 @@ function CommandFieldsPanel({
   if (type === "menu_item.upsert") {
     return (
       <div className="field-grid">
-        <TextField label="Dish id" value={fields.id} onChange={(value) => onChange("id", value)} />
+        <TextField label="Custom dish ID" value={fields.id} onChange={(value) => onChange("id", value)} />
         <TextField label="Dish name" value={fields.name} onChange={(value) => onChange("name", value)} />
         <TextField label="Price paise" value={fields.pricePaise} onChange={(value) => onChange("pricePaise", value)} inputMode="numeric" />
-        <TextField label="Production unit id" value={fields.productionUnitId} onChange={(value) => onChange("productionUnitId", value)} />
+        <TextField label="Kitchen / counter ID" value={fields.productionUnitId} onChange={(value) => onChange("productionUnitId", value)} />
         <SelectField label="Active" value={fields.active} onChange={(value) => onChange("active", value)} options={["true", "false"]} />
       </div>
     );
@@ -853,7 +937,7 @@ function CommandFieldsPanel({
   if (type === "menu_item.disabled") {
     return (
       <div className="field-grid compact">
-        <TextField label="Dish id" value={fields.id} onChange={(value) => onChange("id", value)} />
+        <TextField label="Custom dish ID" value={fields.id} onChange={(value) => onChange("id", value)} />
       </div>
     );
   }
@@ -861,11 +945,11 @@ function CommandFieldsPanel({
   if (type === "production_unit.upsert") {
     return (
       <div className="field-grid">
-        <TextField label="Unit id" value={fields.id} onChange={(value) => onChange("id", value)} />
-        <TextField label="Unit name" value={fields.name} onChange={(value) => onChange("name", value)} />
+        <TextField label="Custom kitchen ID" value={fields.id} onChange={(value) => onChange("id", value)} />
+        <TextField label="Kitchen / counter name" value={fields.name} onChange={(value) => onChange("name", value)} />
         <SelectField label="Printer mode" value={fields.printerMode} onChange={(value) => onChange("printerMode", value)} options={["system", "lan"]} />
         <TextField label="Printer name" value={fields.printerName} onChange={(value) => onChange("printerName", value)} />
-        <SelectField label="KDS enabled" value={fields.kdsEnabled} onChange={(value) => onChange("kdsEnabled", value)} options={["true", "false"]} />
+        <SelectField label="Kitchen screen enabled" value={fields.kdsEnabled} onChange={(value) => onChange("kdsEnabled", value)} options={["true", "false"]} />
       </div>
     );
   }
@@ -882,7 +966,7 @@ function CommandFieldsPanel({
   if (type === "device.updated") {
     return (
       <div className="field-grid">
-        <TextField label="Hub device id" value={fields.hubDeviceId} onChange={(value) => onChange("hubDeviceId", value)} />
+        <TextField label="Hub device ID" value={fields.hubDeviceId} onChange={(value) => onChange("hubDeviceId", value)} />
         <TextField label="Device name" value={fields.name} onChange={(value) => onChange("name", value)} />
         <SelectField label="Role" value={fields.role} onChange={(value) => onChange("role", value)} options={["admin", "cashier", "waiter", "kitchen"]} />
       </div>
@@ -891,7 +975,7 @@ function CommandFieldsPanel({
 
   return (
     <div className="field-grid compact">
-      <TextField label="Hub device id" value={fields.hubDeviceId} onChange={(value) => onChange("hubDeviceId", value)} />
+      <TextField label="Hub device ID" value={fields.hubDeviceId} onChange={(value) => onChange("hubDeviceId", value)} />
       <TextField label="Reason" value={fields.reason} onChange={(value) => onChange("reason", value)} />
     </div>
   );
@@ -953,21 +1037,25 @@ function SyncSection({
   return (
     <div className="sync-grid">
       <section className="admin-panel">
-        <span className="eyebrow">Installations</span>
-        <h2>Registered hubs</h2>
+        <span className="eyebrow">Hub PCs</span>
+        <h2>Connected hubs</h2>
         <div className="stack-list">
           {installations.length ? (
-            installations.map((row) => (
+            installations.map((row, index) => (
               <article key={row.installationId} className="list-row split-row">
                 <div>
-                  <strong>{row.installationId}</strong>
+                  <strong>Hub PC {index + 1}</strong>
                   <span>{row.lastSeenAt ? `Last seen ${new Date(row.lastSeenAt).toLocaleString()}` : "Not seen yet"}</span>
+                  <details className="advanced-json">
+                    <summary>Advanced details</summary>
+                    <code>{row.installationId}</code>
+                  </details>
                 </div>
                 <span className={row.status === "active" ? "state-pill active" : "state-pill revoked"}>{row.status}</span>
               </article>
             ))
           ) : (
-            <EmptyState title="No hub registered" text="Register the Windows hub from Setup before testing sync." />
+            <EmptyState title="No hub connected" text="Create a hub connection from Setup, then start the hub app on the restaurant PC." />
           )}
         </div>
       </section>
@@ -982,9 +1070,10 @@ function SyncSection({
                 <span />
                 <div>
                   <strong>{event.type}</strong>
-                  <p>
-                    {event.aggregateType} / {event.aggregateId}
-                  </p>
+                  <details className="advanced-json">
+                    <summary>Advanced details</summary>
+                    <code>{event.aggregateType} / {event.aggregateId}</code>
+                  </details>
                   <small>{new Date(event.receivedAt).toLocaleString()}</small>
                 </div>
               </article>
@@ -1002,12 +1091,18 @@ function SyncSection({
           <div className="command-preview">
             <div>
               <strong>{commandCatalog[latestCommand.type].label}</strong>
-              <span>{latestCommand.commandId}</span>
+              <details className="advanced-json">
+                <summary>Advanced details</summary>
+                <code>{latestCommand.commandId}</code>
+              </details>
             </div>
-            <pre>{latestCommand.payloadJson}</pre>
+            <details className="advanced-json">
+              <summary>Raw support command</summary>
+              <pre>{latestCommand.payloadJson}</pre>
+            </details>
           </div>
         ) : (
-          <EmptyState title="Command queue empty" text="Cloud-to-hub changes will show here after you queue them." />
+          <EmptyState title="No cloud updates waiting" text="Most setup happens directly in the hub app. Support commands appear here only when used." />
         )}
       </section>
     </div>

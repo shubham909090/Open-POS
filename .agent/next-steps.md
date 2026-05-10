@@ -62,7 +62,7 @@ Harden the product on real restaurant hardware. The local-first pass exists acro
 - Done: cloud event ingestion requires a registered installation id/secret and stores a server-resolved restaurant id.
 - Done: installation registration requires owner access and cannot move an existing installation id across restaurants.
 - Done: cloud-to-hub command pull supports device revocation, local role/name updates, menu item updates, production-unit updates, and receipt-printer setting updates.
-- Done: cloud-admin UI can create restaurants, register hub installations, manage staff invites/members, view installations/events, and queue cloud-to-hub commands.
+- Done: cloud-admin UI can create restaurants, generate one-click hub connections, manage staff invites/members, view sync health, and keep raw cloud-to-hub commands in Advanced.
 - Next: add real email delivery for invitations after choosing a transactional email provider.
 
 ## Phase 4: Android App
@@ -87,6 +87,8 @@ Harden the product on real restaurant hardware. The local-first pass exists acro
 
 - Hardware-test with real LAN ESC/POS printers.
 - Hardware-test with real PC-installed Windows printers.
+- Done: beginner hub setup flow is split into a guided checklist with internal IDs/LAN fallbacks hidden under Advanced.
+- Done: cloud owner setup flow generates hub connection IDs/secrets automatically and shows copyable env text instead of asking owners to invent IDs.
 - Add backup/restore:
   - Done: manual hot backup.
   - Done: restart-based restore scheduling.
@@ -112,5 +114,5 @@ Harden the product on real restaurant hardware. The local-first pass exists acro
 - Convex sync tests for duplicate HTTP ingestion in Convex itself.
 - End-to-end smoke test from API order submit to print-job creation to bill settlement.
 - Android offline draft unit tests; mobile hub client tests exist.
-- Cloud dashboard queries after WorkOS env setup and full Convex codegen. Current code typechecks with a manually updated generated API reference because `convex codegen` requires `WORKOS_CLIENT_ID` in the deployment.
+- Done: Convex codegen now succeeds against the configured dev deployment.
 - Visual browser/device QA on the actual Windows hub monitor and Android phone after env and hardware are available.

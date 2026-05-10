@@ -48,7 +48,16 @@ export class AuthService {
         status: "active",
         createdAt: now
       })
-      .onConflictDoNothing()
+      .onConflictDoUpdate({
+        target: localDevices.id,
+        set: {
+          name: "Local Admin",
+          role: "admin",
+          tokenHash: this.hash(token),
+          status: "active",
+          lastSeenAt: now
+        }
+      })
       .run();
   }
 
