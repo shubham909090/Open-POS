@@ -13,3 +13,4 @@ coverage/
 *.tsbuildinfo
 
 .DS_Store
+.agent
