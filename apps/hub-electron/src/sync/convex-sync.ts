@@ -56,7 +56,7 @@ export class ConvexSyncBridge {
 
   async pushPending(): Promise<{ pushed: number; skipped: boolean }> {
     const events = this.pendingEvents();
-    if (!this.convexUrl || !this.syncSecret || events.length === 0) {
+    if (!this.convexUrl || !this.syncSecret || !this.installationId || events.length === 0) {
       return { pushed: 0, skipped: true };
     }
 

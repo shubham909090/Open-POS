@@ -21,16 +21,22 @@ async function requireRestaurantAdmin(ctx: MutationCtx, restaurantId: Id<"restau
     )
     .unique();
   if (!membership || !["owner", "admin"].includes(membership.role)) throw new Error("Not authorized for this restaurant");
+  return { identity, membership };
+}
+
+async function requireRestaurantOwner(ctx: MutationCtx, restaurantId: Id<"restaurants">) {
+  const result = await requireRestaurantAdmin(ctx, restaurantId);
+  if (result.membership.role !== "owner") throw new Error("Only restaurant owners can do that");
+  return result;
 }
 
 export const ingestEvents = mutation({
   args: {
-    installationId: v.optional(v.string()),
-    syncSecret: v.optional(v.string()),
+    installationId: v.string(),
+    syncSecret: v.string(),
     events: v.array(
       v.object({
         eventId: v.string(),
-        restaurantId: v.optional(v.id("restaurants")),
         type: v.string(),
         aggregateType: v.string(),
         aggregateId: v.string(),
@@ -42,17 +48,14 @@ export const ingestEvents = mutation({
   returns: v.object({ inserted: v.number() }),
   handler: async (ctx, args) => {
     if (args.events.length > 100) throw new Error("Too many events in one sync batch");
-    const installationId = args.installationId;
-    const installation = installationId
-      ? await ctx.db
-          .query("installations")
-          .withIndex("by_installation_id", (q) => q.eq("installationId", installationId))
-          .unique()
-      : null;
-    if (installation) {
-      if (installation.status !== "active" || installation.syncSecret !== args.syncSecret) throw new Error("Unauthorized installation");
-      await ctx.db.patch(installation._id, { lastSeenAt: new Date().toISOString() });
+    const installation = await ctx.db
+      .query("installations")
+      .withIndex("by_installation_id", (q) => q.eq("installationId", args.installationId))
+      .unique();
+    if (!installation || installation.status !== "active" || installation.syncSecret !== args.syncSecret) {
+      throw new Error("Unauthorized installation");
     }
+    await ctx.db.patch(installation._id, { lastSeenAt: new Date().toISOString() });
 
     let inserted = 0;
     for (const event of args.events) {
@@ -65,7 +68,7 @@ export const ingestEvents = mutation({
 
       await ctx.db.insert("syncedEvents", {
         ...event,
-        restaurantId: event.restaurantId ?? installation?.restaurantId,
+        restaurantId: installation.restaurantId,
         receivedAt: new Date().toISOString()
       });
       inserted += 1;
@@ -158,30 +161,37 @@ export const registerInstallation = mutation({
   },
   returns: v.object({ installationId: v.string() }),
   handler: async (ctx, args) => {
-    await requireRestaurantAdmin(ctx, args.restaurantId);
+    await requireRestaurantOwner(ctx, args.restaurantId);
+    const installationId = args.installationId.trim();
+    const syncSecret = args.syncSecret.trim();
+    if (!installationId) throw new Error("Installation id is required");
+    if (!syncSecret) throw new Error("Sync secret is required");
     const existing = await ctx.db
       .query("installations")
-      .withIndex("by_installation_id", (q) => q.eq("installationId", args.installationId))
+      .withIndex("by_installation_id", (q) => q.eq("installationId", installationId))
       .unique();
     const now = new Date().toISOString();
     if (existing) {
+      if (existing.restaurantId !== args.restaurantId) {
+        throw new Error("Installation id is already registered to another restaurant");
+      }
       await ctx.db.patch(existing._id, {
         restaurantId: args.restaurantId,
-        syncSecret: args.syncSecret,
+        syncSecret,
         status: "active",
         lastSeenAt: now
       });
-      return { installationId: args.installationId };
+      return { installationId };
     }
 
     await ctx.db.insert("installations", {
       restaurantId: args.restaurantId,
-      installationId: args.installationId,
-      syncSecret: args.syncSecret,
+      installationId,
+      syncSecret,
       status: "active",
       createdAt: now,
       lastSeenAt: now
     });
-    return { installationId: args.installationId };
+    return { installationId };
   }
 });

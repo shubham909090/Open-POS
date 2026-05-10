@@ -8,12 +8,11 @@ http.route({
   path: "/pos/ingest-events",
   method: "POST",
   handler: httpAction(async (ctx, request) => {
-    const expectedSecret = process.env.POS_SYNC_SECRET;
     const receivedSecret = request.headers.get("x-pos-sync-secret");
     const installationId = request.headers.get("x-pos-installation-id") ?? undefined;
     const installationSecret = request.headers.get("x-pos-installation-secret") ?? receivedSecret ?? undefined;
 
-    if (!installationId && (!expectedSecret || receivedSecret !== expectedSecret)) {
+    if (!installationId || !installationSecret) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401,
         headers: { "content-type": "application/json" }

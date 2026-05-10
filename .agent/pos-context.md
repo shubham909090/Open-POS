@@ -66,6 +66,7 @@ The hub currently implements:
 - Receipt/cashier printer setting and bill print routing.
 - System printer discovery endpoint lists printers installed on the hub PC; selected OS printer names are stored for receipt and production-unit routing.
 - Local device token auth, role checks, pairing-code creation/exchange, device listing, and device revocation.
+- Kitchen devices are intentionally limited to KDS/KOT status endpoints; full order/table-order reads are for waiter, cashier, and admin roles.
 - Device list/revoke controls in Setup.
 - Menu edit/enable/disable controls in Setup.
 - Cash reconciliation summary before POS day close.
@@ -84,6 +85,7 @@ The hub currently implements:
 - Append-only `event_log` and `sync_outbox` for Convex sync.
 - Convex HTTP sync bridge route at `/sync/push`; background push attempts every 60 seconds when `CONVEX_HTTP_URL` and `POS_SYNC_SECRET` are set.
 - Convex installation identity and `/sync/pull` cloud-to-hub command pull for device, menu, production-unit, and printer-setting changes.
+- Convex event ingestion requires `POS_INSTALLATION_ID` plus `POS_SYNC_SECRET`; Convex resolves the restaurant from the registered installation.
 - Fastify REST API plus token-protected WebSocket realtime endpoint.
 - Drizzle-backed auth, idempotency, print queue processing, Convex outbox reads/updates, seed data, schema generation, POS-day writes, order/KOT write clusters, billing/payment writes, print-job enqueue, and event/outbox appends.
 
@@ -109,7 +111,8 @@ The cloud admin currently implements:
 - Authenticated cloud admin dashboard split into Setup, Staff, Menu & Devices, and Sync Health sections.
 - Convex schema for restaurants, memberships, member invitations, devices, installations, hub commands, synced events, and daily reports.
 - Authenticated cloud UI for creating restaurants, registering hub installation identities, inviting/removing staff, accepting staff invitations, listing installations/recent events, and queueing guided cloud-to-hub commands.
-- Convex HTTP event ingestion boundary protected by `POS_SYNC_SECRET`.
+- Hub installation registration is owner-only and an existing installation id cannot be reassigned to a different restaurant.
+- Convex HTTP event ingestion boundary protected by registered installation id/secret.
 
 ## Device-By-Device UX Scope
 

@@ -152,7 +152,7 @@ export function createHubServer(input: {
     input.eventBus.publish({ type: "table.created", result });
     return result;
   });
-  app.get("/tables/:id/order", { preHandler: anyRole }, async (request) => {
+  app.get("/tables/:id/order", { preHandler: orderRole }, async (request) => {
     const params = request.params as { id: string };
     return input.orderService.getTableOrder(params.id);
   });
@@ -250,7 +250,7 @@ export function createHubServer(input: {
     input.eventBus.publish({ type: "kot.status_changed", result });
     return result;
   });
-  app.get("/orders/:id", { preHandler: anyRole }, async (request) => {
+  app.get("/orders/:id", { preHandler: orderRole }, async (request) => {
     const params = request.params as { id: string };
     return input.orderService.getOrder(params.id);
   });

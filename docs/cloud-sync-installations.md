@@ -10,13 +10,15 @@ POS_INSTALLATION_ID=<stable id for this restaurant hub>
 POS_SYNC_SECRET=<per-installation sync secret>
 ```
 
-`POS_SYNC_SECRET` is sent as the installation secret. Older global-secret ingestion still works when no installation id is sent, but production installs should use `POS_INSTALLATION_ID`.
+`POS_SYNC_SECRET` is sent as the installation secret. Cloud sync requires both `POS_INSTALLATION_ID` and `POS_SYNC_SECRET`; the cloud uses them to resolve the restaurant instead of trusting event payloads.
 
 ## Convex Tables
 
 - `installations`: maps `installationId` to `restaurantId` and installation secret.
 - `hubCommands`: ordered cloud-to-hub command stream.
 - `syncedEvents`: local hub events uploaded to cloud with the restaurant id resolved from the installation.
+
+Installation registration is an owner-only cloud action. If an installation id already belongs to one restaurant, it cannot be reused to claim another restaurant.
 
 ## Supported Cloud Commands
 

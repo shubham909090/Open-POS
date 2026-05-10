@@ -69,7 +69,7 @@ export default defineSchema({
     .index("by_command_id", ["commandId"]),
   syncedEvents: defineTable({
     eventId: v.string(),
-    restaurantId: v.optional(v.id("restaurants")),
+    restaurantId: v.id("restaurants"),
     type: v.string(),
     aggregateType: v.string(),
     aggregateId: v.string(),

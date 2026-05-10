@@ -137,3 +137,11 @@
 - Domain behavior: modifiers are validated against assigned menu items, affect item unit price and bill subtotal, and are rendered into KOT kitchen notes. Seed data now includes a Spice group and common notes like Jain, No Onion, and Less Oil.
 - Android additions: waiter ticket lines can apply hub-provided note templates and assigned modifier chips; ticket total includes modifier price deltas.
 - Verification: full tests/typechecks/lint/Convex TS, hub build, `node --check` for hub UI JS, and fresh Drizzle startup smoke passed.
+
+## 2026-05-11
+
+- Task: Audited important auth/authorization pathways before dev testing.
+- Convex hardening: hub installation registration now requires restaurant owner access, trims installation id/secret, and blocks reassigning an existing installation id to another restaurant. Event ingestion now requires installation identity, maps restaurant id server-side, and no longer accepts unmapped/global-secret uploads. Invitation revoke now only applies to pending invitations.
+- Hub hardening: kitchen devices can still access KDS/KOT status paths, but can no longer read full table-order or order-detail endpoints. Waiter/cashier/admin roles keep those reads.
+- Test additions: API integration test confirms a paired kitchen device is blocked from full order reads while still allowed to load KDS.
+- Verification: hub test suite, full workspace typecheck, Convex TypeScript check, and lint passed.

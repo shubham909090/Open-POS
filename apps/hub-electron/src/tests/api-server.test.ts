@@ -96,6 +96,61 @@ describe("Hub API auth and service flow", () => {
     database.close();
   });
 
+  it("keeps kitchen devices limited to KDS actions instead of full order reads", async () => {
+    const { app, database } = createTestServer();
+    const adminHeaders = { "x-device-token": "test-admin-token" };
+
+    const pairingResponse = await app.inject({
+      method: "POST",
+      url: "/devices/pairing-codes",
+      headers: adminHeaders,
+      payload: { deviceName: "Kitchen screen", role: "kitchen", expiresInMinutes: 10 }
+    });
+    const pairing = pairingResponse.json<{ code: string }>();
+    const exchangeResponse = await app.inject({
+      method: "POST",
+      url: "/devices/pair/exchange",
+      payload: { code: pairing.code, deviceName: "Kitchen screen" }
+    });
+    const kitchen = exchangeResponse.json<{ token: string }>();
+    const orderResponse = await app.inject({
+      method: "POST",
+      url: "/orders/submit",
+      headers: adminHeaders,
+      payload: {
+        tableId: "table-t1",
+        captainId: "waiter-1",
+        pax: 2,
+        orderType: "dine_in",
+        items: [{ menuItemId: "item-dal-fry", quantity: 1 }]
+      }
+    });
+    const order = orderResponse.json<{ orderId: string }>();
+
+    const tableOrderResponse = await app.inject({
+      method: "GET",
+      url: "/tables/table-t1/order",
+      headers: { "x-device-token": kitchen.token }
+    });
+    const fullOrderResponse = await app.inject({
+      method: "GET",
+      url: `/orders/${order.orderId}`,
+      headers: { "x-device-token": kitchen.token }
+    });
+    const kdsResponse = await app.inject({
+      method: "GET",
+      url: "/kds/unit-kitchen",
+      headers: { "x-device-token": kitchen.token }
+    });
+
+    expect(tableOrderResponse.statusCode).toBe(403);
+    expect(fullOrderResponse.statusCode).toBe(403);
+    expect(kdsResponse.statusCode).toBe(200);
+
+    await app.close();
+    database.close();
+  });
+
   it("configures receipt printer and processes bill print in dry-run", async () => {
     const { app, database } = createTestServer();
     const headers = { "x-device-token": "test-admin-token" };

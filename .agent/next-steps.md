@@ -41,6 +41,7 @@ Harden the product on real restaurant hardware. The local-first pass exists acro
 - Done: device pairing endpoints exist for code creation, code exchange, list devices, and revoke device.
 - Done: local auth middleware protects hub REST routes and WebSocket realtime.
 - Done: route-level role checks exist for waiter, kitchen, cashier, and admin paths.
+- Done: kitchen devices are restricted to KDS/KOT status paths and cannot read full table-order/order-detail payloads.
 - Done: idempotency keys are supported for order submit, KOT reprint, bill generate, and settlement endpoints.
 - Done: API tests cover duplicate submissions and unauthorized roles.
 - Done: receipt-printer settings and print destination validation tests exist.
@@ -58,6 +59,8 @@ Harden the product on real restaurant hardware. The local-first pass exists acro
 - Done: modeled restaurants, memberships, member invitations, devices, synced events, and report summaries.
 - Done: event ingestion has an HTTP action/mutation pair protected by `POS_SYNC_SECRET`.
 - Done: installation identity maps hub uploads to restaurants without trusting client-provided restaurant IDs.
+- Done: cloud event ingestion requires a registered installation id/secret and stores a server-resolved restaurant id.
+- Done: installation registration requires owner access and cannot move an existing installation id across restaurants.
 - Done: cloud-to-hub command pull supports device revocation, local role/name updates, menu item updates, production-unit updates, and receipt-printer setting updates.
 - Done: cloud-admin UI can create restaurants, register hub installations, manage staff invites/members, view installations/events, and queue cloud-to-hub commands.
 - Next: add real email delivery for invitations after choosing a transactional email provider.

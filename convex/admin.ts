@@ -330,6 +330,7 @@ export const revokeInvitation = mutation({
     await requireRestaurantAdmin(ctx, args.restaurantId);
     const invitation = await ctx.db.get(args.invitationId);
     if (!invitation || invitation.restaurantId !== args.restaurantId) throw new Error("Invitation not found");
+    if (invitation.status !== "pending") throw new Error("Only pending invitations can be revoked");
     await ctx.db.patch(invitation._id, { status: "revoked", revokedAt: new Date().toISOString() });
     return { revoked: true };
   }
@@ -369,35 +370,40 @@ export const registerInstallation = mutation({
   },
   returns: v.object({ installationId: v.string(), updated: v.boolean() }),
   handler: async (ctx, args) => {
-    await requireRestaurantAdmin(ctx, args.restaurantId);
-    if (!args.installationId.trim()) throw new Error("Installation id is required");
-    if (!args.syncSecret.trim()) throw new Error("Sync secret is required");
+    await requireRestaurantOwner(ctx, args.restaurantId);
+    const installationId = args.installationId.trim();
+    const syncSecret = args.syncSecret.trim();
+    if (!installationId) throw new Error("Installation id is required");
+    if (!syncSecret) throw new Error("Sync secret is required");
     const existing = await ctx.db
       .query("installations")
-      .withIndex("by_installation_id", (q) => q.eq("installationId", args.installationId.trim()))
+      .withIndex("by_installation_id", (q) => q.eq("installationId", installationId))
       .unique();
     const now = new Date().toISOString();
 
     if (existing) {
+      if (existing.restaurantId !== args.restaurantId) {
+        throw new Error("Installation id is already registered to another restaurant");
+      }
       await ctx.db.patch(existing._id, {
         restaurantId: args.restaurantId,
-        syncSecret: args.syncSecret,
+        syncSecret,
         status: "active",
         lastSeenAt: now
       });
-      return { installationId: args.installationId.trim(), updated: true };
+      return { installationId, updated: true };
     }
 
     await ctx.db.insert("installations", {
       restaurantId: args.restaurantId,
-      installationId: args.installationId.trim(),
-      syncSecret: args.syncSecret,
+      installationId,
+      syncSecret,
       status: "active",
       createdAt: now,
       lastSeenAt: now
     });
 
-    return { installationId: args.installationId.trim(), updated: false };
+    return { installationId, updated: false };
   }
 });
 
