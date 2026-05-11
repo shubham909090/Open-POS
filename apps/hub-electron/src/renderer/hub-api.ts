@@ -206,6 +206,9 @@ export const hubApi = {
       body: JSON.stringify({ closingCashPaise, closedBy: "cashier" })
     }),
   createFloor: (name: string) => apiFetch<{ id: string }>("/floors", { method: "POST", body: JSON.stringify({ name }) }),
+  updateFloor: (id: string, payload: { name?: string; active?: boolean }) =>
+    apiFetch<{ id: string }>(`/floors/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
+  deleteFloor: (id: string) => apiFetch<{ id: string; deleted: boolean }>(`/floors/${id}`, { method: "DELETE" }),
   createTable: (floorId: string, name: string) =>
     apiFetch<{ id: string }>("/tables", { method: "POST", body: JSON.stringify({ floorId, name, active: true }) }),
   updateTable: (id: string, payload: { name?: string; active?: boolean; floorId?: string }) =>

@@ -100,7 +100,7 @@ export const updateProductionUnitSchema = z.object({
 
 export const createMenuItemSchema = z.object({
   name: z.string().trim().min(1).max(160),
-  pricePaise: z.number().int().min(0),
+  pricePaise: z.number().int().min(1),
   productionUnitId: z.string().min(1).nullable().optional(),
   active: z.boolean().default(true),
   customId: customIdSchema
@@ -108,7 +108,7 @@ export const createMenuItemSchema = z.object({
 
 export const updateMenuItemSchema = z.object({
   name: z.string().trim().min(1).max(160).optional(),
-  pricePaise: z.number().int().min(0).optional(),
+  pricePaise: z.number().int().min(1).optional(),
   productionUnitId: z.string().min(1).nullable().optional(),
   active: z.boolean().optional()
 });

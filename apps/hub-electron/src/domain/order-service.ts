@@ -212,7 +212,7 @@ export class OrderService {
       const openOrders = this.orm
         .select({ count: count() })
         .from(orders)
-        .where(inArray(orders.status, ["open", "billed"]))
+        .where(and(eq(orders.posDayId, openDay.id), inArray(orders.status, ["open", "billed"])))
         .get();
 
       if ((openOrders?.count ?? 0) > 0) {

@@ -7,6 +7,7 @@ import {
   ClipboardList,
   CloudDownload,
   LayoutDashboard,
+  Pencil,
   Plus,
   Printer,
   ReceiptText,
@@ -14,10 +15,11 @@ import {
   Save,
   Settings,
   Trash2,
-  Users
+  Users,
+  X
 } from "lucide-react";
 import { FormEvent, type ReactNode, useEffect, useState } from "react";
-import { hubApi, setAuthToken, getAuthToken, type Bootstrap, type MenuItem, type TableOrder } from "./hub-api.js";
+import { hubApi, setAuthToken, getAuthToken, type Bootstrap, type Floor, type MenuItem, type ProductionUnit, type Table, type TableOrder } from "./hub-api.js";
 import { useHubStore, type HubView } from "./store.js";
 import "./styles.css";
 
@@ -142,7 +144,16 @@ function SetupView({ bootstrap, setNotice }: { bootstrap: Bootstrap; setNotice: 
   const [dishName, setDishName] = useState("");
   const [dishPrice, setDishPrice] = useState("");
   const [dishUnit, setDishUnit] = useState("");
+  const [tableFloorId, setTableFloorId] = useState("");
   const firstFloorId = bootstrap.floors.find((floor) => floor.active)?.id ?? bootstrap.floors[0]?.id ?? "";
+  const activeFloors = bootstrap.floors.filter((floor) => floor.active);
+  const dishPricePaise = Math.round(Number(dishPrice || 0) * 100);
+
+  useEffect(() => {
+    if (!tableFloorId || !bootstrap.floors.some((floor) => floor.id === tableFloorId && floor.active)) {
+      setTableFloorId(firstFloorId);
+    }
+  }, [bootstrap.floors, firstFloorId, tableFloorId]);
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ["bootstrap"] });
   const openDay = useMutation({
@@ -162,7 +173,7 @@ function SetupView({ bootstrap, setNotice }: { bootstrap: Bootstrap; setNotice: 
     onError: (error) => setNotice({ tone: "bad", text: messageOf(error) })
   });
   const createTable = useMutation({
-    mutationFn: () => hubApi.createTable(firstFloorId, tableName),
+    mutationFn: () => hubApi.createTable(tableFloorId || firstFloorId, tableName),
     onSuccess: async () => {
       setTableName("");
       await invalidate();
@@ -181,7 +192,7 @@ function SetupView({ bootstrap, setNotice }: { bootstrap: Bootstrap; setNotice: 
     mutationFn: () =>
       hubApi.createDish({
         name: dishName,
-        pricePaise: Math.round(Number(dishPrice || 0) * 100),
+        pricePaise: dishPricePaise,
         productionUnitId: dishUnit || null,
         active: true
       }),
@@ -220,19 +231,45 @@ function SetupView({ bootstrap, setNotice }: { bootstrap: Bootstrap; setNotice: 
         </form>
         <form className="inline-form" onSubmit={(event) => { event.preventDefault(); createTable.mutate(); }}>
           <label>
+            Room
+            <select value={tableFloorId} onChange={(event) => setTableFloorId(event.target.value)}>
+              {activeFloors.map((floor) => (
+                <option key={floor.id} value={floor.id}>{floor.name}</option>
+              ))}
+            </select>
+          </label>
+          <label>
             Table name
             <input value={tableName} onChange={(event) => setTableName(event.target.value)} placeholder="T1" />
           </label>
           <button disabled={!firstFloorId || !tableName.trim() || createTable.isPending} type="submit">Add table</button>
         </form>
-        <RecordList
+        <EditableRecordList
+          setNotice={setNotice}
           rows={bootstrap.tables.map((table) => ({
             id: table.id,
             title: table.name,
             meta: `${table.floor_name} · ${table.active ? table.status : "disabled"}`,
             active: table.active,
             onToggle: () => hubApi.updateTable(table.id, { active: !table.active }).then(invalidate),
-            onDelete: () => hubApi.deleteTable(table.id).then(invalidate)
+            onDelete: () => hubApi.deleteTable(table.id).then(invalidate),
+            editForm: (close) => (
+              <TableEditForm table={table} floors={activeFloors} onSaved={async () => { close(); await invalidate(); }} setNotice={setNotice} />
+            )
+          }))}
+        />
+        <EditableRecordList
+          setNotice={setNotice}
+          rows={bootstrap.floors.map((floor) => ({
+            id: floor.id,
+            title: floor.name,
+            meta: floor.active ? "Room active" : "Room disabled",
+            active: floor.active,
+            onToggle: () => hubApi.updateFloor(floor.id, { active: !floor.active }).then(invalidate),
+            onDelete: () => hubApi.deleteFloor(floor.id).then(invalidate),
+            editForm: (close) => (
+              <FloorEditForm floor={floor} onSaved={async () => { close(); await invalidate(); }} setNotice={setNotice} />
+            )
           }))}
         />
       </SetupCard>
@@ -245,14 +282,18 @@ function SetupView({ bootstrap, setNotice }: { bootstrap: Bootstrap; setNotice: 
           </label>
           <button disabled={!unitName.trim() || createUnit.isPending} type="submit">Add</button>
         </form>
-        <RecordList
+        <EditableRecordList
+          setNotice={setNotice}
           rows={bootstrap.productionUnits.map((unit) => ({
             id: unit.id,
             title: unit.name,
             meta: unit.active ? "Active" : "Disabled",
             active: unit.active,
             onToggle: () => hubApi.updateUnit(unit.id, { active: !unit.active }).then(invalidate),
-            onDelete: () => hubApi.deleteUnit(unit.id).then(invalidate)
+            onDelete: () => hubApi.deleteUnit(unit.id).then(invalidate),
+            editForm: (close) => (
+              <UnitEditForm unit={unit} onSaved={async () => { close(); await invalidate(); }} setNotice={setNotice} />
+            )
           }))}
         />
       </SetupCard>
@@ -276,16 +317,20 @@ function SetupView({ bootstrap, setNotice }: { bootstrap: Bootstrap; setNotice: 
               ))}
             </select>
           </label>
-          <button disabled={!dishName.trim() || Number(dishPrice) < 0 || createDish.isPending} type="submit">Add dish</button>
+          <button disabled={!dishName.trim() || dishPricePaise <= 0 || createDish.isPending} type="submit">Add dish</button>
         </form>
-        <RecordList
+        <EditableRecordList
+          setNotice={setNotice}
           rows={bootstrap.menuItems.map((item) => ({
             id: item.id,
             title: item.name,
             meta: `${formatInr(item.price_paise)} · ${item.production_unit_name ?? "No kitchen assigned"} · ${item.active ? "active" : "disabled"}`,
             active: item.active,
             onToggle: () => hubApi.updateDish(item.id, { active: !item.active }).then(invalidate),
-            onDelete: () => hubApi.deleteDish(item.id).then(invalidate)
+            onDelete: () => hubApi.deleteDish(item.id).then(invalidate),
+            editForm: (close) => (
+              <DishEditForm item={item} units={bootstrap.productionUnits.filter((unit) => unit.active)} onSaved={async () => { close(); await invalidate(); }} setNotice={setNotice} />
+            )
           }))}
         />
       </SetupCard>
@@ -843,16 +888,30 @@ function SetupCard({ title, done, icon, children }: { title: string; done: boole
   );
 }
 
-function RecordList({
+function EditableRecordList({
+  setNotice,
   rows
 }: {
-  rows: Array<{ id: string; title: string; meta: string; active: boolean; onToggle: () => Promise<unknown>; onDelete: () => Promise<unknown> }>;
+  setNotice: NoticeSetter;
+  rows: Array<{
+    id: string;
+    title: string;
+    meta: string;
+    active: boolean;
+    onToggle: () => Promise<unknown>;
+    onDelete: () => Promise<unknown>;
+    editForm: (close: () => void) => ReactNode;
+  }>;
 }) {
   const [busyId, setBusyId] = useState("");
+  const [editingId, setEditingId] = useState("");
   async function run(id: string, action: () => Promise<unknown>) {
     setBusyId(id);
     try {
       await action();
+      setNotice({ tone: "good", text: "Saved." });
+    } catch (error) {
+      setNotice({ tone: "bad", text: messageOf(error) });
     } finally {
       setBusyId("");
     }
@@ -866,6 +925,10 @@ function RecordList({
             <span>{row.meta}</span>
           </div>
           <div className="row-actions">
+            <button type="button" disabled={busyId === row.id} onClick={() => setEditingId((current) => current === row.id ? "" : row.id)}>
+              {editingId === row.id ? <X size={15} /> : <Pencil size={15} />}
+              {editingId === row.id ? "Close" : "Edit"}
+            </button>
             <button type="button" disabled={busyId === row.id} onClick={() => void run(row.id, row.onToggle)}>
               {row.active ? "Disable" : "Enable"}
             </button>
@@ -873,10 +936,140 @@ function RecordList({
               <Trash2 size={16} />
             </button>
           </div>
+          {editingId === row.id ? row.editForm(() => setEditingId("")) : null}
         </article>
       ))}
       {!rows.length ? <Empty title="Nothing added yet" text="Saved records appear here immediately." /> : null}
     </div>
+  );
+}
+
+function FloorEditForm({ floor, onSaved, setNotice }: { floor: Floor; onSaved: () => Promise<void>; setNotice: NoticeSetter }) {
+  const [name, setName] = useState(floor.name);
+  const [saving, setSaving] = useState(false);
+  return (
+    <form className="row-edit-form" onSubmit={(event) => {
+      event.preventDefault();
+      setSaving(true);
+      hubApi.updateFloor(floor.id, { name })
+        .then(onSaved)
+        .then(() => setNotice({ tone: "good", text: "Room updated." }))
+        .catch((error) => setNotice({ tone: "bad", text: messageOf(error) }))
+        .finally(() => setSaving(false));
+    }}>
+      <label>
+        Room name
+        <input value={name} onChange={(event) => setName(event.target.value)} />
+      </label>
+      <button type="submit" disabled={!name.trim() || saving}>Save</button>
+    </form>
+  );
+}
+
+function TableEditForm({
+  table,
+  floors,
+  onSaved,
+  setNotice
+}: {
+  table: Table;
+  floors: Floor[];
+  onSaved: () => Promise<void>;
+  setNotice: NoticeSetter;
+}) {
+  const [name, setName] = useState(table.name);
+  const [floorId, setFloorId] = useState(table.floor_id);
+  const [saving, setSaving] = useState(false);
+  return (
+    <form className="row-edit-form" onSubmit={(event) => {
+      event.preventDefault();
+      setSaving(true);
+      hubApi.updateTable(table.id, { name, floorId })
+        .then(onSaved)
+        .then(() => setNotice({ tone: "good", text: "Table updated." }))
+        .catch((error) => setNotice({ tone: "bad", text: messageOf(error) }))
+        .finally(() => setSaving(false));
+    }}>
+      <label>
+        Table name
+        <input value={name} onChange={(event) => setName(event.target.value)} />
+      </label>
+      <label>
+        Room
+        <select value={floorId} onChange={(event) => setFloorId(event.target.value)}>
+          {floors.map((floor) => <option key={floor.id} value={floor.id}>{floor.name}</option>)}
+        </select>
+      </label>
+      <button type="submit" disabled={!name.trim() || !floorId || saving}>Save</button>
+    </form>
+  );
+}
+
+function UnitEditForm({ unit, onSaved, setNotice }: { unit: ProductionUnit; onSaved: () => Promise<void>; setNotice: NoticeSetter }) {
+  const [name, setName] = useState(unit.name);
+  const [saving, setSaving] = useState(false);
+  return (
+    <form className="row-edit-form" onSubmit={(event) => {
+      event.preventDefault();
+      setSaving(true);
+      hubApi.updateUnit(unit.id, { name })
+        .then(onSaved)
+        .then(() => setNotice({ tone: "good", text: "Kitchen updated." }))
+        .catch((error) => setNotice({ tone: "bad", text: messageOf(error) }))
+        .finally(() => setSaving(false));
+    }}>
+      <label>
+        Kitchen or counter name
+        <input value={name} onChange={(event) => setName(event.target.value)} />
+      </label>
+      <button type="submit" disabled={!name.trim() || saving}>Save</button>
+    </form>
+  );
+}
+
+function DishEditForm({
+  item,
+  units,
+  onSaved,
+  setNotice
+}: {
+  item: MenuItem;
+  units: ProductionUnit[];
+  onSaved: () => Promise<void>;
+  setNotice: NoticeSetter;
+}) {
+  const [name, setName] = useState(item.name);
+  const [price, setPrice] = useState(String(item.price_paise / 100));
+  const [productionUnitId, setProductionUnitId] = useState(item.production_unit_id ?? "");
+  const [saving, setSaving] = useState(false);
+  const pricePaise = Math.round(Number(price || 0) * 100);
+  return (
+    <form className="row-edit-form dish-edit-form" onSubmit={(event) => {
+      event.preventDefault();
+      setSaving(true);
+      hubApi.updateDish(item.id, { name, pricePaise, productionUnitId: productionUnitId || null })
+        .then(onSaved)
+        .then(() => setNotice({ tone: "good", text: "Dish updated." }))
+        .catch((error) => setNotice({ tone: "bad", text: messageOf(error) }))
+        .finally(() => setSaving(false));
+    }}>
+      <label>
+        Dish name
+        <input value={name} onChange={(event) => setName(event.target.value)} />
+      </label>
+      <label>
+        Price
+        <input value={price} onChange={(event) => setPrice(event.target.value)} inputMode="decimal" />
+      </label>
+      <label>
+        Kitchen
+        <select value={productionUnitId} onChange={(event) => setProductionUnitId(event.target.value)}>
+          <option value="">No kitchen assigned</option>
+          {units.map((unit) => <option key={unit.id} value={unit.id}>{unit.name}</option>)}
+        </select>
+      </label>
+      <button type="submit" disabled={!name.trim() || pricePaise <= 0 || saving}>Save</button>
+    </form>
   );
 }
 

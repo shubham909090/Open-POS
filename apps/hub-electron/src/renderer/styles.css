@@ -337,6 +337,31 @@ label {
   background: #fff;
 }
 
+.record-row {
+  align-items: start;
+}
+
+.row-edit-form {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) minmax(160px, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.dish-edit-form {
+  grid-template-columns: minmax(180px, 1fr) 120px minmax(160px, 220px) auto;
+}
+
+.row-actions button:not(.icon-button) {
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .line-row {
   grid-template-columns: minmax(0, 1fr) auto auto;
 }
@@ -718,6 +743,8 @@ label {
   .inline-form,
   .dish-form,
   .close-day-form,
+  .row-edit-form,
+  .dish-edit-form,
   .bill-metrics,
   .report-metrics,
   .adjust-grid,

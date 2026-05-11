@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { calculateLineTotal, calculateTax, formatInr } from "../money.js";
-import { createPairingCodeSchema, submitOrderSchema, updateReceiptPrinterSchema } from "../schemas.js";
+import { createMenuItemSchema, createPairingCodeSchema, submitOrderSchema, updateReceiptPrinterSchema } from "../schemas.js";
 
 describe("shared money helpers", () => {
   it("calculates line totals, GST, and INR formatting", () => {
@@ -27,5 +27,10 @@ describe("shared command schemas", () => {
       printerMode: "system"
     });
     expect(() => createPairingCodeSchema.parse({ deviceName: "Phone", role: "owner" })).toThrow();
+  });
+
+  it("requires a positive dish price", () => {
+    expect(() => createMenuItemSchema.parse({ name: "Free Tea", pricePaise: 0 })).toThrow();
+    expect(createMenuItemSchema.parse({ name: "Tea", pricePaise: 100 })).toMatchObject({ pricePaise: 100 });
   });
 });

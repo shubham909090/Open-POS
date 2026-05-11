@@ -210,6 +210,29 @@ describe("OrderService KOT lifecycle", () => {
     database.close();
   });
 
+  it("only blocks day close for open orders in the current POS day", () => {
+    const { database, orderService } = createTestHub();
+    database.db
+      .prepare(
+        `INSERT INTO pos_days (id, outlet_id, business_date, status, opening_cash_paise, opened_by, opened_at)
+         VALUES ('day-old', 'outlet-test', '2026-05-08', 'closed', 0, 'admin', '2026-05-08T00:00:00.000Z')`
+      )
+      .run();
+    database.db
+      .prepare(
+        `INSERT INTO orders (id, table_id, pos_day_id, order_type, status, pax, captain_id, created_at, updated_at)
+         VALUES ('order-old-open', 'table-t2', 'day-old', 'dine_in', 'open', 1, 'waiter-1', '2026-05-08T00:00:00.000Z', '2026-05-08T00:00:00.000Z')`
+      )
+      .run();
+
+    expect(orderService.closePosDay({ closingCashPaise: 100_000, closedBy: "cashier-1" }).report).toMatchObject({
+      openOrders: 0,
+      billCount: 0
+    });
+
+    database.close();
+  });
+
   it("manages catalog records and records sync events", () => {
     const { database, orderService } = createTestHub();
 
