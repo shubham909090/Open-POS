@@ -6,6 +6,9 @@
   "scripts": {
     "dev": "expo start",
     "android": "expo start --android",
+    "android:prebuild": "expo prebuild --platform android",
+    "android:apk": "eas build --platform android --profile preview",
+    "android:aab": "eas build --platform android --profile production",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
@@ -18,6 +21,7 @@
     "react-native": "^0.85.3"
   },
   "devDependencies": {
-    "@types/react": "^19.2.14"
+    "@types/react": "^19.2.14",
+    "eas-cli": "^18.11.0"
   }
 }

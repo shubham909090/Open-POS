@@ -28,6 +28,10 @@ The hub API and cashier UI default to `http://localhost:3737`. Use the hub machi
 
 Cloud auth envs are intentionally not committed. See [docs/workos-authkit-setup.md](docs/workos-authkit-setup.md) for WorkOS Google-only setup and Convex sync envs.
 
+## Restaurant Handoff
+
+For sending installable apps to a restaurant PC and Android waiter tablets, see [docs/packaging/restaurant-handoff.md](docs/packaging/restaurant-handoff.md).
+
 ## Reference Intake
 
 Reference repos are kept outside this product in `/Users/shubhamtemak/Documents/ExampleRepos`. See [docs/reference-intake.md](docs/reference-intake.md) for the patterns adopted from URY, MySagra, Olgax, and node-escpos.

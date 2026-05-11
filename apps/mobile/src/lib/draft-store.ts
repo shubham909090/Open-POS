@@ -22,7 +22,7 @@ export async function setHubUrl(url: string): Promise<void> {
 }
 
 export async function getDeviceToken(): Promise<string> {
-  return (await AsyncStorage.getItem(DEVICE_TOKEN_KEY)) ?? "dev-admin-token";
+  return (await AsyncStorage.getItem(DEVICE_TOKEN_KEY)) ?? "";
 }
 
 export async function setDeviceToken(token: string): Promise<void> {

@@ -1,3 +1,7 @@
+import { existsSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join, resolve } from "node:path";
+
 export interface HubConfig {
   host: string;
   port: number;
@@ -11,17 +15,59 @@ export interface HubConfig {
   publicUrl?: string;
 }
 
+type EnvMap = Record<string, string | undefined>;
+
+function parseEnvFile(path: string): EnvMap {
+  const result: EnvMap = {};
+  const content = readFileSync(path, "utf8");
+  for (const rawLine of content.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#")) continue;
+    const match = line.match(/^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/);
+    if (!match) continue;
+    const key = match[1];
+    const rawValue = match[2];
+    if (!key || rawValue === undefined) continue;
+    const value = rawValue.trim().replace(/^['"]|['"]$/g, "");
+    result[key] = value;
+  }
+  return result;
+}
+
+function defaultConfigPaths(env: EnvMap): string[] {
+  return [
+    env.HUB_CONFIG_FILE,
+    env.GAURAV_POS_CONFIG,
+    env.APPDATA ? join(env.APPDATA, "Gaurav POS Hub", "hub.env") : undefined,
+    env.PROGRAMDATA ? join(env.PROGRAMDATA, "Gaurav POS Hub", "hub.env") : undefined,
+    join(homedir(), "AppData", "Roaming", "Gaurav POS Hub", "hub.env"),
+    resolve(process.cwd(), "hub.env"),
+    resolve(process.cwd(), ".env.local")
+  ].filter((path): path is string => Boolean(path));
+}
+
+export function loadHubEnvFiles(env: EnvMap = process.env): EnvMap {
+  const merged: EnvMap = {};
+  for (const path of defaultConfigPaths(env)) {
+    if (!existsSync(path)) continue;
+    Object.assign(merged, parseEnvFile(path));
+  }
+  return merged;
+}
+
 export function loadHubConfig(env = process.env): HubConfig {
+  const fileEnv = loadHubEnvFiles(env);
+  const source = { ...fileEnv, ...env };
   return {
-    host: env.HUB_HOST ?? "0.0.0.0",
-    port: Number(env.HUB_PORT ?? 3737),
-    databasePath: env.HUB_DATABASE_PATH ?? "./data/hub.sqlite",
-    backupDir: env.HUB_BACKUP_DIR ?? "./data/backups",
-    printerDryRun: env.HUB_PRINTER_DRY_RUN !== "false",
-    convexHttpUrl: env.CONVEX_HTTP_URL ?? env.CONVEX_URL,
-    posSyncSecret: env.POS_SYNC_SECRET,
-    installationId: env.POS_INSTALLATION_ID,
-    adminToken: env.HUB_ADMIN_TOKEN ?? (env.NODE_ENV === "production" ? undefined : "dev-admin-token"),
-    publicUrl: env.HUB_PUBLIC_URL
+    host: source.HUB_HOST ?? "0.0.0.0",
+    port: Number(source.HUB_PORT ?? 3737),
+    databasePath: source.HUB_DATABASE_PATH ?? "./data/hub.sqlite",
+    backupDir: source.HUB_BACKUP_DIR ?? "./data/backups",
+    printerDryRun: source.HUB_PRINTER_DRY_RUN !== "false",
+    convexHttpUrl: source.CONVEX_HTTP_URL ?? source.CONVEX_URL,
+    posSyncSecret: source.POS_SYNC_SECRET,
+    installationId: source.POS_INSTALLATION_ID,
+    adminToken: source.HUB_ADMIN_TOKEN ?? (source.NODE_ENV === "production" ? undefined : "dev-admin-token"),
+    publicUrl: source.HUB_PUBLIC_URL
   };
 }

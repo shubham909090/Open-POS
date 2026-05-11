@@ -7,6 +7,7 @@ apps/*/data/
 
 dist/
 build/
+apps/hub-electron/release/
 .turbo/
 .next/
 coverage/

@@ -26,7 +26,7 @@ export default function App() {
   const tableColumns = width >= 900 ? 5 : width >= 640 ? 4 : 3;
 
   const [hubUrl, setHubUrlState] = useState("http://192.168.1.10:3737");
-  const [deviceToken, setDeviceTokenState] = useState("dev-admin-token");
+  const [deviceToken, setDeviceTokenState] = useState("");
   const [showToken, setShowToken] = useState(false);
   const [pairingCode, setPairingCode] = useState("");
   const [pairingPayload, setPairingPayload] = useState("");
