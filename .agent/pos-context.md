@@ -59,10 +59,10 @@ The hub currently implements:
 - Hub UI is split into Setup, Take Orders, Kitchen, Billing, Reports & Backups, and Advanced screens.
 - Floor/table setup APIs.
 - Kitchen/counter and menu setup APIs. Internally these are still production units for printer routing.
-- Modifier group, modifier option, menu-item modifier assignment, and note-template setup APIs.
+- Simple dish setup APIs: dish name, price, optional kitchen/counter, active status.
 - Guided setup checklist for unlocking the hub, opening today's POS day, choosing the cash counter printer, adding kitchens/counters, adding tables, adding dishes, pairing devices, and starting service.
 - Beginner setup forms hide internal IDs and LAN fallback fields behind Advanced sections. Custom IDs remain available only for support/import use.
-- Advanced forms for modifier groups/options, attaching modifiers to dishes, reusable kitchen note templates, and cloud update pull.
+- Advanced forms are for support/cloud update pull only; extra dish-customization setup is intentionally removed until the restaurant asks for it again.
 - Pairing-code creation returns a six-digit fallback code plus a QR data URL/payload for Android scanner pairing.
 - Receipt/cashier printer setting and bill print routing.
 - System printer discovery endpoint lists printers installed on the hub PC; selected OS printer names are stored for receipt and production-unit routing.
@@ -75,13 +75,12 @@ The hub currently implements:
 - Windows NSIS packaging scaffold via Electron Builder.
 - Table list/bootstrap and active table order lookup.
 - Order submit to a table.
-- New, modified, partial-cancel, cancelled, and reprint KOT foundations.
+- New, modified, cancelled, and reprint KOT foundations. Modified KOTs are created when new items are added to an occupied table. Unassigned dishes do not create KOTs.
 - KDS view by production unit with `queued`, `preparing`, `ready`, and `served` status transitions.
 - Production-unit routing to kitchen/bar printers.
 - Print-job queue with list, retry, and retryable `pending`, `printing`, `printed`, `failed` states.
-- Bill generation and cash settlement.
-- Manual bill settlement with discount, tip, full cash/UPI/card/online payments, split payments, and remaining-balance tracking. No payment gateway integration is involved.
-- Menu modifiers affect order item price snapshots, KOT notes, and bill subtotal math. Reusable note templates can be applied from hub and Android order entry.
+- Bill generation and settlement from the selected table.
+- Manual bill settlement with amount/percent discount, tip, full cash/UPI/card/online buttons, split/custom payment rows, remaining-balance tracking, receipt print on paid settlement, and table release. No payment gateway integration is involved.
 - Bill reprint, KOT reprint, and POS day close from the hub UI.
 - Append-only `event_log` and `sync_outbox` for Convex sync.
 - Convex HTTP sync bridge route at `/sync/push`; background push attempts every 60 seconds when `CONVEX_HTTP_URL` and `POS_SYNC_SECRET` are set.
@@ -98,8 +97,7 @@ The Android app currently implements:
 - QR scanner pairing through `expo-camera`, plus manual QR payload paste fallback.
 - Hub health polling.
 - Table list and menu list from hub bootstrap.
-- Ticket-line kitchen notes.
-- Modifier chips and note-template chips from hub bootstrap.
+- Simple ticket-line dish quantities.
 - Final KOT review prompt before sending an online order.
 - Offline draft order storage in AsyncStorage.
 - Hub-confirmed order/KOT submission when online.
@@ -111,9 +109,11 @@ The cloud admin currently implements:
 - Google-only sign-in route expectation.
 - Authenticated cloud admin dashboard split into Setup, Staff, Sync Health, and Advanced sections.
 - Convex schema for restaurants, memberships, member invitations, devices, installations, hub commands, synced events, and daily reports.
+- Materialized closed-day reporting tables for day summaries, bill summaries, and item summaries.
 - Beginner cloud setup wizard for creating a restaurant, creating a hub connection, starting the hub app, confirming sync, and inviting staff.
 - Hub connection creation generates the internal hub ID and secret automatically and gives the user a copyable env block. Manual IDs/secrets are hidden in Advanced support details.
 - Authenticated cloud UI for creating restaurants, connecting hub PCs, inviting/removing staff, accepting staff invitations, listing sync health, and queueing guided cloud-to-hub commands from Advanced.
+- Authenticated cloud Reports tab for closed-day sales, payment split, cash reconciliation, bill rows, and item totals. Reporting-role users can read reports without setup privileges.
 - Hub connection registration is owner-only and an existing internal hub ID cannot be reassigned to a different restaurant.
 - Convex HTTP event ingestion boundary protected by registered installation id/secret.
 
@@ -121,11 +121,13 @@ The cloud admin currently implements:
 
 Windows hub/cashier/admin:
 
+- Hub UI is now Vite + React + TypeScript served by Fastify/Electron. TanStack Query owns server state; Zustand owns only UI state like selected table, active view, and per-table new-item drafts.
 - Setup tab is a guided checklist: unlock hub, open today's POS day, choose cash counter printer, add kitchens/counters, add rooms/tables, add dishes, pair devices, then start service.
 - Reports & Backups handles close reconciliation and local backups.
-- Advanced handles modifier groups/options, assigning modifiers to dishes, reusable note templates, and cloud update pull.
+- Closing a day writes a finalized local report snapshot and queues `daily_report.finalized` for Convex. Cloud reports appear after the hub syncs.
+- Advanced handles support-only tools and cloud update pull.
 - Business day setup includes close reconciliation with opening cash, cash sales, expected drawer cash, typed cash variance, UPI/card/online totals, gross/final sales, discounts, tips, paid bills, unpaid bills, and open-order blockers.
-- Service tab handles table status, waiter-style order entry, menu search, ticket total, and KOT submission.
+- Service tab handles table status, waiter-style order entry, stable menu search, new draft items, already-sent items, table totals, KOT submission, bill generation, discount/tip/payment entry, bill punch, and receipt reprint.
 - Kitchen tab shows KOT/KDS work and print queue actions.
 - Billing tab shows selected order context, bill generation/reprint, discount, tip, split payments, balance, and settlement.
 
@@ -133,7 +135,7 @@ Android waiter device:
 
 - First screen area handles hub URL, device token, QR/manual pairing, and live connection status.
 - Table grid selects the active table.
-- Order area handles captain/pax, menu search, item add, modifier chips, note templates, kitchen notes, quantity edits, ticket total, and final KOT review before sending.
+- Order area handles captain/pax, menu search, dish quantity edits, ticket total, and final KOT review before sending.
 - Offline mode saves a local draft; final KOT needs hub confirmation.
 
 Cloud admin:
@@ -190,6 +192,7 @@ Do not blindly copy AGPL/MRPL code into this product. Use those repos as behavio
 - Drizzle is the SQLite ORM/schema/migration layer for the hub. Use `apps/hub-electron/src/db/drizzle-schema.ts` before adding/changing local tables, then generate migrations into `apps/hub-electron/drizzle`.
 - Convex is not in the hot path for order/KOT/billing.
 - Every finalized local mutation must write domain state, `event_log`, and `sync_outbox` in one SQLite transaction.
+- The hub UI must not optimistically change domain state after service actions. Wait for the hub API result, then refetch the relevant Query keys.
 - Print jobs are durable and retryable; printing failure must not erase order/KOT state.
 - Android devices may cache menu/table data and save drafts when disconnected from the hub, but final order/KOT/bill actions require hub confirmation.
 - Printer routing is via internal production units, presented to users as kitchens/counters: kitchen, bar, tandoor, etc.
@@ -215,7 +218,7 @@ This gives one unified account system while still letting restaurant operations 
 - Receipt/cashier printer destination exists as a hub setting; it still needs hardware validation with the restaurant's actual printer.
 - Real PC-connected printer selection exists, but print output still needs validation on the actual Windows printer hardware.
 - Exact Android release path: Expo shell exists; decide Expo dev client vs bare/native build before hardware testing.
-- Electron UI framework: current hub UI is static HTML/JS served by Fastify inside Electron; migrate to Vite + React only if the UI complexity justifies it.
+- Electron UI framework: hub UI is Vite + React + TypeScript served by Fastify inside Electron.
 - Cloud admin framework: Next.js App Router + Convex + WorkOS AuthKit scaffold exists.
 - Hardware printer protocol needs restaurant hardware testing before replacing the current minimal TCP ESC/POS adapter.
 - Tax/service charge rules need real restaurant requirements before finalizing bill math.

@@ -108,9 +108,9 @@
 
 ## 2026-05-10
 
-- Task: Finished the next urgent non-hardware gaps around QR/barcode pairing, cloud setup, mobile order notes, and edge tests.
+- Task: Finished the next urgent non-hardware gaps around QR/barcode pairing, cloud setup, mobile order flow, and edge tests.
 - Hub additions: pairing-code API now returns a Gaurav POS QR payload, payload text, and QR PNG data URL; hub Setup shows the scan-ready QR plus numeric fallback. `HUB_PUBLIC_URL` can force QR payloads to use the Windows PC LAN URL instead of `localhost`.
-- Mobile additions: `expo-camera` QR scanner, manual QR payload paste fallback, hub URL auto-fill from pairing QR, item-level kitchen notes, and a final KOT review prompt before online submission.
+- Mobile additions: `expo-camera` QR scanner, manual QR payload paste fallback, hub URL auto-fill from pairing QR, and a final KOT review prompt before online submission.
 - Cloud additions: authenticated Convex admin functions and Next.js UI for restaurant creation, installation identity registration, installation/event views, and cloud-to-hub command queueing. Added `memberships` to the Convex schema and locked admin cloud mutations to WorkOS/Convex authenticated restaurant admins.
 - Test additions: API pairing QR assertions, print retry exhaustion test, and unpaid-bill POS day close guard test.
 - Verification: hub tests passed with 28 tests; mobile typecheck, cloud-admin typecheck, and Convex TypeScript check passed. `pnpm exec convex codegen` still requires `WORKOS_CLIENT_ID` in the Convex deployment, so `convex/_generated/api.d.ts` was manually updated for the new `admin` module until env setup is complete.
@@ -119,7 +119,7 @@
 
 - Task: Started the production UI cleanup device by device instead of leaving all controls crammed together.
 - Hub UI: improved the Windows hub surface with operational stats, better service/table/ticket layout, clearer billing context, menu search, draft totals, and toast feedback.
-- Android UI: reshaped the waiter app into a device-friendly flow: hub/pairing controls, table grid, order panel, menu search, ticket total, notes, and a clear Send KOT/Save Draft action.
+- Android UI: reshaped the waiter app into a device-friendly flow: hub/pairing controls, table grid, order panel, menu search, ticket total, and a clear Send KOT/Save Draft action.
 - Cloud admin UI: rebuilt the dashboard into Setup, Menu & Devices, and Sync Health sections with step-based restaurant/hub setup, guided command fields, installation health, event timeline, and command preview.
 - Verification: `pnpm test`, `pnpm typecheck`, `pnpm lint`, `pnpm exec tsc -p convex/tsconfig.json`, `pnpm --filter @gaurav-pos/hub-electron build`, and `git diff --check` passed. No hub server remains running on port 3737.
 
@@ -132,11 +132,7 @@
 
 ## 2026-05-10
 
-- Task: Implemented modifier and item-note catalog setup for real restaurant menu customization.
-- Hub additions: Drizzle tables/migration for modifier groups, modifier options, menu-item modifier assignments, note templates, and modifier snapshots on order/KOT items; setup UI to create groups/options, attach groups to dishes, and create note templates; service UI to apply modifier chips and note-template chips.
-- Domain behavior: modifiers are validated against assigned menu items, affect item unit price and bill subtotal, and are rendered into KOT kitchen notes. Seed data now includes a Spice group and common notes like Jain, No Onion, and Less Oil.
-- Android additions: waiter ticket lines can apply hub-provided note templates and assigned modifier chips; ticket total includes modifier price deltas.
-- Verification: full tests/typechecks/lint/Convex TS, hub build, `node --check` for hub UI JS, and fresh Drizzle startup smoke passed.
+- Superseded: An earlier dish-customization catalog experiment was removed on 2026-05-11 when the product was reset to simple dishes and table billing.
 
 ## 2026-05-11
 
@@ -150,7 +146,7 @@
 
 - Task: Reworked beginner onboarding and removed raw technical wording from the main cloud/hub flows.
 - Cloud UI: Owner Portal setup is now Create Restaurant -> Connect the hub PC -> Start the hub app -> Confirm sync -> Invite staff. Hub connection generation creates the internal hub ID/secret automatically and shows a copyable env block; manual connection details and raw support commands live in Advanced.
-- Hub UI: setup is now a guided checklist for unlocking the hub, opening today's POS day, choosing the cash counter printer, adding kitchens/counters, adding tables, adding dishes, pairing devices, and starting service. Reports & Backups and Advanced now hold backup/reconciliation, modifiers, note templates, and cloud update tools instead of cramming everything into Setup.
+- Hub UI: setup is now a guided checklist for unlocking the hub, opening today's POS day, choosing the cash counter printer, adding kitchens/counters, adding tables, adding dishes, pairing devices, and starting service. Reports & Backups and Advanced now hold backup/reconciliation and cloud update tools instead of cramming everything into Setup.
 - Domain/API behavior: shared create schemas accept optional support-only `customId`; hub catalog creation generates IDs by default, retries generated collisions, and returns a friendly duplicate custom-ID error.
 - Verification: `pnpm exec convex codegen`, `node --check apps/hub-electron/src/public/app.js`, hub tests, full workspace typecheck, and lint passed.
 
@@ -170,7 +166,44 @@
 
 ## 2026-05-11
 
+- Task: Reset the hub product to the restaurant basics: simple dish setup, visible CRUD lists, table-based ordering, and bill settlement from the selected table.
+- Removed: the previous dish-customization catalog, its price snapshots, KOT text, UI, Android UI, seed data, and tests.
+- Hub behavior: dishes now have only name, price, optional kitchen/counter, and active status. Dishes without a kitchen can be sold and billed, but do not create KOTs. Sending to kitchen clears only the new draft; already-sent table items stay visible. Bill settlement supports amount/percent discount, tip, full cash/UPI/card/online buttons, split/custom payment rows, paid bill print, and table release.
+- Setup UX: kitchens/counters, rooms/tables, dishes, and paired devices now show visible lists after saving, with inline edit/disable/remove controls where safe.
+- Verification: `pnpm typecheck`, `pnpm test`, `pnpm lint`, `pnpm exec tsc -p convex/tsconfig.json`, `pnpm build`, hub UI JS syntax check, `git diff --check`, and a fresh SQLite smoke path for no-kitchen dish -> no KOT -> bill -> paid settlement -> table free all passed.
+
+## 2026-05-11
+
+- Task: Polished the Android waiter app to match the simplified POS flow.
+- Mobile UX: app is now organized into clear Setup, Tables, Menu, and Ticket sections; setup is hidden once connected; hub password has Show/Hide; offline/draft/open-day states explain what is happening; table picker, menu search, and ticket views have empty states.
+- Mobile behavior: already-sent table items are read-only context and are no longer loaded into the new draft, preventing accidental re-send. New items clear after Send To Kitchen while the table check remains visible.
+
+## 2026-05-11
+
+- Task: Fixed broken hub setup removal behavior.
+- Hub runtime: removed automatic demo seeding from real hub startup, so a fresh local DB starts with no fake Main room, T1-T4 tables, kitchens, or placeholder dishes.
+- Hub setup CRUD: unused dishes now really delete; used dishes disable to preserve history. Rooms, tables, kitchens/counters, and dishes now all show Enable/Disable controls when they are disabled.
+- UX behavior: remove actions now show whether the row was removed or disabled because it already had history.
+
+## 2026-05-11
+
 - Task: Audited env placement between Convex, cloud web, and local hub.
 - Result: Convex dev deployment now only has `WORKOS_CLIENT_ID` and `WORKOS_API_KEY`, which are the WorkOS/AuthKit values Convex needs. Removed misplaced `WORKOS_COOKIE_PASSWORD` from Convex; it belongs to the Next.js/cloud-web environment.
 - Local env audit: root `.env.local` has no duplicate keys and includes the needed local web and local hub values. `POS_INSTALLATION_ID` and `POS_SYNC_SECRET` are hub-local envs whose matching values are stored in Convex installation records, not Convex deployment env vars.
 - Docs updated: `docs/workos-authkit-setup.md`, `docs/auth-architecture.md`, and `docs/cloud-sync-installations.md` now describe the correct placement.
+
+## 2026-05-11
+
+- Task: Repaired the hub setup journey after hands-on testing exposed unclear blocking states.
+- Hub behavior: bootstrap now exposes whether printer dry-run mode is enabled. In dry-run development, setup can continue without connected printers. In production mode, the cash-counter printer/IP remains a required step.
+- Hub UX: Ready For Service now lists every missing required step with plain instructions instead of a generic blocked message. Protected modes show the first exact missing requirement in the toast. Successful setup actions advance to the next required step.
+- Product rule: pairing waiter/kitchen devices is useful but optional for starting service from the hub PC, so it no longer blocks Take Orders.
+- Verification: hub UI JS syntax check, hub tests, and hub typecheck passed.
+
+## 2026-05-11
+
+- Task: Rebuilt hub state/UI around server-confirmed state and added real cloud daily reports.
+- Hub renderer: added a Vite + React + TypeScript frontend served by the existing Fastify/Electron hub. TanStack Query owns hub API/server state; Zustand owns only UI state like selected table, active view, and per-table new-item drafts. Order/KOT/bill mutations are pessimistic: buttons lock during requests, then refetch from the hub before showing the final state.
+- Hub daily close: close now freezes a `daily_report.finalized` snapshot with cash reconciliation, bill totals, payment split, bill summaries, and item summaries; stores it locally in SQLite; queues it through `event_log`/`sync_outbox`; and tries cloud sync after close without blocking offline close.
+- Cloud reporting: Convex now materializes finalized report events into `dailyReports`, `dailyReportBills`, and `dailyReportItems`; read queries allow owner/admin/reporting users to view daily reports and details. The Owner Portal now has a real Reports tab with sales, payments, cash variance, bill rows, and item rows.
+- Verification: `pnpm typecheck`, `pnpm test`, `pnpm --filter @gaurav-pos/hub-electron build`, `pnpm --filter @gaurav-pos/cloud-admin exec dotenv -e ../../.env.local -- next build`, and a temp-DB hub smoke path (setup -> order -> bill -> close -> local report) passed.

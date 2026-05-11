@@ -1,6 +1,6 @@
 # POS Next Steps
 
-Last updated: 2026-05-10
+Last updated: 2026-05-11
 
 ## Immediate Priority
 
@@ -24,11 +24,13 @@ Harden the product on real restaurant hardware. The local-first pass exists acro
 - Done: richer close reconciliation shows opening cash, cash sales, expected drawer, typed variance, UPI/card/online totals, bill totals, discounts, tips, and close blockers.
 - Done: manual split-payment UI exists for cash, UPI, card, and online/external payments.
 - Done: discount and tip inputs exist on the bill settlement panel.
-- Done: modifier and item-note catalog setup exists for menu customization.
+- Done: extra dish-customization complexity has been removed from the active product. A dish is now just name, price, optional kitchen/counter, and active status.
+- Done: hub frontend is now React + TypeScript. TanStack Query owns server state and Zustand owns local UI-only state, so Send to Kitchen and Punch Bill wait for hub confirmation and refetch instead of faking optimistic state.
+- Done: close day stores a finalized local daily report snapshot and queues it for cloud sync.
 - Done: backup list/create/schedule-restore UI exists.
 - Done: production UI pass added operational stats, menu search, draft total, billing context, and toast feedback.
 - Next:
-  - Tune modifier groups/options after the real menu is entered.
+  - Hardware-test the simplified setup/order/billing flow on the actual counter machine and phones.
 
 ## Phase 2: Hub API Hardening
 
@@ -57,6 +59,8 @@ Harden the product on real restaurant hardware. The local-first pass exists acro
 - Run `pnpm exec convex dev` interactively to complete Convex-managed WorkOS provisioning.
 - Finish WorkOS AuthKit dashboard setup with Google as the only enabled provider.
 - Done: modeled restaurants, memberships, member invitations, devices, synced events, and report summaries.
+- Done: finalized day reports are materialized into Convex `dailyReports`, `dailyReportBills`, and `dailyReportItems`.
+- Done: cloud Reports tab shows closed-day sales, payment split, cash reconciliation, bills, and item totals for owner/admin/reporting users.
 - Done: event ingestion has an HTTP action/mutation pair protected by `POS_SYNC_SECRET`.
 - Done: installation identity maps hub uploads to restaurants without trusting client-provided restaurant IDs.
 - Done: cloud event ingestion requires a registered installation id/secret and stores a server-resolved restaurant id.
@@ -74,13 +78,11 @@ Harden the product on real restaurant hardware. The local-first pass exists acro
 - Done: local draft storage exists through AsyncStorage.
 - Done: waiter table/menu/order submit flow exists.
 - Done: disconnected state saves draft instead of finalizing.
-- Done: item notes exist on Android ticket lines.
-- Done: Android can apply note templates and menu modifiers from hub bootstrap.
+- Done: Android waiter ordering uses simple dish quantity lines only.
 - Done: Android shows a KOT review confirmation before final submission.
 - Done: device-friendly UI pass added cleaner pairing controls, table grid, menu search, ticket total, and clearer final action.
 - Next:
-  - Tune modifier layout after testing on actual Android screen sizes.
-  - Add cashier mode only after local auth/roles exist.
+  - Add cashier mode only after the hub cashier flow is stable on real hardware.
 - Build optional cashier flow only after hub cashier UI stabilizes.
 
 ## Phase 5: Production Readiness
@@ -88,6 +90,9 @@ Harden the product on real restaurant hardware. The local-first pass exists acro
 - Hardware-test with real LAN ESC/POS printers.
 - Hardware-test with real PC-installed Windows printers.
 - Done: beginner hub setup flow is split into a guided checklist with internal IDs/LAN fallbacks hidden under Advanced.
+- Done: hub setup now explains the exact missing required step before blocking Take Orders/Kitchen/Billing.
+- Done: dry-run development printing no longer blocks setup when no physical printers are connected; production still requires a saved cash-counter printer or LAN/IP fallback.
+- Done: pairing waiter/kitchen phones is recommended but no longer blocks the cashier PC from starting service.
 - Done: cloud owner setup flow generates hub connection IDs/secrets automatically and shows copyable env text instead of asking owners to invent IDs.
 - Add backup/restore:
   - Done: manual hot backup.

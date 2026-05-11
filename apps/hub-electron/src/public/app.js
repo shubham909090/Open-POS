@@ -10,7 +10,9 @@ const state = {
   menuSearch: "",
   receiptPrinter: null,
   activeSetupStep: null,
-  manualSetupStep: false
+  manualSetupStep: false,
+  printerSkipped: localStorage.getItem("printerSetupSkipped") === "1",
+  editing: {}
 };
 
 const $ = (id) => document.getElementById(id);
@@ -21,13 +23,14 @@ const escapeHtml = (value) =>
 
 async function api(path, options = {}) {
   const token = $("deviceToken")?.value || localStorage.getItem("deviceToken") || "dev-admin-token";
+  const headers = {
+    "x-device-token": token,
+    ...(options.headers ?? {})
+  };
+  if (options.body) headers["content-type"] = "application/json";
   const response = await fetch(path, {
     ...options,
-    headers: {
-      "content-type": "application/json",
-      "x-device-token": token,
-      ...(options.headers ?? {})
-    }
+    headers
   });
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
@@ -106,7 +109,7 @@ function showToast(message, type = "ok") {
 async function runAction(action, successMessage) {
   try {
     const result = await action();
-    if (successMessage) showToast(successMessage);
+    if (successMessage) showToast(typeof successMessage === "function" ? successMessage(result) : successMessage);
     return result;
   } catch (error) {
     showToast(error.message ?? "Action failed", "error");
@@ -124,36 +127,104 @@ function renderOperationalStats() {
   $("metricSync").textContent = String(pending);
 }
 
+function isDryRunPrinting() {
+  return Boolean(state.bootstrap?.setup?.printerDryRun);
+}
+
 function setupSteps() {
   const hasToken = Boolean(($("deviceToken")?.value || localStorage.getItem("deviceToken") || "").trim());
   const hasDay = Boolean(state.bootstrap?.openDay);
   const hasPrinter = Boolean(state.receiptPrinter?.printerName || state.receiptPrinter?.printerHost);
-  const hasKitchens = (state.bootstrap?.productionUnits ?? []).length > 0;
-  const hasTables = (state.bootstrap?.tables ?? []).length > 0;
-  const hasMenu = (state.bootstrap?.menuItems ?? []).length > 0;
+  const printerCanBeSkipped = isDryRunPrinting();
+  const printerReady = hasPrinter || printerCanBeSkipped;
+  const hasKitchens = (state.bootstrap?.productionUnits ?? []).some((unit) => unit.active);
+  const hasTables = (state.bootstrap?.tables ?? []).some((table) => table.active);
+  const hasMenu = (state.bootstrap?.menuItems ?? []).some((item) => item.active);
   const pairedDevices = (state.devices ?? []).filter((device) => device.id !== "device-local-admin" && device.status !== "revoked");
   const hasDevices = pairedDevices.length > 0;
-  const coreReady = hasToken && hasDay && hasPrinter && hasKitchens && hasTables && hasMenu && hasDevices;
+  const coreReady = hasToken && hasDay && printerReady && hasTables && hasMenu;
   return [
-    { key: "unlock", label: "Unlock Hub", done: hasToken, hint: hasToken ? "Hub unlocked" : "Enter the hub password" },
-    { key: "day", label: "Open Today's POS Day", done: hasDay, hint: hasDay ? "Day is open" : "Open the day before orders" },
+    {
+      key: "unlock",
+      label: "Unlock Hub",
+      done: hasToken,
+      required: true,
+      hint: hasToken ? "Hub unlocked" : "Enter the hub password",
+      missing: "Unlock the hub with the password from the hub PC env file."
+    },
+    {
+      key: "day",
+      label: "Open Today's POS Day",
+      done: hasDay,
+      required: true,
+      hint: hasDay ? "Day is open" : "Open the day before orders",
+      missing: "Open today's POS day before orders and bills."
+    },
     {
       key: "printer",
       label: "Choose Cash Counter Printer",
-      done: hasPrinter,
-      hint: hasPrinter ? "Bill printer saved" : "Pick the bill printer"
+      done: printerReady,
+      required: true,
+      hint: hasPrinter ? "Bill printer saved" : printerCanBeSkipped ? "Dry-run printing is on" : "Pick the bill printer",
+      missing: "Choose the cash counter printer, or enter the printer IP in Advanced."
     },
     {
       key: "kitchens",
       label: "Add Kitchens / Bar Counters",
       done: hasKitchens,
-      hint: hasKitchens ? `${state.bootstrap.productionUnits.length} ready` : "Add at least one kitchen or counter"
+      required: false,
+      hint: hasKitchens ? `${state.bootstrap.productionUnits.length} ready` : "Optional: add kitchen routing later",
+      missing: "Add a kitchen or counter when you want KOT printing."
     },
-    { key: "tables", label: "Add Tables", done: hasTables, hint: hasTables ? `${state.bootstrap.tables.length} tables` : "Add your first table" },
-    { key: "menu", label: "Add Menu Items", done: hasMenu, hint: hasMenu ? `${state.bootstrap.menuItems.length} dishes` : "Add dishes and routing" },
-    { key: "devices", label: "Pair Devices", done: hasDevices, hint: hasDevices ? `${pairedDevices.length} paired` : "Pair waiter or kitchen devices" },
-    { key: "ready", label: "Ready For Service", done: coreReady, hint: coreReady ? "Service can start" : "Finish the required setup" }
+    {
+      key: "tables",
+      label: "Add Tables",
+      done: hasTables,
+      required: true,
+      hint: hasTables ? `${state.bootstrap.tables.length} tables` : "Add your first table",
+      missing: "Add at least one table before taking orders."
+    },
+    {
+      key: "menu",
+      label: "Add Menu Items",
+      done: hasMenu,
+      required: true,
+      hint: hasMenu ? `${state.bootstrap.menuItems.length} dishes` : "Add dishes and routing",
+      missing: "Add at least one dish and choose its kitchen or counter."
+    },
+    {
+      key: "devices",
+      label: "Pair Devices",
+      done: hasDevices,
+      required: false,
+      hint: hasDevices ? `${pairedDevices.length} paired` : "Optional: pair phones when ready",
+      missing: "Pair waiter or kitchen devices when you want phones or kitchen screens."
+    },
+    {
+      key: "ready",
+      label: "Ready For Service",
+      done: coreReady,
+      required: true,
+      hint: coreReady ? "Service can start" : "Finish the required setup"
+    }
   ];
+}
+
+function missingRequiredSteps() {
+  return setupSteps().filter((step) => step.key !== "ready" && step.required !== false && !step.done);
+}
+
+function focusNextSetupStep() {
+  const missing = missingRequiredSteps();
+  state.activeSetupStep = missing[0]?.key ?? "ready";
+  state.manualSetupStep = false;
+  renderSetupProgress();
+}
+
+function keepSetupStep(stepKey) {
+  state.activeSetupStep = stepKey;
+  state.manualSetupStep = true;
+  renderSetupProgress();
 }
 
 function setActiveSetupStep(stepKey) {
@@ -164,13 +235,12 @@ function setActiveSetupStep(stepKey) {
 
 function switchView(viewId) {
   const protectedViews = new Set(["serviceView", "kitchenView", "billingView"]);
-  const ready = setupSteps().find((step) => step.key === "ready")?.done;
-  if (protectedViews.has(viewId) && !ready) {
-    const nextStep = setupSteps().find((step) => !step.done)?.key ?? "ready";
-    state.activeSetupStep = nextStep;
+  const missing = missingRequiredSteps();
+  if (protectedViews.has(viewId) && missing.length > 0) {
+    state.activeSetupStep = missing[0].key;
     state.manualSetupStep = false;
     renderSetupProgress();
-    showToast("Finish setup before starting service.", "error");
+    showToast(`Finish setup first: ${missing[0].missing}`, "error");
     viewId = "setupView";
   }
   document.querySelectorAll(".nav-item").forEach((button) => button.classList.toggle("active", button.dataset.view === viewId));
@@ -179,7 +249,8 @@ function switchView(viewId) {
 
 function renderSetupProgress() {
   const steps = setupSteps();
-  const firstIncomplete = steps.find((step) => !step.done)?.key ?? "ready";
+  const requiredSteps = steps.filter((step) => step.key !== "ready" && step.required !== false);
+  const firstIncomplete = requiredSteps.find((step) => !step.done)?.key ?? "ready";
   if (!steps.some((step) => step.key === state.activeSetupStep)) state.activeSetupStep = firstIncomplete;
   if (!state.manualSetupStep && state.activeSetupStep !== "ready" && steps.find((step) => step.key === state.activeSetupStep)?.done) {
     state.activeSetupStep = firstIncomplete;
@@ -192,10 +263,11 @@ function renderSetupProgress() {
       const button = document.createElement("button");
       button.type = "button";
       button.className = `check-step ${step.done ? "done" : ""} ${step.key === state.activeSetupStep ? "active" : ""}`;
+      const statusLabel = step.done ? "Done" : step.required === false ? "Optional" : `Step ${index + 1}`;
       button.innerHTML = `
-        <span>${step.done ? "Done" : `Step ${index + 1}`}</span>
+        <span>${statusLabel}</span>
         <strong>${step.label}</strong>
-        <small>${step.hint}</small>
+        <small>${step.done || step.required === false ? step.hint : step.missing}</small>
       `;
       button.addEventListener("click", () => setActiveSetupStep(step.key));
       checklist.append(button);
@@ -214,11 +286,26 @@ function renderSetupProgress() {
   const readyMessage = $("readyMessage");
   if (readyMessage) {
     const ready = steps.find((step) => step.key === "ready")?.done;
-    readyMessage.textContent = ready
-      ? "The basics are ready. You can take orders, use kitchen tickets, and settle bills."
-      : "Finish the required setup steps before taking orders.";
+    const missing = missingRequiredSteps();
+    if (ready) {
+      readyMessage.className = "ready-panel ready";
+      readyMessage.innerHTML = "<strong>Service can start.</strong><span>You can take orders, send kitchen tickets, and settle bills from this PC. Pair phones later if you need them.</span>";
+    } else {
+      readyMessage.className = "ready-panel missing";
+      readyMessage.innerHTML = `
+        <strong>${missing.length} required step${missing.length === 1 ? "" : "s"} left</strong>
+        <ul class="ready-list">
+          ${missing.map((step) => `<li><span>${escapeHtml(step.label)}</span><small>${escapeHtml(step.missing)}</small></li>`).join("")}
+        </ul>
+      `;
+    }
   }
-  if ($("goService")) $("goService").disabled = !steps.find((step) => step.key === "ready")?.done;
+  if ($("goService")) {
+    const ready = steps.find((step) => step.key === "ready")?.done;
+    $("goService").disabled = !ready;
+    $("goService").textContent = ready ? "Go To Take Orders" : "Finish Required Steps First";
+  }
+  renderPrinterSetupState();
 }
 
 async function loadAdminPanels() {
@@ -231,6 +318,9 @@ async function loadAdminPanels() {
   state.backups = backups;
   state.closeSummary = closeSummary;
   renderDevices();
+  renderUnitAdmin();
+  renderFloorAdmin();
+  renderTableAdmin();
   renderBackups();
   renderMenuAdmin();
   renderCloseSummary();
@@ -244,6 +334,14 @@ async function loadSystemPrinters() {
   }
   renderPrinterOptions();
   renderSetupProgress();
+  if (state.systemPrinters.length === 0) {
+    showToast(
+      isDryRunPrinting()
+        ? "No PC printers found. Dry-run printing is on, so you can continue setup."
+        : "No PC printers found. Install one or use the LAN fallback fields.",
+      isDryRunPrinting() ? "ok" : "error"
+    );
+  }
 }
 
 function renderCloseSummary() {
@@ -311,85 +409,273 @@ function renderDevices() {
   }
 }
 
+function renderUnitAdmin() {
+  const list = $("unitAdminList");
+  if (!list) return;
+  list.textContent = "";
+  const units = state.bootstrap?.productionUnits ?? [];
+  if (units.length === 0) return list.append(emptyNode("No kitchens yet", "Add the kitchen, bar, or counter that prepares dishes."));
+  for (const unit of units) {
+    const isEditing = state.editing.unit === unit.id;
+    const row = document.createElement("div");
+    row.className = "admin-row editable-row";
+    if (isEditing) {
+      row.innerHTML = `
+        <div class="edit-grid">
+          <input data-field="name" value="${escapeHtml(unit.name)}" />
+          <input data-field="printerHost" value="${escapeHtml(unit.printer_host ?? "")}" placeholder="Printer IP" />
+          <input data-field="printerPort" type="number" value="${unit.printer_port ?? 9100}" />
+        </div>
+      `;
+      row.append(editButtons("unit", async () => {
+        await api(`/production-units/${unit.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            name: row.querySelector('[data-field="name"]').value,
+            printerHost: row.querySelector('[data-field="printerHost"]').value,
+            printerPort: Number(row.querySelector('[data-field="printerPort"]').value || 9100)
+          })
+        });
+      }));
+    } else {
+      row.innerHTML = `
+        <div>
+          <strong>${escapeHtml(unit.name)}</strong><br />
+          <small>${unit.active ? "active" : "disabled"} · ${escapeHtml(unit.printer_name || unit.printer_host || "No printer selected")}</small>
+        </div>
+      `;
+      row.append(rowActions(
+        "unit",
+        unit.id,
+        async () => api(`/production-units/${unit.id}`, { method: "DELETE" }),
+        async () => api(`/production-units/${unit.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({ active: !unit.active })
+        }),
+        unit.active
+      ));
+    }
+    list.append(row);
+  }
+}
+
+function renderFloorAdmin() {
+  const list = $("floorAdminList");
+  if (!list) return;
+  list.textContent = "";
+  const floors = state.bootstrap?.floors ?? [];
+  if (floors.length === 0) return list.append(emptyNode("No rooms yet", "Add your first room or floor."));
+  for (const floor of floors) {
+    const isEditing = state.editing.floor === floor.id;
+    const row = document.createElement("div");
+    row.className = "admin-row editable-row";
+    if (isEditing) {
+      row.innerHTML = `<input data-field="name" value="${escapeHtml(floor.name)}" />`;
+      row.append(editButtons("floor", async () => {
+        await api(`/floors/${floor.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({ name: row.querySelector('[data-field="name"]').value })
+        });
+      }));
+    } else {
+      row.innerHTML = `
+        <div>
+          <strong>${escapeHtml(floor.name)}</strong><br />
+          <small>${floor.active ? "active" : "disabled"}</small>
+        </div>
+      `;
+      row.append(rowActions(
+        "floor",
+        floor.id,
+        async () => api(`/floors/${floor.id}`, { method: "DELETE" }),
+        async () => api(`/floors/${floor.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({ active: !floor.active })
+        }),
+        floor.active
+      ));
+    }
+    list.append(row);
+  }
+}
+
+function renderTableAdmin() {
+  const list = $("tableAdminList");
+  if (!list) return;
+  list.textContent = "";
+  const tables = state.bootstrap?.tables ?? [];
+  if (tables.length === 0) return list.append(emptyNode("No tables yet", "Add the tables waiters will use."));
+  for (const table of tables) {
+    const isEditing = state.editing.table === table.id;
+    const row = document.createElement("div");
+    row.className = "admin-row editable-row";
+    if (isEditing) {
+      row.innerHTML = `
+        <div class="edit-grid">
+          <select data-field="floorId">
+            ${(state.bootstrap?.floors ?? []).map((floor) => `<option value="${floor.id}" ${floor.id === table.floor_id ? "selected" : ""}>${escapeHtml(floor.name)}</option>`).join("")}
+          </select>
+          <input data-field="name" value="${escapeHtml(table.name)}" />
+        </div>
+      `;
+      row.append(editButtons("table", async () => {
+        await api(`/tables/${table.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            floorId: row.querySelector('[data-field="floorId"]').value,
+            name: row.querySelector('[data-field="name"]').value
+          })
+        });
+      }));
+    } else {
+      row.innerHTML = `
+        <div>
+          <strong>${escapeHtml(table.name)}</strong><br />
+          <small>${escapeHtml(table.floor_name)} · ${table.status.replaceAll("_", " ")} · ${table.active ? "active" : "disabled"}</small>
+        </div>
+      `;
+      row.append(rowActions(
+        "table",
+        table.id,
+        async () => api(`/tables/${table.id}`, { method: "DELETE" }),
+        async () => api(`/tables/${table.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({ active: !table.active })
+        }),
+        table.active
+      ));
+    }
+    list.append(row);
+  }
+}
+
 function renderMenuAdmin() {
   const list = $("menuAdminList");
   if (!list) return;
   list.textContent = "";
   const menuItems = state.bootstrap?.menuItems ?? [];
-  if (menuItems.length === 0) return list.append(emptyNode("No dishes yet", "Add dishes and choose where they print."));
+  if (menuItems.length === 0) return list.append(emptyNode("No dishes yet", "Add normal dishes with price. Kitchen can be assigned now or later."));
   for (const item of menuItems) {
+    const isEditing = state.editing.menu === item.id;
     const row = document.createElement("div");
-    row.className = "admin-row";
-    row.innerHTML = `
-      <div>
-        <strong>${item.name}</strong><br />
-        <small>${item.production_unit_name} · ${money(item.price_paise)} · ${item.active ? "active" : "disabled"}</small>
-      </div>
-    `;
-    const edit = document.createElement("button");
-    edit.type = "button";
-    edit.className = "secondary";
-    edit.textContent = "Edit";
-    edit.addEventListener("click", async () => {
-      const name = prompt("Item name", item.name);
-      if (!name) return;
-      const price = prompt("Price in rupees", String(item.price_paise / 100));
-      if (price === null) return;
-      await api(`/menu-items/${item.id}`, {
-        method: "PATCH",
-        body: JSON.stringify({ name, pricePaise: Math.round(Number(price) * 100), active: item.active })
-      });
-      await loadBootstrap();
-    });
-    const toggle = document.createElement("button");
-    toggle.type = "button";
-    toggle.textContent = item.active ? "Disable" : "Enable";
-    toggle.addEventListener("click", async () => {
-      await api(`/menu-items/${item.id}/active`, {
-        method: "PATCH",
-        body: JSON.stringify({ active: !item.active })
-      });
-      await loadBootstrap();
-    });
-    row.append(edit, toggle);
+    row.className = "admin-row editable-row";
+    const unitLabel = item.production_unit_name || "No kitchen assigned";
+    if (isEditing) {
+      row.innerHTML = `
+        <div class="edit-grid">
+          <input data-field="name" value="${escapeHtml(item.name)}" />
+          <input data-field="price" type="number" min="0" step="1" value="${item.price_paise / 100}" />
+          <select data-field="productionUnitId">
+            <option value="">No kitchen assigned</option>
+            ${(state.bootstrap?.productionUnits ?? [])
+              .filter((unit) => unit.active)
+              .map((unit) => `<option value="${unit.id}" ${unit.id === item.production_unit_id ? "selected" : ""}>${escapeHtml(unit.name)}</option>`)
+              .join("")}
+          </select>
+        </div>
+      `;
+      row.append(editButtons("menu", async () => {
+        await api(`/menu-items/${item.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            name: row.querySelector('[data-field="name"]').value,
+            pricePaise: Number(row.querySelector('[data-field="price"]').value || 0) * 100,
+            productionUnitId: row.querySelector('[data-field="productionUnitId"]').value || null
+          })
+        });
+      }));
+    } else {
+      row.innerHTML = `
+        <div>
+          <strong>${escapeHtml(item.name)}</strong><br />
+          <small>${escapeHtml(unitLabel)} · ${money(item.price_paise)} · ${item.active ? "active" : "disabled"}</small>
+        </div>
+      `;
+      row.append(rowActions(
+        "menu",
+        item.id,
+        async () => api(`/menu-items/${item.id}`, { method: "DELETE" }),
+        async () => api(`/menu-items/${item.id}/active`, {
+          method: "PATCH",
+          body: JSON.stringify({ active: !item.active })
+        }),
+        item.active
+      ));
+    }
     list.append(row);
   }
 }
 
-function renderModifierAdmin() {
-  const list = $("modifierAdminList");
-  if (!list) return;
-  list.textContent = "";
-  const groups = state.bootstrap?.modifierGroups ?? [];
-  const notes = state.bootstrap?.noteTemplates ?? [];
-  if (groups.length === 0 && notes.length === 0) {
-    return list.append(emptyNode("No modifiers or notes", "Add spice levels, portion choices, or common kitchen notes when the menu needs them."));
+function removalMessage(result) {
+  if (!result) return "Updated";
+  if (result.deleted) return "Removed";
+  if (result.active === false) return "Disabled because it already has history";
+  return "Updated";
+}
+
+function rowActions(kind, id, removeAction, toggleAction, isActive = true) {
+  const actions = document.createElement("div");
+  actions.className = "row-actions";
+  const edit = document.createElement("button");
+  edit.type = "button";
+  edit.className = "secondary";
+  edit.textContent = "Edit";
+  edit.addEventListener("click", () => {
+    state.editing[kind] = id;
+    loadBootstrap();
+  });
+  const remove = document.createElement("button");
+  remove.type = "button";
+  remove.className = "danger";
+  remove.textContent = "Remove";
+  remove.addEventListener("click", async () => {
+    await runAction(async () => {
+      const result = await removeAction();
+      await loadBootstrap();
+      return result;
+    }, removalMessage);
+  });
+  actions.append(edit);
+  if (toggleAction) {
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "secondary";
+    toggle.textContent = isActive ? "Disable" : "Enable";
+    toggle.addEventListener("click", async () => {
+      await runAction(async () => {
+        await toggleAction();
+        await loadBootstrap();
+      }, isActive ? "Disabled" : "Enabled");
+    });
+    actions.append(toggle);
   }
-  for (const group of groups) {
-    const row = document.createElement("div");
-    row.className = "admin-row";
-    const options = (group.options ?? [])
-      .map((option) => `${option.name}${option.price_delta_paise ? ` +${money(option.price_delta_paise)}` : ""}`)
-      .join(", ");
-    row.innerHTML = `
-      <div>
-        <strong>${group.name}</strong><br />
-        <small>${group.selection_type} · ${options || "No options yet"}</small>
-      </div>
-    `;
-    list.append(row);
-  }
-  for (const note of notes) {
-    const row = document.createElement("div");
-    row.className = "admin-row";
-    row.innerHTML = `
-      <div>
-        <strong>Note: ${note.label}</strong><br />
-        <small>${note.note}</small>
-      </div>
-    `;
-    list.append(row);
-  }
+  actions.append(remove);
+  return actions;
+}
+
+function editButtons(kind, saveAction) {
+  const actions = document.createElement("div");
+  actions.className = "row-actions";
+  const save = document.createElement("button");
+  save.type = "button";
+  save.textContent = "Save";
+  save.addEventListener("click", async () => {
+    await runAction(async () => {
+      await saveAction();
+      state.editing[kind] = null;
+      await loadBootstrap();
+    }, "Saved");
+  });
+  const cancel = document.createElement("button");
+  cancel.type = "button";
+  cancel.className = "secondary";
+  cancel.textContent = "Cancel";
+  cancel.addEventListener("click", () => {
+    state.editing[kind] = null;
+    loadBootstrap();
+  });
+  actions.append(save, cancel);
+  return actions;
 }
 
 function renderBackups() {
@@ -434,14 +720,15 @@ function renderTables() {
   const tables = $("tables");
   tables.textContent = "";
   const rows = state.bootstrap?.tables ?? [];
-  if (rows.length === 0) {
+  const activeRows = rows.filter((table) => table.active);
+  if (activeRows.length === 0) {
     tables.append(emptyNode("No tables yet", "Add your first table in Setup before taking orders."));
     return;
   }
   if (!state.bootstrap?.openDay) {
     tables.append(emptyNode("Open today's POS day", "Open the day in Setup before taking orders."));
   }
-  for (const table of rows) {
+  for (const table of activeRows) {
     const tile = document.createElement("button");
     tile.type = "button";
     tile.className = `table-tile ${table.status} ${table.id === state.selectedTableId ? "selected" : ""}`;
@@ -454,12 +741,8 @@ function renderTables() {
 function renderMenu() {
   const menu = $("menu");
   menu.textContent = "";
-  if ((state.bootstrap?.productionUnits ?? []).length === 0) {
-    menu.append(emptyNode("No kitchens yet", "Add at least one kitchen or counter before adding dishes."));
-    return;
-  }
   if ((state.bootstrap?.menuItems ?? []).length === 0) {
-    menu.append(emptyNode("No dishes yet", "Add dishes in Setup and choose where they print."));
+    menu.append(emptyNode("No dishes yet", "Add dishes in Setup."));
     return;
   }
   const query = state.menuSearch.trim().toLowerCase();
@@ -473,7 +756,7 @@ function renderMenu() {
     row.innerHTML = `
       <div>
         <strong>${item.name}</strong><br />
-        <small>${item.production_unit_name} · ${money(item.price_paise)}</small>
+        <small>${item.production_unit_name || "No kitchen assigned"} · ${money(item.price_paise)}</small>
       </div>
     `;
     const button = document.createElement("button");
@@ -492,6 +775,7 @@ function renderUnits() {
   const current = select.value;
   select.textContent = "";
   for (const unit of state.bootstrap?.productionUnits ?? []) {
+    if (!unit.active) continue;
     const option = document.createElement("option");
     option.value = unit.id;
     option.textContent = unit.name;
@@ -503,56 +787,34 @@ function renderUnits() {
 function renderSetupOptions() {
   const tableFloor = $("tableFloor");
   const menuItemUnit = $("menuItemUnit");
-  const modifierOptionGroup = $("modifierOptionGroup");
-  const modifierAssignItem = $("modifierAssignItem");
-  const modifierAssignGroup = $("modifierAssignGroup");
   const selectedFloor = tableFloor.value;
   const selectedUnit = menuItemUnit.value;
-  const selectedOptionGroup = modifierOptionGroup?.value;
-  const selectedAssignItem = modifierAssignItem?.value;
-  const selectedAssignGroup = modifierAssignGroup?.value;
   tableFloor.textContent = "";
   menuItemUnit.textContent = "";
-  if (modifierOptionGroup) modifierOptionGroup.textContent = "";
-  if (modifierAssignItem) modifierAssignItem.textContent = "";
-  if (modifierAssignGroup) modifierAssignGroup.textContent = "";
 
   for (const floor of state.bootstrap?.floors ?? []) {
+    if (!floor.active) continue;
     const option = document.createElement("option");
     option.value = floor.id;
     option.textContent = floor.name;
     tableFloor.append(option);
   }
 
+  const noKitchen = document.createElement("option");
+  noKitchen.value = "";
+  noKitchen.textContent = "No kitchen assigned";
+  menuItemUnit.append(noKitchen);
   for (const unit of state.bootstrap?.productionUnits ?? []) {
+    if (!unit.active) continue;
     const option = document.createElement("option");
     option.value = unit.id;
     option.textContent = unit.name;
     menuItemUnit.append(option);
   }
 
-  for (const group of state.bootstrap?.modifierGroups ?? []) {
-    const option = document.createElement("option");
-    option.value = group.id;
-    option.textContent = group.name;
-    modifierOptionGroup?.append(option.cloneNode(true));
-    modifierAssignGroup?.append(option);
-  }
-
-  for (const item of state.bootstrap?.menuItems ?? []) {
-    const option = document.createElement("option");
-    option.value = item.id;
-    option.textContent = item.name;
-    modifierAssignItem?.append(option);
-  }
-
   if (selectedFloor) tableFloor.value = selectedFloor;
   if (selectedUnit) menuItemUnit.value = selectedUnit;
-  if (selectedOptionGroup && modifierOptionGroup) modifierOptionGroup.value = selectedOptionGroup;
-  if (selectedAssignItem && modifierAssignItem) modifierAssignItem.value = selectedAssignItem;
-  if (selectedAssignGroup && modifierAssignGroup) modifierAssignGroup.value = selectedAssignGroup;
   renderPrinterOptions();
-  renderModifierAdmin();
 }
 
 function renderPrinterOptions() {
@@ -571,6 +833,26 @@ function renderPrinterOptions() {
       select.append(option);
     }
     if (current) select.value = current;
+  }
+  renderPrinterSetupState();
+}
+
+function renderPrinterSetupState() {
+  const help = $("printerHelp");
+  const skipButton = $("skipPrinter");
+  const hasPrinter = Boolean(state.receiptPrinter?.printerName || state.receiptPrinter?.printerHost);
+  const dryRun = isDryRunPrinting();
+  if (help) {
+    help.textContent = hasPrinter
+      ? "Cash counter printer is saved. Bills and payment receipts will use this printer."
+      : dryRun
+        ? "Development dry-run printing is on, so setup can continue without a physical printer. Add the real printer here before restaurant use."
+        : "Choose a PC printer, or open Advanced and enter the printer IP address.";
+  }
+  if (skipButton) {
+    skipButton.hidden = !dryRun || hasPrinter;
+    skipButton.textContent = state.printerSkipped ? "Dry-Run Printer Skipped" : "Continue Without Printer For Now";
+    skipButton.disabled = state.printerSkipped;
   }
 }
 
@@ -614,6 +896,7 @@ async function renderReceiptPrinter() {
   $("receiptPrinterName").value = settings.printerName ?? "";
   $("receiptHost").value = settings.printerHost ?? "";
   $("receiptPort").value = settings.printerPort ?? 9100;
+  renderPrinterSetupState();
 }
 
 async function selectTable(tableId) {
@@ -627,49 +910,22 @@ async function selectTable(tableId) {
 
 function hydrateDraftFromOrder() {
   state.draft = new Map();
-  const items = state.selectedOrder?.items ?? [];
-  for (const item of items) {
-    if (item.status === "cancelled") continue;
-    const modifiers = JSON.parse(item.modifiers_json || "[]");
-    state.draft.set(draftKey(item.menu_item_id, item.notes ?? "", modifiers), {
-      menuItemId: item.menu_item_id,
-      name: item.name_snapshot,
-      quantity: item.quantity,
-      notes: item.notes ?? "",
-      basePricePaise: item.unit_price_paise - (item.modifier_total_paise ?? 0),
-      pricePaise: item.unit_price_paise,
-      modifiers
-    });
-  }
 }
 
-function draftKey(menuItemId, notes = "", modifiers = []) {
-  return `${menuItemId}::${notes.trim()}::${JSON.stringify(modifiers)}`;
-}
-
-function modifierGroupsForItem(menuItemId) {
-  const item = state.bootstrap?.menuItems?.find((entry) => entry.id === menuItemId);
-  const ids = new Set(item?.modifier_group_ids ?? []);
-  return (state.bootstrap?.modifierGroups ?? []).filter((group) => ids.has(group.id) && group.active);
-}
-
-function priceWithModifiers(menuItem, modifiers) {
-  return menuItem.price_paise + modifiers.reduce((total, modifier) => total + (modifier.priceDeltaPaise ?? modifier.price_delta_paise ?? 0), 0);
+function draftKey(menuItemId) {
+  return menuItemId;
 }
 
 function addDraftItem(menuItem) {
   if (!state.selectedTableId) return;
-  const modifiers = [];
-  const key = draftKey(menuItem.id, "", modifiers);
+  const key = draftKey(menuItem.id);
   const current = state.draft.get(key);
   state.draft.set(key, {
     menuItemId: menuItem.id,
     name: menuItem.name,
     quantity: (current?.quantity ?? 0) + 1,
-    notes: "",
     basePricePaise: menuItem.price_paise,
-    pricePaise: menuItem.price_paise,
-    modifiers
+    pricePaise: menuItem.price_paise
   });
   renderOrder();
 }
@@ -683,46 +939,6 @@ function changeDraftQty(key, delta) {
   renderOrder();
 }
 
-function replaceDraftItem(key, next) {
-  state.draft.delete(key);
-  const menuItem = state.bootstrap?.menuItems?.find((item) => item.id === next.menuItemId);
-  const pricePaise = menuItem ? priceWithModifiers(menuItem, next.modifiers ?? []) : next.pricePaise;
-  const updated = { ...next, pricePaise };
-  const nextKey = draftKey(updated.menuItemId, updated.notes, updated.modifiers ?? []);
-  const existing = state.draft.get(nextKey);
-  state.draft.set(nextKey, existing ? { ...updated, quantity: existing.quantity + updated.quantity } : updated);
-  renderOrder();
-}
-
-function toggleModifier(key, group, option) {
-  const current = state.draft.get(key);
-  if (!current) return;
-  const existing = current.modifiers ?? [];
-  const withoutGroupOption = existing.filter((modifier) =>
-    group.selection_type === "single" ? modifier.groupId !== group.id : modifier.optionId !== option.id
-  );
-  const isSelected = existing.some((modifier) => modifier.groupId === group.id && modifier.optionId === option.id);
-  const nextModifiers = isSelected
-    ? withoutGroupOption
-    : [
-        ...withoutGroupOption,
-        {
-          groupId: group.id,
-          groupName: group.name,
-          optionId: option.id,
-          optionName: option.name,
-          priceDeltaPaise: option.price_delta_paise
-        }
-      ].sort((left, right) => `${left.groupName}:${left.optionName}`.localeCompare(`${right.groupName}:${right.optionName}`));
-  replaceDraftItem(key, { ...current, modifiers: nextModifiers });
-}
-
-function updateDraftNotes(key, notes) {
-  const current = state.draft.get(key);
-  if (!current) return;
-  replaceDraftItem(key, { ...current, notes });
-}
-
 function renderOrder() {
   const table = state.bootstrap?.tables?.find((item) => item.id === state.selectedTableId);
   $("orderTitle").textContent = table ? `Table ${table.name}` : "Select a table";
@@ -733,71 +949,28 @@ function renderOrder() {
       : "";
 
   const list = $("draftItems");
+  const sentList = $("sentItems");
   list.textContent = "";
+  if (sentList) sentList.textContent = "";
   const entries = [...state.draft.entries()];
-  const total = entries.reduce((sum, [, item]) => sum + item.pricePaise * item.quantity, 0);
-  if ($("draftTotal")) $("draftTotal").textContent = money(total);
+  const draftTotal = entries.reduce((sum, [, item]) => sum + item.pricePaise * item.quantity, 0);
+  const sentItems = (state.selectedOrder?.items ?? []).filter((item) => item.status !== "cancelled" && item.quantity > 0);
+  const sentTotal = sentItems.reduce((sum, item) => sum + item.unit_price_paise * item.quantity, 0);
+  if ($("draftTotal")) $("draftTotal").textContent = money(draftTotal + sentTotal);
   if (entries.length === 0) {
-    renderBillingContext();
-    return list.append(emptyNode("No dishes selected", "Choose dishes from the menu, then send them to the kitchen."));
+    list.append(emptyNode("No new dishes selected", "Choose dishes from the menu to add more items."));
   }
 
   for (const [key, item] of entries) {
     const row = document.createElement("div");
     row.className = "draft-item";
-    const groups = modifierGroupsForItem(item.menuItemId);
-    const selected = new Set((item.modifiers ?? []).map((modifier) => `${modifier.groupId}:${modifier.optionId}`));
-    const modifierHtml = groups
-      .map(
-        (group) => `
-          <div class="modifier-line">
-            <span>${group.name}</span>
-            <div>
-              ${(group.options ?? [])
-                .filter((option) => option.active)
-                .map(
-                  (option) => `
-                    <button type="button" class="modifier-chip ${selected.has(`${group.id}:${option.id}`) ? "active" : ""}"
-                      data-group="${group.id}" data-option="${option.id}">
-                      ${option.name}${option.price_delta_paise ? ` +${money(option.price_delta_paise)}` : ""}
-                    </button>
-                  `
-                )
-                .join("")}
-            </div>
-          </div>
-        `
-      )
-      .join("");
-    const noteButtons = (state.bootstrap?.noteTemplates ?? [])
-      .map((note) => `<button type="button" class="note-chip" data-note="${note.note}">${note.label}</button>`)
-      .join("");
     row.innerHTML = `
       <div class="draft-main">
         <strong>${item.name}</strong>
-        <small>${money(item.pricePaise)} each</small>
-        ${modifierHtml ? `<div class="modifier-list">${modifierHtml}</div>` : ""}
-        ${noteButtons ? `<div class="note-chip-row">${noteButtons}</div>` : ""}
-        <input class="draft-note" value="${escapeHtml(item.notes ?? "")}" placeholder="Kitchen note" />
+        <small>${money(item.pricePaise)} each · new</small>
       </div>
       <span>${item.quantity}</span>
     `;
-    for (const chip of row.querySelectorAll(".modifier-chip")) {
-      chip.addEventListener("click", () => {
-        const group = groups.find((entry) => entry.id === chip.dataset.group);
-        const option = group?.options?.find((entry) => entry.id === chip.dataset.option);
-        if (group && option) toggleModifier(key, group, option);
-      });
-    }
-    for (const chip of row.querySelectorAll(".note-chip")) {
-      chip.addEventListener("click", () => {
-        const current = state.draft.get(key);
-        const note = chip.dataset.note ?? "";
-        const next = [current?.notes, note].filter(Boolean).join(" | ");
-        updateDraftNotes(key, next);
-      });
-    }
-    row.querySelector(".draft-note")?.addEventListener("change", (event) => updateDraftNotes(key, event.target.value));
     const minus = document.createElement("button");
     minus.type = "button";
     minus.className = "qty-btn secondary";
@@ -810,6 +983,24 @@ function renderOrder() {
     plus.addEventListener("click", () => changeDraftQty(key, 1));
     row.append(minus, plus);
     list.append(row);
+  }
+  if (sentList) {
+    if (sentItems.length === 0) {
+      sentList.append(emptyNode("No sent items yet", "Sent dishes will stay here after kitchen confirmation."));
+    } else {
+      for (const item of sentItems) {
+        const row = document.createElement("div");
+        row.className = "draft-item sent";
+        row.innerHTML = `
+          <div class="draft-main">
+            <strong>${escapeHtml(item.name_snapshot)}</strong>
+            <small>${money(item.unit_price_paise)} each · ${escapeHtml(item.production_unit_name || "No kitchen assigned")}</small>
+          </div>
+          <span>${item.quantity}</span>
+        `;
+        sentList.append(row);
+      }
+    }
   }
   renderPaymentPanel();
   renderBillingContext();
@@ -841,7 +1032,7 @@ function renderPaymentPanel() {
   if (!summary) return;
 
   if (!bill) {
-    summary.textContent = "Select a billed order.";
+    summary.textContent = state.selectedOrder?.order ? "Generate the bill, then choose how the customer paid." : "Select an occupied table.";
     for (const id of ["billDiscount", "billTip", "payCash", "payUpi", "payCard", "payOnline", "paymentReference"]) {
       if ($(id)) $(id).value = id === "paymentReference" ? "" : "0";
     }
@@ -850,7 +1041,7 @@ function renderPaymentPanel() {
   }
 
   const paid = bill.paid_paise ?? payments.reduce((total, payment) => total + (payment.amount_paise ?? 0), 0);
-  const finalTotal = bill.final_total_paise || bill.total_paise;
+  const finalTotal = currentBillFinalTotal();
   const remaining = Math.max(0, finalTotal - paid);
   summary.innerHTML = `
     <span>Bill <strong>Current bill</strong></span>
@@ -858,11 +1049,35 @@ function renderPaymentPanel() {
     <span>Paid <strong>${money(paid)}</strong></span>
     <span>Remaining <strong>${money(remaining)}</strong></span>
   `;
-  $("billDiscount").value = String((bill.discount_paise ?? 0) / 100);
-  $("billTip").value = String((bill.tip_paise ?? 0) / 100);
+  if (!$("billDiscount").dataset.touched) $("billDiscount").value = String((bill.discount_paise ?? 0) / 100);
+  if ($("discountType") && !$("discountType").dataset.touched) $("discountType").value = "amount";
+  if (!$("billTip").dataset.touched) $("billTip").value = String((bill.tip_paise ?? 0) / 100);
   for (const id of ["payCash", "payUpi", "payCard", "payOnline"]) $(id).value = "0";
   $("paymentReference").value = "";
   renderBillingContext();
+}
+
+function currentBillFinalTotal() {
+  const bill = state.selectedOrder?.bill;
+  if (!bill) return 0;
+  const discountValue = Number($("billDiscount")?.value || 0);
+  const discountPaise =
+    $("discountType")?.value === "percent" ? Math.round((bill.total_paise * Math.min(100, discountValue)) / 100) : discountValue * 100;
+  const tipPaise = Number($("billTip")?.value || 0) * 100;
+  return Math.max(0, bill.total_paise - discountPaise + tipPaise);
+}
+
+function currentBillRemaining() {
+  const bill = state.selectedOrder?.bill;
+  if (!bill) return 0;
+  const paid = bill.paid_paise ?? (state.selectedOrder?.payments ?? []).reduce((total, payment) => total + (payment.amount_paise ?? 0), 0);
+  return Math.max(0, currentBillFinalTotal() - paid);
+}
+
+function fillFullPayment(method) {
+  for (const id of ["payCash", "payUpi", "payCard", "payOnline"]) $(id).value = "0";
+  const idByMethod = { cash: "payCash", upi: "payUpi", card: "payCard", online: "payOnline" };
+  $(idByMethod[method]).value = String(currentBillRemaining() / 100);
 }
 
 async function loadKds() {
@@ -887,8 +1102,7 @@ async function loadKds() {
       <ul class="kot-items">
         ${(kot.items ?? [])
           .map(
-            (item) =>
-              `<li>${item.quantity_delta} x ${escapeHtml(item.name_snapshot)}${item.notes ? `<br /><small>${escapeHtml(item.notes)}</small>` : ""}</li>`
+            (item) => `<li>${item.quantity_delta} x ${escapeHtml(item.name_snapshot)}</li>`
           )
           .join("")}
       </ul>
@@ -942,6 +1156,7 @@ $("openDayForm").addEventListener("submit", async (event) => {
       })
     });
     await loadBootstrap();
+    focusNextSetupStep();
   }, "POS day opened");
 });
 
@@ -974,15 +1189,11 @@ $("submitOrder").addEventListener("click", async () => {
         orderType: "dine_in",
         items: [...state.draft.values()].map((item) => ({
           menuItemId: item.menuItemId,
-          quantity: item.quantity,
-          notes: item.notes,
-          modifiers: (item.modifiers ?? []).map((modifier) => ({
-            groupId: modifier.groupId,
-            optionId: modifier.optionId
-          }))
+          quantity: item.quantity
         }))
       })
     });
+    state.draft.clear();
     await loadBootstrap();
     await selectTable(state.selectedTableId);
   }, "Kitchen ticket sent");
@@ -993,8 +1204,8 @@ $("generateBill").addEventListener("click", async () => {
   if (!orderId) return;
   await runAction(async () => {
     await api(`/bills/${orderId}/generate`, { method: "POST" });
-    await selectTable(state.selectedTableId);
     await loadBootstrap();
+    await selectTable(state.selectedTableId);
   }, "Bill generated");
 });
 
@@ -1028,7 +1239,8 @@ $("settleBill").addEventListener("click", async () => {
     await api(`/bills/${bill.id}/settle`, {
       method: "POST",
       body: JSON.stringify({
-        discountPaise: Number($("billDiscount").value || 0) * 100,
+        discountType: $("discountType").value,
+        discountValue: $("discountType").value === "percent" ? Number($("billDiscount").value || 0) : Number($("billDiscount").value || 0) * 100,
         tipPaise: Number($("billTip").value || 0) * 100,
         payments,
         receivedBy: "cashier-1"
@@ -1037,7 +1249,7 @@ $("settleBill").addEventListener("click", async () => {
     await loadBootstrap();
     if (state.selectedTableId) await selectTable(state.selectedTableId);
     renderOrder();
-  }, "Payment saved");
+  }, "Bill punched");
 });
 
 $("cancelOrder").addEventListener("click", async () => {
@@ -1058,6 +1270,15 @@ $("menuSearch").addEventListener("input", () => {
   renderMenu();
 });
 $("closingCash").addEventListener("input", renderCloseSummary);
+for (const id of ["billDiscount", "billTip", "discountType"]) {
+  $(id)?.addEventListener("input", () => {
+    $(id).dataset.touched = "1";
+    renderPaymentPanel();
+  });
+}
+for (const button of document.querySelectorAll(".quick-pay-btn")) {
+  button.addEventListener("click", () => fillFullPayment(button.dataset.method));
+}
 $("deviceToken").addEventListener("change", () => {
   localStorage.setItem("deviceToken", $("deviceToken").value);
   if ($("setupDeviceToken")) $("setupDeviceToken").value = $("deviceToken").value;
@@ -1068,7 +1289,10 @@ $("saveHubToken").addEventListener("click", async () => {
   $("deviceToken").value = token;
   localStorage.setItem("deviceToken", token);
   await loadBootstrap();
-  if (state.bootstrap) showToast("Hub unlocked. Setup can continue.");
+  if (state.bootstrap) {
+    focusNextSetupStep();
+    showToast("Hub unlocked. Setup can continue.");
+  }
 });
 $("toggleHubToken").addEventListener("click", () => {
   const input = $("setupDeviceToken");
@@ -1088,6 +1312,12 @@ $("processPrints").addEventListener("click", async () => {
   }, "Print queue processed");
 });
 $("loadPrinters").addEventListener("click", loadSystemPrinters);
+$("skipPrinter").addEventListener("click", () => {
+  state.printerSkipped = true;
+  localStorage.setItem("printerSetupSkipped", "1");
+  focusNextSetupStep();
+  showToast("Dry-run printing is enabled. Add the real printer before live restaurant use.");
+});
 $("receiptPrinterForm").addEventListener("submit", async (event) => {
   event.preventDefault();
   await runAction(async () => {
@@ -1100,7 +1330,10 @@ $("receiptPrinterForm").addEventListener("submit", async (event) => {
         printerPort: Number($("receiptPort").value || 9100)
       })
     });
+    state.printerSkipped = false;
+    localStorage.removeItem("printerSetupSkipped");
     await loadBootstrap();
+    focusNextSetupStep();
   }, "Cash counter printer saved");
 });
 $("floorForm").addEventListener("submit", async (event) => {
@@ -1113,6 +1346,7 @@ $("floorForm").addEventListener("submit", async (event) => {
     $("floorName").value = "";
     $("floorCustomId").value = "";
     await loadBootstrap();
+    keepSetupStep("tables");
   }, "Room added");
 });
 $("tableForm").addEventListener("submit", async (event) => {
@@ -1125,6 +1359,7 @@ $("tableForm").addEventListener("submit", async (event) => {
     $("tableName").value = "";
     $("tableCustomId").value = "";
     await loadBootstrap();
+    keepSetupStep("tables");
   }, "Table added");
 });
 $("unitForm").addEventListener("submit", async (event) => {
@@ -1147,6 +1382,7 @@ $("unitForm").addEventListener("submit", async (event) => {
     $("unitHost").value = "";
     $("unitPort").value = "9100";
     await loadBootstrap();
+    keepSetupStep("kitchens");
   }, "Kitchen / counter added");
 });
 $("menuItemForm").addEventListener("submit", async (event) => {
@@ -1157,86 +1393,18 @@ $("menuItemForm").addEventListener("submit", async (event) => {
       body: JSON.stringify({
         name: $("menuItemName").value,
         pricePaise: Number($("menuItemPrice").value || 0) * 100,
-        productionUnitId: $("menuItemUnit").value,
+        productionUnitId: $("menuItemUnit").value || null,
         active: true,
         customId: $("menuItemCustomId").value || undefined
       })
     });
     $("menuItemName").value = "";
     $("menuItemPrice").value = "";
+    $("menuItemUnit").value = "";
     $("menuItemCustomId").value = "";
     await loadBootstrap();
+    keepSetupStep("menu");
   }, "Dish added");
-});
-$("modifierGroupForm").addEventListener("submit", async (event) => {
-  event.preventDefault();
-  await runAction(async () => {
-    const selectionType = $("modifierGroupType").value;
-    await api("/modifier-groups", {
-      method: "POST",
-      body: JSON.stringify({
-        name: $("modifierGroupName").value,
-        selectionType,
-        minSelections: 0,
-        maxSelections: selectionType === "single" ? 1 : 20,
-        active: true,
-        customId: $("modifierGroupCustomId").value || undefined
-      })
-    });
-    $("modifierGroupName").value = "";
-    $("modifierGroupCustomId").value = "";
-    await loadBootstrap();
-  }, "Modifier group added");
-});
-$("modifierOptionForm").addEventListener("submit", async (event) => {
-  event.preventDefault();
-  await runAction(async () => {
-    await api("/modifier-options", {
-      method: "POST",
-      body: JSON.stringify({
-        groupId: $("modifierOptionGroup").value,
-        name: $("modifierOptionName").value,
-        priceDeltaPaise: Number($("modifierOptionPrice").value || 0) * 100,
-        active: true,
-        customId: $("modifierOptionCustomId").value || undefined
-      })
-    });
-    $("modifierOptionName").value = "";
-    $("modifierOptionPrice").value = "";
-    $("modifierOptionCustomId").value = "";
-    await loadBootstrap();
-  }, "Modifier option added");
-});
-$("modifierAssignForm").addEventListener("submit", async (event) => {
-  event.preventDefault();
-  await runAction(async () => {
-    await api("/menu-item-modifier-groups", {
-      method: "POST",
-      body: JSON.stringify({
-        menuItemId: $("modifierAssignItem").value,
-        groupId: $("modifierAssignGroup").value
-      })
-    });
-    await loadBootstrap();
-  }, "Modifier attached to item");
-});
-$("noteTemplateForm").addEventListener("submit", async (event) => {
-  event.preventDefault();
-  await runAction(async () => {
-    await api("/note-templates", {
-      method: "POST",
-      body: JSON.stringify({
-        label: $("noteTemplateLabel").value,
-        note: $("noteTemplateNote").value,
-        active: true,
-        customId: $("noteTemplateCustomId").value || undefined
-      })
-    });
-    $("noteTemplateLabel").value = "";
-    $("noteTemplateNote").value = "";
-    $("noteTemplateCustomId").value = "";
-    await loadBootstrap();
-  }, "Note template added");
 });
 $("pairingForm").addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -1260,7 +1428,7 @@ $("pairingForm").addEventListener("submit", async (event) => {
       </div>
     `;
     await loadAdminPanels();
-    renderSetupProgress();
+    focusNextSetupStep();
   }, "Pairing code created");
 });
 

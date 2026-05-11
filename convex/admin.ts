@@ -42,6 +42,19 @@ async function requireRestaurantAdmin(ctx: QueryCtx | MutationCtx, restaurantId:
   return { identity, membership };
 }
 
+async function requireRestaurantMember(ctx: QueryCtx | MutationCtx, restaurantId: Id<"restaurants">) {
+  const identity = await requireIdentity(ctx);
+  const membership = await ctx.db
+    .query("memberships")
+    .withIndex("by_restaurant_and_user", (q) =>
+      q.eq("restaurantId", restaurantId).eq("userTokenIdentifier", identity.tokenIdentifier)
+    )
+    .unique();
+
+  if (!membership) throw new Error("Not authorized for this restaurant");
+  return { identity, membership };
+}
+
 async function requireRestaurantOwner(ctx: QueryCtx | MutationCtx, restaurantId: Id<"restaurants">) {
   const result = await requireRestaurantAdmin(ctx, restaurantId);
   if (result.membership.role !== "owner") throw new Error("Only restaurant owners can do that");
@@ -521,7 +534,7 @@ export const listRecentEvents = query({
     })
   ),
   handler: async (ctx, args) => {
-    await requireRestaurantAdmin(ctx, args.restaurantId);
+    await requireRestaurantMember(ctx, args.restaurantId);
     const rows = await ctx.db
       .query("syncedEvents")
       .withIndex("by_restaurant_and_receivedAt", (q) => q.eq("restaurantId", args.restaurantId))
@@ -536,5 +549,178 @@ export const listRecentEvents = query({
         createdAt: row.createdAt,
         receivedAt: row.receivedAt
       }));
+  }
+});
+
+export const listDailyReports = query({
+  args: { restaurantId: v.id("restaurants") },
+  returns: v.array(
+    v.object({
+      _id: v.id("dailyReports"),
+      businessDate: v.string(),
+      status: v.literal("finalized"),
+      billCount: v.number(),
+      grossSalesPaise: v.number(),
+      discountPaise: v.number(),
+      tipPaise: v.number(),
+      finalSalesPaise: v.number(),
+      totalPaymentsPaise: v.number(),
+      cashVariancePaise: v.number(),
+      finalizedAt: v.string(),
+      updatedAt: v.string()
+    })
+  ),
+  handler: async (ctx, args) => {
+    await requireRestaurantMember(ctx, args.restaurantId);
+    const rows = await ctx.db
+      .query("dailyReports")
+      .withIndex("by_restaurant_and_updatedAt", (q) => q.eq("restaurantId", args.restaurantId))
+      .order("desc")
+      .take(60);
+    return rows.map((row) => ({
+      _id: row._id,
+      businessDate: row.businessDate,
+      status: row.status,
+      billCount: row.billCount,
+      grossSalesPaise: row.grossSalesPaise,
+      discountPaise: row.discountPaise,
+      tipPaise: row.tipPaise,
+      finalSalesPaise: row.finalSalesPaise,
+      totalPaymentsPaise: row.totalPaymentsPaise,
+      cashVariancePaise: row.cashVariancePaise,
+      finalizedAt: row.finalizedAt,
+      updatedAt: row.updatedAt
+    }));
+  }
+});
+
+export const getDailyReport = query({
+  args: { restaurantId: v.id("restaurants"), businessDate: v.string() },
+  returns: v.union(
+    v.null(),
+    v.object({
+      report: v.object({
+        businessDate: v.string(),
+        status: v.literal("finalized"),
+        openingCashPaise: v.number(),
+        closingCashPaise: v.number(),
+        expectedClosingCashPaise: v.number(),
+        cashVariancePaise: v.number(),
+        grossSalesPaise: v.number(),
+        discountPaise: v.number(),
+        tipPaise: v.number(),
+        finalSalesPaise: v.number(),
+        cashPaymentsPaise: v.number(),
+        upiPaymentsPaise: v.number(),
+        cardPaymentsPaise: v.number(),
+        onlinePaymentsPaise: v.number(),
+        totalPaymentsPaise: v.number(),
+        nonCashPaymentsPaise: v.number(),
+        billCount: v.number(),
+        openOrders: v.number(),
+        billedOrders: v.number(),
+        paidBills: v.number(),
+        unpaidBills: v.number(),
+        cancelledOrders: v.number(),
+        finalizedAt: v.string(),
+        updatedAt: v.string()
+      }),
+      bills: v.array(
+        v.object({
+          billId: v.string(),
+          orderId: v.string(),
+          tableName: v.string(),
+          status: v.string(),
+          totalPaise: v.number(),
+          discountPaise: v.number(),
+          tipPaise: v.number(),
+          finalTotalPaise: v.number(),
+          paidPaise: v.number(),
+          paymentsJson: v.string(),
+          settledAt: v.optional(v.string())
+        })
+      ),
+      items: v.array(
+        v.object({
+          menuItemId: v.string(),
+          name: v.string(),
+          quantity: v.number(),
+          grossSalesPaise: v.number()
+        })
+      )
+    })
+  ),
+  handler: async (ctx, args) => {
+    await requireRestaurantMember(ctx, args.restaurantId);
+    const report = (
+      await ctx.db
+        .query("dailyReports")
+        .withIndex("by_restaurant_and_businessDate", (q) =>
+          q.eq("restaurantId", args.restaurantId).eq("businessDate", args.businessDate)
+        )
+        .take(1)
+    )[0];
+    if (!report) return null;
+
+    const bills = await ctx.db
+      .query("dailyReportBills")
+      .withIndex("by_restaurant_and_businessDate", (q) =>
+        q.eq("restaurantId", args.restaurantId).eq("businessDate", args.businessDate)
+      )
+      .take(500);
+    const items = await ctx.db
+      .query("dailyReportItems")
+      .withIndex("by_restaurant_and_businessDate", (q) =>
+        q.eq("restaurantId", args.restaurantId).eq("businessDate", args.businessDate)
+      )
+      .take(500);
+
+    return {
+      report: {
+        businessDate: report.businessDate,
+        status: report.status,
+        openingCashPaise: report.openingCashPaise,
+        closingCashPaise: report.closingCashPaise,
+        expectedClosingCashPaise: report.expectedClosingCashPaise,
+        cashVariancePaise: report.cashVariancePaise,
+        grossSalesPaise: report.grossSalesPaise,
+        discountPaise: report.discountPaise,
+        tipPaise: report.tipPaise,
+        finalSalesPaise: report.finalSalesPaise,
+        cashPaymentsPaise: report.cashPaymentsPaise,
+        upiPaymentsPaise: report.upiPaymentsPaise,
+        cardPaymentsPaise: report.cardPaymentsPaise,
+        onlinePaymentsPaise: report.onlinePaymentsPaise,
+        totalPaymentsPaise: report.totalPaymentsPaise,
+        nonCashPaymentsPaise: report.nonCashPaymentsPaise,
+        billCount: report.billCount,
+        openOrders: report.openOrders,
+        billedOrders: report.billedOrders,
+        paidBills: report.paidBills,
+        unpaidBills: report.unpaidBills,
+        cancelledOrders: report.cancelledOrders,
+        finalizedAt: report.finalizedAt,
+        updatedAt: report.updatedAt
+      },
+      bills: bills.map((bill) => ({
+        billId: bill.billId,
+        orderId: bill.orderId,
+        tableName: bill.tableName,
+        status: bill.status,
+        totalPaise: bill.totalPaise,
+        discountPaise: bill.discountPaise,
+        tipPaise: bill.tipPaise,
+        finalTotalPaise: bill.finalTotalPaise,
+        paidPaise: bill.paidPaise,
+        paymentsJson: bill.paymentsJson,
+        ...(bill.settledAt ? { settledAt: bill.settledAt } : {})
+      })),
+      items: items.map((item) => ({
+        menuItemId: item.menuItemId,
+        name: item.name,
+        quantity: item.quantity,
+        grossSalesPaise: item.grossSalesPaise
+      }))
+    };
   }
 });

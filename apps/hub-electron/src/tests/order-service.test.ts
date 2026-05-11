@@ -11,7 +11,7 @@ describe("OrderService KOT lifecycle", () => {
       pax: 2,
       orderType: "dine_in",
       items: [
-        { menuItemId: "item-paneer-tikka", quantity: 2, notes: "less spicy" },
+        { menuItemId: "item-paneer-tikka", quantity: 2 },
         { menuItemId: "item-lassi", quantity: 1 }
       ]
     });
@@ -31,7 +31,7 @@ describe("OrderService KOT lifecycle", () => {
     database.close();
   });
 
-  it("creates modified and partial-cancel KOTs when quantities change", () => {
+  it("creates modified KOTs when more items are added to a table", () => {
     const { database, orderService } = createTestHub();
 
     orderService.submitOrder({
@@ -45,7 +45,7 @@ describe("OrderService KOT lifecycle", () => {
       ]
     });
 
-    orderService.submitOrder({
+    const result = orderService.submitOrder({
       tableId: "table-t1",
       captainId: "waiter-1",
       pax: 2,
@@ -58,55 +58,40 @@ describe("OrderService KOT lifecycle", () => {
 
     const rows = database.db.prepare("SELECT type, COUNT(*) AS count FROM kots GROUP BY type ORDER BY type").all();
     expect(rows).toEqual([
-      { type: "modified", count: 1 },
-      { type: "new", count: 2 },
-      { type: "partial_cancel", count: 1 }
+      { type: "modified", count: 2 },
+      { type: "new", count: 2 }
+    ]);
+    const currentOrder = orderService.getOrder(result.orderId) as {
+      items: Array<{ menu_item_id: string; quantity: number }>;
+    };
+    expect(currentOrder.items.map((item) => ({ menuItemId: item.menu_item_id, quantity: item.quantity })).sort((a, b) => a.menuItemId.localeCompare(b.menuItemId))).toEqual([
+      { menuItemId: "item-lassi", quantity: 3 },
+      { menuItemId: "item-paneer-tikka", quantity: 5 },
     ]);
 
     database.close();
   });
 
-  it("applies menu modifiers and note templates into order, KOT, and bill math", () => {
+  it("allows dishes without a kitchen to be billed without creating a KOT", () => {
     const { database, orderService } = createTestHub();
-    const group = orderService.createModifierGroup({
-      name: "Add-on",
-      selectionType: "multiple",
-      minSelections: 0,
-      maxSelections: 3,
-      active: true
-    });
-    const option = orderService.createModifierOption({
-      groupId: group.id,
-      name: "Extra Malai",
-      priceDeltaPaise: 5_000,
-      active: true
-    });
-    orderService.assignModifierGroup({ menuItemId: "item-lassi", groupId: group.id });
+    const dish = orderService.createMenuItem({ name: "Curd Rice", pricePaise: 10_000, active: true });
 
     const order = orderService.submitOrder({
       tableId: "table-t1",
       captainId: "waiter-1",
       pax: 1,
       orderType: "dine_in",
-      items: [
-        {
-          menuItemId: "item-lassi",
-          quantity: 2,
-          notes: "chilled",
-          modifiers: [{ groupId: group.id, optionId: option.id }]
-        }
-      ]
+      items: [{ menuItemId: dish.id, quantity: 2 }]
     });
 
-    expect(database.db.prepare("SELECT unit_price_paise, modifier_total_paise, notes FROM order_items").get()).toEqual({
-      unit_price_paise: 14_000,
-      modifier_total_paise: 5_000,
-      notes: "Add-on: Extra Malai | chilled"
+    expect(order.kotIds).toHaveLength(0);
+    expect(database.db.prepare("SELECT unit_price_paise, production_unit_id FROM order_items WHERE menu_item_id = ?").get(dish.id)).toEqual({
+      unit_price_paise: 10_000,
+      production_unit_id: null
     });
-    expect(database.db.prepare("SELECT notes FROM kot_items").get()).toEqual({ notes: "Add-on: Extra Malai | chilled" });
 
     const bill = orderService.generateBill(order.orderId);
-    expect(bill.totalPaise).toBe(29_400);
+    expect(bill.totalPaise).toBe(21_000);
 
     database.close();
   });
@@ -176,7 +161,8 @@ describe("OrderService KOT lifecycle", () => {
     const bill = orderService.generateBill(order.orderId);
     const partPaid = orderService.settleBill(bill.billId, {
       receivedBy: "cashier-1",
-      discountPaise: 1000,
+      discountType: "amount",
+      discountValue: 1000,
       tipPaise: 500,
       payments: [
         { method: "cash", amountPaise: 10000 },
@@ -189,7 +175,8 @@ describe("OrderService KOT lifecycle", () => {
 
     const final = orderService.settleBill(bill.billId, {
       receivedBy: "cashier-1",
-      discountPaise: 1000,
+      discountType: "amount",
+      discountValue: 1000,
       tipPaise: 500,
       payments: [{ method: "card", amountPaise: partPaid.remainingPaise }]
     });
@@ -250,7 +237,13 @@ describe("OrderService KOT lifecycle", () => {
       price_paise: 7000,
       active: 0
     });
-    expect(database.db.prepare("SELECT COUNT(*) AS count FROM sync_outbox").get()).toEqual({ count: 6 });
+    orderService.updateFloor(floor.id, { name: "Terrace" });
+    orderService.updateTable(table.id, { name: "R2" });
+    orderService.updateProductionUnit(unit.id, { name: "Main Tandoor" });
+    expect(database.db.prepare("SELECT name FROM floors WHERE id = ?").get(floor.id)).toEqual({ name: "Terrace" });
+    expect(database.db.prepare("SELECT name FROM restaurant_tables WHERE id = ?").get(table.id)).toEqual({ name: "R2" });
+    expect(database.db.prepare("SELECT name FROM production_units WHERE id = ?").get(unit.id)).toEqual({ name: "Main Tandoor" });
+    expect(database.db.prepare("SELECT COUNT(*) AS count FROM sync_outbox").get()).toEqual({ count: 9 });
 
     database.close();
   });
@@ -266,6 +259,40 @@ describe("OrderService KOT lifecycle", () => {
     expect(() => orderService.createFloor({ name: "Duplicate Garden", customId: "room-garden" })).toThrow(
       "That custom ID is already used. Choose another one."
     );
+
+    database.close();
+  });
+
+  it("deletes unused setup records and disables used ones so they can be re-enabled", () => {
+    const { database, orderService } = createTestHub();
+
+    const floor = orderService.createFloor({ name: "Patio" });
+    const table = orderService.createTable({ floorId: floor.id, name: "P1" });
+    const unusedDish = orderService.createMenuItem({ name: "Papad", pricePaise: 4000 });
+
+    expect(orderService.removeMenuItem(unusedDish.id)).toEqual({ id: unusedDish.id, deleted: true, active: false });
+    expect(database.db.prepare("SELECT COUNT(*) AS count FROM menu_items WHERE id = ?").get(unusedDish.id)).toEqual({
+      count: 0
+    });
+
+    orderService.removeTable(table.id);
+    expect(database.db.prepare("SELECT COUNT(*) AS count FROM restaurant_tables WHERE id = ?").get(table.id)).toEqual({
+      count: 0
+    });
+
+    const order = orderService.submitOrder({
+      tableId: "table-t1",
+      captainId: "waiter-1",
+      pax: 1,
+      orderType: "dine_in",
+      items: [{ menuItemId: "item-dal-fry", quantity: 1 }]
+    });
+    orderService.cancelOrder(order.orderId, "Test cleanup");
+
+    expect(orderService.removeTable("table-t1")).toEqual({ id: "table-t1", deleted: false, active: false });
+    expect(database.db.prepare("SELECT active FROM restaurant_tables WHERE id = 'table-t1'").get()).toEqual({ active: 0 });
+    orderService.updateTable("table-t1", { active: true });
+    expect(database.db.prepare("SELECT active FROM restaurant_tables WHERE id = 'table-t1'").get()).toEqual({ active: 1 });
 
     database.close();
   });
@@ -295,7 +322,7 @@ describe("OrderService KOT lifecycle", () => {
     database.close();
   });
 
-  it("routes bill printing to the configured receipt printer", () => {
+  it("routes paid bill printing to the configured receipt printer", () => {
     const { database, orderService } = createTestHub();
     orderService.updateReceiptPrinter({
       printerMode: "network",
@@ -312,6 +339,7 @@ describe("OrderService KOT lifecycle", () => {
     });
 
     const bill = orderService.generateBill(order.orderId);
+    orderService.settleBill(bill.billId, { method: "cash", amountPaise: bill.totalPaise, receivedBy: "cashier-1" });
     expect(database.db.prepare("SELECT printer_host, printer_port FROM print_jobs WHERE target_id = ?").get(bill.billId)).toEqual({
       printer_host: "192.168.1.70",
       printer_port: 9100
@@ -335,7 +363,8 @@ describe("OrderService KOT lifecycle", () => {
     const finalTotalPaise = bill.totalPaise - discountPaise + tipPaise;
     orderService.settleBill(bill.billId, {
       receivedBy: "cashier-1",
-      discountPaise,
+      discountType: "amount",
+      discountValue: discountPaise,
       tipPaise,
       payments: [
         { method: "cash", amountPaise: 10_000 },
@@ -356,6 +385,20 @@ describe("OrderService KOT lifecycle", () => {
       upiPaymentsPaise: finalTotalPaise - 10_000,
       totalPaymentsPaise: finalTotalPaise,
       expectedClosingCashPaise: 110_000
+    });
+
+    const closeResult = orderService.closePosDay({ closingCashPaise: 110_000, closedBy: "cashier-1" });
+    expect(closeResult.report).toMatchObject({
+      finalSalesPaise: finalTotalPaise,
+      cashVariancePaise: 0,
+      billCount: 1
+    });
+    expect(database.db.prepare("SELECT final_sales_paise, cash_variance_paise FROM daily_report_snapshots WHERE pos_day_id = ?").get(closeResult.id)).toEqual({
+      final_sales_paise: finalTotalPaise,
+      cash_variance_paise: 0
+    });
+    expect(database.db.prepare("SELECT COUNT(*) AS count FROM event_log WHERE type = 'daily_report.finalized'").get()).toEqual({
+      count: 1
     });
 
     database.close();

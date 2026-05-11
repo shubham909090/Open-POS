@@ -3,7 +3,6 @@ import { formatInr } from "@gaurav-pos/shared";
 export interface KotTicketItem {
   name: string;
   quantityDelta: number;
-  notes: string;
 }
 
 export interface KotTicket {
@@ -42,7 +41,6 @@ export function renderKotTicket(ticket: KotTicket): string {
   for (const item of ticket.items) {
     const sign = item.quantityDelta > 0 ? "+" : "";
     lines.push(`${sign}${item.quantityDelta} ${item.name}`);
-    if (item.notes) lines.push(`  Note: ${item.notes}`);
   }
 
   if (ticket.reason) {

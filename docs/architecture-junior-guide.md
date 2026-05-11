@@ -81,24 +81,22 @@ It does a smaller set of tasks:
 - show LAN connection status
 - choose a table
 - search menu items
-- add item quantities, modifier chips, note templates, and kitchen notes
+- add simple dish quantities
 - review the KOT before sending
 - save a draft if the hub is temporarily unreachable
 
 It does not write directly to SQLite. It sends final orders to the hub.
 
-## Menu Modifiers And Notes
+## Menu Simplicity
 
-Modifiers are structured dish customizations. Instead of the waiter typing everything manually, the admin can create reusable groups and options.
+For now, a dish is deliberately simple:
 
-Examples:
+- dish name
+- price
+- optional kitchen/counter
+- active or inactive
 
-- Spice: mild, medium, spicy
-- Size: half, full
-- Add-on: extra cheese, extra malai, extra chutney
-- Preparation: Jain, no onion garlic
-
-Each menu item can be linked to the modifier groups it supports. When a waiter selects a modifier, the hub stores the selected option snapshot, adds any price delta to that item, and prints the modifier text on the KOT. Reusable note templates like Jain, No Onion, and Less Oil remain available for quick kitchen instructions.
+The kitchen/counter is optional during setup. If a dish has no kitchen assigned, it can still be sold and billed, but it will not create a KOT until the owner assigns it to a kitchen/counter. Extra dish-customization catalogs are not part of the current product.
 
 ### 3. Cloud Admin App
 
@@ -212,7 +210,7 @@ sequenceDiagram
   Hub->>Cloud: Upload event later if internet exists
 ```
 
-On Android, the waiter can add kitchen notes to ticket lines. Before the app sends the KOT, it shows a review prompt with the item quantities and notes so the waiter can catch mistakes before kitchen printing starts.
+On Android, the waiter reviews item quantities before sending the KOT so mistakes can be caught before kitchen printing starts.
 
 The key rule is atomic local writing. When an order is finalized, the hub writes all important local records together:
 

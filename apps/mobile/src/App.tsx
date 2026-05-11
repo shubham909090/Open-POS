@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
-  FlatList,
   Modal,
   Pressable,
   SafeAreaView,
@@ -10,103 +9,124 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View
 } from "react-native";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import type { OrderItemInput } from "@gaurav-pos/shared";
-import { HubClient, type HubBootstrap } from "./lib/hub-client";
+import { HubClient, type HubBootstrap, type HubOrder } from "./lib/hub-client";
 import { clearDraft, getDeviceToken, getHubUrl, loadDraft, saveDraft, setDeviceToken, setHubUrl } from "./lib/draft-store";
 
 type ConnectionState = "checking" | "online" | "offline";
+type ViewMode = "tables" | "menu" | "ticket";
 
 export default function App() {
+  const { width } = useWindowDimensions();
+  const isWide = width >= 760;
+  const tableColumns = width >= 900 ? 5 : width >= 640 ? 4 : 3;
+
   const [hubUrl, setHubUrlState] = useState("http://192.168.1.10:3737");
   const [deviceToken, setDeviceTokenState] = useState("dev-admin-token");
+  const [showToken, setShowToken] = useState(false);
   const [pairingCode, setPairingCode] = useState("");
   const [pairingPayload, setPairingPayload] = useState("");
   const [scannerOpen, setScannerOpen] = useState(false);
+  const [setupOpen, setSetupOpen] = useState(false);
   const scanLockRef = useRef(false);
+
   const [connection, setConnection] = useState<ConnectionState>("checking");
+  const [loading, setLoading] = useState(false);
+  const [savingDraft, setSavingDraft] = useState(false);
+  const [message, setMessage] = useState("Checking hub connection...");
   const [bootstrap, setBootstrap] = useState<HubBootstrap | null>(null);
   const [selectedTableId, setSelectedTableId] = useState<string | null>(null);
+  const [currentOrder, setCurrentOrder] = useState<HubOrder | null>(null);
   const [captainId, setCaptainId] = useState("waiter-1");
   const [pax, setPax] = useState("2");
   const [items, setItems] = useState<OrderItemInput[]>([]);
   const [menuSearch, setMenuSearch] = useState("");
+  const [mode, setMode] = useState<ViewMode>("tables");
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
 
   const client = useMemo(() => new HubClient(hubUrl, deviceToken), [deviceToken, hubUrl]);
   const selectedTable = bootstrap?.tables.find((table) => table.id === selectedTableId) ?? null;
+  const openDay = Boolean(bootstrap?.openDay);
+  const activeTables = (bootstrap?.tables ?? []).filter((table) => table.status !== "disabled");
+  const sentItems = (currentOrder?.items ?? []).filter((item) => item.status !== "cancelled" && item.quantity > 0);
+  const sentTotal = sentItems.reduce((total, item) => total + item.unit_price_paise * item.quantity, 0);
+  const draftTotal = items.reduce((total, item) => {
+    const menuItem = bootstrap?.menuItems.find((entry) => entry.id === item.menuItemId);
+    return total + (menuItem?.price_paise ?? 0) * item.quantity;
+  }, 0);
+  const tableTotal = sentTotal + draftTotal;
+
   const visibleMenu = (bootstrap?.menuItems ?? []).filter((item) => {
     if (!item.active) return false;
     const query = menuSearch.trim().toLowerCase();
-    return !query || `${item.name} ${item.production_unit_name}`.toLowerCase().includes(query);
+    return !query || `${item.name} ${item.production_unit_name ?? ""}`.toLowerCase().includes(query);
   });
-  const ticketTotal = items.reduce((total, item) => {
-    const menuItem = bootstrap?.menuItems.find((entry) => entry.id === item.menuItemId);
-    const modifierTotal = (item.modifiers ?? []).reduce((sum, modifier) => {
-      const group = bootstrap?.modifierGroups.find((entry) => entry.id === modifier.groupId);
-      const option = group?.options.find((entry) => entry.id === modifier.optionId);
-      return sum + (option?.price_delta_paise ?? 0);
-    }, 0);
-    return total + ((menuItem?.price_paise ?? 0) + modifierTotal) * item.quantity;
-  }, 0);
 
   useEffect(() => {
-    void getHubUrl().then((url) => {
-      setHubUrlState(url);
-    });
-    void getDeviceToken().then((token) => {
-      setDeviceTokenState(token);
-    });
+    void getHubUrl().then(setHubUrlState);
+    void getDeviceToken().then(setDeviceTokenState);
   }, []);
 
   useEffect(() => {
     void refresh();
-    const interval = setInterval(() => void refresh(), 8_000);
+    const interval = setInterval(() => void refresh(false), 8_000);
     return () => clearInterval(interval);
-  }, [client]);
+  }, [client, selectedTableId]);
 
-  async function refresh() {
-    setConnection("checking");
-    const isOnline = await client.health();
-    setConnection(isOnline ? "online" : "offline");
-    if (!isOnline) return;
-    setBootstrap(await client.bootstrap());
+  async function refresh(showSpinner = true) {
+    if (showSpinner) setLoading(true);
+    if (showSpinner) setConnection("checking");
+    try {
+      const isOnline = await client.health();
+      setConnection(isOnline ? "online" : "offline");
+      if (!isOnline) {
+        setMessage("Hub is offline. Drafts stay on this phone until the hub is back.");
+        return;
+      }
+
+      const nextBootstrap = await client.bootstrap();
+      setBootstrap(nextBootstrap);
+      setMessage(nextBootstrap.openDay ? "Connected to hub. Ready for service." : "Hub connected, but today's POS day is not open.");
+      if (selectedTableId) await loadTableOrder(selectedTableId);
+    } catch (error) {
+      setConnection("offline");
+      setMessage(error instanceof Error ? error.message : "Could not reach the hub.");
+    } finally {
+      if (showSpinner) setLoading(false);
+    }
+  }
+
+  async function loadTableOrder(tableId: string) {
+    if (connection === "offline") return;
+    try {
+      setCurrentOrder(await client.tableOrder(tableId));
+    } catch (error) {
+      setCurrentOrder(null);
+      setMessage(error instanceof Error ? error.message : "Could not load table order.");
+    }
   }
 
   async function selectTable(tableId: string) {
     setSelectedTableId(tableId);
+    setMode("menu");
+    setCurrentOrder(null);
     const draft = await loadDraft(tableId);
+    setItems(draft?.items ?? []);
     if (draft) {
       setCaptainId(draft.captainId);
       setPax(String(draft.pax));
-      setItems(draft.items);
-      return;
+      setMessage("Draft restored for this table.");
     }
-
-    if (connection === "online") {
-      const order = await client.tableOrder(tableId);
-      setItems(
-        (order?.items ?? [])
-          .filter((item) => item.status !== "cancelled")
-          .map((item) => ({
-            menuItemId: item.menu_item_id,
-            quantity: item.quantity,
-            notes: item.notes
-              ? item.notes
-              : undefined,
-            modifiers: item.modifiers_json ? JSON.parse(item.modifiers_json) : undefined
-          }))
-      );
-      if (order?.order?.pax) setPax(String(order.order.pax));
-    } else {
-      setItems([]);
-    }
+    await loadTableOrder(tableId);
   }
 
   async function persistDraft(nextItems = items) {
     if (!selectedTableId) return;
+    setSavingDraft(true);
     await saveDraft({
       tableId: selectedTableId,
       captainId,
@@ -114,16 +134,21 @@ export default function App() {
       items: nextItems,
       updatedAt: new Date().toISOString()
     });
+    setSavingDraft(false);
   }
 
   function addItem(menuItemId: string) {
-    const current = items.find((item) => item.menuItemId === menuItemId && !item.notes);
+    if (!selectedTableId) {
+      setMessage("Choose a table before adding dishes.");
+      setMode("tables");
+      return;
+    }
+    const current = items.find((item) => item.menuItemId === menuItemId);
     const next = current
-      ? items.map((item) =>
-          item.menuItemId === menuItemId && !item.notes ? { ...item, quantity: item.quantity + 1 } : item
-        )
+      ? items.map((item) => (item.menuItemId === menuItemId ? { ...item, quantity: item.quantity + 1 } : item))
       : [...items, { menuItemId, quantity: 1 }];
     setItems(next);
+    setMode("ticket");
     void persistDraft(next);
   }
 
@@ -135,74 +160,73 @@ export default function App() {
     void persistDraft(next);
   }
 
-  function changeNotes(index: number, notes: string) {
-    const next = items.map((item, itemIndex) => (itemIndex === index ? { ...item, notes } : item));
-    setItems(next);
-    void persistDraft(next);
-  }
-
-  function toggleModifier(index: number, groupId: string, optionId: string, single: boolean) {
-    const next = items.map((item, itemIndex) => {
-      if (itemIndex !== index) return item;
-      const current = item.modifiers ?? [];
-      const selected = current.some((modifier) => modifier.groupId === groupId && modifier.optionId === optionId);
-      const without = current.filter((modifier) => (single ? modifier.groupId !== groupId : modifier.optionId !== optionId));
-      return { ...item, modifiers: selected ? without : [...without, { groupId, optionId }] };
-    });
-    setItems(next);
-    void persistDraft(next);
-  }
-
-  function applyNoteTemplate(index: number, note: string) {
-    const current = items[index]?.notes?.trim();
-    changeNotes(index, [current, note].filter(Boolean).join(" | "));
-  }
-
   function orderSummary() {
     return items
       .map((item) => {
         const menuItem = bootstrap?.menuItems.find((entry) => entry.id === item.menuItemId);
-        const note = item.notes?.trim() ? ` (${item.notes.trim()})` : "";
-        return `${item.quantity} x ${menuItem?.name ?? item.menuItemId}${note}`;
+        return `${item.quantity} x ${menuItem?.name ?? item.menuItemId}`;
       })
       .join("\n");
   }
 
   function confirmSendKot(): Promise<boolean> {
     return new Promise((resolve) => {
-      Alert.alert("Review KOT", orderSummary(), [
-        { text: "Go Back", style: "cancel", onPress: () => resolve(false) },
-        { text: "Send KOT", onPress: () => resolve(true) }
+      Alert.alert("Send these new items?", orderSummary(), [
+        { text: "Review", style: "cancel", onPress: () => resolve(false) },
+        { text: "Send To Kitchen", onPress: () => resolve(true) }
       ]);
     });
   }
 
   async function submitOrder() {
-    if (!selectedTableId || items.length === 0) return;
-    if (connection !== "online") {
-      await persistDraft();
-      Alert.alert("Saved locally", "Reconnect to the hub to send KOT.");
+    if (!selectedTableId) {
+      setMessage("Choose a table first.");
+      setMode("tables");
       return;
     }
-
+    if (items.length === 0) {
+      setMessage("Add at least one dish before sending.");
+      setMode("menu");
+      return;
+    }
+    if (connection !== "online") {
+      await persistDraft();
+      Alert.alert("Draft saved", "Reconnect to the hub to send these items.");
+      return;
+    }
+    if (!openDay) {
+      Alert.alert("POS day is closed", "Ask the cashier to open today's POS day on the hub.");
+      return;
+    }
     if (!(await confirmSendKot())) return;
 
-    await client.submitOrder({
-      tableId: selectedTableId,
-      captainId,
-      pax: Number(pax || 1),
-      orderType: "dine_in",
-      items
-    });
-    await clearDraft(selectedTableId);
-    await refresh();
-    Alert.alert("KOT sent", "Kitchen and cashier are updated.");
+    try {
+      setLoading(true);
+      await client.submitOrder({
+        tableId: selectedTableId,
+        captainId,
+        pax: Number(pax || 1),
+        orderType: "dine_in",
+        items
+      });
+      await clearDraft(selectedTableId);
+      setItems([]);
+      await refresh(false);
+      await loadTableOrder(selectedTableId);
+      setMode("ticket");
+      setMessage("Sent to kitchen. New items cleared; table check stays visible.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not send order.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function saveHub() {
     await setHubUrl(hubUrl);
     await setDeviceToken(deviceToken);
     await refresh();
+    setSetupOpen(false);
   }
 
   async function pairDevice() {
@@ -217,17 +241,22 @@ export default function App() {
       setHubUrlState(payload.hubUrl);
       await setHubUrl(payload.hubUrl);
     }
-    const pairClient = new HubClient(pairHubUrl, deviceToken);
-    const result = await pairClient.exchangePairingCode({
-      code: pairCode,
-      deviceName: captainId || payload?.deviceName || "Android waiter"
-    });
-    setDeviceTokenState(result.token);
-    await setDeviceToken(result.token);
-    setPairingCode("");
-    setPairingPayload("");
-    await refresh();
-    Alert.alert("Device paired", `${result.deviceName} is ready as ${result.role}.`);
+    try {
+      const pairClient = new HubClient(pairHubUrl, deviceToken);
+      const result = await pairClient.exchangePairingCode({
+        code: pairCode,
+        deviceName: captainId || payload?.deviceName || "Android waiter"
+      });
+      setDeviceTokenState(result.token);
+      await setDeviceToken(result.token);
+      setPairingCode("");
+      setPairingPayload("");
+      setSetupOpen(false);
+      await refresh();
+      Alert.alert("Device paired", `${result.deviceName} is ready as ${result.role}.`);
+    } catch (error) {
+      Alert.alert("Pairing failed", error instanceof Error ? error.message : "Try a fresh code from the hub.");
+    }
   }
 
   async function openScanner() {
@@ -252,199 +281,271 @@ export default function App() {
     setPairingPayload(data);
     setPairingCode(payload.code);
     if (payload.hubUrl) setHubUrlState(payload.hubUrl);
-    Alert.alert("Pair this device?", `${payload.deviceName} as ${payload.role}`, [
+    Alert.alert("Pair this device?", `${payload.deviceName ?? "Android waiter"} as ${payload.role ?? "waiter"}`, [
       { text: "Later", style: "cancel" },
       { text: "Pair Now", onPress: () => void pairDeviceFromPayload(payload) }
     ]);
   }
 
   async function pairDeviceFromPayload(payload: PairingPayload) {
-    const pairClient = new HubClient(payload.hubUrl, deviceToken);
-    const result = await pairClient.exchangePairingCode({
-      code: payload.code,
-      deviceName: captainId || payload.deviceName || "Android waiter"
-    });
-    setHubUrlState(payload.hubUrl);
-    setDeviceTokenState(result.token);
-    await setHubUrl(payload.hubUrl);
-    await setDeviceToken(result.token);
-    setPairingCode("");
-    setPairingPayload("");
-    await refresh();
-    Alert.alert("Device paired", `${result.deviceName} is ready as ${result.role}.`);
+    try {
+      const pairClient = new HubClient(payload.hubUrl, deviceToken);
+      const result = await pairClient.exchangePairingCode({
+        code: payload.code,
+        deviceName: captainId || payload.deviceName || "Android waiter"
+      });
+      setHubUrlState(payload.hubUrl);
+      setDeviceTokenState(result.token);
+      await setHubUrl(payload.hubUrl);
+      await setDeviceToken(result.token);
+      setPairingCode("");
+      setPairingPayload("");
+      setSetupOpen(false);
+      await refresh();
+      Alert.alert("Device paired", `${result.deviceName} is ready as ${result.role}.`);
+    } catch (error) {
+      Alert.alert("Pairing failed", error instanceof Error ? error.message : "Try a fresh code from the hub.");
+    }
   }
 
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.header}>
-        <View>
-          <Text style={styles.title}>Waiter Station</Text>
-          <Text style={styles.muted}>{selectedTable ? `Table ${selectedTable.name}` : "Choose table, punch items, send KOT"}</Text>
+        <View style={styles.headerText}>
+          <Text style={styles.kicker}>Gaurav POS</Text>
+          <Text style={styles.title}>{selectedTable ? `Table ${selectedTable.name}` : "Waiter App"}</Text>
+          <Text style={styles.muted}>{selectedTable ? "Add new items or review the table check." : "Pick a table to start taking an order."}</Text>
         </View>
-        <View style={styles.statusPill}>
-          {connection === "checking" ? <ActivityIndicator size="small" /> : <View style={[styles.dot, styles[connection]]} />}
-          <Text style={styles.statusText}>{connection === "online" ? "Online" : connection === "offline" ? "Offline" : "Checking"}</Text>
-        </View>
-      </View>
-
-      <View style={styles.connectionCard}>
-        <View style={styles.hubRow}>
-          <TextInput value={hubUrl} onChangeText={setHubUrlState} style={styles.hubInput} autoCapitalize="none" />
-          <TextInput
-            value={deviceToken}
-            onChangeText={setDeviceTokenState}
-            style={styles.tokenInput}
-            autoCapitalize="none"
-            secureTextEntry
-          />
-          <Pressable style={styles.primaryButton} onPress={saveHub}>
-            <Text style={styles.primaryButtonText}>Set</Text>
-          </Pressable>
-        </View>
-        <View style={styles.hubRow}>
-          <TextInput value={pairingCode} onChangeText={setPairingCode} style={styles.hubInput} placeholder="Pairing code" />
-          <Pressable style={styles.secondaryButton} onPress={() => void openScanner()}>
-            <Text style={styles.secondaryButtonText}>Scan</Text>
-          </Pressable>
-          <Pressable style={styles.primaryButton} onPress={() => void pairDevice()}>
-            <Text style={styles.primaryButtonText}>Pair</Text>
-          </Pressable>
-        </View>
-        <TextInput
-          value={pairingPayload}
-          onChangeText={setPairingPayload}
-          style={styles.payloadInput}
-          placeholder="Paste QR payload"
-          autoCapitalize="none"
-          multiline
-        />
-      </View>
-
-      <View style={styles.body}>
-        <View style={styles.tablePanel}>
-          <View style={styles.panelHeader}>
-            <Text style={styles.sectionTitle}>Tables</Text>
-            <Text style={styles.muted}>{bootstrap?.tables.length ?? 0} total</Text>
+        <View style={styles.headerActions}>
+          <View style={[styles.statusPill, styles[`status_${connection}`]]}>
+            {connection === "checking" ? <ActivityIndicator size="small" /> : <View style={[styles.dot, styles[connection]]} />}
+            <Text style={styles.statusText}>{connection === "online" ? "Online" : connection === "offline" ? "Offline" : "Checking"}</Text>
           </View>
-        <FlatList
-          data={bootstrap?.tables ?? []}
-          keyExtractor={(item) => item.id}
-          numColumns={3}
-          contentContainerStyle={styles.tableList}
-          renderItem={({ item }) => (
-            <Pressable
-              style={[styles.tableTile, item.status !== "free" && styles.busyTable, item.id === selectedTableId && styles.selectedTable]}
-              onPress={() => void selectTable(item.id)}
-            >
-              <Text style={styles.tableName}>{item.name}</Text>
-              <Text style={styles.muted}>{item.status}</Text>
+          <Pressable style={styles.ghostButton} onPress={() => setSetupOpen((value) => !value)}>
+            <Text style={styles.ghostButtonText}>{setupOpen ? "Hide Setup" : "Setup"}</Text>
+          </Pressable>
+        </View>
+      </View>
+
+      <ScrollView style={styles.screen} contentContainerStyle={styles.screenContent} keyboardShouldPersistTaps="handled">
+        <View style={styles.banner}>
+          <Text style={styles.bannerText}>{message}</Text>
+          {savingDraft ? <Text style={styles.bannerMeta}>Saving draft...</Text> : null}
+        </View>
+
+        {setupOpen || connection === "offline" ? (
+          <View style={styles.setupCard}>
+            <View style={styles.cardHeader}>
+              <View>
+                <Text style={styles.sectionTitle}>Connect This Phone</Text>
+                <Text style={styles.muted}>Scan the QR from the hub or enter the hub address manually.</Text>
+              </View>
+              <Pressable style={styles.secondaryButton} onPress={() => void refresh()}>
+                <Text style={styles.secondaryButtonText}>Retry</Text>
+              </Pressable>
+            </View>
+            <LabeledInput label="Hub address" value={hubUrl} onChangeText={setHubUrlState} autoCapitalize="none" />
+            <View style={styles.secretRow}>
+              <View style={styles.secretInput}>
+                <LabeledInput
+                  label="Device password"
+                  value={deviceToken}
+                  onChangeText={setDeviceTokenState}
+                  autoCapitalize="none"
+                  secureTextEntry={!showToken}
+                />
+              </View>
+              <Pressable style={styles.secondaryButton} onPress={() => setShowToken((value) => !value)}>
+                <Text style={styles.secondaryButtonText}>{showToken ? "Hide" : "Show"}</Text>
+              </Pressable>
+            </View>
+            <View style={styles.actionRow}>
+              <Pressable style={styles.primaryButton} onPress={saveHub}>
+                <Text style={styles.primaryButtonText}>Save Connection</Text>
+              </Pressable>
+              <Pressable style={styles.secondaryButton} onPress={() => void openScanner()}>
+                <Text style={styles.secondaryButtonText}>Scan QR</Text>
+              </Pressable>
+            </View>
+            <LabeledInput label="Six digit pairing code" value={pairingCode} onChangeText={setPairingCode} keyboardType="number-pad" />
+            <TextInput
+              value={pairingPayload}
+              onChangeText={setPairingPayload}
+              style={styles.payloadInput}
+              placeholder="Paste QR payload if scanning is not available"
+              placeholderTextColor="#81786b"
+              autoCapitalize="none"
+              multiline
+            />
+            <Pressable style={styles.primaryButton} onPress={() => void pairDevice()}>
+              <Text style={styles.primaryButtonText}>Pair Device</Text>
             </Pressable>
-          )}
-        />
+          </View>
+        ) : null}
+
+        <View style={styles.modeTabs}>
+          {(["tables", "menu", "ticket"] as ViewMode[]).map((entry) => (
+            <Pressable key={entry} style={[styles.modeTab, mode === entry && styles.modeTabActive]} onPress={() => setMode(entry)}>
+              <Text style={[styles.modeTabText, mode === entry && styles.modeTabTextActive]}>
+                {entry === "tables" ? "Tables" : entry === "menu" ? "Menu" : "Ticket"}
+              </Text>
+            </Pressable>
+          ))}
         </View>
 
-        <View style={styles.order}>
-          <View style={styles.panelHeader}>
-            <Text style={styles.sectionTitle}>{selectedTable ? `Table ${selectedTable.name}` : "Select table"}</Text>
-            <Text style={styles.totalText}>₹{(ticketTotal / 100).toFixed(0)}</Text>
-          </View>
-          <View style={styles.inputs}>
-            <TextInput value={captainId} onChangeText={setCaptainId} style={styles.input} />
-            <TextInput value={pax} onChangeText={setPax} keyboardType="numeric" style={styles.paxInput} />
-          </View>
-          <TextInput
-            value={menuSearch}
-            onChangeText={setMenuSearch}
-            style={styles.input}
-            placeholder="Search menu"
-          />
-
-          <ScrollView style={styles.menu}>
-            {visibleMenu
-              .map((menuItem) => (
-                <Pressable key={menuItem.id} style={styles.menuItem} onPress={() => addItem(menuItem.id)}>
-                  <View>
-                    <Text style={styles.menuName}>{menuItem.name}</Text>
-                    <Text style={styles.muted}>{menuItem.production_unit_name}</Text>
-                  </View>
-                  <Text style={styles.price}>₹{(menuItem.price_paise / 100).toFixed(0)}</Text>
-                </Pressable>
-              ))}
-          </ScrollView>
-
-          <View style={styles.ticket}>
-            {items.map((item, index) => {
-              const menuItem = bootstrap?.menuItems.find((entry) => entry.id === item.menuItemId);
-              return (
-                <View key={`${item.menuItemId}-${index}`} style={styles.ticketLine}>
-                  <View style={styles.ticketText}>
-                    <Text style={styles.ticketName}>{menuItem?.name ?? item.menuItemId}</Text>
-                    <TextInput
-                      value={item.notes ?? ""}
-                      onChangeText={(notes) => changeNotes(index, notes)}
-                      style={styles.noteInput}
-                      placeholder="Kitchen note"
-                    />
-                    <View style={styles.noteChipRow}>
-                      {(bootstrap?.noteTemplates ?? []).map((note) => (
-                        <Pressable key={note.id} style={styles.noteChip} onPress={() => applyNoteTemplate(index, note.note)}>
-                          <Text style={styles.noteChipText}>{note.label}</Text>
-                        </Pressable>
-                      ))}
-                    </View>
-                    {(bootstrap?.modifierGroups ?? [])
-                      .filter((group) => {
-                        const menuItemIds = bootstrap?.menuItems.find((entry) => entry.id === item.menuItemId)?.modifier_group_ids ?? [];
-                        return menuItemIds.includes(group.id);
-                      })
-                      .map((group) => (
-                        <View key={group.id} style={styles.modifierBlock}>
-                          <Text style={styles.muted}>{group.name}</Text>
-                          <View style={styles.noteChipRow}>
-                            {group.options
-                              .filter((option) => option.active)
-                              .map((option) => {
-                                const active = (item.modifiers ?? []).some((modifier) => modifier.groupId === group.id && modifier.optionId === option.id);
-                                return (
-                                  <Pressable
-                                    key={option.id}
-                                    style={[styles.noteChip, active && styles.activeChip]}
-                                    onPress={() => toggleModifier(index, group.id, option.id, group.selection_type === "single")}
-                                  >
-                                    <Text style={styles.noteChipText}>
-                                      {option.name}
-                                      {option.price_delta_paise ? ` +₹${(option.price_delta_paise / 100).toFixed(0)}` : ""}
-                                    </Text>
-                                  </Pressable>
-                                );
-                              })}
-                          </View>
-                        </View>
-                      ))}
-                  </View>
-                  <View style={styles.qtyControls}>
-                    <Pressable style={styles.qtyButton} onPress={() => changeQty(index, -1)}>
-                      <Text>-</Text>
-                    </Pressable>
-                    <Text>{item.quantity}</Text>
-                    <Pressable style={styles.qtyButton} onPress={() => changeQty(index, 1)}>
-                      <Text>+</Text>
-                    </Pressable>
-                  </View>
+        <View style={[styles.workArea, isWide && styles.workAreaWide]}>
+          {(mode === "tables" || isWide) && (
+            <View style={[styles.panel, isWide && styles.sidePanel]}>
+              <View style={styles.cardHeader}>
+                <View>
+                  <Text style={styles.sectionTitle}>Tables</Text>
+                  <Text style={styles.muted}>{openDay ? `${activeTables.length} tables available` : "Open POS day on the hub first"}</Text>
                 </View>
-              );
-            })}
-          </View>
+                {loading ? <ActivityIndicator /> : null}
+              </View>
+              {activeTables.length === 0 ? (
+                <EmptyState title="No tables yet" text="Add rooms and tables on the hub setup screen." />
+              ) : (
+                <View style={styles.tableGrid}>
+                  {activeTables.map((table) => (
+                    <Pressable
+                      key={table.id}
+                      style={[
+                        styles.tableTile,
+                        { width: `${100 / tableColumns - 2}%` },
+                        table.status !== "free" && styles.busyTable,
+                        table.id === selectedTableId && styles.selectedTable
+                      ]}
+                      onPress={() => void selectTable(table.id)}
+                    >
+                      <Text style={styles.tableName}>{table.name}</Text>
+                      <Text style={[styles.tableStatus, table.status !== "free" && styles.tableStatusBusy]}>
+                        {table.status === "free" ? "Free" : "Occupied"}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+              )}
+            </View>
+          )}
 
-          <Pressable style={[styles.primaryButton, styles.sendButton]} onPress={() => void submitOrder()}>
-            <Text style={styles.primaryButtonText}>{connection === "online" ? "Send KOT" : "Save Draft"}</Text>
-          </Pressable>
+          {(mode === "menu" || isWide) && (
+            <View style={[styles.panel, styles.menuPanel]}>
+              <View style={styles.cardHeader}>
+                <View>
+                  <Text style={styles.sectionTitle}>Add Dishes</Text>
+                  <Text style={styles.muted}>{selectedTable ? `New items for Table ${selectedTable.name}` : "Choose a table first"}</Text>
+                </View>
+                <Text style={styles.totalText}>Rs {(draftTotal / 100).toFixed(0)}</Text>
+              </View>
+              <TextInput
+                value={menuSearch}
+                onChangeText={setMenuSearch}
+                style={styles.input}
+                placeholder="Search dishes"
+                placeholderTextColor="#81786b"
+              />
+              {!selectedTable ? (
+                <EmptyState title="No table selected" text="Tap a table, then add dishes here." />
+              ) : visibleMenu.length === 0 ? (
+                <EmptyState title="No dishes found" text="Try another search or add dishes on the hub." />
+              ) : (
+                <View style={styles.menuList}>
+                  {visibleMenu.map((menuItem) => (
+                    <Pressable key={menuItem.id} style={styles.menuItem} onPress={() => addItem(menuItem.id)}>
+                      <View style={styles.menuText}>
+                        <Text style={styles.menuName}>{menuItem.name}</Text>
+                        <Text style={styles.muted}>{menuItem.production_unit_name ?? "No kitchen assigned"}</Text>
+                      </View>
+                      <View style={styles.menuPriceBlock}>
+                        <Text style={styles.price}>Rs {(menuItem.price_paise / 100).toFixed(0)}</Text>
+                        <Text style={styles.addText}>Add</Text>
+                      </View>
+                    </Pressable>
+                  ))}
+                </View>
+              )}
+            </View>
+          )}
+
+          {(mode === "ticket" || isWide) && (
+            <View style={[styles.panel, isWide && styles.sidePanel]}>
+              <View style={styles.cardHeader}>
+                <View>
+                  <Text style={styles.sectionTitle}>Table Check</Text>
+                  <Text style={styles.muted}>{selectedTable ? `Table ${selectedTable.name}` : "No table selected"}</Text>
+                </View>
+                <Text style={styles.totalText}>Rs {(tableTotal / 100).toFixed(0)}</Text>
+              </View>
+
+              <View style={styles.formRow}>
+                <LabeledInput label="Waiter" value={captainId} onChangeText={setCaptainId} />
+                <View style={styles.paxBox}>
+                  <LabeledInput label="Pax" value={pax} onChangeText={setPax} keyboardType="number-pad" />
+                </View>
+              </View>
+
+              <Text style={styles.subhead}>New Items</Text>
+              {items.length === 0 ? (
+                <EmptyState title="No new dishes" text="Add dishes from the menu. Sent items stay below for reference." compact />
+              ) : (
+                <View style={styles.ticketList}>
+                  {items.map((item, index) => {
+                    const menuItem = bootstrap?.menuItems.find((entry) => entry.id === item.menuItemId);
+                    return (
+                      <View key={`${item.menuItemId}-${index}`} style={styles.ticketLine}>
+                        <View style={styles.ticketText}>
+                          <Text style={styles.ticketName}>{menuItem?.name ?? item.menuItemId}</Text>
+                          <Text style={styles.muted}>Rs {(((menuItem?.price_paise ?? 0) * item.quantity) / 100).toFixed(0)}</Text>
+                        </View>
+                        <View style={styles.qtyControls}>
+                          <Pressable style={styles.qtyButton} onPress={() => changeQty(index, -1)}>
+                            <Text style={styles.qtyText}>-</Text>
+                          </Pressable>
+                          <Text style={styles.qtyValue}>{item.quantity}</Text>
+                          <Pressable style={styles.qtyButton} onPress={() => changeQty(index, 1)}>
+                            <Text style={styles.qtyText}>+</Text>
+                          </Pressable>
+                        </View>
+                      </View>
+                    );
+                  })}
+                </View>
+              )}
+
+              <Text style={styles.subhead}>Already Sent</Text>
+              {sentItems.length === 0 ? (
+                <Text style={styles.smallMuted}>Nothing has been sent for this table yet.</Text>
+              ) : (
+                <View style={styles.sentList}>
+                  {sentItems.map((item) => (
+                    <View key={item.menu_item_id} style={styles.sentLine}>
+                      <Text style={styles.sentName}>{item.quantity} x {item.name_snapshot}</Text>
+                      <Text style={styles.muted}>Rs {((item.unit_price_paise * item.quantity) / 100).toFixed(0)}</Text>
+                    </View>
+                  ))}
+                </View>
+              )}
+
+              <View style={styles.totalStrip}>
+                <Text style={styles.totalLabel}>New Rs {(draftTotal / 100).toFixed(0)}</Text>
+                <Text style={styles.totalLabel}>Table Rs {(tableTotal / 100).toFixed(0)}</Text>
+              </View>
+              <Pressable style={[styles.primaryButton, styles.sendButton, (!selectedTable || items.length === 0) && styles.buttonDisabled]} onPress={() => void submitOrder()}>
+                <Text style={styles.primaryButtonText}>{connection === "online" ? "Send New Items" : "Save Draft"}</Text>
+              </Pressable>
+            </View>
+          )}
         </View>
-      </View>
+      </ScrollView>
+
       <Modal visible={scannerOpen} animationType="slide" onRequestClose={() => setScannerOpen(false)}>
         <SafeAreaView style={styles.scannerShell}>
           <View style={styles.scannerHeader}>
-            <Text style={styles.title}>Scan Pairing QR</Text>
+            <View>
+              <Text style={styles.title}>Scan Pairing QR</Text>
+              <Text style={styles.muted}>Use the QR shown on the hub PC.</Text>
+            </View>
             <Pressable style={styles.secondaryButton} onPress={() => setScannerOpen(false)}>
               <Text style={styles.secondaryButtonText}>Close</Text>
             </Pressable>
@@ -490,218 +591,305 @@ function parsePairingPayload(value: string): PairingPayload | null {
   }
 }
 
+function LabeledInput({
+  label,
+  value,
+  onChangeText,
+  secureTextEntry,
+  autoCapitalize,
+  keyboardType
+}: {
+  label: string;
+  value: string;
+  onChangeText: (value: string) => void;
+  secureTextEntry?: boolean;
+  autoCapitalize?: "none" | "sentences" | "words" | "characters";
+  keyboardType?: "default" | "number-pad";
+}) {
+  return (
+    <View style={styles.inputGroup}>
+      <Text style={styles.inputLabel}>{label}</Text>
+      <TextInput
+        value={value}
+        onChangeText={onChangeText}
+        style={styles.input}
+        secureTextEntry={secureTextEntry}
+        autoCapitalize={autoCapitalize}
+        keyboardType={keyboardType}
+        placeholderTextColor="#81786b"
+      />
+    </View>
+  );
+}
+
+function EmptyState({ title, text, compact = false }: { title: string; text: string; compact?: boolean }) {
+  return (
+    <View style={[styles.empty, compact && styles.emptyCompact]}>
+      <Text style={styles.emptyTitle}>{title}</Text>
+      <Text style={styles.muted}>{text}</Text>
+    </View>
+  );
+}
+
+const palette = {
+  ink: "#1c1915",
+  muted: "#6f675d",
+  paper: "#fffdf7",
+  wash: "#f3eee3",
+  line: "#d7cdbc",
+  green: "#16645d",
+  greenSoft: "#e8f4ef",
+  amber: "#9d5d20",
+  amberSoft: "#fff0dc",
+  red: "#a6422b"
+};
+
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: "#ebe6dc" },
+  safe: { flex: 1, backgroundColor: palette.wash },
+  screen: { flex: 1 },
+  screenContent: { padding: 12, gap: 12, paddingBottom: 28 },
   header: {
-    padding: 16,
-    backgroundColor: "#fffaf1",
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    backgroundColor: palette.paper,
     borderBottomWidth: 1,
-    borderColor: "#d8cfbf",
+    borderColor: palette.line,
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between"
+    justifyContent: "space-between",
+    gap: 12
   },
-  title: { fontSize: 24, fontWeight: "800", color: "#18140f" },
-  muted: { color: "#716a60", fontSize: 12 },
-  dot: { width: 14, height: 14, borderRadius: 7 },
-  online: { backgroundColor: "#2c6f68" },
-  offline: { backgroundColor: "#a6422b" },
-  checking: { backgroundColor: "#9b8a64" },
+  headerText: { flex: 1, minWidth: 0 },
+  headerActions: { alignItems: "flex-end", gap: 8 },
+  kicker: { color: palette.green, fontWeight: "800", fontSize: 11, textTransform: "uppercase", letterSpacing: 0 },
+  title: { fontSize: 25, fontWeight: "900", color: palette.ink },
+  muted: { color: palette.muted, fontSize: 12, lineHeight: 17 },
+  smallMuted: { color: palette.muted, fontSize: 12, lineHeight: 18, paddingVertical: 4 },
+  banner: {
+    borderWidth: 1,
+    borderColor: palette.line,
+    backgroundColor: "#fbf6eb",
+    borderRadius: 8,
+    padding: 12,
+    gap: 3
+  },
+  bannerText: { color: palette.ink, fontWeight: "700", lineHeight: 20 },
+  bannerMeta: { color: palette.green, fontSize: 12, fontWeight: "800" },
+  dot: { width: 12, height: 12, borderRadius: 6 },
+  online: { backgroundColor: palette.green },
+  offline: { backgroundColor: palette.red },
+  checking: { backgroundColor: palette.amber },
   statusPill: {
     minHeight: 34,
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: "#d8cfbf",
-    backgroundColor: "#fffdf7",
     paddingHorizontal: 10,
     flexDirection: "row",
     alignItems: "center",
     gap: 7
   },
-  statusText: { color: "#18140f", fontWeight: "700", fontSize: 12 },
-  connectionCard: {
-    padding: 10,
-    gap: 8,
+  status_online: { borderColor: "#a7cbc3", backgroundColor: palette.greenSoft },
+  status_offline: { borderColor: "#e4b1a6", backgroundColor: "#fff0ed" },
+  status_checking: { borderColor: "#ead4a9", backgroundColor: palette.amberSoft },
+  statusText: { color: palette.ink, fontWeight: "800", fontSize: 12 },
+  ghostButton: {
+    minHeight: 34,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: palette.line,
+    paddingHorizontal: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: palette.paper
+  },
+  ghostButtonText: { color: palette.ink, fontWeight: "800", fontSize: 12 },
+  setupCard: {
+    padding: 12,
+    gap: 10,
+    backgroundColor: palette.paper,
+    borderWidth: 1,
+    borderColor: palette.line,
+    borderRadius: 8
+  },
+  cardHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 },
+  sectionTitle: { fontSize: 19, fontWeight: "900", color: palette.ink },
+  inputGroup: { flex: 1, gap: 5 },
+  inputLabel: { color: palette.muted, fontSize: 11, fontWeight: "800", textTransform: "uppercase", letterSpacing: 0 },
+  input: {
+    minHeight: 46,
+    borderWidth: 1,
+    borderColor: "#cfc4b2",
+    borderRadius: 8,
+    paddingHorizontal: 11,
+    color: palette.ink,
     backgroundColor: "#fffaf1",
-    borderBottomWidth: 1,
-    borderColor: "#d8cfbf"
-  },
-  hubRow: { flexDirection: "row", gap: 8 },
-  hubInput: {
-    flex: 1,
-    minHeight: 44,
-    borderWidth: 1,
-    borderColor: "#cfc4b2",
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    color: "#18140f",
-    backgroundColor: "#fffdf7"
-  },
-  tokenInput: {
-    width: 112,
-    minHeight: 44,
-    borderWidth: 1,
-    borderColor: "#cfc4b2",
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    color: "#18140f",
-    backgroundColor: "#fffdf7"
+    fontWeight: "700"
   },
   payloadInput: {
-    minHeight: 48,
+    minHeight: 58,
     borderWidth: 1,
     borderColor: "#cfc4b2",
     borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    color: "#18140f",
-    backgroundColor: "#fffdf7"
-  },
-  body: { flex: 1, padding: 10, gap: 10 },
-  tablePanel: {
-    maxHeight: 192,
-    borderWidth: 1,
-    borderColor: "#d8cfbf",
-    borderRadius: 10,
-    backgroundColor: "#fffdf7",
-    padding: 10
-  },
-  panelHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10 },
-  tableList: { paddingTop: 10, gap: 8 },
-  tableTile: {
-    flex: 1,
-    minHeight: 76,
-    margin: 4,
-    padding: 12,
-    borderWidth: 2,
-    borderColor: "#b9d4c7",
-    borderRadius: 8,
-    backgroundColor: "#f8fff9",
-    justifyContent: "space-between"
-  },
-  busyTable: { borderColor: "#d18b5d", backgroundColor: "#fff3e8" },
-  selectedTable: { borderColor: "#2c6f68", borderWidth: 3 },
-  tableName: { fontSize: 20, fontWeight: "800", color: "#18140f" },
-  order: {
-    flex: 1,
-    padding: 10,
-    gap: 10,
-    borderWidth: 1,
-    borderColor: "#d8cfbf",
-    borderRadius: 10,
-    backgroundColor: "#fffdf7"
-  },
-  sectionTitle: { fontSize: 19, fontWeight: "800", color: "#18140f" },
-  totalText: { color: "#2c6f68", fontSize: 20, fontWeight: "800" },
-  inputs: { flexDirection: "row", gap: 8 },
-  input: {
-    flex: 1,
-    minHeight: 44,
-    borderWidth: 1,
-    borderColor: "#cfc4b2",
-    borderRadius: 8,
-    paddingHorizontal: 10,
+    paddingHorizontal: 11,
+    paddingVertical: 9,
+    color: palette.ink,
     backgroundColor: "#fffaf1"
   },
-  paxInput: {
-    width: 64,
-    minHeight: 44,
-    borderWidth: 1,
-    borderColor: "#cfc4b2",
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    backgroundColor: "#fffaf1"
-  },
-  menu: { maxHeight: 238 },
-  menuItem: {
-    minHeight: 64,
-    padding: 12,
-    marginBottom: 8,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#e5dccd",
-    backgroundColor: "#f8f3e8",
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center"
-  },
-  menuName: { fontSize: 16, fontWeight: "700", color: "#18140f" },
-  price: { color: "#2c6f68", fontWeight: "800" },
-  ticket: { flex: 1, gap: 8 },
-  ticketLine: {
-    minHeight: 76,
-    padding: 10,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#e5dccd",
-    backgroundColor: "#fffaf1",
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center"
-  },
-  ticketText: { flex: 1, gap: 6 },
-  ticketName: { color: "#18140f", fontWeight: "700" },
-  noteInput: {
-    minHeight: 36,
-    borderWidth: 1,
-    borderColor: "#d8cfbf",
-    borderRadius: 8,
-    paddingHorizontal: 8,
-    backgroundColor: "#f8f3e9"
-  },
-  noteChipRow: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
-  noteChip: {
-    minHeight: 30,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: "#cfc4b2",
-    paddingHorizontal: 9,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#fffdf7"
-  },
-  activeChip: { borderColor: "#2c6f68", backgroundColor: "#e4f1eb" },
-  noteChipText: { color: "#18140f", fontSize: 12, fontWeight: "700" },
-  modifierBlock: { gap: 5 },
-  qtyControls: { flexDirection: "row", alignItems: "center", gap: 10 },
-  qtyButton: {
-    width: 38,
-    height: 38,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#cfc4b2",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#fffdf7"
-  },
+  secretRow: { flexDirection: "row", gap: 8, alignItems: "flex-end" },
+  secretInput: { flex: 1 },
+  actionRow: { flexDirection: "row", gap: 8, flexWrap: "wrap" },
   primaryButton: {
-    minHeight: 44,
+    minHeight: 46,
     borderRadius: 8,
-    backgroundColor: "#211d17",
+    backgroundColor: palette.ink,
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 14
+    paddingHorizontal: 16
   },
-  primaryButtonText: { color: "#fffdfa", fontWeight: "700" },
+  primaryButtonText: { color: "#fffdfa", fontWeight: "900" },
   secondaryButton: {
-    minHeight: 44,
+    minHeight: 46,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: "#211d17",
+    borderColor: palette.ink,
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 14,
-    backgroundColor: "#fffdf7"
+    backgroundColor: palette.paper
   },
-  secondaryButtonText: { color: "#211d17", fontWeight: "700" },
-  sendButton: { minHeight: 50 },
+  secondaryButtonText: { color: palette.ink, fontWeight: "900" },
+  modeTabs: {
+    flexDirection: "row",
+    padding: 4,
+    borderRadius: 8,
+    backgroundColor: "#e6ded0",
+    borderWidth: 1,
+    borderColor: palette.line
+  },
+  modeTab: { flex: 1, minHeight: 42, alignItems: "center", justifyContent: "center", borderRadius: 7 },
+  modeTabActive: { backgroundColor: palette.ink },
+  modeTabText: { color: palette.ink, fontWeight: "900" },
+  modeTabTextActive: { color: "#fffdfa" },
+  workArea: { gap: 12 },
+  workAreaWide: { flexDirection: "row", alignItems: "flex-start" },
+  panel: {
+    borderWidth: 1,
+    borderColor: palette.line,
+    borderRadius: 8,
+    backgroundColor: palette.paper,
+    padding: 12,
+    gap: 12
+  },
+  sidePanel: { flex: 1 },
+  menuPanel: { flex: 1.35 },
+  tableGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  tableTile: {
+    minHeight: 78,
+    padding: 11,
+    borderWidth: 2,
+    borderColor: "#a8cdbf",
+    borderRadius: 8,
+    backgroundColor: "#f5fff9",
+    justifyContent: "space-between"
+  },
+  busyTable: { borderColor: "#d08a4d", backgroundColor: palette.amberSoft },
+  selectedTable: { borderColor: palette.green, backgroundColor: palette.greenSoft },
+  tableName: { fontSize: 20, fontWeight: "900", color: palette.ink },
+  tableStatus: { color: palette.green, fontWeight: "900", fontSize: 12 },
+  tableStatusBusy: { color: palette.amber },
+  totalText: { color: palette.green, fontSize: 20, fontWeight: "900" },
+  menuList: { gap: 8 },
+  menuItem: {
+    minHeight: 68,
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#e5dccd",
+    backgroundColor: "#fbf6eb",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 10
+  },
+  menuText: { flex: 1, minWidth: 0 },
+  menuName: { fontSize: 16, fontWeight: "900", color: palette.ink },
+  menuPriceBlock: { alignItems: "flex-end", gap: 4 },
+  price: { color: palette.green, fontWeight: "900" },
+  addText: { color: palette.ink, fontSize: 12, fontWeight: "900" },
+  formRow: { flexDirection: "row", gap: 8 },
+  paxBox: { width: 88 },
+  subhead: { color: palette.ink, fontWeight: "900", fontSize: 13, textTransform: "uppercase", letterSpacing: 0 },
+  ticketList: { gap: 8 },
+  ticketLine: {
+    minHeight: 72,
+    padding: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#e5dccd",
+    backgroundColor: "#fffaf1",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 10
+  },
+  ticketText: { flex: 1, minWidth: 0 },
+  ticketName: { color: palette.ink, fontWeight: "900", fontSize: 15 },
+  qtyControls: { flexDirection: "row", alignItems: "center", gap: 10 },
+  qtyButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#cfc4b2",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: palette.paper
+  },
+  qtyText: { color: palette.ink, fontSize: 20, fontWeight: "900" },
+  qtyValue: { color: palette.ink, fontSize: 16, fontWeight: "900", minWidth: 20, textAlign: "center" },
+  sentList: { borderTopWidth: 1, borderColor: "#ece2d4" },
+  sentLine: {
+    minHeight: 42,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderColor: "#ece2d4",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    gap: 8
+  },
+  sentName: { color: palette.ink, fontWeight: "800", flex: 1 },
+  totalStrip: {
+    borderRadius: 8,
+    backgroundColor: palette.greenSoft,
+    padding: 10,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    gap: 8
+  },
+  totalLabel: { color: palette.green, fontWeight: "900" },
+  sendButton: { minHeight: 52 },
+  buttonDisabled: { opacity: 0.45 },
+  empty: {
+    minHeight: 120,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#eadfce",
+    backgroundColor: "#fffaf1",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 18,
+    gap: 6
+  },
+  emptyCompact: { minHeight: 78, alignItems: "flex-start" },
+  emptyTitle: { color: palette.ink, fontWeight: "900", fontSize: 15 },
   scannerShell: { flex: 1, backgroundColor: "#11100e" },
   scannerHeader: {
     padding: 16,
-    backgroundColor: "#fffdfa",
+    backgroundColor: palette.paper,
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between"
+    justifyContent: "space-between",
+    gap: 12
   },
   camera: { flex: 1 }
 });

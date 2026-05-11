@@ -81,9 +81,63 @@ export default defineSchema({
     .index("by_restaurant_and_receivedAt", ["restaurantId", "receivedAt"]),
   dailyReports: defineTable({
     restaurantId: v.id("restaurants"),
+    posDayId: v.string(),
     businessDate: v.string(),
+    status: v.union(v.literal("finalized")),
+    openingCashPaise: v.number(),
+    closingCashPaise: v.number(),
+    expectedClosingCashPaise: v.number(),
+    cashVariancePaise: v.number(),
     grossSalesPaise: v.number(),
+    discountPaise: v.number(),
+    tipPaise: v.number(),
+    finalSalesPaise: v.number(),
+    cashPaymentsPaise: v.number(),
+    upiPaymentsPaise: v.number(),
+    cardPaymentsPaise: v.number(),
+    onlinePaymentsPaise: v.number(),
+    totalPaymentsPaise: v.number(),
+    nonCashPaymentsPaise: v.number(),
     billCount: v.number(),
+    openOrders: v.number(),
+    billedOrders: v.number(),
+    paidBills: v.number(),
+    unpaidBills: v.number(),
+    cancelledOrders: v.number(),
+    finalizedAt: v.string(),
     updatedAt: v.string()
-  }).index("by_restaurant_date", ["restaurantId", "businessDate"])
+  })
+    .index("by_restaurant_and_businessDate", ["restaurantId", "businessDate"])
+    .index("by_restaurant_and_updatedAt", ["restaurantId", "updatedAt"]),
+  dailyReportBills: defineTable({
+    restaurantId: v.id("restaurants"),
+    businessDate: v.string(),
+    posDayId: v.string(),
+    billId: v.string(),
+    orderId: v.string(),
+    tableName: v.string(),
+    status: v.string(),
+    totalPaise: v.number(),
+    discountPaise: v.number(),
+    tipPaise: v.number(),
+    finalTotalPaise: v.number(),
+    paidPaise: v.number(),
+    paymentsJson: v.string(),
+    settledAt: v.optional(v.string()),
+    updatedAt: v.string()
+  })
+    .index("by_restaurant_and_businessDate", ["restaurantId", "businessDate"])
+    .index("by_restaurant_and_billId", ["restaurantId", "billId"]),
+  dailyReportItems: defineTable({
+    restaurantId: v.id("restaurants"),
+    businessDate: v.string(),
+    posDayId: v.string(),
+    menuItemId: v.string(),
+    name: v.string(),
+    quantity: v.number(),
+    grossSalesPaise: v.number(),
+    updatedAt: v.string()
+  })
+    .index("by_restaurant_and_businessDate", ["restaurantId", "businessDate"])
+    .index("by_restaurant_date_and_menuItem", ["restaurantId", "businessDate", "menuItemId"])
 });

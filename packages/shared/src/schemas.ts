@@ -6,16 +6,9 @@ const customIdSchema = z
   .regex(/^[a-zA-Z0-9_-]{3,80}$/, "Use 3-80 letters, numbers, dashes, or underscores")
   .optional();
 
-export const modifierSelectionInputSchema = z.object({
-  groupId: z.string().min(1),
-  optionId: z.string().min(1)
-});
-
 export const orderItemInputSchema = z.object({
   menuItemId: z.string().min(1),
-  quantity: z.number().int().min(0),
-  notes: z.string().trim().max(500).optional(),
-  modifiers: z.array(modifierSelectionInputSchema).max(20).optional()
+  quantity: z.number().int().min(0)
 });
 
 export const submitOrderSchema = z.object({
@@ -23,7 +16,6 @@ export const submitOrderSchema = z.object({
   captainId: z.string().min(1),
   pax: z.number().int().min(1).max(99).default(1),
   orderType: z.enum(["dine_in", "takeaway"]).default("dine_in"),
-  notes: z.string().trim().max(1000).optional(),
   items: z.array(orderItemInputSchema).min(1)
 });
 
@@ -50,7 +42,8 @@ export const settleBillSchema = z.object({
   method: z.enum(["cash", "upi", "card", "online"]).default("cash").optional(),
   amountPaise: z.number().int().min(0).optional(),
   receivedBy: z.string().min(1),
-  discountPaise: z.number().int().min(0).default(0),
+  discountType: z.enum(["amount", "percent"]).default("amount"),
+  discountValue: z.number().min(0).default(0),
   tipPaise: z.number().int().min(0).default(0),
   payments: z.array(paymentInputSchema).optional()
 });
@@ -62,13 +55,26 @@ export const reprintKotSchema = z.object({
 
 export const createFloorSchema = z.object({
   name: z.string().trim().min(1).max(80),
+  active: z.boolean().default(true),
   customId: customIdSchema
+});
+
+export const updateFloorSchema = z.object({
+  name: z.string().trim().min(1).max(80).optional(),
+  active: z.boolean().optional()
 });
 
 export const createTableSchema = z.object({
   floorId: z.string().min(1),
   name: z.string().trim().min(1).max(40),
+  active: z.boolean().default(true),
   customId: customIdSchema
+});
+
+export const updateTableSchema = z.object({
+  floorId: z.string().min(1).optional(),
+  name: z.string().trim().min(1).max(40).optional(),
+  active: z.boolean().optional()
 });
 
 export const createProductionUnitSchema = z.object({
@@ -78,13 +84,24 @@ export const createProductionUnitSchema = z.object({
   printerHost: z.string().trim().max(120).optional(),
   printerPort: z.number().int().min(1).max(65535).default(9100),
   kdsEnabled: z.boolean().default(true),
+  active: z.boolean().default(true),
   customId: customIdSchema
+});
+
+export const updateProductionUnitSchema = z.object({
+  name: z.string().trim().min(1).max(80).optional(),
+  printerMode: z.enum(["system", "network"]).optional(),
+  printerName: z.string().trim().max(240).nullable().optional(),
+  printerHost: z.string().trim().max(120).optional(),
+  printerPort: z.number().int().min(1).max(65535).optional(),
+  kdsEnabled: z.boolean().optional(),
+  active: z.boolean().optional()
 });
 
 export const createMenuItemSchema = z.object({
   name: z.string().trim().min(1).max(160),
   pricePaise: z.number().int().min(0),
-  productionUnitId: z.string().min(1),
+  productionUnitId: z.string().min(1).nullable().optional(),
   active: z.boolean().default(true),
   customId: customIdSchema
 });
@@ -92,37 +109,8 @@ export const createMenuItemSchema = z.object({
 export const updateMenuItemSchema = z.object({
   name: z.string().trim().min(1).max(160).optional(),
   pricePaise: z.number().int().min(0).optional(),
-  productionUnitId: z.string().min(1).optional(),
+  productionUnitId: z.string().min(1).nullable().optional(),
   active: z.boolean().optional()
-});
-
-export const createModifierGroupSchema = z.object({
-  name: z.string().trim().min(1).max(80),
-  selectionType: z.enum(["single", "multiple"]).default("single"),
-  minSelections: z.number().int().min(0).max(20).default(0),
-  maxSelections: z.number().int().min(1).max(20).default(1),
-  active: z.boolean().default(true),
-  customId: customIdSchema
-});
-
-export const createModifierOptionSchema = z.object({
-  groupId: z.string().min(1),
-  name: z.string().trim().min(1).max(80),
-  priceDeltaPaise: z.number().int().min(0).default(0),
-  active: z.boolean().default(true),
-  customId: customIdSchema
-});
-
-export const assignModifierGroupSchema = z.object({
-  menuItemId: z.string().min(1),
-  groupId: z.string().min(1)
-});
-
-export const createNoteTemplateSchema = z.object({
-  label: z.string().trim().min(1).max(80),
-  note: z.string().trim().min(1).max(240),
-  active: z.boolean().default(true),
-  customId: customIdSchema
 });
 
 export const updateKotStatusSchema = z.object({
@@ -168,15 +156,14 @@ export type OpenPosDayInput = z.infer<typeof openPosDaySchema>;
 export type ClosePosDayInput = z.infer<typeof closePosDaySchema>;
 export type SettleBillInput = z.input<typeof settleBillSchema>;
 export type ReprintKotInput = z.infer<typeof reprintKotSchema>;
-export type CreateFloorInput = z.infer<typeof createFloorSchema>;
-export type CreateTableInput = z.infer<typeof createTableSchema>;
-export type CreateProductionUnitInput = z.infer<typeof createProductionUnitSchema>;
-export type CreateMenuItemInput = z.infer<typeof createMenuItemSchema>;
+export type CreateFloorInput = z.input<typeof createFloorSchema>;
+export type UpdateFloorInput = z.infer<typeof updateFloorSchema>;
+export type CreateTableInput = z.input<typeof createTableSchema>;
+export type UpdateTableInput = z.infer<typeof updateTableSchema>;
+export type CreateProductionUnitInput = z.input<typeof createProductionUnitSchema>;
+export type UpdateProductionUnitInput = z.infer<typeof updateProductionUnitSchema>;
+export type CreateMenuItemInput = z.input<typeof createMenuItemSchema>;
 export type UpdateMenuItemInput = z.infer<typeof updateMenuItemSchema>;
-export type CreateModifierGroupInput = z.infer<typeof createModifierGroupSchema>;
-export type CreateModifierOptionInput = z.infer<typeof createModifierOptionSchema>;
-export type AssignModifierGroupInput = z.infer<typeof assignModifierGroupSchema>;
-export type CreateNoteTemplateInput = z.infer<typeof createNoteTemplateSchema>;
 export type UpdateKotStatusInput = z.infer<typeof updateKotStatusSchema>;
 export type RetryPrintJobInput = z.infer<typeof retryPrintJobSchema>;
 export type UpdateReceiptPrinterInput = z.infer<typeof updateReceiptPrinterSchema>;

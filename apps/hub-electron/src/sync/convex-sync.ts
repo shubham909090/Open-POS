@@ -162,7 +162,8 @@ export class ConvexSyncBridge {
           printerName: typeof payload.printerName === "string" ? payload.printerName : null,
           printerHost: typeof payload.printerHost === "string" ? payload.printerHost : "",
           printerPort: typeof payload.printerPort === "number" ? payload.printerPort : 9100,
-          kdsEnabled: typeof payload.kdsEnabled === "boolean" ? payload.kdsEnabled : true
+          kdsEnabled: typeof payload.kdsEnabled === "boolean" ? payload.kdsEnabled : true,
+          active: typeof payload.active === "boolean" ? payload.active : true
         })
         .onConflictDoUpdate({
           target: productionUnits.id,
@@ -172,7 +173,8 @@ export class ConvexSyncBridge {
             printerName: typeof payload.printerName === "string" ? payload.printerName : null,
             printerHost: typeof payload.printerHost === "string" ? payload.printerHost : "",
             printerPort: typeof payload.printerPort === "number" ? payload.printerPort : 9100,
-            kdsEnabled: typeof payload.kdsEnabled === "boolean" ? payload.kdsEnabled : true
+            kdsEnabled: typeof payload.kdsEnabled === "boolean" ? payload.kdsEnabled : true,
+            active: typeof payload.active === "boolean" ? payload.active : true
           }
         })
         .run();
@@ -186,7 +188,7 @@ export class ConvexSyncBridge {
           id,
           name: this.requiredString(payload.name, "menu item name"),
           pricePaise: this.requiredNumber(payload.pricePaise, "menu item price"),
-          productionUnitId: this.requiredString(payload.productionUnitId, "production unit id"),
+          productionUnitId: typeof payload.productionUnitId === "string" && payload.productionUnitId ? payload.productionUnitId : null,
           active: typeof payload.active === "boolean" ? payload.active : true
         })
         .onConflictDoUpdate({
@@ -194,7 +196,7 @@ export class ConvexSyncBridge {
           set: {
             name: this.requiredString(payload.name, "menu item name"),
             pricePaise: this.requiredNumber(payload.pricePaise, "menu item price"),
-            productionUnitId: this.requiredString(payload.productionUnitId, "production unit id"),
+            productionUnitId: typeof payload.productionUnitId === "string" && payload.productionUnitId ? payload.productionUnitId : null,
             active: typeof payload.active === "boolean" ? payload.active : true
           }
         })

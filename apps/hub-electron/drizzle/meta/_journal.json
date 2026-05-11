@@ -5,22 +5,15 @@
     {
       "idx": 0,
       "version": "6",
-      "when": 1778325466082,
-      "tag": "0000_wise_xorn",
+      "when": 1778455730607,
+      "tag": "0000_late_onslaught",
       "breakpoints": true
     },
     {
       "idx": 1,
       "version": "6",
-      "when": 1778356464844,
-      "tag": "0001_numerous_lily_hollister",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "6",
-      "when": 1778392204428,
-      "tag": "0002_sloppy_pete_wisdom",
+      "when": 1778458700000,
+      "tag": "0001_daily_reports",
       "breakpoints": true
     }
   ]

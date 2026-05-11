@@ -14,7 +14,6 @@ export async function startHub() {
   BackupService.applyPendingRestore(config.databasePath, config.backupDir);
   const database = new HubDatabase(config.databasePath);
   database.migrate();
-  database.seedDemoData();
   const backupService = new BackupService(database, config.databasePath, config.backupDir);
 
   const printerAdapter = config.printerDryRun ? new DryRunPrinterAdapter() : new RoutedPrinterAdapter();
@@ -32,7 +31,8 @@ export async function startHub() {
     printJobService,
     syncBridge,
     eventBus,
-    publicUrl: config.publicUrl
+    publicUrl: config.publicUrl,
+    printerDryRun: config.printerDryRun
   });
 
   await app.listen({ host: config.host, port: config.port });

@@ -3,17 +3,14 @@ import websocket from "@fastify/websocket";
 import { and, eq } from "drizzle-orm";
 import Fastify from "fastify";
 import { createHash } from "node:crypto";
+import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import QRCode from "qrcode";
 import {
   closePosDaySchema,
-  assignModifierGroupSchema,
   createBackupSchema,
   createFloorSchema,
   createMenuItemSchema,
-  createModifierGroupSchema,
-  createModifierOptionSchema,
-  createNoteTemplateSchema,
   createPairingCodeSchema,
   createProductionUnitSchema,
   createTableSchema,
@@ -25,9 +22,12 @@ import {
   settleBillSchema,
   scheduleRestoreSchema,
   submitOrderSchema,
+  updateFloorSchema,
   updateKotStatusSchema,
   updateMenuItemSchema,
+  updateProductionUnitSchema,
   updateReceiptPrinterSchema,
+  updateTableSchema,
   type UserRole
 } from "@gaurav-pos/shared";
 import type { HubDatabase } from "../db/database.js";
@@ -50,12 +50,17 @@ export function createHubServer(input: {
   syncBridge?: ConvexSyncBridge;
   eventBus: EventBus<unknown>;
   publicUrl?: string;
+  printerDryRun?: boolean;
 }) {
   const app = Fastify({ logger: true });
 
   app.register(websocket);
+  const staticRootCandidates = [
+    fileURLToPath(new URL("../../dist/public", import.meta.url)),
+    fileURLToPath(new URL("../public", import.meta.url))
+  ];
   app.register(fastifyStatic, {
-    root: fileURLToPath(new URL("../public", import.meta.url)),
+    root: staticRootCandidates.find((candidate) => existsSync(candidate)) ?? staticRootCandidates[0],
     index: "index.html"
   });
 
@@ -136,7 +141,15 @@ export function createHubServer(input: {
   app.post("/devices/pair/exchange", async (request) =>
     input.authService.exchangePairingCode(exchangePairingCodeSchema.parse(request.body))
   );
-  app.get("/sync/bootstrap", { preHandler: anyRole }, async () => input.orderService.bootstrap());
+  app.get("/sync/bootstrap", { preHandler: anyRole }, async () => {
+    const bootstrap = input.orderService.bootstrap() as Record<string, unknown>;
+    return {
+      ...bootstrap,
+      setup: {
+        printerDryRun: Boolean(input.printerDryRun)
+      }
+    };
+  });
   app.get("/sync/status", { preHandler: cashierOrAdmin }, async () => input.orderService.getSyncStatus());
   app.post("/sync/push", { preHandler: adminOnly }, async () => input.syncBridge?.pushPending() ?? { pushed: 0, skipped: true });
   app.post("/sync/pull", { preHandler: adminOnly }, async () => input.syncBridge?.pullCloudSnapshot() ?? { applied: 0, skipped: true });
@@ -146,10 +159,34 @@ export function createHubServer(input: {
     input.eventBus.publish({ type: "floor.created", result });
     return result;
   });
+  app.patch("/floors/:id", { preHandler: adminOnly }, async (request) => {
+    const params = request.params as { id: string };
+    const result = input.orderService.updateFloor(params.id, updateFloorSchema.parse(request.body));
+    input.eventBus.publish({ type: "floor.updated", result });
+    return result;
+  });
+  app.delete("/floors/:id", { preHandler: adminOnly }, async (request) => {
+    const params = request.params as { id: string };
+    const result = input.orderService.removeFloor(params.id);
+    input.eventBus.publish({ type: "floor.removed", result });
+    return result;
+  });
   app.get("/tables", { preHandler: anyRole }, async () => input.orderService.listTables());
   app.post("/tables", { preHandler: adminOnly }, async (request) => {
     const result = input.orderService.createTable(createTableSchema.parse(request.body));
     input.eventBus.publish({ type: "table.created", result });
+    return result;
+  });
+  app.patch("/tables/:id", { preHandler: adminOnly }, async (request) => {
+    const params = request.params as { id: string };
+    const result = input.orderService.updateTable(params.id, updateTableSchema.parse(request.body));
+    input.eventBus.publish({ type: "table.updated", result });
+    return result;
+  });
+  app.delete("/tables/:id", { preHandler: adminOnly }, async (request) => {
+    const params = request.params as { id: string };
+    const result = input.orderService.removeTable(params.id);
+    input.eventBus.publish({ type: "table.removed", result });
     return result;
   });
   app.get("/tables/:id/order", { preHandler: orderRole }, async (request) => {
@@ -160,6 +197,18 @@ export function createHubServer(input: {
   app.post("/production-units", { preHandler: adminOnly }, async (request) => {
     const result = input.orderService.createProductionUnit(createProductionUnitSchema.parse(request.body));
     input.eventBus.publish({ type: "production_unit.created", result });
+    return result;
+  });
+  app.patch("/production-units/:id", { preHandler: adminOnly }, async (request) => {
+    const params = request.params as { id: string };
+    const result = input.orderService.updateProductionUnit(params.id, updateProductionUnitSchema.parse(request.body));
+    input.eventBus.publish({ type: "production_unit.updated", result });
+    return result;
+  });
+  app.delete("/production-units/:id", { preHandler: adminOnly }, async (request) => {
+    const params = request.params as { id: string };
+    const result = input.orderService.removeProductionUnit(params.id);
+    input.eventBus.publish({ type: "production_unit.removed", result });
     return result;
   });
   app.get("/menu-items", { preHandler: anyRole }, async (request) => {
@@ -178,32 +227,16 @@ export function createHubServer(input: {
     input.eventBus.publish({ type: "menu_item.active_changed", result });
     return result;
   });
+  app.delete("/menu-items/:id", { preHandler: adminOnly }, async (request) => {
+    const params = request.params as { id: string };
+    const result = input.orderService.removeMenuItem(params.id);
+    input.eventBus.publish({ type: "menu_item.removed", result });
+    return result;
+  });
   app.patch("/menu-items/:id", { preHandler: adminOnly }, async (request) => {
     const params = request.params as { id: string };
     const result = input.orderService.updateMenuItem(params.id, updateMenuItemSchema.parse(request.body));
     input.eventBus.publish({ type: "menu_item.updated", result });
-    return result;
-  });
-  app.get("/modifier-groups", { preHandler: anyRole }, async () => input.orderService.listModifierCatalog());
-  app.post("/modifier-groups", { preHandler: adminOnly }, async (request) => {
-    const result = input.orderService.createModifierGroup(createModifierGroupSchema.parse(request.body));
-    input.eventBus.publish({ type: "modifier_group.created", result });
-    return result;
-  });
-  app.post("/modifier-options", { preHandler: adminOnly }, async (request) => {
-    const result = input.orderService.createModifierOption(createModifierOptionSchema.parse(request.body));
-    input.eventBus.publish({ type: "modifier_option.created", result });
-    return result;
-  });
-  app.post("/menu-item-modifier-groups", { preHandler: adminOnly }, async (request) => {
-    const result = input.orderService.assignModifierGroup(assignModifierGroupSchema.parse(request.body));
-    input.eventBus.publish({ type: "menu_item.modifier_group_assigned", result });
-    return result;
-  });
-  app.get("/note-templates", { preHandler: anyRole }, async () => input.orderService.listNoteTemplates());
-  app.post("/note-templates", { preHandler: adminOnly }, async (request) => {
-    const result = input.orderService.createNoteTemplate(createNoteTemplateSchema.parse(request.body));
-    input.eventBus.publish({ type: "note_template.created", result });
     return result;
   });
   app.get("/settings/receipt-printer", { preHandler: cashierOrAdmin }, async () => input.orderService.getReceiptPrinter());
@@ -277,9 +310,15 @@ export function createHubServer(input: {
   app.post("/pos-days/close", { preHandler: cashierOrAdmin }, async (request) => {
     const result = input.orderService.closePosDay(closePosDaySchema.parse(request.body));
     input.eventBus.publish({ type: "pos_day.closed", result });
+    void input.syncBridge?.pushPending().catch((error) => app.log.warn(error, "Close-day report sync will retry later"));
     return result;
   });
   app.get("/pos-days/close-summary", { preHandler: cashierOrAdmin }, async () => input.orderService.getCloseSummary());
+  app.get("/reports/daily", { preHandler: cashierOrAdmin }, async () => input.orderService.listDailyReports());
+  app.get("/reports/daily/:posDayId", { preHandler: cashierOrAdmin }, async (request) => {
+    const params = request.params as { posDayId: string };
+    return input.orderService.getDailyReport(params.posDayId);
+  });
 
   app.post("/orders/submit", { preHandler: orderRole }, async (request) => {
     const { result, replayed } = await withIdempotency(request, "orders.submit", () =>

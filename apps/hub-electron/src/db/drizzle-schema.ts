@@ -19,9 +19,44 @@ export const posDays = sqliteTable("pos_days", {
   closedAt: text("closed_at")
 });
 
+export const dailyReportSnapshots = sqliteTable(
+  "daily_report_snapshots",
+  {
+    posDayId: text("pos_day_id").primaryKey().references(() => posDays.id),
+    businessDate: text("business_date").notNull(),
+    status: text("status").notNull(),
+    openingCashPaise: integer("opening_cash_paise").notNull(),
+    closingCashPaise: integer("closing_cash_paise").notNull(),
+    expectedClosingCashPaise: integer("expected_closing_cash_paise").notNull(),
+    cashVariancePaise: integer("cash_variance_paise").notNull(),
+    billCount: integer("bill_count").notNull(),
+    openOrders: integer("open_orders").notNull(),
+    billedOrders: integer("billed_orders").notNull(),
+    paidBills: integer("paid_bills").notNull(),
+    unpaidBills: integer("unpaid_bills").notNull(),
+    cancelledOrders: integer("cancelled_orders").notNull(),
+    grossSalesPaise: integer("gross_sales_paise").notNull(),
+    discountPaise: integer("discount_paise").notNull(),
+    tipPaise: integer("tip_paise").notNull(),
+    finalSalesPaise: integer("final_sales_paise").notNull(),
+    cashPaymentsPaise: integer("cash_payments_paise").notNull(),
+    upiPaymentsPaise: integer("upi_payments_paise").notNull(),
+    cardPaymentsPaise: integer("card_payments_paise").notNull(),
+    onlinePaymentsPaise: integer("online_payments_paise").notNull(),
+    totalPaymentsPaise: integer("total_payments_paise").notNull(),
+    nonCashPaymentsPaise: integer("non_cash_payments_paise").notNull(),
+    billSummariesJson: text("bill_summaries_json").notNull(),
+    itemSummariesJson: text("item_summaries_json").notNull(),
+    finalizedAt: text("finalized_at").notNull(),
+    updatedAt: text("updated_at").notNull()
+  },
+  (table) => [index("idx_daily_report_date").on(table.businessDate)]
+);
+
 export const floors = sqliteTable("floors", {
   id: text("id").primaryKey(),
-  name: text("name").notNull()
+  name: text("name").notNull(),
+  active: integer("active", { mode: "boolean" }).notNull().default(true)
 });
 
 export const restaurantTables = sqliteTable(
@@ -30,6 +65,7 @@ export const restaurantTables = sqliteTable(
     id: text("id").primaryKey(),
     floorId: text("floor_id").notNull().references(() => floors.id),
     name: text("name").notNull(),
+    active: integer("active", { mode: "boolean" }).notNull().default(true),
     status: text("status").notNull(),
     currentOrderId: text("current_order_id"),
     occupiedAt: text("occupied_at")
@@ -43,14 +79,15 @@ export const productionUnits = sqliteTable("production_units", {
   printerPort: integer("printer_port").notNull(),
   kdsEnabled: integer("kds_enabled", { mode: "boolean" }).notNull().default(true),
   printerMode: text("printer_mode").notNull().default("network"),
-  printerName: text("printer_name")
+  printerName: text("printer_name"),
+  active: integer("active", { mode: "boolean" }).notNull().default(true)
 });
 
 export const menuItems = sqliteTable("menu_items", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
   pricePaise: integer("price_paise").notNull(),
-  productionUnitId: text("production_unit_id").notNull().references(() => productionUnits.id),
+  productionUnitId: text("production_unit_id").references(() => productionUnits.id),
   active: integer("active", { mode: "boolean" }).notNull().default(true)
 });
 
@@ -64,7 +101,6 @@ export const orders = sqliteTable(
     status: text("status").notNull(),
     pax: integer("pax").notNull(),
     captainId: text("captain_id").notNull(),
-    notes: text("notes"),
     createdAt: text("created_at").notNull(),
     updatedAt: text("updated_at").notNull()
   },
@@ -79,11 +115,8 @@ export const orderItems = sqliteTable(
     menuItemId: text("menu_item_id").notNull().references(() => menuItems.id),
     nameSnapshot: text("name_snapshot").notNull(),
     unitPricePaise: integer("unit_price_paise").notNull(),
-    modifierTotalPaise: integer("modifier_total_paise").notNull().default(0),
-    modifiersJson: text("modifiers_json").notNull().default("[]"),
     quantity: integer("quantity").notNull(),
-    notes: text("notes").notNull().default(""),
-    productionUnitId: text("production_unit_id").notNull().references(() => productionUnits.id),
+    productionUnitId: text("production_unit_id").references(() => productionUnits.id),
     status: text("status").notNull(),
     createdAt: text("created_at").notNull(),
     updatedAt: text("updated_at").notNull()
@@ -112,50 +145,7 @@ export const kotItems = sqliteTable("kot_items", {
   orderItemId: text("order_item_id"),
   menuItemId: text("menu_item_id").notNull(),
   nameSnapshot: text("name_snapshot").notNull(),
-  quantityDelta: integer("quantity_delta").notNull(),
-  modifiersJson: text("modifiers_json").notNull().default("[]"),
-  notes: text("notes").notNull().default("")
-});
-
-export const modifierGroups = sqliteTable("modifier_groups", {
-  id: text("id").primaryKey(),
-  name: text("name").notNull(),
-  selectionType: text("selection_type").notNull(),
-  minSelections: integer("min_selections").notNull().default(0),
-  maxSelections: integer("max_selections").notNull().default(1),
-  active: integer("active", { mode: "boolean" }).notNull().default(true),
-  sortOrder: integer("sort_order").notNull().default(0)
-});
-
-export const modifierOptions = sqliteTable(
-  "modifier_options",
-  {
-    id: text("id").primaryKey(),
-    groupId: text("group_id").notNull().references(() => modifierGroups.id),
-    name: text("name").notNull(),
-    priceDeltaPaise: integer("price_delta_paise").notNull().default(0),
-    active: integer("active", { mode: "boolean" }).notNull().default(true),
-    sortOrder: integer("sort_order").notNull().default(0)
-  },
-  (table) => [index("idx_modifier_options_group").on(table.groupId)]
-);
-
-export const menuItemModifierGroups = sqliteTable(
-  "menu_item_modifier_groups",
-  {
-    menuItemId: text("menu_item_id").notNull().references(() => menuItems.id),
-    groupId: text("group_id").notNull().references(() => modifierGroups.id),
-    sortOrder: integer("sort_order").notNull().default(0)
-  },
-  (table) => [primaryKey({ columns: [table.menuItemId, table.groupId] }), index("idx_menu_modifier_group").on(table.groupId)]
-);
-
-export const noteTemplates = sqliteTable("note_templates", {
-  id: text("id").primaryKey(),
-  label: text("label").notNull(),
-  note: text("note").notNull(),
-  active: integer("active", { mode: "boolean" }).notNull().default(true),
-  sortOrder: integer("sort_order").notNull().default(0)
+  quantityDelta: integer("quantity_delta").notNull()
 });
 
 export const bills = sqliteTable("bills", {

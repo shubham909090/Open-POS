@@ -30,6 +30,154 @@ async function requireRestaurantOwner(ctx: MutationCtx, restaurantId: Id<"restau
   return result;
 }
 
+type DailyReportPayload = {
+  posDayId?: string;
+  businessDate?: string;
+  finalizedAt?: string;
+  openOrders?: number;
+  billedOrders?: number;
+  paidBills?: number;
+  unpaidBills?: number;
+  cancelledOrders?: number;
+  openingCashPaise?: number;
+  closingCashPaise?: number | null;
+  expectedClosingCashPaise?: number;
+  cashVariancePaise?: number | null;
+  billCount?: number;
+  grossSalesPaise?: number;
+  discountPaise?: number;
+  tipPaise?: number;
+  finalSalesPaise?: number;
+  cashPaymentsPaise?: number;
+  upiPaymentsPaise?: number;
+  cardPaymentsPaise?: number;
+  onlinePaymentsPaise?: number;
+  totalPaymentsPaise?: number;
+  nonCashPaymentsPaise?: number;
+  billSummaries?: Array<{
+    billId: string;
+    orderId: string;
+    tableName: string;
+    status: string;
+    totalPaise: number;
+    discountPaise: number;
+    tipPaise: number;
+    finalTotalPaise: number;
+    paidPaise: number;
+    settledAt: string | null;
+    payments: Array<{ method: string; amountPaise: number; reference: string | null }>;
+  }>;
+  itemSummaries?: Array<{
+    menuItemId: string;
+    name: string;
+    quantity: number;
+    grossSalesPaise: number;
+  }>;
+};
+
+function numberOrZero(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+async function upsertDailyReport(
+  ctx: MutationCtx,
+  restaurantId: Id<"restaurants">,
+  payloadJson: string,
+  receivedAt: string
+) {
+  const payload = JSON.parse(payloadJson) as DailyReportPayload;
+  const businessDate = payload.businessDate;
+  const posDayId = payload.posDayId;
+  if (!businessDate || !posDayId) throw new Error("Daily report is missing business date or day id");
+
+  const existing = (
+    await ctx.db
+      .query("dailyReports")
+      .withIndex("by_restaurant_and_businessDate", (q) => q.eq("restaurantId", restaurantId).eq("businessDate", businessDate))
+      .take(1)
+  )[0];
+  const report = {
+    restaurantId,
+    posDayId,
+    businessDate,
+    status: "finalized" as const,
+    openingCashPaise: numberOrZero(payload.openingCashPaise),
+    closingCashPaise: numberOrZero(payload.closingCashPaise),
+    expectedClosingCashPaise: numberOrZero(payload.expectedClosingCashPaise),
+    cashVariancePaise: numberOrZero(payload.cashVariancePaise),
+    grossSalesPaise: numberOrZero(payload.grossSalesPaise),
+    discountPaise: numberOrZero(payload.discountPaise),
+    tipPaise: numberOrZero(payload.tipPaise),
+    finalSalesPaise: numberOrZero(payload.finalSalesPaise),
+    cashPaymentsPaise: numberOrZero(payload.cashPaymentsPaise),
+    upiPaymentsPaise: numberOrZero(payload.upiPaymentsPaise),
+    cardPaymentsPaise: numberOrZero(payload.cardPaymentsPaise),
+    onlinePaymentsPaise: numberOrZero(payload.onlinePaymentsPaise),
+    totalPaymentsPaise: numberOrZero(payload.totalPaymentsPaise),
+    nonCashPaymentsPaise: numberOrZero(payload.nonCashPaymentsPaise),
+    billCount: numberOrZero(payload.billCount),
+    openOrders: numberOrZero(payload.openOrders),
+    billedOrders: numberOrZero(payload.billedOrders),
+    paidBills: numberOrZero(payload.paidBills),
+    unpaidBills: numberOrZero(payload.unpaidBills),
+    cancelledOrders: numberOrZero(payload.cancelledOrders),
+    finalizedAt: payload.finalizedAt ?? receivedAt,
+    updatedAt: receivedAt
+  };
+
+  if (existing) await ctx.db.patch(existing._id, report);
+  else await ctx.db.insert("dailyReports", report);
+
+  for (const bill of payload.billSummaries ?? []) {
+    const existingBill = await ctx.db
+      .query("dailyReportBills")
+      .withIndex("by_restaurant_and_billId", (q) => q.eq("restaurantId", restaurantId).eq("billId", bill.billId))
+      .unique();
+    const billDoc = {
+      restaurantId,
+      businessDate,
+      posDayId,
+      billId: bill.billId,
+      orderId: bill.orderId,
+      tableName: bill.tableName,
+      status: bill.status,
+      totalPaise: numberOrZero(bill.totalPaise),
+      discountPaise: numberOrZero(bill.discountPaise),
+      tipPaise: numberOrZero(bill.tipPaise),
+      finalTotalPaise: numberOrZero(bill.finalTotalPaise),
+      paidPaise: numberOrZero(bill.paidPaise),
+      paymentsJson: JSON.stringify(bill.payments ?? []),
+      ...(bill.settledAt ? { settledAt: bill.settledAt } : {}),
+      updatedAt: receivedAt
+    };
+    if (existingBill) await ctx.db.patch(existingBill._id, billDoc);
+    else await ctx.db.insert("dailyReportBills", billDoc);
+  }
+
+  for (const item of payload.itemSummaries ?? []) {
+    const existingItem = (
+      await ctx.db
+        .query("dailyReportItems")
+        .withIndex("by_restaurant_date_and_menuItem", (q) =>
+          q.eq("restaurantId", restaurantId).eq("businessDate", businessDate).eq("menuItemId", item.menuItemId)
+        )
+        .take(1)
+    )[0];
+    const itemDoc = {
+      restaurantId,
+      businessDate,
+      posDayId,
+      menuItemId: item.menuItemId,
+      name: item.name,
+      quantity: numberOrZero(item.quantity),
+      grossSalesPaise: numberOrZero(item.grossSalesPaise),
+      updatedAt: receivedAt
+    };
+    if (existingItem) await ctx.db.patch(existingItem._id, itemDoc);
+    else await ctx.db.insert("dailyReportItems", itemDoc);
+  }
+}
+
 export const ingestEvents = mutation({
   args: {
     installationId: v.string(),
@@ -58,6 +206,7 @@ export const ingestEvents = mutation({
     await ctx.db.patch(installation._id, { lastSeenAt: new Date().toISOString() });
 
     let inserted = 0;
+    const receivedAt = new Date().toISOString();
     for (const event of args.events) {
       const existing = await ctx.db
         .query("syncedEvents")
@@ -66,10 +215,14 @@ export const ingestEvents = mutation({
 
       if (existing) continue;
 
+      if (event.type === "daily_report.finalized") {
+        await upsertDailyReport(ctx, installation.restaurantId, event.payloadJson, receivedAt);
+      }
+
       await ctx.db.insert("syncedEvents", {
         ...event,
         restaurantId: installation.restaurantId,
-        receivedAt: new Date().toISOString()
+        receivedAt
       });
       inserted += 1;
     }

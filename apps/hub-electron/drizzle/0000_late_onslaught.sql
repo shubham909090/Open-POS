@@ -5,6 +5,9 @@ CREATE TABLE `bills` (
 	`subtotal_paise` integer NOT NULL,
 	`tax_paise` integer NOT NULL,
 	`total_paise` integer NOT NULL,
+	`discount_paise` integer DEFAULT 0 NOT NULL,
+	`tip_paise` integer DEFAULT 0 NOT NULL,
+	`final_total_paise` integer DEFAULT 0 NOT NULL,
 	`created_at` text NOT NULL,
 	`settled_at` text,
 	FOREIGN KEY (`order_id`) REFERENCES `orders`(`id`) ON UPDATE no action ON DELETE no action
@@ -23,7 +26,8 @@ CREATE TABLE `event_log` (
 CREATE UNIQUE INDEX `event_log_event_id_unique` ON `event_log` (`event_id`);--> statement-breakpoint
 CREATE TABLE `floors` (
 	`id` text PRIMARY KEY NOT NULL,
-	`name` text NOT NULL
+	`name` text NOT NULL,
+	`active` integer DEFAULT true NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE `hub_settings` (
@@ -48,7 +52,6 @@ CREATE TABLE `kot_items` (
 	`menu_item_id` text NOT NULL,
 	`name_snapshot` text NOT NULL,
 	`quantity_delta` integer NOT NULL,
-	`notes` text DEFAULT '' NOT NULL,
 	FOREIGN KEY (`kot_id`) REFERENCES `kots`(`id`) ON UPDATE no action ON DELETE no action
 );
 --> statement-breakpoint
@@ -83,7 +86,7 @@ CREATE TABLE `menu_items` (
 	`id` text PRIMARY KEY NOT NULL,
 	`name` text NOT NULL,
 	`price_paise` integer NOT NULL,
-	`production_unit_id` text NOT NULL,
+	`production_unit_id` text,
 	`active` integer DEFAULT true NOT NULL,
 	FOREIGN KEY (`production_unit_id`) REFERENCES `production_units`(`id`) ON UPDATE no action ON DELETE no action
 );
@@ -100,8 +103,7 @@ CREATE TABLE `order_items` (
 	`name_snapshot` text NOT NULL,
 	`unit_price_paise` integer NOT NULL,
 	`quantity` integer NOT NULL,
-	`notes` text DEFAULT '' NOT NULL,
-	`production_unit_id` text NOT NULL,
+	`production_unit_id` text,
 	`status` text NOT NULL,
 	`created_at` text NOT NULL,
 	`updated_at` text NOT NULL,
@@ -119,7 +121,6 @@ CREATE TABLE `orders` (
 	`status` text NOT NULL,
 	`pax` integer NOT NULL,
 	`captain_id` text NOT NULL,
-	`notes` text,
 	`created_at` text NOT NULL,
 	`updated_at` text NOT NULL,
 	FOREIGN KEY (`table_id`) REFERENCES `restaurant_tables`(`id`) ON UPDATE no action ON DELETE no action,
@@ -147,6 +148,8 @@ CREATE TABLE `payments` (
 	`method` text NOT NULL,
 	`amount_paise` integer NOT NULL,
 	`received_by` text NOT NULL,
+	`reference` text,
+	`note` text,
 	`created_at` text NOT NULL,
 	FOREIGN KEY (`bill_id`) REFERENCES `bills`(`id`) ON UPDATE no action ON DELETE no action
 );
@@ -188,13 +191,15 @@ CREATE TABLE `production_units` (
 	`printer_port` integer NOT NULL,
 	`kds_enabled` integer DEFAULT true NOT NULL,
 	`printer_mode` text DEFAULT 'network' NOT NULL,
-	`printer_name` text
+	`printer_name` text,
+	`active` integer DEFAULT true NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE `restaurant_tables` (
 	`id` text PRIMARY KEY NOT NULL,
 	`floor_id` text NOT NULL,
 	`name` text NOT NULL,
+	`active` integer DEFAULT true NOT NULL,
 	`status` text NOT NULL,
 	`current_order_id` text,
 	`occupied_at` text,

@@ -22,6 +22,10 @@
   box-sizing: border-box;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 body {
   margin: 0;
 }
@@ -351,8 +355,17 @@ p {
 }
 
 .setup-step p,
+.field-help,
 .advanced-fields {
   color: var(--muted);
+}
+
+.field-help {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-2);
+  padding: 10px 11px;
+  line-height: 1.35;
 }
 
 .advanced-fields {
@@ -409,6 +422,60 @@ p {
   min-height: 24px;
   color: var(--brand);
   font-weight: 800;
+}
+
+.ready-panel {
+  display: grid;
+  gap: 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-2);
+  padding: 12px;
+  color: var(--muted);
+}
+
+.ready-panel strong {
+  color: var(--ink);
+}
+
+.ready-panel.ready {
+  border-color: #b9d7ca;
+  background: var(--brand-2);
+}
+
+.ready-panel.missing {
+  border-color: #efc6a2;
+  background: #fff8ed;
+}
+
+.ready-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ready-list li {
+  display: grid;
+  gap: 2px;
+  border-top: 1px solid rgba(180, 83, 9, 0.18);
+  padding-top: 8px;
+}
+
+.ready-list li:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.ready-list span {
+  color: var(--ink);
+  font-weight: 800;
+}
+
+.ready-list small {
+  color: var(--muted);
+  line-height: 1.35;
 }
 
 .pairing-card {
@@ -495,7 +562,7 @@ p {
 
 .admin-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
   padding: 10px;
@@ -503,6 +570,24 @@ p {
 
 .admin-row small {
   color: var(--muted);
+}
+
+.editable-row {
+  align-items: stretch;
+}
+
+.edit-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.row-actions,
+.quick-pay {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .service-grid {
@@ -674,53 +759,6 @@ p {
   color: var(--muted);
 }
 
-.draft-note {
-  min-height: 34px;
-  font-size: 12px;
-}
-
-.modifier-list,
-.note-chip-row {
-  display: grid;
-  gap: 6px;
-}
-
-.modifier-line {
-  display: grid;
-  gap: 5px;
-}
-
-.modifier-line > span {
-  color: var(--muted);
-  font-size: 11px;
-  font-weight: 800;
-  text-transform: uppercase;
-}
-
-.modifier-line > div,
-.note-chip-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-}
-
-.modifier-chip,
-.note-chip {
-  min-height: 30px;
-  border-radius: 999px;
-  border-color: var(--line-strong);
-  background: #fff;
-  color: var(--ink);
-  padding: 4px 9px;
-  font-size: 12px;
-}
-
-.modifier-chip.active {
-  border-color: var(--brand);
-  background: var(--brand-2);
-  color: var(--brand);
-}
-
 .qty-btn {
   width: 38px;
   height: 38px;
@@ -800,6 +838,12 @@ p {
 
 .payment-adjustments {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.inline-fields {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 6px;
 }
 
 .payment-grid {
@@ -914,12 +958,13 @@ p {
   .summary-strip,
   .form-row,
   .two-col,
-  #tableForm,
-  #pairingForm,
-  #menuItemForm,
+  .edit-grid,
   .payment-summary,
   .payment-adjustments,
   .payment-grid,
+  #tableForm,
+  #pairingForm,
+  #menuItemForm,
   .report-grid,
   .advanced-grid {
     grid-template-columns: 1fr;

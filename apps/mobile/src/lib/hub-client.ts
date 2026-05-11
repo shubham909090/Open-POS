@@ -15,19 +15,10 @@ export interface HubBootstrap {
     id: string;
     name: string;
     price_paise: number;
-    production_unit_id: string;
-    production_unit_name: string;
+    production_unit_id: string | null;
+    production_unit_name: string | null;
     active: number;
-    modifier_group_ids?: string[];
   }>;
-  modifierGroups: Array<{
-    id: string;
-    name: string;
-    selection_type: "single" | "multiple";
-    active: number;
-    options: Array<{ id: string; name: string; price_delta_paise: number; active: number }>;
-  }>;
-  noteTemplates: Array<{ id: string; label: string; note: string; active: number }>;
   syncStatus: { counts: Record<string, number> };
 }
 
@@ -37,9 +28,7 @@ export interface HubOrder {
     menu_item_id: string;
     name_snapshot: string;
     unit_price_paise: number;
-    modifiers_json?: string;
     quantity: number;
-    notes: string;
     status: string;
   }>;
   bill: { id: string; total_paise: number; status: string } | null;
@@ -88,13 +77,15 @@ export class HubClient {
   }
 
   private async request<T>(path: string, init: RequestInit = {}): Promise<T> {
+    const headers: Record<string, string> = {
+      "x-device-token": this.deviceToken,
+      ...(init.headers as Record<string, string> | undefined)
+    };
+    if (init.body) headers["content-type"] = "application/json";
+
     const response = await fetch(`${this.baseUrl}${path}`, {
       ...init,
-      headers: {
-        "content-type": "application/json",
-        "x-device-token": this.deviceToken,
-        ...(init.headers ?? {})
-      }
+      headers
     });
 
     if (!response.ok) {

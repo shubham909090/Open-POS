@@ -15,7 +15,8 @@ function createTestServer() {
     authService: hub.authService,
     orderService: hub.orderService,
     printJobService,
-    eventBus: new EventBus<unknown>()
+    eventBus: new EventBus<unknown>(),
+    printerDryRun: true
   });
 
   return { ...hub, app };
@@ -34,6 +35,7 @@ describe("Hub API auth and service flow", () => {
 
     expect(unauthorized.statusCode).toBe(401);
     expect(authorized.statusCode).toBe(200);
+    expect(authorized.json<{ setup: { printerDryRun: boolean } }>().setup.printerDryRun).toBe(true);
 
     await app.close();
     database.close();
@@ -179,7 +181,13 @@ describe("Hub API auth and service flow", () => {
       url: `/bills/${order.orderId}/generate`,
       headers
     });
-    const bill = billResponse.json<{ billId: string }>();
+    const bill = billResponse.json<{ billId: string; totalPaise: number }>();
+    await app.inject({
+      method: "POST",
+      url: `/bills/${bill.billId}/settle`,
+      headers,
+      payload: { method: "cash", amountPaise: bill.totalPaise, receivedBy: "cashier-1" }
+    });
     const printResponse = await app.inject({
       method: "POST",
       url: "/print-jobs/process",

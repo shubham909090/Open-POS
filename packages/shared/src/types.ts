@@ -23,7 +23,7 @@ export interface MenuItem {
   id: string;
   name: string;
   pricePaise: number;
-  productionUnitId: string;
+  productionUnitId: string | null;
   active: boolean;
 }
 
@@ -38,13 +38,6 @@ export interface RestaurantTable {
 export interface OrderItemInput {
   menuItemId: string;
   quantity: number;
-  notes?: string;
-  modifiers?: ModifierSelectionInput[];
-}
-
-export interface ModifierSelectionInput {
-  groupId: string;
-  optionId: string;
 }
 
 export interface DomainEvent {

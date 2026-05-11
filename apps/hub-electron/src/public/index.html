@@ -102,6 +102,7 @@
               <h2>Choose Cash Counter Printer</h2>
               <p>This printer is used for final bills and payment receipts.</p>
               <button id="loadPrinters" type="button" class="secondary">Load PC Printers</button>
+              <p id="printerHelp" class="field-help">Choose a printer from this PC. If none is connected yet, development dry-run mode can let you continue.</p>
               <form id="receiptPrinterForm" class="form-stack">
                 <select id="receiptPrinterName"></select>
                 <details class="advanced-fields">
@@ -113,6 +114,7 @@
                 </details>
                 <button type="submit">Save Cash Counter Printer</button>
               </form>
+              <button id="skipPrinter" type="button" class="secondary">Continue Without Printer For Now</button>
             </section>
 
             <section class="setup-step" data-setup-step="kitchens">
@@ -135,6 +137,7 @@
                 </details>
                 <button type="submit">Add Kitchen / Counter</button>
               </form>
+              <div id="unitAdminList" class="admin-list"></div>
             </section>
 
             <section class="setup-step" data-setup-step="tables">
@@ -161,6 +164,8 @@
                 <summary>Advanced: custom table ID</summary>
                 <input id="tableCustomId" placeholder="Custom table ID (optional)" />
               </details>
+              <div id="floorAdminList" class="admin-list"></div>
+              <div id="tableAdminList" class="admin-list"></div>
             </section>
 
             <section class="setup-step" data-setup-step="menu">
@@ -169,7 +174,7 @@
                 <button class="secondary setup-edit" data-go-step="menu" type="button">Edit</button>
               </div>
               <h2>Add Menu Items</h2>
-              <p>Add dishes and choose where each one should print.</p>
+              <p>Add a normal dish, its price, and optionally choose the kitchen or counter that prepares it.</p>
               <form id="menuItemForm" class="form-row">
                 <input id="menuItemName" placeholder="Dish name" />
                 <input id="menuItemPrice" type="number" min="0" step="1" placeholder="Price" />
@@ -210,7 +215,7 @@
                 <button class="secondary setup-edit" data-go-step="ready" type="button">View</button>
               </div>
               <h2>Ready For Service</h2>
-              <p id="readyMessage">Complete the required steps above before taking orders.</p>
+              <div id="readyMessage" class="ready-panel">Complete the required steps above before taking orders.</div>
               <button id="goService" type="button">Go To Take Orders</button>
             </section>
           </div>
@@ -245,7 +250,47 @@
                     <strong id="draftTotal">₹0</strong>
                     <button id="submitOrder" type="button">Send To Kitchen</button>
                   </div>
+                  <div id="billingContext" class="billing-context">Select a table.</div>
+                  <div class="billing-actions">
+                    <button id="generateBill" type="button">Generate Bill</button>
+                    <button id="reprintBill" type="button">Reprint Bill</button>
+                    <button id="cancelOrder" type="button" class="danger">Cancel Order</button>
+                  </div>
+                  <section class="payment-panel">
+                    <div class="payment-summary" id="paymentSummary">Generate a bill to take payment.</div>
+                    <div class="payment-adjustments">
+                      <label>Discount
+                        <span class="inline-fields">
+                          <select id="discountType">
+                            <option value="amount">₹</option>
+                            <option value="percent">%</option>
+                          </select>
+                          <input id="billDiscount" type="number" min="0" step="1" value="0" />
+                        </span>
+                      </label>
+                      <label>Tip <input id="billTip" type="number" min="0" step="1" value="0" /></label>
+                    </div>
+                    <div class="quick-pay">
+                      <button class="secondary quick-pay-btn" data-method="cash" type="button">Full Cash</button>
+                      <button class="secondary quick-pay-btn" data-method="upi" type="button">Full UPI</button>
+                      <button class="secondary quick-pay-btn" data-method="card" type="button">Full Card</button>
+                      <button class="secondary quick-pay-btn" data-method="online" type="button">Full Online</button>
+                    </div>
+                    <div class="payment-grid">
+                      <label>Cash <input id="payCash" type="number" min="0" step="1" value="0" /></label>
+                      <label>UPI <input id="payUpi" type="number" min="0" step="1" value="0" /></label>
+                      <label>Card <input id="payCard" type="number" min="0" step="1" value="0" /></label>
+                      <label>Online <input id="payOnline" type="number" min="0" step="1" value="0" /></label>
+                    </div>
+                    <div class="form-row">
+                      <input id="paymentReference" placeholder="Reference or note" />
+                      <button id="settleBill" type="button">Punch Bill</button>
+                    </div>
+                  </section>
+                  <h3>New items to send</h3>
                   <div id="draftItems" class="draft-items"></div>
+                  <h3>Already sent to kitchen</h3>
+                  <div id="sentItems" class="draft-items"></div>
                 </div>
               </div>
             </section>
@@ -267,33 +312,11 @@
           <header class="view-header">
             <div>
               <h1>Billing</h1>
-              <p id="billingMeta">Select a table in Service to bill or settle.</p>
+              <p id="billingMeta">Billing is handled on the selected table in Take Orders.</p>
             </div>
             <button id="processPrints" type="button">Run Print Queue</button>
           </header>
-          <section id="billingContext" class="billing-context">No table selected.</section>
-          <section class="billing-actions">
-            <button id="generateBill" type="button">Generate Bill</button>
-            <button id="reprintBill" type="button">Reprint Bill</button>
-            <button id="cancelOrder" type="button" class="danger">Cancel Order</button>
-          </section>
-          <section class="payment-panel">
-            <div class="payment-summary" id="paymentSummary">Select a billed order.</div>
-            <div class="payment-adjustments">
-              <label>Discount <input id="billDiscount" type="number" min="0" step="1" value="0" /></label>
-              <label>Tip <input id="billTip" type="number" min="0" step="1" value="0" /></label>
-            </div>
-            <div class="payment-grid">
-              <label>Cash <input id="payCash" type="number" min="0" step="1" value="0" /></label>
-              <label>UPI <input id="payUpi" type="number" min="0" step="1" value="0" /></label>
-              <label>Card <input id="payCard" type="number" min="0" step="1" value="0" /></label>
-              <label>Online <input id="payOnline" type="number" min="0" step="1" value="0" /></label>
-            </div>
-            <div class="form-row">
-              <input id="paymentReference" placeholder="Reference or note" />
-              <button id="settleBill" type="button">Save Payments</button>
-            </div>
-          </section>
+          <section class="billing-context">Select a table in Take Orders, then generate and punch the bill from that table.</section>
           <div id="printJobs" class="print-list"></div>
         </section>
 
@@ -324,56 +347,11 @@
           <header class="view-header">
             <div>
               <h1>Advanced</h1>
-              <p>Support tools for modifiers, kitchen notes, cloud updates, and recovery.</p>
+              <p>Support tools for cloud updates and recovery.</p>
             </div>
             <button id="pullCloud" type="button" class="secondary">Get Cloud Updates</button>
           </header>
-          <section class="advanced-grid">
-            <article class="work-pane">
-              <h2>Modifiers</h2>
-              <form id="modifierGroupForm" class="form-row">
-                <input id="modifierGroupName" placeholder="Group: Spice, Size" />
-                <select id="modifierGroupType">
-                  <option value="single">single</option>
-                  <option value="multiple">multiple</option>
-                </select>
-                <button type="submit">Add Group</button>
-              </form>
-              <details class="advanced-fields">
-                <summary>Advanced: custom group ID</summary>
-                <input id="modifierGroupCustomId" placeholder="Custom group ID (optional)" />
-              </details>
-              <form id="modifierOptionForm" class="form-row">
-                <select id="modifierOptionGroup"></select>
-                <input id="modifierOptionName" placeholder="Option: Spicy" />
-                <input id="modifierOptionPrice" type="number" min="0" step="1" placeholder="+ Price" />
-                <button type="submit">Add Option</button>
-              </form>
-              <details class="advanced-fields">
-                <summary>Advanced: custom option ID</summary>
-                <input id="modifierOptionCustomId" placeholder="Custom option ID (optional)" />
-              </details>
-              <form id="modifierAssignForm" class="form-row">
-                <select id="modifierAssignItem"></select>
-                <select id="modifierAssignGroup"></select>
-                <button type="submit">Attach To Dish</button>
-              </form>
-            </article>
-
-            <article class="work-pane">
-              <h2>Kitchen Notes</h2>
-              <form id="noteTemplateForm" class="form-row">
-                <input id="noteTemplateLabel" placeholder="Label: Jain" />
-                <input id="noteTemplateNote" placeholder="Kitchen note" />
-                <button type="submit">Add Note</button>
-              </form>
-              <details class="advanced-fields">
-                <summary>Advanced: custom note ID</summary>
-                <input id="noteTemplateCustomId" placeholder="Custom note ID (optional)" />
-              </details>
-              <div id="modifierAdminList" class="admin-list"></div>
-            </article>
-          </section>
+          <section class="advanced-grid"></section>
         </section>
       </section>
     </main>
