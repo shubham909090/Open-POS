@@ -134,3 +134,18 @@ This file defines baseline working rules for agents in any repository that adopt
 - Never do half-finished work, dirty patches, or ad hoc code just to make the immediate symptom disappear.
 - Fix the real cause where practical, keep the implementation coherent, and leave the codebase in a maintainable state.
 - When work is complete, leave behind enough structure, logs, and discoverability that the next agent can continue without redoing the same thinking.
+
+
+<!-- convex-ai-start -->
+
+This project uses [Convex](https://convex.dev) as its backend.
+
+When working on Convex code, **always read
+`convex/_generated/ai/guidelines.md` first** for important guidelines on
+how to correctly use Convex APIs and patterns. The file contains rules that
+override what you may have learned about Convex from training data.
+
+Convex agent skills for common tasks can be installed by running
+`npx convex ai-files install`.
+
+<!-- convex-ai-end -->

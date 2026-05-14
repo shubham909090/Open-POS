@@ -1,6 +1,7 @@
 import { v } from "convex/values";
-import { mutation, type MutationCtx } from "./_generated/server";
+import { internalMutation, mutation, type MutationCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
+import { parseHubCommandCursor, serializeHubCommandCursor } from "./hubCommandCursor";
 
 const hubCommandType = v.union(
   v.literal("device.revoked"),
@@ -18,6 +19,8 @@ type HubCommandType =
   | "production_unit.upsert"
   | "receipt_printer.updated";
 
+const localDeviceRoles = ["admin", "captain", "waiter", "kitchen"] as const;
+
 function normalizeHubCommandPayload(type: HubCommandType, payloadJson: string): string {
   if (!payloadJson.trim()) throw new Error("Command payload JSON is required");
   const payload = JSON.parse(payloadJson) as unknown;
@@ -26,6 +29,29 @@ function normalizeHubCommandPayload(type: HubCommandType, payloadJson: string): 
   }
   const normalized = { ...(payload as Record<string, unknown>) };
 
+  const requiredString = (field: string, label: string) => {
+    const value = normalized[field];
+    if (typeof value !== "string" || !value.trim()) throw new Error(`${label} is required`);
+    normalized[field] = value.trim();
+  };
+  const requiredNumber = (field: string, label: string) => {
+    const value = normalized[field];
+    if (typeof value !== "number" || !Number.isFinite(value)) throw new Error(`${label} is required`);
+  };
+  const optionalPrinterMode = () => {
+    const value = normalized.printerMode;
+    if (value !== undefined && value !== "system" && value !== "network") {
+      throw new Error("Printer mode must be system or network");
+    }
+  };
+  const optionalPrinterPort = () => {
+    const value = normalized.printerPort;
+    if (value === undefined) return;
+    if (typeof value !== "number" || !Number.isInteger(value) || value < 1 || value > 65535) {
+      throw new Error("Printer port must be between 1 and 65535");
+    }
+  };
+
   if (type === "device.revoked" || type === "device.updated") {
     const hubDeviceId = normalized.hubDeviceId;
     if (typeof hubDeviceId !== "string" || !hubDeviceId.trim()) {
@@ -33,6 +59,31 @@ function normalizeHubCommandPayload(type: HubCommandType, payloadJson: string): 
     }
     normalized.hubDeviceId = hubDeviceId.trim();
     delete normalized.localDeviceId;
+    if (normalized.role !== undefined && !localDeviceRoles.includes(normalized.role as (typeof localDeviceRoles)[number])) {
+      throw new Error("Device role must be admin, captain, waiter, or kitchen");
+    }
+  }
+  if (type === "menu_item.upsert") {
+    requiredString("id", "Menu item id");
+    requiredString("name", "Menu item name");
+    requiredNumber("pricePaise", "Menu item price");
+    if (normalized.productionUnitId !== undefined && normalized.productionUnitId !== null && typeof normalized.productionUnitId !== "string") {
+      throw new Error("Menu item productionUnitId must be a string or null");
+    }
+    if (normalized.active !== undefined && typeof normalized.active !== "boolean") throw new Error("Menu item active must be boolean");
+  }
+  if (type === "menu_item.disabled") requiredString("id", "Menu item id");
+  if (type === "production_unit.upsert") {
+    requiredString("id", "Kitchen/counter id");
+    requiredString("name", "Kitchen/counter name");
+    optionalPrinterMode();
+    optionalPrinterPort();
+  }
+  if (type === "receipt_printer.updated") {
+    optionalPrinterMode();
+    if (normalized.printerName !== undefined && typeof normalized.printerName !== "string") throw new Error("Printer name must be a string");
+    if (normalized.printerHost !== undefined && typeof normalized.printerHost !== "string") throw new Error("Printer host must be a string");
+    optionalPrinterPort();
   }
 
   return JSON.stringify(normalized);
@@ -252,7 +303,7 @@ async function upsertDailyReport(
   }
 }
 
-export const ingestEvents = mutation({
+export const ingestEvents = internalMutation({
   args: {
     installationId: v.string(),
     syncSecret: v.string(),
@@ -305,7 +356,7 @@ export const ingestEvents = mutation({
   }
 });
 
-export const pullHubSnapshot = mutation({
+export const pullHubSnapshot = internalMutation({
   args: {
     installationId: v.string(),
     syncSecret: v.string(),
@@ -334,18 +385,37 @@ export const pullHubSnapshot = mutation({
 
     await ctx.db.patch(installation._id, { lastSeenAt: new Date().toISOString() });
 
-    const commands = await ctx.db
-      .query("hubCommands")
-      .withIndex("by_restaurant_and_createdAt", (q) => {
-        const scoped = q.eq("restaurantId", installation.restaurantId);
-        return args.cursor ? scoped.gt("createdAt", args.cursor) : scoped;
-      })
-      .order("asc")
-      .take(100);
+    const cursor = parseHubCommandCursor(args.cursor);
+    const commands = cursor
+      ? [
+          ...(await ctx.db
+            .query("hubCommands")
+            .withIndex("by_restaurant_createdAt_and_commandId", (q) =>
+              q.eq("restaurantId", installation.restaurantId).eq("createdAt", cursor.createdAt).gt("commandId", cursor.commandId)
+            )
+            .order("asc")
+            .take(100))
+        ]
+      : await ctx.db
+          .query("hubCommands")
+          .withIndex("by_restaurant_createdAt_and_commandId", (q) => q.eq("restaurantId", installation.restaurantId))
+          .order("asc")
+          .take(100);
+
+    if (cursor && commands.length < 100) {
+      const newerCommands = await ctx.db
+        .query("hubCommands")
+        .withIndex("by_restaurant_createdAt_and_commandId", (q) =>
+          q.eq("restaurantId", installation.restaurantId).gt("createdAt", cursor.createdAt)
+        )
+        .order("asc")
+        .take(100 - commands.length);
+      commands.push(...newerCommands);
+    }
 
     const last = commands.at(-1);
     return {
-      cursor: last?.createdAt ?? args.cursor ?? "",
+      cursor: last ? serializeHubCommandCursor(last) : args.cursor ?? "",
       commands: commands.map((command) => ({
         commandId: command.commandId,
         type: command.type,

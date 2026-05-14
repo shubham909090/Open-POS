@@ -25,10 +25,30 @@ The Windows hub must continue operating offline, so it needs local service sessi
 
 ## Roles
 
-- `admin`: settings, devices, menu, printers, business-day reports.
-- `cashier`: bills, payments, reprints, table supervision.
-- `waiter`: table order draft/submit.
-- `kitchen`: KDS status updates.
+There are two role layers.
+
+Cloud portal roles:
+
+| Role | Scope |
+| --- | --- |
+| `owner` | Owns the restaurant account, creates hub connections, manages staff, sees reports. |
+| `admin` | Manages staff/setup/support commands and sees reports, but cannot create a new hub connection. |
+| `reporting` | Reads cloud reports only. No setup, staff, or hub connection authority. |
+
+Local hub/mobile device roles:
+
+| Capability | admin | captain | waiter | kitchen |
+| --- | --- | --- | --- | --- |
+| Hub setup, device pairing, printers, templates, manager PIN, backups, sync tools | yes | no | no | no |
+| View full order/bill/payment/KOT data | yes | yes | no | no |
+| Submit table orders | yes | yes | yes | no |
+| Move table/items | yes | own captain tables/items only | no | no |
+| Billing, settlement, NC, reprint, revisions | yes | yes | no | no |
+| Reports and alcohol stock reports | yes | yes | no | no |
+| KDS ticket screen and KOT/BOT status updates | yes | no | no | yes |
+| Ready notifications | yes | yes | yes | no |
+
+Sensitive actions still require Manager PIN even for `admin`/`captain`: cancel/remove order, reprint/regenerate bill, revise bill after print, edit running-table item price, NC bill, and alcohol stock adjustment.
 
 ## Why This Shape
 
@@ -46,4 +66,4 @@ Only Google sign-in should be enabled in WorkOS AuthKit. Disable password, OTP/m
 - Hub pairing APIs can create one-time pairing codes, exchange them for long-lived local device tokens, list devices, and revoke paired devices.
 - Development seeds `dev-admin-token`; production should set `HUB_ADMIN_TOKEN`.
 - Convex event ingestion requires the hub to send its `POS_INSTALLATION_ID` and matching `POS_SYNC_SECRET`. The secret is stored on the Convex `installations` record and in the local hub env, not as a Convex deployment env var.
-- Cloud-to-hub role snapshots are still pending; current hub roles are stored locally.
+- Cloud-to-hub device update/revoke commands exist; current local authority is enforced from the paired hub device token and role.

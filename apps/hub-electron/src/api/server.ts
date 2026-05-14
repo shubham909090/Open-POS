@@ -42,7 +42,7 @@ import {
 } from "@gaurav-pos/shared";
 import type { HubDatabase } from "../db/database.js";
 import type { BackupService } from "../db/backup-service.js";
-import { idempotencyRecords } from "../db/drizzle-schema.js";
+import { cloudCommandFailures, idempotencyRecords } from "../db/drizzle-schema.js";
 import { AuthService } from "../domain/auth-service.js";
 import type { LocalDeviceSession } from "../domain/auth-service.js";
 import { DomainError } from "../domain/errors.js";
@@ -53,10 +53,10 @@ import { listSystemPrinters } from "../printing/printer-discovery.js";
 import type { ConvexSyncBridge } from "../sync/convex-sync.js";
 
 export function isRealtimeEventVisibleForRole(event: unknown, role: UserRole): boolean {
-  if (role === "admin" || role === "cashier") return true;
+  if (role === "admin" || role === "captain") return true;
   const type = typeof event === "object" && event !== null && "type" in event ? String((event as { type?: unknown }).type ?? "") : "";
   if (role === "kitchen") return type.startsWith("kot.");
-  if (role === "captain" || role === "waiter") return ["order.submitted", "table.shifted", "order_items.shifted", "kot.status_changed"].includes(type);
+  if (role === "waiter") return ["order.submitted", "table.shifted", "order_items.shifted", "kot.status_changed"].includes(type);
   return false;
 }
 
@@ -122,19 +122,19 @@ export function createHubServer(input: {
   const getSession = (request: { headers: Record<string, string | string[] | undefined> }): LocalDeviceSession =>
     input.authService.authenticate(getToken(request));
 
-  const anyRole = requireRoles(["admin", "cashier", "captain", "waiter", "kitchen"]);
+  const anyRole = requireRoles(["admin", "captain", "waiter", "kitchen"]);
   const adminOnly = requireRoles(["admin"]);
-  const cashierOrAdmin = requireRoles(["admin", "cashier"]);
-  const orderRole = requireRoles(["admin", "cashier", "captain", "waiter"]);
-  const orderMoveRole = requireRoles(["admin", "cashier", "captain"]);
-  const kitchenRole = requireRoles(["admin", "cashier", "kitchen"]);
+  const captainOrAdmin = requireRoles(["admin", "captain"]);
+  const orderRole = requireRoles(["admin", "captain", "waiter"]);
+  const orderMoveRole = requireRoles(["admin", "captain"]);
+  const kitchenRole = requireRoles(["admin", "kitchen"]);
   const publicBootstrapForRole = (bootstrap: Record<string, unknown>, role: UserRole): Record<string, unknown> => {
-    if (role === "admin" || role === "cashier") return bootstrap;
+    if (role === "admin" || role === "captain") return bootstrap;
     const { ticketTemplate: _ticketTemplate, printJobs: _printJobs, syncStatus: _syncStatus, ...safeBootstrap } = bootstrap;
     return safeBootstrap;
   };
   const tableOrderForRole = (tableOrder: unknown, role: UserRole): unknown => {
-    if (role === "admin" || role === "cashier" || tableOrder === null || typeof tableOrder !== "object") return tableOrder;
+    if (role === "admin" || role === "captain" || tableOrder === null || typeof tableOrder !== "object") return tableOrder;
     const order = tableOrder as Record<string, unknown>;
     return {
       order: order.order,
@@ -155,7 +155,8 @@ export function createHubServer(input: {
     const existing = input.database.orm
       .select({
         requestHash: idempotencyRecords.requestHash,
-        responseJson: idempotencyRecords.responseJson
+        responseJson: idempotencyRecords.responseJson,
+        status: idempotencyRecords.status
       })
       .from(idempotencyRecords)
       .where(and(eq(idempotencyRecords.key, key), eq(idempotencyRecords.route, route)))
@@ -163,20 +164,90 @@ export function createHubServer(input: {
     if (existing && existing.requestHash !== requestHash) {
       throw new DomainError("Idempotency key was already used with a different request body", 409);
     }
-    if (existing) return { result: JSON.parse(existing.responseJson) as T, replayed: true };
+    if (existing?.status === "completed") return { result: JSON.parse(existing.responseJson) as T, replayed: true };
+    if (existing?.status === "in_progress") throw new DomainError("Request is already in progress. Retry shortly.", 409);
 
-    const result = handler();
-    input.database.orm
-      .insert(idempotencyRecords)
-      .values({ key, route, requestHash, responseJson: JSON.stringify(result), createdAt: new Date().toISOString() })
-      .run();
-    return { result, replayed: false };
+    const now = new Date().toISOString();
+    if (existing?.status === "failed") {
+      input.database.orm
+        .update(idempotencyRecords)
+        .set({ status: "in_progress", responseJson: "", updatedAt: now })
+        .where(and(eq(idempotencyRecords.key, key), eq(idempotencyRecords.route, route)))
+        .run();
+    } else {
+      try {
+        input.database.orm
+          .insert(idempotencyRecords)
+          .values({ key, route, requestHash, status: "in_progress", responseJson: "", createdAt: now, updatedAt: now })
+          .run();
+      } catch {
+        throw new DomainError("Request is already in progress. Retry shortly.", 409);
+      }
+    }
+
+    try {
+      const result = handler();
+      input.database.orm
+        .update(idempotencyRecords)
+        .set({ status: "completed", responseJson: JSON.stringify(result), updatedAt: new Date().toISOString() })
+        .where(and(eq(idempotencyRecords.key, key), eq(idempotencyRecords.route, route)))
+        .run();
+      return { result, replayed: false };
+    } catch (error) {
+      input.database.orm
+        .update(idempotencyRecords)
+        .set({ status: "failed", updatedAt: new Date().toISOString() })
+        .where(and(eq(idempotencyRecords.key, key), eq(idempotencyRecords.route, route)))
+        .run();
+      throw error;
+    }
+  };
+
+  const pairingAttempts = new Map<string, { failedAttempts: number; windowStartedAt: number; lockedUntil: number }>();
+  const pairingAttemptWindowMs = 5 * 60 * 1000;
+  const pairingLockMs = 10 * 60 * 1000;
+  const maxPairingFailures = 8;
+  const assertPairingExchangeAllowed = (key: string): void => {
+    const now = Date.now();
+    const state = pairingAttempts.get(key);
+    if (!state) return;
+    if (state.lockedUntil > now) {
+      throw new DomainError("Too many failed pairing attempts. Try again later.", 429);
+    }
+    if (now - state.windowStartedAt > pairingAttemptWindowMs) {
+      pairingAttempts.delete(key);
+    }
+  };
+  const recordPairingFailure = (key: string): void => {
+    const now = Date.now();
+    const current = pairingAttempts.get(key);
+    const state =
+      current && now - current.windowStartedAt <= pairingAttemptWindowMs
+        ? current
+        : { failedAttempts: 0, windowStartedAt: now, lockedUntil: 0 };
+    state.failedAttempts += 1;
+    if (state.failedAttempts >= maxPairingFailures) {
+      state.lockedUntil = now + pairingLockMs;
+    }
+    pairingAttempts.set(key, state);
+  };
+  const recordPairingSuccess = (key: string): void => {
+    pairingAttempts.delete(key);
   };
 
   app.get("/health", async () => ({ ok: true }));
-  app.post("/devices/pair/exchange", async (request) =>
-    input.authService.exchangePairingCode(exchangePairingCodeSchema.parse(request.body))
-  );
+  app.post("/devices/pair/exchange", async (request) => {
+    const attemptKey = request.ip || "unknown";
+    assertPairingExchangeAllowed(attemptKey);
+    try {
+      const result = input.authService.exchangePairingCode(exchangePairingCodeSchema.parse(request.body));
+      recordPairingSuccess(attemptKey);
+      return result;
+    } catch (error) {
+      recordPairingFailure(attemptKey);
+      throw error;
+    }
+  });
   app.get("/sync/bootstrap", { preHandler: anyRole }, async (request) => {
     const session = getSession(request);
     const bootstrap = input.orderService.bootstrap() as Record<string, unknown>;
@@ -187,9 +258,14 @@ export function createHubServer(input: {
       }
     };
   });
-  app.get("/sync/status", { preHandler: cashierOrAdmin }, async () => input.orderService.getSyncStatus());
+  app.get("/sync/status", { preHandler: captainOrAdmin }, async () => input.orderService.getSyncStatus());
   app.post("/sync/push", { preHandler: adminOnly }, async () => input.syncBridge?.pushPending() ?? { pushed: 0, skipped: true });
   app.post("/sync/pull", { preHandler: adminOnly }, async () => input.syncBridge?.pullCloudSnapshot() ?? { applied: 0, skipped: true });
+  app.post("/sync/requeue-failed", { preHandler: adminOnly }, async () => input.syncBridge?.requeueFailedEvents() ?? { requeued: 0 });
+  app.delete<{ Params: { commandId: string } }>("/sync/cloud-command-failures/:commandId", { preHandler: adminOnly }, async ({ params }) => {
+    const result = input.database.orm.delete(cloudCommandFailures).where(eq(cloudCommandFailures.commandId, params.commandId)).run();
+    return { commandId: params.commandId, resolved: Number(result.changes ?? 0) > 0 };
+  });
   app.get("/floors", { preHandler: anyRole }, async () => input.orderService.listFloors());
   app.post("/floors", { preHandler: adminOnly }, async (request) => {
     const result = input.orderService.createFloor(createFloorSchema.parse(request.body));
@@ -289,8 +365,8 @@ export function createHubServer(input: {
     input.eventBus.publish({ type: "menu_item.updated", result });
     return result;
   });
-  app.get("/alcohol", { preHandler: cashierOrAdmin }, async () => input.orderService.listAlcoholCatalog());
-  app.get("/alcohol/storage", { preHandler: cashierOrAdmin }, async () => input.orderService.listAlcoholStorage());
+  app.get("/alcohol", { preHandler: captainOrAdmin }, async () => input.orderService.listAlcoholCatalog());
+  app.get("/alcohol/storage", { preHandler: captainOrAdmin }, async () => input.orderService.listAlcoholStorage());
   app.post("/alcohol/items", { preHandler: adminOnly }, async (request) => {
     const result = input.orderService.createAlcoholItem(createAlcoholItemSchema.parse(request.body));
     input.eventBus.publish({ type: "alcohol_item.created", result });
@@ -302,13 +378,13 @@ export function createHubServer(input: {
     input.eventBus.publish({ type: "alcohol_item.updated", result });
     return result;
   });
-  app.post("/alcohol/stock/:id/adjust", { preHandler: cashierOrAdmin }, async (request) => {
+  app.post("/alcohol/stock/:id/adjust", { preHandler: captainOrAdmin }, async (request) => {
     const params = request.params as { id: string };
     const result = input.orderService.adjustAlcoholStock(params.id, adjustAlcoholStockSchema.parse(request.body));
     input.eventBus.publish({ type: "alcohol_stock.adjusted", result });
     return result;
   });
-  app.get("/settings/receipt-printer", { preHandler: cashierOrAdmin }, async () => input.orderService.getReceiptPrinter());
+  app.get("/settings/receipt-printer", { preHandler: captainOrAdmin }, async () => input.orderService.getReceiptPrinter());
   app.get("/system-printers", { preHandler: adminOnly }, async () => listSystemPrinters());
   app.put("/settings/receipt-printer", { preHandler: adminOnly }, async (request) => {
     const result = input.orderService.updateReceiptPrinter(updateReceiptPrinterSchema.parse(request.body));
@@ -320,7 +396,7 @@ export function createHubServer(input: {
     input.eventBus.publish({ type: "manager_pin.updated", result });
     return result;
   });
-  app.get("/settings/ticket-template", { preHandler: cashierOrAdmin }, async () => input.orderService.getTicketTemplate());
+  app.get("/settings/ticket-template", { preHandler: captainOrAdmin }, async () => input.orderService.getTicketTemplate());
   app.put("/settings/ticket-template", { preHandler: adminOnly }, async (request) => {
     const result = input.orderService.updateTicketTemplate(ticketTemplateSchema.parse(request.body));
     input.eventBus.publish({ type: "ticket_template.updated", result });
@@ -366,7 +442,8 @@ export function createHubServer(input: {
   });
   app.get("/orders/:id", { preHandler: orderRole }, async (request) => {
     const params = request.params as { id: string };
-    return input.orderService.getOrder(params.id);
+    const session = getSession(request);
+    return tableOrderForRole(input.orderService.getOrder(params.id), session.role);
   });
   app.get("/notifications/ready", { preHandler: orderRole }, async (request) => input.orderService.listReadyNotifications(getSession(request)));
 
@@ -385,17 +462,17 @@ export function createHubServer(input: {
     socket.on("close", unsubscribe);
   });
 
-  app.get("/business-day/current-summary", { preHandler: cashierOrAdmin }, async () => input.orderService.getCurrentBusinessDaySummary());
-  app.get("/reports/daily", { preHandler: cashierOrAdmin }, async () => {
+  app.get("/business-day/current-summary", { preHandler: captainOrAdmin }, async () => input.orderService.getCurrentBusinessDaySummary());
+  app.get("/reports/daily", { preHandler: captainOrAdmin }, async () => {
     const result = input.orderService.listDailyReports();
     void input.syncBridge?.pushPending().catch((error) => app.log.warn(error, "Daily report sync will retry later"));
     return result;
   });
-  app.get("/reports/daily/:posDayId", { preHandler: cashierOrAdmin }, async (request) => {
+  app.get("/reports/daily/:posDayId", { preHandler: captainOrAdmin }, async (request) => {
     const params = request.params as { posDayId: string };
     return input.orderService.getDailyReport(params.posDayId);
   });
-  app.get("/reports/alcohol-stock-movements", { preHandler: cashierOrAdmin }, async (request) => {
+  app.get("/reports/alcohol-stock-movements", { preHandler: captainOrAdmin }, async (request) => {
     const query = request.query as { limit?: string };
     return input.orderService.listAlcoholStockMovements(Number(query.limit ?? 100));
   });
@@ -420,7 +497,7 @@ export function createHubServer(input: {
     return result;
   });
 
-  app.post("/orders/:id/cancel", { preHandler: cashierOrAdmin }, async (request) => {
+  app.post("/orders/:id/cancel", { preHandler: captainOrAdmin }, async (request) => {
     const params = request.params as { id: string };
     const session = getSession(request);
     const result = input.orderService.cancelOrder(
@@ -431,7 +508,7 @@ export function createHubServer(input: {
     return result;
   });
 
-  app.post("/kot/:id/reprint", { preHandler: cashierOrAdmin }, async (request) => {
+  app.post("/kot/:id/reprint", { preHandler: captainOrAdmin }, async (request) => {
     const params = request.params as { id: string };
     const session = getSession(request);
     const { result, replayed } = await withIdempotency(request, `kot.reprint.${params.id}`, () =>
@@ -444,7 +521,7 @@ export function createHubServer(input: {
     return result;
   });
 
-  app.post("/bills/:billId/reprint", { preHandler: cashierOrAdmin }, async (request) => {
+  app.post("/bills/:billId/reprint", { preHandler: captainOrAdmin }, async (request) => {
     const params = request.params as { billId: string };
     const session = getSession(request);
     const { result, replayed } = await withIdempotency(request, `bills.reprint.${params.billId}`, () =>
@@ -457,7 +534,7 @@ export function createHubServer(input: {
     return result;
   });
 
-  app.post("/bills/:billId/print", { preHandler: cashierOrAdmin }, async (request) => {
+  app.post("/bills/:billId/print", { preHandler: captainOrAdmin }, async (request) => {
     const params = request.params as { billId: string };
     const session = getSession(request);
     const { result, replayed } = await withIdempotency(request, `bills.print.${params.billId}`, () =>
@@ -467,7 +544,7 @@ export function createHubServer(input: {
     return result;
   });
 
-  app.post("/bills/:billId/revise", { preHandler: cashierOrAdmin }, async (request) => {
+  app.post("/bills/:billId/revise", { preHandler: captainOrAdmin }, async (request) => {
     const params = request.params as { billId: string };
     const { result, replayed } = await withIdempotency(request, `bills.revise.${params.billId}`, () =>
       input.orderService.reviseBill(params.billId, reviseBillSchema.parse(request.body))
@@ -476,7 +553,7 @@ export function createHubServer(input: {
     return result;
   });
 
-  app.post("/bills/:billId/nc", { preHandler: cashierOrAdmin }, async (request) => {
+  app.post("/bills/:billId/nc", { preHandler: captainOrAdmin }, async (request) => {
     const params = request.params as { billId: string };
     const { result, replayed } = await withIdempotency(request, `bills.nc.${params.billId}`, () =>
       input.orderService.markBillNc(params.billId, markNcBillSchema.parse(request.body))
@@ -485,7 +562,7 @@ export function createHubServer(input: {
     return result;
   });
 
-  app.post("/bills/:orderId/generate", { preHandler: cashierOrAdmin }, async (request) => {
+  app.post("/bills/:orderId/generate", { preHandler: captainOrAdmin }, async (request) => {
     const params = request.params as { orderId: string };
     const { result, replayed } = await withIdempotency(request, `bills.generate.${params.orderId}`, () =>
       input.orderService.generateBill(params.orderId)
@@ -494,7 +571,7 @@ export function createHubServer(input: {
     return result;
   });
 
-  app.post("/bills/:billId/settle", { preHandler: cashierOrAdmin }, async (request) => {
+  app.post("/bills/:billId/settle", { preHandler: captainOrAdmin }, async (request) => {
     const params = request.params as { billId: string };
     const session = getSession(request);
     const { result, replayed } = await withIdempotency(request, `bills.settle.${params.billId}`, () =>
@@ -507,12 +584,12 @@ export function createHubServer(input: {
     return result;
   });
 
-  app.post("/print-jobs/process", { preHandler: cashierOrAdmin }, async () => input.printJobService.processPending());
-  app.get("/print-jobs", { preHandler: cashierOrAdmin }, async (request) => {
+  app.post("/print-jobs/process", { preHandler: captainOrAdmin }, async () => input.printJobService.processPending());
+  app.get("/print-jobs", { preHandler: captainOrAdmin }, async (request) => {
     const query = request.query as { limit?: string };
     return input.orderService.listPrintJobs(Number(query.limit ?? 50));
   });
-  app.post("/print-jobs/:id/retry", { preHandler: cashierOrAdmin }, async (request) => {
+  app.post("/print-jobs/:id/retry", { preHandler: captainOrAdmin }, async (request) => {
     const params = request.params as { id: string };
     const result = input.orderService.retryPrintJob(params.id, retryPrintJobSchema.parse(request.body));
     input.eventBus.publish({ type: "print_job.retry_requested", result });

@@ -2,12 +2,12 @@
 
 ## 2026-05-14 Alcohol Management Review Fixes
 
-- Fixed alcohol stock adjustments so the Hub API route `POST /alcohol/stock/:id/adjust` is available to cashier/admin sessions while still requiring Manager PIN verification inside `OrderService.adjustAlcoholStock`.
+- Fixed alcohol stock adjustments so the Hub API route `POST /alcohol/stock/:id/adjust` is available to admin sessions while still requiring Manager PIN verification inside `OrderService.adjustAlcoholStock`.
 - Added `OrderService.listAlcoholStockMovements()` and exposed it through `GET /reports/alcohol-stock-movements`, then surfaced the recent movement history in the Hub Reports view. The Storage tab still only shows current/pending/expected stock, keeping history out of that operational page.
 - Updated alcohol item deletion safety in `OrderService.removeMenuItem`: if an item has order usage or alcohol stock movement history, removal disables the menu item instead of deleting rows that are still referenced by historical records.
 - Changed alcohol variant replacement so existing variant ids are updated in place. Variants removed from setup are disabled when old order items reference them, preventing old bills/tickets from breaking after catalog edits.
 - Added Hub Alcohol catalog editing UI in `apps/hub-electron/src/renderer/App.tsx`: admins can edit item type, name, active state, bar routing, bottle sizes, plain liquor variant prices/active states, and prepared-product recipes. Styles live in `apps/hub-electron/src/renderer/styles.css`.
-- Added regression coverage in `apps/hub-electron/src/tests/order-service.test.ts` and `apps/hub-electron/src/tests/api-server.test.ts` for movement reports, delete-to-disable behavior, and cashier stock adjustment with Manager PIN.
+- Added regression coverage in `apps/hub-electron/src/tests/order-service.test.ts` and `apps/hub-electron/src/tests/api-server.test.ts` for movement reports, delete-to-disable behavior, and captain stock adjustment with Manager PIN.
 
 Verification run:
 

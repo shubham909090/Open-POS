@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "dotenv -e ../../.env.local -- next dev",
+    "lint": "tsc --noEmit",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

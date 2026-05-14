@@ -17,11 +17,12 @@ import {
 } from "react-native";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { getTableDisplayState, tableDisplayLabel, type OrderItemInput } from "@gaurav-pos/shared";
-import { HubClient, type HubBootstrap, type HubOrder } from "./lib/hub-client";
+import { HubClient, type CurrentDaySummary, type HubBootstrap, type HubOrder } from "./lib/hub-client";
 import { clearDraft, getDeviceToken, getHubUrl, loadDraft, saveDraft, setDeviceToken, setHubUrl } from "./lib/draft-store";
 
 type ConnectionState = "checking" | "online" | "offline";
 type ViewMode = "tables" | "menu" | "ticket";
+type PaymentMethod = "cash" | "upi" | "card" | "online";
 
 interface PairingPayload {
   kind: "gaurav-pos-pairing";
@@ -63,11 +64,13 @@ export default function App() {
   const [bootstrap, setBootstrap] = useState<HubBootstrap | null>(null);
   const [selectedTableId, setSelectedTableId] = useState<string | null>(null);
   const [currentOrder, setCurrentOrder] = useState<HubOrder | null>(null);
+  const [currentSummary, setCurrentSummary] = useState<CurrentDaySummary | null>(null);
   const [pax, setPax] = useState("2");
   const [items, setItems] = useState<OrderItemInput[]>([]);
   const [menuSearch, setMenuSearch] = useState("");
   const [mode, setMode] = useState<ViewMode>("tables");
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
+  const operationKeysRef = useRef<Record<string, string>>({});
 
   const client = useMemo(() => new HubClient(hubUrl, deviceToken), [deviceToken, hubUrl]);
   const selectedTable = bootstrap?.tables.find((table) => table.id === selectedTableId) ?? null;
@@ -81,6 +84,7 @@ export default function App() {
   }, 0);
   const tableTotal = sentTotal + draftTotal;
   const hasNewItems = items.length > 0;
+  const canBill = deviceRole === "admin" || deviceRole === "captain";
   const shouldShowOnboarding = setupOpen || !deviceToken || connection === "offline";
 
   const visibleMenu = (bootstrap?.menuItems ?? []).filter((item) => {
@@ -88,6 +92,16 @@ export default function App() {
     const query = menuSearch.trim().toLowerCase();
     return !query || `${item.name} ${item.production_unit_name ?? ""}`.toLowerCase().includes(query);
   });
+
+  function operationKey(prefix: string, scope: unknown) {
+    const mapKey = `${prefix}:${stableStringify(scope)}`;
+    operationKeysRef.current[mapKey] ??= createOperationKey(prefix);
+    return operationKeysRef.current[mapKey];
+  }
+
+  function clearOperationKey(prefix: string, scope: unknown) {
+    delete operationKeysRef.current[`${prefix}:${stableStringify(scope)}`];
+  }
 
   useEffect(() => {
     let alive = true;
@@ -129,6 +143,15 @@ export default function App() {
       const session = await client.me();
       setDeviceNameState(session.name);
       setDeviceRoleState(session.role);
+      if (session.role === "admin" || session.role === "captain") {
+        try {
+          setCurrentSummary(await client.currentBusinessDaySummary());
+        } catch {
+          setCurrentSummary(null);
+        }
+      } else {
+        setCurrentSummary(null);
+      }
       await checkReadyNotifications();
       setMessage(`Connected. Business day ${nextBootstrap.currentBusinessDay.business_date} is active.`);
       if (selectedTableId) await loadTableOrder(selectedTableId);
@@ -249,12 +272,15 @@ export default function App() {
 
     try {
       setSending(true);
-      await client.submitOrder({
+      const input = {
         tableId: selectedTableId,
         pax: normalisePax(pax),
-        orderType: "dine_in",
+        orderType: "dine_in" as const,
         items
-      });
+      };
+      const scope = { tableId: selectedTableId, items, pax: normalisePax(pax) };
+      await client.submitOrder(input, { idempotencyKey: operationKey("mobile-order", scope) });
+      clearOperationKey("mobile-order", scope);
       await clearDraft(selectedTableId);
       setItems([]);
       await refresh(false);
@@ -318,6 +344,160 @@ export default function App() {
       setMessage("Item shifted. The table checks have been refreshed.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not shift item.");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  async function generateBillForSelectedTable() {
+    if (!currentOrder?.order || !selectedTableId) {
+      setMessage("Send items first, then generate the bill.");
+      return;
+    }
+    try {
+      setSending(true);
+      const scope = { orderId: currentOrder.order.id };
+      await client.generateBill(currentOrder.order.id, { idempotencyKey: operationKey("mobile-bill-generate", scope) });
+      await refresh(false);
+      await loadTableOrder(selectedTableId);
+      setMessage("Bill generated for this table.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not generate bill.");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  async function printSelectedBill() {
+    if (!currentOrder?.bill) {
+      setMessage("Generate the bill before printing.");
+      return;
+    }
+    try {
+      setSending(true);
+      await client.printBill(currentOrder.bill.id, { idempotencyKey: operationKey("mobile-bill-print", { billId: currentOrder.bill.id }) });
+      setMessage("Bill print queued on the hub printer.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not print bill.");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  async function reprintSelectedBill(pin: string, reason: string) {
+    if (!currentOrder?.bill) {
+      setMessage("Generate the bill before reprinting.");
+      return;
+    }
+    try {
+      setSending(true);
+      const payload = approvalPayload(pin, reason, deviceName);
+      const scope = { billId: currentOrder.bill.id, payload };
+      await client.reprintBill(currentOrder.bill.id, payload, { idempotencyKey: operationKey("mobile-bill-reprint", scope) });
+      clearOperationKey("mobile-bill-reprint", scope);
+      setMessage("Bill reprint queued.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not reprint bill.");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  async function markSelectedBillNc(pin: string, reason: string) {
+    if (!currentOrder?.bill || !selectedTableId) {
+      setMessage("Generate the bill before marking NC.");
+      return;
+    }
+    try {
+      setSending(true);
+      const payload = approvalPayload(pin, reason, deviceName);
+      const scope = { billId: currentOrder.bill.id, payload };
+      await client.markBillNc(currentOrder.bill.id, payload, { idempotencyKey: operationKey("mobile-bill-nc", scope) });
+      clearOperationKey("mobile-bill-nc", scope);
+      await refresh(false);
+      await loadTableOrder(selectedTableId);
+      setMessage("NC bill saved and print queued.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not mark NC bill.");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  async function settleSelectedBill(input: {
+    discountType: "amount" | "percent";
+    discountValue: number;
+    tipPaise: number;
+    payments: Array<{ method: PaymentMethod; amountPaise: number; reference?: string }>;
+  }) {
+    if (!currentOrder?.bill || !selectedTableId) {
+      setMessage("Generate the bill before taking payment.");
+      return;
+    }
+    try {
+      setSending(true);
+      const scope = { billId: currentOrder.bill.id, existingPaid: currentOrder.bill.paid_paise ?? 0, input };
+      await client.settleBill(currentOrder.bill.id, input, { idempotencyKey: operationKey("mobile-bill-settle", scope) });
+      clearOperationKey("mobile-bill-settle", scope);
+      await refresh(false);
+      await loadTableOrder(selectedTableId);
+      setMessage("Payment saved. Table status has been refreshed.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not punch bill.");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  async function reviseSelectedBill(pin: string, reason: string) {
+    if (!currentOrder?.bill || !selectedTableId) {
+      setMessage("Generate the bill before revising.");
+      return;
+    }
+    if (!items.length && !sentItems.length) {
+      setMessage("Add new dishes before revising this bill.");
+      return;
+    }
+    const existingItems = sentItems.map((item) =>
+      item.menu_item_id
+        ? {
+            orderItemId: item.id,
+            menuItemId: item.menu_item_id,
+            menuItemVariantId: item.menu_item_variant_id ?? undefined,
+            quantity: item.quantity
+          }
+        : {
+            orderItemId: item.id,
+            openName: item.name_snapshot,
+            openPricePaise: item.unit_price_paise,
+            saleGroupId: item.sale_group_id ?? "sg-food",
+            productionUnitId: item.production_unit_id ?? null,
+            quantity: item.quantity
+          }
+    );
+    const newItems = items
+      .filter((item): item is OrderItemInput & { menuItemId: string } => Boolean(item.menuItemId))
+      .map((item) => ({
+        menuItemId: item.menuItemId,
+        menuItemVariantId: item.menuItemVariantId,
+        quantity: item.quantity
+      }));
+    try {
+      setSending(true);
+      const payload = {
+        ...approvalPayload(pin, reason, deviceName),
+        items: [...existingItems, ...newItems]
+      };
+      const scope = { billId: currentOrder.bill.id, payload };
+      await client.reviseBill(currentOrder.bill.id, payload, { idempotencyKey: operationKey("mobile-bill-revise", scope) });
+      clearOperationKey("mobile-bill-revise", scope);
+      await clearDraft(selectedTableId);
+      setItems([]);
+      await refresh(false);
+      await loadTableOrder(selectedTableId);
+      setMessage("Bill revised. Latest bill is ready for payment or print.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not revise bill.");
     } finally {
       setSending(false);
     }
@@ -427,7 +607,7 @@ export default function App() {
       <SafeAreaView style={styles.safe}>
         <View style={styles.loadingShell}>
           <ActivityIndicator size="large" color={palette.green} />
-          <Text style={styles.loadingText}>Opening waiter app...</Text>
+          <Text style={styles.loadingText}>Opening POS app...</Text>
         </View>
       </SafeAreaView>
     );
@@ -439,7 +619,7 @@ export default function App() {
       <KeyboardAvoidingView style={styles.keyboardShell} behavior={Platform.OS === "ios" ? "padding" : undefined}>
         <AppHeader
           connection={connection}
-          title={selectedTable ? `Table ${selectedTable.name}` : "Waiter"}
+          title={selectedTable ? `Table ${selectedTable.name}` : canBill ? "Captain POS" : "Waiter"}
           subtitle={selectedTable ? "Add dishes or review sent items" : "Pick a table to start"}
           onSetupPress={() => {
             setHubUrlDraft(hubUrl);
@@ -506,9 +686,12 @@ export default function App() {
                     selectedTableId={selectedTableId}
                     draftTotal={draftTotal}
                     tableTotal={tableTotal}
+                    currentOrder={currentOrder}
+                    currentSummary={currentSummary}
                     connection={connection}
                     sending={sending}
-                    canShift={deviceRole === "captain"}
+                    canShift={deviceRole === "admin" || deviceRole === "captain"}
+                    canBill={canBill}
                     onPaxChange={(value) => {
                       const clean = value.replace(/\D/g, "").slice(0, 3);
                       setPax(clean);
@@ -517,6 +700,12 @@ export default function App() {
                     onChangeQty={changeQty}
                     onShiftTable={(tableId) => void shiftTable(tableId)}
                     onShiftItem={(orderItemId, quantity, toTableId) => void shiftItem(orderItemId, quantity, toTableId)}
+                    onGenerateBill={() => void generateBillForSelectedTable()}
+                    onPrintBill={() => void printSelectedBill()}
+                    onReprintBill={(pin, reason) => void reprintSelectedBill(pin, reason)}
+                    onMarkNc={(pin, reason) => void markSelectedBillNc(pin, reason)}
+                    onReviseBill={(pin, reason) => void reviseSelectedBill(pin, reason)}
+                    onSettleBill={(input) => void settleSelectedBill(input)}
                     onSubmit={() => void submitOrder()}
                   />
                 )}
@@ -902,13 +1091,22 @@ function TicketScreen({
   tables,
   draftTotal,
   tableTotal,
+  currentOrder,
+  currentSummary,
   connection,
   sending,
   canShift,
+  canBill,
   onPaxChange,
   onChangeQty,
   onShiftTable,
   onShiftItem,
+  onGenerateBill,
+  onPrintBill,
+  onReprintBill,
+  onMarkNc,
+  onReviseBill,
+  onSettleBill,
   onSubmit
 }: {
   selectedTableName: string | null;
@@ -921,13 +1119,27 @@ function TicketScreen({
   tables: HubBootstrap["tables"];
   draftTotal: number;
   tableTotal: number;
+  currentOrder: HubOrder | null;
+  currentSummary: CurrentDaySummary | null;
   connection: ConnectionState;
   sending: boolean;
   canShift: boolean;
+  canBill: boolean;
   onPaxChange: (value: string) => void;
   onChangeQty: (index: number, delta: number) => void;
   onShiftTable: (tableId: string) => void;
   onShiftItem: (orderItemId: string, quantity: number, toTableId: string) => void;
+  onGenerateBill: () => void;
+  onPrintBill: () => void;
+  onReprintBill: (pin: string, reason: string) => void;
+  onMarkNc: (pin: string, reason: string) => void;
+  onReviseBill: (pin: string, reason: string) => void;
+  onSettleBill: (input: {
+    discountType: "amount" | "percent";
+    discountValue: number;
+    tipPaise: number;
+    payments: Array<{ method: PaymentMethod; amountPaise: number; reference?: string }>;
+  }) => void;
   onSubmit: () => void;
 }) {
   const [itemShiftTargetId, setItemShiftTargetId] = useState("");
@@ -1063,6 +1275,246 @@ function TicketScreen({
       <Pressable style={[styles.primaryButton, styles.sendButton, !canSubmit && styles.buttonDisabled]} onPress={onSubmit} disabled={!canSubmit}>
         <Text style={styles.primaryButtonText}>{sending ? "Sending..." : connection === "online" ? "Send New Items" : "Save Draft"}</Text>
       </Pressable>
+
+      <CaptainBillingPanel
+        canBill={canBill}
+        currentOrder={currentOrder}
+        currentSummary={currentSummary}
+        hasNewItems={items.length > 0}
+        sending={sending}
+        onGenerateBill={onGenerateBill}
+        onPrintBill={onPrintBill}
+        onReprintBill={onReprintBill}
+        onMarkNc={onMarkNc}
+        onReviseBill={onReviseBill}
+        onSettleBill={onSettleBill}
+      />
+    </View>
+  );
+}
+
+function CaptainBillingPanel({
+  canBill,
+  currentOrder,
+  currentSummary,
+  hasNewItems,
+  sending,
+  onGenerateBill,
+  onPrintBill,
+  onReprintBill,
+  onMarkNc,
+  onReviseBill,
+  onSettleBill
+}: {
+  canBill: boolean;
+  currentOrder: HubOrder | null;
+  currentSummary: CurrentDaySummary | null;
+  hasNewItems: boolean;
+  sending: boolean;
+  onGenerateBill: () => void;
+  onPrintBill: () => void;
+  onReprintBill: (pin: string, reason: string) => void;
+  onMarkNc: (pin: string, reason: string) => void;
+  onReviseBill: (pin: string, reason: string) => void;
+  onSettleBill: (input: {
+    discountType: "amount" | "percent";
+    discountValue: number;
+    tipPaise: number;
+    payments: Array<{ method: PaymentMethod; amountPaise: number; reference?: string }>;
+  }) => void;
+}) {
+  const bill = currentOrder?.bill ?? null;
+  const payments = currentOrder?.payments ?? [];
+  const [discountType, setDiscountType] = useState<"amount" | "percent">("amount");
+  const [discountValue, setDiscountValue] = useState("0");
+  const [tipValue, setTipValue] = useState("0");
+  const [reference, setReference] = useState("");
+  const [paymentInputs, setPaymentInputs] = useState<Record<PaymentMethod, string>>({ cash: "0", upi: "0", card: "0", online: "0" });
+  const [managerPin, setManagerPin] = useState("");
+  const [managerReason, setManagerReason] = useState("");
+
+  useEffect(() => {
+    if (!bill) return;
+    setDiscountType("amount");
+    setDiscountValue(paiseToRupeeInput(bill.discount_paise ?? 0));
+    setTipValue(paiseToRupeeInput(bill.tip_paise ?? 0));
+    setPaymentInputs({ cash: "0", upi: "0", card: "0", online: "0" });
+  }, [bill?.id]);
+
+  if (!canBill) return null;
+
+  const existingPaidPaise = bill?.paid_paise ?? payments.reduce((total, payment) => total + payment.amount_paise, 0);
+  const rawDiscount = Math.max(0, Number(discountValue || 0));
+  const discountPaise = bill
+    ? discountType === "percent"
+      ? Math.round((bill.total_paise * Math.min(rawDiscount, 100)) / 100)
+      : Math.round(rawDiscount * 100)
+    : 0;
+  const tipPaise = Math.round(Math.max(0, Number(tipValue || 0)) * 100);
+  const finalTotalPaise = bill ? Math.max(0, bill.total_paise - discountPaise + tipPaise) : 0;
+  const balancePaise = Math.max(0, finalTotalPaise - existingPaidPaise);
+  const newPaymentPaise = (["cash", "upi", "card", "online"] as PaymentMethod[]).reduce((total, method) => total + amountInputToPaise(paymentInputs[method]), 0);
+  const remainingPaise = balancePaise - newPaymentPaise;
+  const canPunch = Boolean(bill && newPaymentPaise > 0 && remainingPaise === 0 && !sending);
+  const hasApproval = managerPin.trim().length > 0 && managerReason.trim().length > 0;
+
+  const fillFullPayment = (method: PaymentMethod) => {
+    setPaymentInputs({
+      cash: method === "cash" ? paiseToRupeeInput(balancePaise) : "0",
+      upi: method === "upi" ? paiseToRupeeInput(balancePaise) : "0",
+      card: method === "card" ? paiseToRupeeInput(balancePaise) : "0",
+      online: method === "online" ? paiseToRupeeInput(balancePaise) : "0"
+    });
+  };
+
+  return (
+    <View style={styles.billingPanel}>
+      <Text style={styles.subhead}>Captain Billing</Text>
+
+      {currentSummary ? (
+        <View style={styles.summaryGrid}>
+          <SummaryBox label="Sales" value={`Rs ${formatRupees(currentSummary.finalSalesPaise)}`} />
+          <SummaryBox label="Bills" value={String(currentSummary.billCount)} />
+          <SummaryBox label="Cash" value={`Rs ${formatRupees(currentSummary.cashPaymentsPaise)}`} />
+          <SummaryBox label="UPI/Card" value={`Rs ${formatRupees(currentSummary.upiPaymentsPaise + currentSummary.cardPaymentsPaise)}`} />
+        </View>
+      ) : null}
+
+      {!currentOrder?.order ? (
+        <Text style={styles.smallMuted}>Send items for this table before billing.</Text>
+      ) : !bill ? (
+        <Pressable style={[styles.primaryButton, sending && styles.buttonDisabled]} disabled={sending} onPress={onGenerateBill}>
+          <Text style={styles.primaryButtonText}>{sending ? "Working..." : "Generate Bill"}</Text>
+        </Pressable>
+      ) : (
+        <>
+          <View style={styles.billTotals}>
+            <Text style={styles.sentName}>Bill {bill.revision_number ? `rev ${bill.revision_number}` : ""}</Text>
+            <Text style={styles.muted}>Items Rs {formatRupees(bill.total_paise)}</Text>
+            <Text style={styles.muted}>Already paid Rs {formatRupees(existingPaidPaise)}</Text>
+            <Text style={styles.totalText}>Balance Rs {formatRupees(balancePaise)}</Text>
+          </View>
+
+          <View style={styles.segmentedRow}>
+            <Pressable style={[styles.segmentButton, discountType === "amount" && styles.segmentButtonActive]} onPress={() => setDiscountType("amount")}>
+              <Text style={[styles.segmentText, discountType === "amount" && styles.segmentTextActive]}>Rs off</Text>
+            </Pressable>
+            <Pressable style={[styles.segmentButton, discountType === "percent" && styles.segmentButtonActive]} onPress={() => setDiscountType("percent")}>
+              <Text style={[styles.segmentText, discountType === "percent" && styles.segmentTextActive]}>% off</Text>
+            </Pressable>
+          </View>
+
+          <View style={styles.paymentGrid}>
+            <LabeledMoneyInput label="Discount" value={discountValue} onChange={setDiscountValue} />
+            <LabeledMoneyInput label="Tip" value={tipValue} onChange={setTipValue} />
+          </View>
+
+          <View style={styles.quickPayGrid}>
+            {(["cash", "upi", "card", "online"] as PaymentMethod[]).map((method) => (
+              <Pressable key={method} style={styles.quickPayButton} onPress={() => fillFullPayment(method)}>
+                <Text style={styles.quickPayText}>Full {method.toUpperCase()}</Text>
+              </Pressable>
+            ))}
+          </View>
+
+          <View style={styles.paymentGrid}>
+            {(["cash", "upi", "card", "online"] as PaymentMethod[]).map((method) => (
+              <LabeledMoneyInput
+                key={method}
+                label={method.toUpperCase()}
+                value={paymentInputs[method]}
+                onChange={(value) => setPaymentInputs((current) => ({ ...current, [method]: value }))}
+              />
+            ))}
+          </View>
+          <UncontrolledInput
+            inputKey={`payment-reference-${bill.id}`}
+            label="Reference"
+            defaultValue={reference}
+            onChangeText={setReference}
+            placeholder="UPI/card note, optional"
+            returnKeyType="done"
+          />
+          <Text style={[styles.smallMuted, remainingPaise < 0 && styles.dangerText]}>
+            {remainingPaise === 0 ? "Payment covers the bill." : remainingPaise > 0 ? `Still pending Rs ${formatRupees(remainingPaise)}` : `Over by Rs ${formatRupees(Math.abs(remainingPaise))}`}
+          </Text>
+          <View style={styles.buttonStack}>
+            <Pressable
+              style={[styles.primaryButton, !canPunch && styles.buttonDisabled]}
+              disabled={!canPunch}
+              onPress={() =>
+                onSettleBill({
+                  discountType,
+                  discountValue: discountType === "percent" ? rawDiscount : discountPaise,
+                  tipPaise,
+                  payments: (["cash", "upi", "card", "online"] as PaymentMethod[])
+                    .map((method) => ({ method, amountPaise: amountInputToPaise(paymentInputs[method]), reference: reference.trim() || undefined }))
+                    .filter((payment) => payment.amountPaise > 0)
+                })
+              }
+            >
+              <Text style={styles.primaryButtonText}>Punch Bill</Text>
+            </Pressable>
+            <Pressable style={[styles.secondaryButton, sending && styles.buttonDisabled]} disabled={sending} onPress={onPrintBill}>
+              <Text style={styles.secondaryButtonText}>Print Bill</Text>
+            </Pressable>
+          </View>
+
+          <View style={styles.managerBox}>
+            <Text style={styles.subhead}>Manager Approval</Text>
+            <UncontrolledInput
+              inputKey={`manager-pin-${bill.id}`}
+              label="Manager PIN"
+              defaultValue=""
+              secureTextEntry
+              keyboardType="number-pad"
+              onChangeText={setManagerPin}
+            />
+            <UncontrolledInput
+              inputKey={`manager-reason-${bill.id}`}
+              label="Reason"
+              defaultValue=""
+              onChangeText={setManagerReason}
+              placeholder="Required for NC, reprint, revise"
+            />
+            <View style={styles.quickPayGrid}>
+              <Pressable style={[styles.secondaryButton, (!hasApproval || sending) && styles.buttonDisabled]} disabled={!hasApproval || sending} onPress={() => onReprintBill(managerPin, managerReason)}>
+                <Text style={styles.secondaryButtonText}>Reprint</Text>
+              </Pressable>
+              <Pressable style={[styles.dangerButton, (!hasApproval || sending) && styles.buttonDisabled]} disabled={!hasApproval || sending} onPress={() => onMarkNc(managerPin, managerReason)}>
+                <Text style={styles.dangerButtonText}>NC Bill</Text>
+              </Pressable>
+              <Pressable style={[styles.secondaryButton, (!hasApproval || !hasNewItems || sending) && styles.buttonDisabled]} disabled={!hasApproval || !hasNewItems || sending} onPress={() => onReviseBill(managerPin, managerReason)}>
+                <Text style={styles.secondaryButtonText}>Revise</Text>
+              </Pressable>
+            </View>
+          </View>
+        </>
+      )}
+    </View>
+  );
+}
+
+function SummaryBox({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.summaryBox}>
+      <Text style={styles.inputLabel}>{label}</Text>
+      <Text style={styles.summaryValue}>{value}</Text>
+    </View>
+  );
+}
+
+function LabeledMoneyInput({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+  return (
+    <View style={styles.moneyInputWrap}>
+      <Text style={styles.inputLabel}>{label}</Text>
+      <TextInput
+        style={styles.input}
+        value={value}
+        onChangeText={(next) => onChange(next.replace(/[^0-9.]/g, "").slice(0, 8))}
+        keyboardType="decimal-pad"
+        returnKeyType="done"
+      />
     </View>
   );
 }
@@ -1101,7 +1553,7 @@ function UncontrolledInput({
   secureTextEntry?: boolean;
   autoCapitalize?: "none" | "sentences" | "words" | "characters";
   autoCorrect?: boolean;
-  keyboardType?: "default" | "number-pad" | "url";
+  keyboardType?: "default" | "number-pad" | "decimal-pad" | "url";
   returnKeyType?: "done" | "next" | "search";
   placeholder?: string;
   multiline?: boolean;
@@ -1137,6 +1589,26 @@ function EmptyState({ title, text, compact = false }: { title: string; text: str
   );
 }
 
+function approvalPayload(pin: string, reason: string, approvedBy: string) {
+  return {
+    managerApproval: {
+      pin: pin.trim(),
+      reason: reason.trim(),
+      approvedBy: approvedBy || "Captain app"
+    }
+  };
+}
+
+function amountInputToPaise(value: string) {
+  const amount = Number(value || 0);
+  return Number.isFinite(amount) ? Math.max(0, Math.round(amount * 100)) : 0;
+}
+
+function paiseToRupeeInput(paise: number) {
+  const rupees = Math.max(0, paise) / 100;
+  return rupees % 1 === 0 ? String(rupees.toFixed(0)) : rupees.toFixed(2);
+}
+
 function parsePairingPayload(value: string): PairingPayload | null {
   const trimmed = value.trim();
   if (!trimmed || /^[0-9]{6}$/.test(trimmed)) return null;
@@ -1164,6 +1636,14 @@ function normaliseHubUrl(value: string) {
   return `http://${trimmed}`;
 }
 
+function createOperationKey(prefix: string) {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function stableStringify(value: unknown) {
+  return JSON.stringify(value);
+}
+
 function normalisePax(value: string) {
   const parsed = Number(value || 1);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
@@ -1175,7 +1655,8 @@ function findMenuVariant(menuItem: HubBootstrap["menuItems"][number] | undefined
 }
 
 function formatRupees(paise: number) {
-  return (paise / 100).toFixed(0);
+  const rupees = paise / 100;
+  return rupees % 1 === 0 ? rupees.toFixed(0) : rupees.toFixed(2);
 }
 
 const palette = {
@@ -1489,9 +1970,94 @@ const styles = StyleSheet.create({
     padding: 10,
     flexDirection: "row",
     justifyContent: "space-between",
+    flexWrap: "wrap",
     gap: 8
   },
   totalLabel: { color: palette.green, fontWeight: "900" },
+  billingPanel: {
+    borderTopWidth: 1,
+    borderColor: "#ece2d4",
+    paddingTop: 12,
+    gap: 12
+  },
+  summaryGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8
+  },
+  summaryBox: {
+    minWidth: 128,
+    flex: 1,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#e5dccd",
+    backgroundColor: "#fffaf1",
+    padding: 10,
+    gap: 3
+  },
+  summaryValue: { color: palette.ink, fontWeight: "900", fontSize: 15 },
+  billTotals: {
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#d8cdbb",
+    backgroundColor: "#fbf6eb",
+    padding: 10,
+    gap: 4
+  },
+  segmentedRow: {
+    flexDirection: "row",
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#d8cdbb",
+    overflow: "hidden"
+  },
+  segmentButton: { flex: 1, minHeight: 42, alignItems: "center", justifyContent: "center", backgroundColor: palette.paper },
+  segmentButtonActive: { backgroundColor: palette.ink },
+  segmentText: { color: palette.ink, fontWeight: "900" },
+  segmentTextActive: { color: "#fffdfa" },
+  paymentGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8
+  },
+  moneyInputWrap: { minWidth: 126, flex: 1, gap: 5 },
+  quickPayGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8
+  },
+  quickPayButton: {
+    minHeight: 44,
+    minWidth: 112,
+    flexGrow: 1,
+    borderRadius: 9,
+    borderWidth: 1,
+    borderColor: palette.green,
+    backgroundColor: palette.greenSoft,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 10
+  },
+  quickPayText: { color: palette.green, fontWeight: "900", fontSize: 12 },
+  managerBox: {
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#e7c1b9",
+    backgroundColor: palette.redSoft,
+    padding: 10,
+    gap: 9
+  },
+  dangerButton: {
+    minHeight: 48,
+    borderRadius: 9,
+    backgroundColor: palette.red,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 14,
+    flexGrow: 1
+  },
+  dangerButtonText: { color: "#fffdfa", fontWeight: "900" },
+  dangerText: { color: palette.red, fontWeight: "900" },
   sendButton: { minHeight: 54 },
   buttonDisabled: { opacity: 0.45 },
   draftBar: {

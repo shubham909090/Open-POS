@@ -6,7 +6,7 @@ This is the practical handoff path for installing Gaurav POS in a restaurant.
 
 Send two installable apps:
 
-- **Windows Hub** for the cashier/admin PC.
+- **Windows Hub** for the admin PC.
 - **Android APK** for waiter tablets.
 
 The cloud portal is not installed on the restaurant computer. The owner opens it in a browser for hub connection setup and day reports.
@@ -111,10 +111,10 @@ pnpm --filter @gaurav-pos/mobile android:aab
 
 ## Daily Restaurant Flow
 
-1. Cashier opens the hub app.
+1. Captain or admin opens the hub app.
 2. Hub automatically uses the current 6 AM IST business day.
 3. Waiters take orders on tablets.
 4. Hub creates KOTs and print jobs locally.
-5. Cashier punches bills from occupied tables.
+5. Captain punches bills from occupied tables.
 6. After the next 6 AM IST boundary, hub finalizes the old settled business day.
 7. Hub saves the local report and syncs it to cloud when internet is available.

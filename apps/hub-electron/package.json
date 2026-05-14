@@ -15,6 +15,7 @@
     "db:studio": "drizzle-kit studio",
     "package:win": "pnpm build && electron-builder --win nsis --x64",
     "package:dir": "pnpm build && electron-builder --dir",
+    "lint": "tsc --noEmit",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },

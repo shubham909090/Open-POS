@@ -140,7 +140,7 @@ describe("OrderService KOT lifecycle", () => {
     orderService.setManagerPin({ newPin: "1234", updatedBy: "admin" });
     const cancelled = orderService.cancelOrder(order.orderId, {
       reason: "Guest left",
-      requestedBy: "cashier-1",
+      requestedBy: "captain-1",
       managerApproval: { pin: "1234", reason: "Guest left", approvedBy: "manager" }
     });
 
@@ -171,7 +171,7 @@ describe("OrderService KOT lifecycle", () => {
     orderService.settleBill(bill.billId, {
       method: "cash",
       amountPaise: bill.totalPaise,
-      receivedBy: "cashier-1"
+      receivedBy: "captain-1"
     });
 
     expect(database.db.prepare("SELECT status FROM bills WHERE id = ?").get(bill.billId)).toEqual({ status: "paid" });
@@ -195,7 +195,7 @@ describe("OrderService KOT lifecycle", () => {
 
     const bill = orderService.generateBill(order.orderId);
     const partPaid = orderService.settleBill(bill.billId, {
-      receivedBy: "cashier-1",
+      receivedBy: "captain-1",
       discountType: "amount",
       discountValue: 1000,
       tipPaise: 500,
@@ -209,10 +209,7 @@ describe("OrderService KOT lifecycle", () => {
     expect(partPaid.remainingPaise).toBeGreaterThan(0);
 
     const final = orderService.settleBill(bill.billId, {
-      receivedBy: "cashier-1",
-      discountType: "amount",
-      discountValue: 1000,
-      tipPaise: 500,
+      receivedBy: "captain-1",
       payments: [{ method: "card", amountPaise: partPaid.remainingPaise }]
     });
 
@@ -223,6 +220,64 @@ describe("OrderService KOT lifecycle", () => {
       tip_paise: 500
     });
     expect(database.db.prepare("SELECT COUNT(*) AS count FROM payments WHERE bill_id = ?").get(bill.billId)).toEqual({ count: 3 });
+
+    database.close();
+  });
+
+  it("allows explicit zero to clear bill discount and tip during settlement", () => {
+    const { database, orderService } = createTestHub();
+    const order = orderService.submitOrder({
+      tableId: "table-t1",
+      captainId: "waiter-1",
+      pax: 1,
+      orderType: "dine_in",
+      items: [{ menuItemId: "item-dal-fry", quantity: 2 }]
+    });
+    const bill = orderService.generateBill(order.orderId);
+    orderService.settleBill(bill.billId, {
+      receivedBy: "captain-1",
+      discountType: "amount",
+      discountValue: 1000,
+      tipPaise: 500,
+      payments: [{ method: "cash", amountPaise: 1000 }]
+    });
+    const final = orderService.settleBill(bill.billId, {
+      receivedBy: "captain-1",
+      discountType: "amount",
+      discountValue: 0,
+      tipPaise: 0,
+      payments: [{ method: "card", amountPaise: bill.totalPaise - 1000 }]
+    });
+
+    expect(final.status).toBe("paid");
+    expect(database.db.prepare("SELECT discount_paise, tip_paise, final_total_paise FROM bills WHERE id = ?").get(bill.billId)).toEqual({
+      discount_paise: 0,
+      tip_paise: 0,
+      final_total_paise: bill.totalPaise
+    });
+
+    database.close();
+  });
+
+  it("rejects overpayment instead of silently recording extra money", () => {
+    const { database, orderService } = createTestHub();
+
+    const order = orderService.submitOrder({
+      tableId: "table-t1",
+      captainId: "waiter-1",
+      pax: 1,
+      orderType: "dine_in",
+      items: [{ menuItemId: "item-dal-fry", quantity: 1 }]
+    });
+    const bill = orderService.generateBill(order.orderId);
+
+    expect(() =>
+      orderService.settleBill(bill.billId, {
+        receivedBy: "captain-1",
+        payments: [{ method: "cash", amountPaise: bill.totalPaise + 1 }]
+      })
+    ).toThrow("Payment exceeds the balance due");
+    expect(database.db.prepare("SELECT COUNT(*) AS count FROM payments WHERE bill_id = ?").get(bill.billId)).toEqual({ count: 0 });
 
     database.close();
   });
@@ -348,7 +403,7 @@ describe("OrderService KOT lifecycle", () => {
     orderService.setManagerPin({ newPin: "1234", updatedBy: "admin" });
     orderService.cancelOrder(order.orderId, {
       reason: "Test cleanup",
-      requestedBy: "cashier-1",
+      requestedBy: "captain-1",
       managerApproval: { pin: "1234", reason: "Test cleanup", approvedBy: "manager" }
     });
 
@@ -374,7 +429,7 @@ describe("OrderService KOT lifecycle", () => {
 
     orderService.updateKotStatus(kot.id, { status: "preparing" });
     database.db.prepare("UPDATE print_jobs SET status = 'failed', last_error = 'paper out' WHERE id = ?").run(print.id);
-    orderService.retryPrintJob(print.id, { requestedBy: "cashier-1" });
+    orderService.retryPrintJob(print.id, { requestedBy: "captain-1" });
 
     expect(database.db.prepare("SELECT status FROM kots WHERE id = ?").get(kot.id)).toEqual({ status: "preparing" });
     expect(database.db.prepare("SELECT status, last_error FROM print_jobs WHERE id = ?").get(print.id)).toEqual({
@@ -402,7 +457,7 @@ describe("OrderService KOT lifecycle", () => {
     });
 
     const bill = orderService.generateBill(order.orderId);
-    orderService.settleBill(bill.billId, { method: "cash", amountPaise: bill.totalPaise, receivedBy: "cashier-1" });
+    orderService.settleBill(bill.billId, { method: "cash", amountPaise: bill.totalPaise, receivedBy: "captain-1" });
     expect(database.db.prepare("SELECT printer_host, printer_port FROM print_jobs WHERE target_id = ?").get(bill.billId)).toEqual({
       printer_host: "192.168.1.70",
       printer_port: 9100
@@ -425,7 +480,7 @@ describe("OrderService KOT lifecycle", () => {
     const tipPaise = 500;
     const finalTotalPaise = bill.totalPaise - discountPaise + tipPaise;
     orderService.settleBill(bill.billId, {
-      receivedBy: "cashier-1",
+      receivedBy: "captain-1",
       discountType: "amount",
       discountValue: discountPaise,
       tipPaise,
@@ -464,7 +519,7 @@ describe("OrderService KOT lifecycle", () => {
       items: [{ menuItemId: "item-dal-fry", quantity: 1 }]
     });
     const bill = orderService.generateBill(order.orderId);
-    orderService.settleBill(bill.billId, { method: "cash", amountPaise: bill.totalPaise, receivedBy: "cashier-1" });
+    orderService.settleBill(bill.billId, { method: "cash", amountPaise: bill.totalPaise, receivedBy: "captain-1" });
     const dayId = database.db.prepare("SELECT pos_day_id FROM orders WHERE id = ?").get(order.orderId) as { pos_day_id: string };
     database.db
       .prepare(
@@ -569,7 +624,7 @@ describe("OrderService KOT lifecycle", () => {
     const tipPaise = 500;
     const finalTotalPaise = bill.totalPaise - discountPaise + tipPaise;
     orderService.settleBill(bill.billId, {
-      receivedBy: "cashier",
+      receivedBy: "captain",
       discountType: "amount",
       discountValue: discountPaise,
       tipPaise,
@@ -602,7 +657,7 @@ describe("OrderService KOT lifecycle", () => {
       discountValue: 0,
       tipPaise: 0,
       payments: [{ method: "cash", amountPaise: 100 }],
-      receivedBy: "cashier"
+      receivedBy: "captain"
     });
 
     expect(() =>
@@ -630,7 +685,7 @@ describe("OrderService KOT lifecycle", () => {
       discountValue: 0,
       tipPaise: 0,
       payments: [{ method: "cash", amountPaise: 100 }],
-      receivedBy: "cashier"
+      receivedBy: "captain"
     });
 
     expect(() =>
@@ -710,7 +765,7 @@ describe("OrderService KOT lifecycle", () => {
     expect(pending.find((row) => row.id === liquor.id)).toMatchObject({ pending_total_ml: 990, total_available_ml: 1680 });
 
     const bill = orderService.generateBill(order.orderId);
-    orderService.settleBill(bill.billId, { method: "cash", amountPaise: bill.totalPaise, receivedBy: "cashier-1" });
+    orderService.settleBill(bill.billId, { method: "cash", amountPaise: bill.totalPaise, receivedBy: "captain-1" });
 
     expect(database.db.prepare("SELECT sealed_large_count, open_large_ml, sealed_small_count FROM alcohol_stock_levels WHERE menu_item_id = ?").get(liquor.id)).toEqual({
       sealed_large_count: 0,
@@ -722,7 +777,7 @@ describe("OrderService KOT lifecycle", () => {
     database.close();
   });
 
-  it("allows negative alcohol stock and deducts cocktail recipes from large bottles", () => {
+  it("blocks alcohol settlement that would make stock negative", () => {
     const { database, orderService } = createTestHub();
     const vodka = orderService.createAlcoholItem({
       type: "plain_liquor",
@@ -773,15 +828,55 @@ describe("OrderService KOT lifecycle", () => {
       ]
     });
     const bill = orderService.generateBill(order.orderId);
-    orderService.settleBill(bill.billId, { method: "cash", amountPaise: bill.totalPaise, receivedBy: "cashier-1" });
+    expect(() =>
+      orderService.settleBill(bill.billId, { method: "cash", amountPaise: bill.totalPaise, receivedBy: "captain-1" })
+    ).toThrow("Alcohol stock cannot go below zero");
 
     expect(database.db.prepare("SELECT sealed_large_count, open_large_ml FROM alcohol_stock_levels WHERE menu_item_id = ?").get(vodka.id)).toEqual({
-      sealed_large_count: 0,
-      open_large_ml: 690
+      sealed_large_count: 1,
+      open_large_ml: 0
     });
     expect(database.db.prepare("SELECT sealed_large_count FROM alcohol_stock_levels WHERE menu_item_id = ?").get(rum.id)).toEqual({
-      sealed_large_count: -1
+      sealed_large_count: 0
     });
+    expect(database.db.prepare("SELECT COUNT(*) AS count FROM alcohol_stock_movements WHERE source_id = ?").get(bill.billId)).toEqual({ count: 0 });
+
+    database.close();
+  });
+
+  it("deducts alcohol stock for NC bills", () => {
+    const { database, orderService } = createTestHub();
+    orderService.setManagerPin({ newPin: "1234", updatedBy: "admin" });
+    const liquor = orderService.createAlcoholItem({
+      type: "plain_liquor",
+      name: "NC Whisky",
+      productionUnitId: "unit-bar",
+      largeBottleMl: 750,
+      smallBottleMl: 180,
+      sealedLargeCount: 1,
+      openLargeMl: 0,
+      sealedSmallCount: 0,
+      variants: [{ label: "750 ml", kind: "large_bottle", pricePaise: 180_000, volumeMl: 750, inventoryAction: "large_bottle", sortOrder: 0, active: true }],
+      recipeIngredients: []
+    });
+    const large = database.db.prepare("SELECT id FROM menu_item_variants WHERE menu_item_id = ? AND kind = 'large_bottle'").get(liquor.id) as { id: string };
+    const order = orderService.submitOrder({
+      tableId: "table-t1",
+      captainId: "waiter-1",
+      pax: 1,
+      orderType: "dine_in",
+      items: [{ menuItemId: liquor.id, menuItemVariantId: large.id, quantity: 1 }]
+    });
+    const bill = orderService.generateBill(order.orderId);
+
+    orderService.markBillNc(bill.billId, {
+      managerApproval: { pin: "1234", reason: "Owner tasting", approvedBy: "manager" }
+    });
+
+    expect(database.db.prepare("SELECT sealed_large_count FROM alcohol_stock_levels WHERE menu_item_id = ?").get(liquor.id)).toEqual({
+      sealed_large_count: 0
+    });
+    expect(database.db.prepare("SELECT COUNT(*) AS count FROM alcohol_stock_movements WHERE source_id = ?").get(bill.billId)).toEqual({ count: 1 });
 
     database.close();
   });
@@ -828,7 +923,7 @@ describe("OrderService KOT lifecycle", () => {
     expect(pending.find((row) => row.id === vodka.id)).toMatchObject({ pending_large_ml: 30 });
 
     const bill = orderService.generateBill(order.orderId);
-    orderService.settleBill(bill.billId, { method: "cash", amountPaise: bill.totalPaise, receivedBy: "cashier-1" });
+    orderService.settleBill(bill.billId, { method: "cash", amountPaise: bill.totalPaise, receivedBy: "captain-1" });
 
     expect(database.db.prepare("SELECT sealed_large_count, open_large_ml FROM alcohol_stock_levels WHERE menu_item_id = ?").get(vodka.id)).toEqual({
       sealed_large_count: 0,
@@ -899,7 +994,7 @@ describe("OrderService KOT lifecycle", () => {
     expect(recipeMl).toEqual([30, 90]);
 
     const bill = orderService.generateBill(order.orderId);
-    orderService.settleBill(bill.billId, { method: "cash", amountPaise: bill.totalPaise, receivedBy: "cashier-1" });
+    orderService.settleBill(bill.billId, { method: "cash", amountPaise: bill.totalPaise, receivedBy: "captain-1" });
 
     expect(database.db.prepare("SELECT sealed_large_count, open_large_ml FROM alcohol_stock_levels WHERE menu_item_id = ?").get(vodka.id)).toEqual({
       sealed_large_count: 0,
@@ -947,7 +1042,7 @@ describe("OrderService KOT lifecycle", () => {
 
     expect(orderService.removeMenuItem(vodka.id)).toEqual({ id: vodka.id, deleted: false, active: false });
     const bill = orderService.generateBill(order.orderId);
-    orderService.settleBill(bill.billId, { method: "cash", amountPaise: bill.totalPaise, receivedBy: "cashier-1" });
+    orderService.settleBill(bill.billId, { method: "cash", amountPaise: bill.totalPaise, receivedBy: "captain-1" });
 
     expect(database.db.prepare("SELECT sealed_large_count, open_large_ml FROM alcohol_stock_levels WHERE menu_item_id = ?").get(vodka.id)).toEqual({
       sealed_large_count: 0,
@@ -1105,6 +1200,14 @@ describe("OrderService KOT lifecycle", () => {
     ).toThrow("Set a manager PIN before using manager-only actions");
 
     orderService.setManagerPin({ newPin: "1234", updatedBy: "admin" });
+    expect(() =>
+      orderService.adjustAlcoholStock(liquor.id, {
+        mode: "delta",
+        sealedLargeCount: -1,
+        managerApproval: { pin: "1234", reason: "Alcohol stock edit", approvedBy: "manager" }
+      })
+    ).toThrow("Alcohol stock cannot go below zero");
+
     orderService.adjustAlcoholStock(liquor.id, {
       mode: "delta",
       sealedLargeCount: 2,
@@ -1232,8 +1335,47 @@ describe("OrderService KOT lifecycle", () => {
       unit_price_paise: 180_000,
       inventory_action_snapshot: "large_bottle"
     });
-    orderService.settleBill(bill.billId, { method: "cash", amountPaise: revised.totalPaise, receivedBy: "cashier-1" });
+    orderService.settleBill(bill.billId, { method: "cash", amountPaise: revised.totalPaise, receivedBy: "captain-1" });
     expect(database.db.prepare("SELECT sealed_large_count FROM alcohol_stock_levels WHERE menu_item_id = ?").get(liquor.id)).toEqual({ sealed_large_count: 1 });
+
+    database.close();
+  });
+
+  it("records revised bill audit totals with existing discount and tip", () => {
+    const { database, orderService } = createTestHub();
+    orderService.setManagerPin({ newPin: "1234", updatedBy: "admin" });
+    const order = orderService.submitOrder({
+      tableId: "table-t1",
+      captainId: "waiter-1",
+      pax: 1,
+      orderType: "dine_in",
+      items: [{ menuItemId: "item-dal-fry", quantity: 1 }]
+    });
+    const bill = orderService.generateBill(order.orderId);
+    const existingItem = database.db.prepare("SELECT id FROM order_items WHERE order_id = ?").get(order.orderId) as { id: string };
+    database.db
+      .prepare("UPDATE bills SET discount_paise = 1000, tip_paise = 500, final_total_paise = total_paise - 500 WHERE id = ?")
+      .run(bill.billId);
+
+    orderService.reviseBill(bill.billId, {
+      items: [
+        { orderItemId: existingItem.id, menuItemId: "item-dal-fry", quantity: 1 },
+        { menuItemId: "item-lassi", quantity: 1 }
+      ],
+      managerApproval: { pin: "1234", reason: "Added lassi", approvedBy: "manager" }
+    });
+
+    const liveBill = database.db.prepare("SELECT total_paise, discount_paise, tip_paise, final_total_paise FROM bills WHERE id = ?").get(bill.billId) as {
+      total_paise: number;
+      discount_paise: number;
+      tip_paise: number;
+      final_total_paise: number;
+    };
+    expect(database.db.prepare("SELECT discount_paise, tip_paise, final_total_paise FROM bill_revisions WHERE bill_id = ? ORDER BY revision_number DESC LIMIT 1").get(bill.billId)).toEqual({
+      discount_paise: 1000,
+      tip_paise: 500,
+      final_total_paise: liveBill.final_total_paise
+    });
 
     database.close();
   });
@@ -1276,7 +1418,7 @@ describe("OrderService KOT lifecycle", () => {
 
     const movement = orderService.moveTable(
       { fromTableId: "table-t1", toTableId: "table-t2", reason: "Guest moved outside" },
-      { id: "device-local-admin", name: "Cashier", role: "cashier" }
+      { id: "device-local-admin", name: "Local Admin", role: "admin" }
     );
 
     expect(movement.kotIds).toHaveLength(1);
@@ -1305,7 +1447,7 @@ describe("OrderService KOT lifecycle", () => {
 
     const movement = orderService.moveOrderItems(
       { fromTableId: "table-t1", toTableId: "table-t2", reason: "Split table", items: [{ orderItemId: item.id, quantity: 1 }] },
-      { id: "device-local-admin", name: "Cashier", role: "cashier" }
+      { id: "device-local-admin", name: "Local Admin", role: "admin" }
     );
 
     expect(movement.sourceKotIds).toHaveLength(1);
@@ -1323,6 +1465,35 @@ describe("OrderService KOT lifecycle", () => {
         .get(movement.toOrderId)
     ).toEqual({ count: 1 });
     expect(database.db.prepare("SELECT COUNT(*) AS count FROM print_jobs WHERE target_type = 'KOT'").get()).toEqual({ count: 3 });
+
+    database.close();
+  });
+
+  it("merges identical open items when shifting selected items", () => {
+    const { database, orderService } = createTestHub();
+    const sourceOrder = orderService.submitOrder({
+      tableId: "table-t1",
+      captainId: "waiter-1",
+      pax: 1,
+      orderType: "dine_in",
+      items: [{ openName: "Chef special", openPricePaise: 12_000, saleGroupId: "sg-food", productionUnitId: "unit-kitchen", quantity: 2 }]
+    });
+    const targetOrder = orderService.submitOrder({
+      tableId: "table-t2",
+      captainId: "waiter-1",
+      pax: 1,
+      orderType: "dine_in",
+      items: [{ openName: "Chef special", openPricePaise: 12_000, saleGroupId: "sg-food", productionUnitId: "unit-kitchen", quantity: 1 }]
+    });
+    const sourceItem = database.db.prepare("SELECT id FROM order_items WHERE order_id = ?").get(sourceOrder.orderId) as { id: string };
+
+    orderService.moveOrderItems(
+      { fromTableId: "table-t1", toTableId: "table-t2", reason: "Split table", items: [{ orderItemId: sourceItem.id, quantity: 1 }] },
+      { id: "device-local-admin", name: "Local Admin", role: "admin" }
+    );
+
+    expect(database.db.prepare("SELECT COUNT(*) AS count FROM order_items WHERE order_id = ? AND name_snapshot = 'Chef special'").get(targetOrder.orderId)).toEqual({ count: 1 });
+    expect(database.db.prepare("SELECT quantity FROM order_items WHERE order_id = ? AND name_snapshot = 'Chef special'").get(targetOrder.orderId)).toEqual({ quantity: 2 });
 
     database.close();
   });
@@ -1352,7 +1523,7 @@ describe("OrderService KOT lifecycle", () => {
 
     orderService.moveOrderItems(
       { fromTableId: "table-t1", toTableId: "table-t2", reason: "Restore cancelled item", items: [{ orderItemId: sourceItem.id, quantity: 1 }] },
-      { id: "device-local-admin", name: "Cashier", role: "cashier" }
+      { id: "device-local-admin", name: "Local Admin", role: "admin" }
     );
 
     expect(
@@ -1386,7 +1557,7 @@ describe("OrderService KOT lifecycle", () => {
 
     orderService.moveOrderItems(
       { fromTableId: "table-t1", toTableId: "table-t2", reason: "Join tables", items: [{ orderItemId: sourceItem.id, quantity: 1 }] },
-      { id: "device-local-admin", name: "Cashier", role: "cashier" }
+      { id: "device-local-admin", name: "Local Admin", role: "admin" }
     );
 
     expect(

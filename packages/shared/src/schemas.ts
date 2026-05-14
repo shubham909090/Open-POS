@@ -52,9 +52,9 @@ export const settleBillSchema = z.object({
   method: z.enum(["cash", "upi", "card", "online"]).default("cash").optional(),
   amountPaise: z.number().int().min(0).optional(),
   receivedBy: z.string().min(1),
-  discountType: z.enum(["amount", "percent"]).default("amount"),
-  discountValue: z.number().min(0).default(0),
-  tipPaise: z.number().int().min(0).default(0),
+  discountType: z.enum(["amount", "percent"]).optional(),
+  discountValue: z.number().min(0).optional(),
+  tipPaise: z.number().int().min(0).optional(),
   payments: z.array(paymentInputSchema).optional()
 });
 
@@ -66,7 +66,7 @@ export const reprintKotSchema = z.object({
 
 export const cancelOrderSchema = z.object({
   reason: z.string().trim().min(3).max(500),
-  requestedBy: z.string().trim().min(1).max(120).default("cashier"),
+  requestedBy: z.string().trim().min(1).max(120).default("captain"),
   managerApproval: managerApprovalSchema.optional()
 });
 
@@ -259,7 +259,7 @@ export const moveOrderItemsSchema = z.object({
 
 export const createPairingCodeSchema = z.object({
   deviceName: z.string().trim().min(1).max(120),
-  role: z.enum(["admin", "cashier", "captain", "waiter", "kitchen"]),
+  role: z.enum(["admin", "captain", "waiter", "kitchen"]),
   expiresInMinutes: z.number().int().min(1).max(120).default(10)
 });
 

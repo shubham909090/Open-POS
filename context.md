@@ -40,7 +40,7 @@ Useful root scripts:
 
 Package: `apps/hub-electron`
 
-The hub is the local restaurant machine. It runs on the cashier/admin Windows PC in production. In development it can run on macOS as a local Fastify server.
+The hub is the local restaurant machine. It runs on the admin Windows PC in production. In development it can run on macOS as a local Fastify server.
 
 Responsibilities:
 
@@ -107,8 +107,8 @@ Responsibilities:
 
 Cloud portal roles:
 
-- `owner`: created when the restaurant is created; can manage restaurant setup, staff, and hub connection.
-- `admin`: can manage restaurant setup/staff/hub connection.
+- `owner`: created when the restaurant is created; can manage restaurant setup, staff, and create/revoke hub connections.
+- `admin`: can manage staff/setup/support commands, but cannot create a new hub connection. Hub connection creation is owner-only.
 - `reporting`: can view reports but not manage setup/staff/hub connection.
 
 ### 4. Convex Backend
@@ -136,7 +136,6 @@ Convex HTTP endpoints:
 Local hub/mobile device roles are defined in `packages/shared/src/types.ts`:
 
 - `admin`
-- `cashier`
 - `captain`
 - `waiter`
 - `kitchen`
@@ -144,18 +143,38 @@ Local hub/mobile device roles are defined in `packages/shared/src/types.ts`:
 Current local permission model:
 
 - `admin`: full hub setup/admin permissions, device pairing/revoke, sync, backups, settings, printer setup, and reports.
-- `cashier`: order/billing/report/print operation permissions. Sensitive actions still require manager PIN where applicable.
-- `captain`: mobile/floor service role. Can submit orders, view running orders, shift own open tables/items, and receive ready alerts.
+- `captain`: full restaurant operations role. Can submit orders, bill/settle/print, view current reports, adjust alcohol stock with Manager PIN, shift own open tables/items from APK, and receive ready alerts.
 - `waiter`: mobile/basic order-taking role. Can submit/view orders, cannot shift tables/items.
 - `kitchen`: KDS role. Can view kitchen/bar tickets and update KOT/BOT statuses.
+
+Authority matrix:
+
+| Capability | admin | captain | waiter | kitchen |
+| --- | --- | --- | --- | --- |
+| Unlock hub / use local admin token | yes | no | no | no |
+| Pair/revoke local devices | yes | no | no | no |
+| Manage floors/tables/kitchens/dishes/sale groups | yes | no | no | no |
+| Manage printers/templates/manager PIN/backups/sync tools | yes | no | no | no |
+| View basic setup/catalog data | yes | yes | yes | yes |
+| View full table/order with bill, payments, KOT/BOT | yes | yes | no | no |
+| View running table order without bill/payment/KOT details | yes | yes | yes | no |
+| Submit table orders / open items | yes | yes | yes | no |
+| Move full table / selected items | yes | own open table/items only | no | no |
+| Generate, print, revise, settle, NC, reprint bills | yes | yes | no | no |
+| Cancel/remove orders | yes, manager PIN required | yes, manager PIN required | no | no |
+| Reprint KOT/BOT | yes, manager PIN required | yes, manager PIN required | no | no |
+| View current reports and alcohol stock reports | yes | yes | no | no |
+| Adjust alcohol stock | yes, manager PIN required | yes, manager PIN required | no | no |
+| View KDS tickets and mark status | yes | no | no | yes |
+| Receive ready notifications | yes | yes | yes | no |
 
 Important security rule:
 
 - Hub endpoints derive actor identity from the authenticated local device token.
-- The system does not trust client-sent `captainId`, `movedBy`, or cashier names for security decisions.
+- The system does not trust client-sent `captainId`, `movedBy`, or display names for security decisions.
 - Captain ownership is based on paired device identity.
 - Captains can shift only their own open/running tables/items.
-- Cashier/admin can correct valid table/item movement.
+- Admin can correct valid table/item movement from the hub; captain APK movement remains own-open-table scoped.
 
 ## Auth Model
 
@@ -404,7 +423,7 @@ Implemented movement:
 
 Movement is available from:
 
-- hub UI for cashier/admin correction,
+- hub UI for admin correction,
 - mobile APK for captain-owned open/running tables/items.
 
 Movement behavior:
@@ -430,7 +449,7 @@ Main flow:
    - amount,
    - or percentage.
 5. Add tip if needed.
-6. Record one or more cashier-entered payments:
+6. Record one or more captain-entered payments:
    - cash,
    - UPI,
    - card,
@@ -442,7 +461,7 @@ Main flow:
 11. Receipt print job is queued.
 12. Table is freed/refreshed.
 
-Payments are cashier-recorded external payments. There is no gateway integration currently.
+Payments are captain-recorded external payments. There is no gateway integration currently.
 
 Bill statuses in shared types:
 
@@ -482,7 +501,7 @@ Approvals are audited in `manager_approvals` with action, aggregate, reason, app
 
 Implemented revision behavior:
 
-- Cashier/admin can enter revision mode from a generated/printed bill.
+- Admin and captain can enter revision mode from a generated/printed bill.
 - Manager PIN and reason are required.
 - User can add/subtract items.
 - Hub records a new bill revision in `bill_revisions`.
@@ -617,8 +636,10 @@ Cloud-to-hub pull:
 
 1. Cloud admin queues commands into Convex `hubCommands`.
 2. Hub calls `/pos/pull-hub-snapshot`.
-3. Hub applies commands locally.
+3. Hub applies commands locally one by one.
 4. Cursor is stored in hub settings as `cloud_snapshot_cursor`.
+5. If a command fails, the hub records it in local command failures, continues with later commands, and shows the warning in Hub Advanced support tools.
+6. Operators should fix the cloud setup, send a new update, and mark the old failure resolved in the hub once it no longer matters.
 
 Supported cloud command types:
 
@@ -753,7 +774,7 @@ These are not hallucinated features; they are current operational notes:
 - Mobile ready alerts are polling-based, not native push notifications.
 - Cloud admin has a `dev` and `typecheck` script, but no package-level `build` script in `apps/cloud-admin/package.json`.
 - Hub is the live source of truth; cloud reports appear after the hub finalizes a 6 AM IST business day and syncs.
-- The system is not a payment gateway; UPI/card/online payments are manually recorded by cashier.
+- The system is not a payment gateway; UPI/card/online payments are manually recorded by captain.
 - Convex cloud is not used as the live order database.
 - SQLite should not be shared over a network file system.
 

@@ -1,11 +1,11 @@
 # Gaurav POS
 
-Offline-first restaurant POS monorepo for a Windows cashier hub, Android order-taking devices, LAN kitchen printers, and Convex cloud sync.
+Offline-first restaurant POS monorepo for a Windows hub, Android order-taking devices, LAN kitchen printers, and Convex cloud sync.
 
 ## Architecture
 
 - `apps/hub-electron`: local Windows hub runtime. It owns SQLite, REST/WebSocket APIs, KOT generation, billing, print jobs, and cloud sync outbox.
-- `apps/mobile`: React Native Android client shell for waiters/cashiers.
+- `apps/mobile`: React Native Android client shell for waiters and captains.
 - `apps/cloud-admin`: Next.js cloud/admin shell for reporting and SaaS management.
 - `packages/shared`: shared TypeScript types, Zod schemas, money helpers, and event contracts.
 - `convex`: Convex cloud schema/functions for synced events, device enrollment, and reporting data.
@@ -24,7 +24,7 @@ pnpm --filter @gaurav-pos/mobile dev
 pnpm dev:cloud
 ```
 
-The hub API and cashier UI default to `http://localhost:3737`. Use the hub machine LAN IP from Android devices.
+The hub API and hub UI default to `http://localhost:3737`. Use the hub machine LAN IP from Android devices.
 
 Cloud auth envs are intentionally not committed. See [docs/workos-authkit-setup.md](docs/workos-authkit-setup.md) for WorkOS Google-only setup and Convex sync envs.
 

@@ -10,6 +10,7 @@
 
 import type * as admin from "../admin.js";
 import type * as http from "../http.js";
+import type * as hubCommandCursor from "../hubCommandCursor.js";
 import type * as sync from "../sync.js";
 import type * as viewer from "../viewer.js";
 
@@ -22,6 +23,7 @@ import type {
 declare const fullApi: ApiFromModules<{
   admin: typeof admin;
   http: typeof http;
+  hubCommandCursor: typeof hubCommandCursor;
   sync: typeof sync;
   viewer: typeof viewer;
 }>;

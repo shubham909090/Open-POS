@@ -38,7 +38,7 @@ See [restaurant-handoff.md](packaging/restaurant-handoff.md) for the full packag
 
 ## Startup
 
-Use Windows Startup Apps or Task Scheduler to start `Gaurav POS Hub` when the cashier PC boots. The app must run on the same LAN as waiter devices and PC-installed printers.
+Use Windows Startup Apps or Task Scheduler to start `Gaurav POS Hub` when the hub PC boots. The app must run on the same LAN as waiter devices and PC-installed printers.
 
 ## Backups
 

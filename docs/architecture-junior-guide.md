@@ -7,7 +7,7 @@ This guide explains the current POS architecture in simple terms. The main idea 
 The system has three major areas:
 
 - The Windows hub app inside the restaurant.
-- Android devices used by captains, waiters, cashiers, and kitchen staff.
+- Android devices used by captains, waiters, and kitchen staff.
 - Convex cloud used for account management, event sync, command sync, and reporting.
 
 The Windows hub is the most important part during service hours. Orders, KOTs, billing, table status, local device tokens, print jobs, and the SQLite database all live there.
@@ -21,7 +21,6 @@ flowchart TD
   hubPull --> hub["Windows Electron Hub<br/>Fastify API + local UI"]
 
   waiter["Android Captain / Waiter App"] -->|LAN REST commands| hub
-  cashierPhone["Android Cashier Device"] -->|LAN REST commands| hub
   kitchenScreen["Kitchen/KDS Screen"] -->|LAN REST + WebSocket| hub
 
   hub --> sqlite["Local SQLite DB<br/>Drizzle schema + migrations"]
@@ -42,7 +41,7 @@ flowchart TD
 
 ## Why The Hub Exists
 
-The hub is a local server running on the cashier/admin Windows PC.
+The hub is a local server running on the admin Windows PC.
 
 It exists because the restaurant cannot depend on the internet. If Convex or the internet is down, the hub still accepts orders, creates KOTs, prints tickets, generates bills, and settles payments.
 
@@ -50,7 +49,7 @@ All other local devices talk to the hub over the restaurant LAN:
 
 - Waiter Android app sends table orders.
 - Kitchen screen reads KOTs.
-- Cashier/admin UI manages billing, setup, printers, devices, backups, and sync.
+- Admin hub UI manages setup, printers, devices, backups, and sync. Captain operations can run billing, payment, print, movement, and current-day reports.
 
 The hub is the service-hour source of truth.
 
@@ -60,7 +59,7 @@ Think of each app as one job, not one giant shared screen.
 
 ### 1. Windows Hub App
 
-This runs on the cashier/admin PC. It is the local server, local database owner, printer owner, and main admin screen.
+This runs on the admin PC. It is the local server, local database owner, printer owner, and main admin screen.
 
 It has four main areas:
 
@@ -87,9 +86,25 @@ It does a smaller set of tasks:
 - save a draft if the hub is temporarily unreachable
 - captain only: shift a full running table to another free table
 - captain only: shift selected items to another table
+- captain only: generate/print/settle bills and view the current-day summary
 - captain only: receive kitchen/bar ready alerts
 
 It does not write directly to SQLite. It sends final orders to the hub.
+
+### Current Role Authority
+
+| Capability | admin | captain | waiter | kitchen |
+| --- | --- | --- | --- | --- |
+| Setup floors/tables/kitchens/dishes/printers/devices | yes | no | no | no |
+| Submit orders | yes | yes | yes | no |
+| View running table order | yes | yes | yes | no |
+| See bill/payment/KOT details | yes | yes | no | no |
+| Shift full table or selected items | yes | own captain tables/items only | no | no |
+| Generate, print, settle, revise, NC bills | yes | yes | no | no |
+| Current reports/alcohol stock reports | yes | yes | no | no |
+| KDS ticket status updates | yes | no | no | yes |
+
+This means the Android app is role-aware: `captain` is the trusted operations role for table service, billing, current-day summary, and table/item shifting; `waiter` is basic order entry; `kitchen` is KDS only.
 
 ## Menu Simplicity
 
@@ -110,9 +125,9 @@ The current workflow is built around real restaurant operations:
 - Table colours mean: free is white, running is amber, and bill printed / pending payment is blue.
 - Food, Alcohol, Beverage, and Other are sale groups. Each group can have its own tax lines and default kitchen/counter.
 - Alcohol defaults to BOT, food/beverage defaults to KOT. A dish can override its kitchen/counter.
-- Open items are allowed for off-menu sale entries. Cashier chooses name, price, group, and optional print counter.
+- Open items are allowed for off-menu sale entries. Captain chooses name, price, group, and optional print counter.
 - Manager PIN is required for sensitive actions: cancelling an order, bill reprint/regeneration, revised bill changes, price edit, and NC bill.
-- Captain movement is device-owned: a captain can shift only tables/items opened by that captain device. Cashier/admin can correct any valid table.
+- Captain movement is device-owned from the APK: a captain can shift only tables/items opened by that captain device. Admin can correct any valid table from the hub.
 - Open items are stored as order snapshots, not hidden dishes, so setup stays clean.
 - NC bills print like normal bills but do not count into sales, tax, or payment totals. Their item quantities still appear in usage/group summaries.
 - The hub automatically finalizes old 6 AM IST business days and queues reports to Convex so the owner can review finalized days later.
@@ -203,7 +218,7 @@ The hub shows both:
 The Android device can scan the QR code with the camera, paste the QR payload manually, or enter the six-digit code. The hub then creates a local device token with a role:
 
 - admin
-- cashier
+- captain
 - captain
 - waiter
 - kitchen
@@ -275,7 +290,7 @@ flowchart LR
   paid --> closeSummary["Included in business-day summary"]
 ```
 
-Current billing supports manual cashier-entered payments. This does not call any payment gateway. If the guest pays by UPI/card/online, the cashier enters the method and amount after seeing the payment externally.
+Current billing supports manual captain-entered payments. This does not call any payment gateway. If the guest pays by UPI/card/online, the captain enters the method and amount after seeing the payment externally.
 
 Supported settlement basics:
 
@@ -299,7 +314,7 @@ The hub shows a current 6 AM IST business-day summary:
 - gross sales, discounts, tips, and final sales
 - paid bills, unpaid bills, and open-order blockers
 
-After the next 6 AM IST boundary, the hub automatically finalizes the old business day once old open/billed tables are settled or cancelled. No cashier has to press an open-day or close-day button.
+After the next 6 AM IST boundary, the hub automatically finalizes the old business day once old open/billed tables are settled or cancelled. No captain has to press an open-day or close-day button.
 
 ## Cloud Sync
 
@@ -326,7 +341,7 @@ The hub also pulls commands from Convex:
 - create/update/disable menu items
 - update receipt printer settings
 
-The cloud admin UI currently supports creating restaurants, generating hub connections, viewing sync health, inviting staff, and queueing advanced support commands. WorkOS/Convex auth is required for those actions.
+The cloud admin UI currently supports creating restaurants, owner-only hub connection creation, viewing sync health, inviting staff, and queueing advanced support commands. WorkOS/Convex auth is required for those actions.
 
 ## Hub Connection Identity
 

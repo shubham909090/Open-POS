@@ -43,6 +43,7 @@ import {
   alcoholRecipeIngredients,
   alcoholStockLevels,
   alcoholStockMovements,
+  cloudCommandFailures,
   dailyReportSnapshots,
   eventLog,
   floors,
@@ -174,6 +175,7 @@ interface BillRow {
   final_total_paise: number;
   tax_breakdown_json: string;
   revision_number: number;
+  print_count: number;
   is_nc: boolean;
   nc_reason: string | null;
 }
@@ -681,7 +683,7 @@ export class OrderService {
 
       this.orm.update(orders).set({ status: "billed", updatedAt: now }).where(eq(orders.id, orderId)).run();
       this.orm.update(restaurantTables).set({ status: "billed" }).where(eq(restaurantTables.id, table.id)).run();
-      this.recordBillRevision(billId, 1, totals, "Initial bill", "cashier", now);
+      this.recordBillRevision(billId, 1, totals, "Initial bill", "captain", now);
 
       this.appendEvent("bill.generated", "bill", billId, { orderId, totalPaise: totals.totalPaise, taxBreakdown: totals.taxBreakdown });
       return { billId, totalPaise: totals.totalPaise };
@@ -705,8 +707,8 @@ export class OrderService {
       const order = this.requireOrderById(bill.order_id);
       const table = this.requireTable(order.table_id);
       const now = new Date().toISOString();
-      const discountPaise = this.calculateDiscountPaise(bill.total_paise, input);
-      const tipPaise = input.tipPaise ?? bill.tip_paise ?? 0;
+      const discountPaise = input.discountValue === undefined ? bill.discount_paise : this.calculateDiscountPaise(bill.total_paise, input);
+      const tipPaise = input.tipPaise === undefined ? (bill.tip_paise ?? 0) : input.tipPaise;
       const finalTotalPaise = Math.max(0, bill.total_paise - discountPaise + tipPaise);
       const existingPaid = this.getBillPaidPaise(billId);
       const requestedPayments =
@@ -716,9 +718,20 @@ export class OrderService {
             ? [{ method: input.method ?? "cash", amountPaise: input.amountPaise }]
             : [];
 
-      let addedPaise = 0;
-      for (const payment of requestedPayments) {
-        if (payment.amountPaise <= 0) continue;
+      const validPayments = requestedPayments.filter((payment) => payment.amountPaise > 0);
+      const requestedPaymentTotalPaise = validPayments.reduce(
+        (sum, payment) => sum + payment.amountPaise,
+        0
+      );
+      if (existingPaid > finalTotalPaise) {
+        throw new DomainError("Recorded payments exceed this bill total");
+      }
+      const balanceDuePaise = finalTotalPaise - existingPaid;
+      if (requestedPaymentTotalPaise > balanceDuePaise) {
+        throw new DomainError("Payment exceeds the balance due");
+      }
+
+      for (const payment of validPayments) {
         const paymentId = makeId("pay");
         this.orm
           .insert(payments)
@@ -733,10 +746,9 @@ export class OrderService {
             createdAt: now
           })
           .run();
-        addedPaise += payment.amountPaise;
       }
 
-      const paidPaise = existingPaid + addedPaise;
+      const paidPaise = existingPaid + requestedPaymentTotalPaise;
       const remainingPaise = Math.max(0, finalTotalPaise - paidPaise);
       const isPaid = remainingPaise === 0;
 
@@ -1493,9 +1505,21 @@ export class OrderService {
     const lastEvent = this.db
       .prepare("SELECT event_id, type, created_at FROM event_log ORDER BY id DESC LIMIT 1")
       .get();
+    const commandFailures = this.orm
+      .select({
+        commandId: cloudCommandFailures.commandId,
+        type: cloudCommandFailures.type,
+        error: cloudCommandFailures.error,
+        failedAt: cloudCommandFailures.failedAt
+      })
+      .from(cloudCommandFailures)
+      .orderBy(desc(cloudCommandFailures.failedAt))
+      .limit(10)
+      .all();
     return {
       counts: Object.fromEntries(rows.map((row) => [row.status, row.count])),
-      lastEvent: lastEvent ?? null
+      lastEvent: lastEvent ?? null,
+      commandFailures
     };
   }
 
@@ -1552,6 +1576,7 @@ export class OrderService {
       const changes = this.applyOrderItemDiff(order.id, normalizedItems, previousItems, menuById, now, true);
       const kotIds = this.createKotsForChanges(order, table, changes, now, false, false, input.managerApproval.reason);
       const totals = this.calculateBillTotals(this.getOrderItems(order.id).filter((item) => item.quantity > 0));
+      const finalTotalPaise = Math.max(0, totals.totalPaise - bill.discount_paise + bill.tip_paise);
       const revisionNumber = (bill.revision_number ?? 1) + 1;
 
       this.orm
@@ -1560,7 +1585,7 @@ export class OrderService {
           subtotalPaise: totals.subtotalPaise,
           taxPaise: totals.taxPaise,
           totalPaise: totals.totalPaise,
-          finalTotalPaise: Math.max(0, totals.totalPaise - bill.discount_paise + bill.tip_paise),
+          finalTotalPaise,
           taxBreakdownJson: JSON.stringify(totals.taxBreakdown),
           revisionNumber,
           status: "pending"
@@ -1569,7 +1594,11 @@ export class OrderService {
         .run();
       this.orm.update(orders).set({ status: "billed", updatedAt: now }).where(eq(orders.id, order.id)).run();
       this.orm.update(restaurantTables).set({ status: "billed" }).where(eq(restaurantTables.id, table.id)).run();
-      this.recordBillRevision(billId, revisionNumber, totals, input.managerApproval.reason, input.managerApproval.approvedBy, now);
+      this.recordBillRevision(billId, revisionNumber, totals, input.managerApproval.reason, input.managerApproval.approvedBy, now, {
+        discountPaise: bill.discount_paise,
+        tipPaise: bill.tip_paise,
+        finalTotalPaise
+      });
       this.appendEvent("bill.revised", "bill", billId, { billId, revisionNumber, totalPaise: totals.totalPaise, kotIds });
       return { billId, revisionNumber, totalPaise: totals.totalPaise, kotIds };
     });
@@ -1587,6 +1616,7 @@ export class OrderService {
       const order = this.requireOrderById(bill.order_id);
       const table = this.requireTable(order.table_id);
       const now = new Date().toISOString();
+      this.deductAlcoholStockForPaidBill(billId, order.id);
       this.orm
         .update(bills)
         .set({
@@ -1636,6 +1666,7 @@ export class OrderService {
     const run = this.db.transaction(() => {
       const bill = this.getBillById(billId);
       if (!bill) throw new DomainError("Bill not found", 404);
+      if (bill.print_count > 0) throw new DomainError("Bill was already printed. Use manager-approved reprint.");
       const order = this.requireOrderById(bill.order_id);
       const table = this.requireTable(order.table_id);
       const now = new Date().toISOString();
@@ -1736,7 +1767,7 @@ export class OrderService {
         if (!source || source.order_id !== fromOrder.id || source.quantity < moveItem.quantity) {
           throw new DomainError("Cannot shift more items than the source table has");
         }
-        const target = source.menu_item_id ? this.getMatchingOrderItemSnapshot(toOrder.id, source) : undefined;
+        const target = this.getMatchingOrderItemSnapshot(toOrder.id, source);
         let targetOrderItemId = target?.id;
         if (target) {
           this.orm
@@ -2110,7 +2141,7 @@ export class OrderService {
           if (!menuItem) throw new DomainError(`Menu item ${item.menuItemId} is not available`);
           const variant = this.resolveMenuItemVariant(menuItem.id, item.menuItemVariantId, item.menuItemVariantId ? allowedInactiveVariantIds.has(item.menuItemVariantId) : false);
           if (item.unitPricePaise !== undefined && item.unitPricePaise !== variant.price_paise) {
-            this.verifyManagerApproval(item.managerApproval, "order_item.price_edit", "menu_item", menuItem.id, item.managerApproval?.approvedBy ?? "cashier");
+            this.verifyManagerApproval(item.managerApproval, "order_item.price_edit", "menu_item", menuItem.id, item.managerApproval?.approvedBy ?? "captain");
           }
           const previous = item.orderItemId ? previousItemsById.get(item.orderItemId) : undefined;
           const preservePreviousSnapshot =
@@ -2300,6 +2331,11 @@ export class OrderService {
 
   private consumeAlcoholLargeMl(menuItemId: string, billId: string, ml: number): void {
     const stock = this.requireAlcoholStock(menuItemId);
+    const totalAvailableMl = stock.sealed_large_count * stock.large_bottle_ml + stock.open_large_ml;
+    if (ml > totalAvailableMl) {
+      throw new DomainError("Not enough alcohol stock for settlement");
+    }
+
     let sealedLarge = stock.sealed_large_count;
     let openLargeMl = stock.open_large_ml;
     let remaining = ml;
@@ -2354,7 +2390,19 @@ export class OrderService {
     }
   }
 
-  private recordBillRevision(billId: string, revisionNumber: number, totals: BillTotals, reason: string, changedBy: string, now: string): void {
+  private recordBillRevision(
+    billId: string,
+    revisionNumber: number,
+    totals: BillTotals,
+    reason: string,
+    changedBy: string,
+    now: string,
+    financials: { discountPaise: number; tipPaise: number; finalTotalPaise: number } = {
+      discountPaise: 0,
+      tipPaise: 0,
+      finalTotalPaise: totals.totalPaise
+    }
+  ): void {
     this.orm
       .insert(billRevisions)
       .values({
@@ -2364,9 +2412,9 @@ export class OrderService {
         subtotalPaise: totals.subtotalPaise,
         taxPaise: totals.taxPaise,
         totalPaise: totals.totalPaise,
-        discountPaise: 0,
-        tipPaise: 0,
-        finalTotalPaise: totals.totalPaise,
+        discountPaise: financials.discountPaise,
+        tipPaise: financials.tipPaise,
+        finalTotalPaise: financials.finalTotalPaise,
         taxBreakdownJson: JSON.stringify(totals.taxBreakdown),
         reason,
         approvedBy: changedBy,
@@ -2405,7 +2453,7 @@ export class OrderService {
     action: string,
     aggregateType: string,
     aggregateId: string,
-    requestedBy = "cashier"
+    requestedBy = "captain"
   ): void {
     const configuredHash = this.getSetting("manager_pin_hash");
     if (!configuredHash) throw new DomainError("Set a manager PIN before using manager-only actions", 403);
@@ -2590,6 +2638,10 @@ export class OrderService {
   }
 
   private writeAlcoholStock(menuItemId: string, sealedLarge: number, openLargeMl: number, sealedSmall: number): void {
+    if (sealedLarge < 0 || openLargeMl < 0 || sealedSmall < 0) {
+      throw new DomainError("Alcohol stock cannot go below zero");
+    }
+
     this.orm
       .update(alcoholStockLevels)
       .set({
@@ -2636,20 +2688,19 @@ export class OrderService {
   private orderInputForActor(input: SubmitOrderInput, actor?: DeviceActor): Pick<SubmitOrderInput, "tableId" | "pax" | "orderType"> & { captainId: string } {
     return {
       tableId: input.tableId,
-      captainId: actor?.name || input.captainId || "cashier",
+      captainId: actor?.name || input.captainId || "captain",
       pax: input.pax,
       orderType: input.orderType
     };
   }
 
   private assertCanEditOrder(order: OrderRow, actor?: DeviceActor): void {
-    if (!actor || ["admin", "cashier", "waiter"].includes(actor.role)) return;
-    if (actor.role === "captain" && order.captain_device_id === actor.id) return;
-    throw new DomainError("Captain devices can only edit their own running tables", 403);
+    if (!actor || ["admin", "captain", "waiter"].includes(actor.role)) return;
+    throw new DomainError("Device role cannot edit orders", 403);
   }
 
   private assertCanMoveOrder(order: OrderRow, actor: DeviceActor, action: "table" | "items"): void {
-    if (["admin", "cashier"].includes(actor.role)) {
+    if (actor.role === "admin") {
       if (action === "items" && order.status !== "open") throw new DomainError("Only running tables can have selected items shifted");
       if (action === "table" && !["open", "billed"].includes(order.status)) throw new DomainError("Only running or billed tables can be shifted");
       return;
@@ -3624,6 +3675,7 @@ export class OrderService {
         final_total_paise: bills.finalTotalPaise,
         tax_breakdown_json: bills.taxBreakdownJson,
         revision_number: bills.revisionNumber,
+        print_count: bills.printCount,
         is_nc: bills.isNc,
         nc_reason: bills.ncReason
       })

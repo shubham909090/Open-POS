@@ -271,6 +271,7 @@ function CloudDashboard({ userLabel }: { userLabel: string }) {
         {section === "setup" ? (
           <SetupSection
             canManage={Boolean(canManage)}
+            isOwner={Boolean(isOwner)}
             restaurantReady={Boolean(restaurants?.length)}
             activeHubCount={activeHubCount}
             restaurantName={restaurantName}
@@ -495,6 +496,7 @@ function ReportsSection({
 
 function SetupSection({
   canManage,
+  isOwner,
   restaurantReady,
   activeHubCount,
   restaurantName,
@@ -506,6 +508,7 @@ function SetupSection({
   onCreateHubConnection
 }: {
   canManage: boolean;
+  isOwner: boolean;
   restaurantReady: boolean;
   activeHubCount: number;
   restaurantName: string;
@@ -554,9 +557,14 @@ function SetupSection({
             </details>
           </div>
         ) : (
-          <button type="button" disabled={!canManage || !restaurantReady} onClick={onCreateHubConnection}>
-            Create hub connection
-          </button>
+          <>
+            <button type="button" disabled={!isOwner || !restaurantReady} onClick={onCreateHubConnection}>
+              Create hub connection
+            </button>
+            {restaurantReady && canManage && !isOwner ? (
+              <p className="soft-note">Only the restaurant owner can create a new hub connection. Ask the owner to do this once, then admins can continue normal setup.</p>
+            ) : null}
+          </>
         )}
       </section>
 

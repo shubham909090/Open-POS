@@ -43,6 +43,13 @@
       "when": 1778782000000,
       "tag": "0005_alcohol_recipe_snapshots",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1778787000000,
+      "tag": "0006_sync_hardening",
+      "breakpoints": true
     }
   ]
 }

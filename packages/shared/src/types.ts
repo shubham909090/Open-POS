@@ -1,4 +1,4 @@
-export type UserRole = "admin" | "cashier" | "captain" | "waiter" | "kitchen";
+export type UserRole = "admin" | "captain" | "waiter" | "kitchen";
 export type PosDayStatus = "active" | "finalized";
 export type TableStatus = "free" | "occupied" | "billed" | "attention";
 export type TableDisplayState = "free" | "running" | "bill_printed" | "needs_attention" | "disabled";

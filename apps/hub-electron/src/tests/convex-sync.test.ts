@@ -56,7 +56,7 @@ describe("ConvexSyncBridge", () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(
         JSON.stringify({
-          cursor: "2026-05-09T12:00:00.000Z",
+          cursor: JSON.stringify({ createdAt: "2026-05-09T12:00:00.000Z", commandId: "cmd-menu-1" }),
           commands: [
             {
               commandId: "cmd-menu-1",
@@ -80,11 +80,15 @@ describe("ConvexSyncBridge", () => {
 
     await expect(sync.pullCloudSnapshot()).resolves.toEqual({
       applied: 1,
+      failed: 0,
       skipped: false,
-      cursor: "2026-05-09T12:00:00.000Z"
+      cursor: JSON.stringify({ createdAt: "2026-05-09T12:00:00.000Z", commandId: "cmd-menu-1" })
     });
     expect(database.db.prepare("SELECT name FROM menu_items WHERE id = 'item-cloud-chaas'").get()).toEqual({
       name: "Masala Chaas"
+    });
+    expect(database.db.prepare("SELECT price_paise FROM menu_item_variants WHERE menu_item_id = 'item-cloud-chaas' AND kind = 'default'").get()).toEqual({
+      price_paise: 8000
     });
 
     database.close();
@@ -100,7 +104,7 @@ describe("ConvexSyncBridge", () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(
         JSON.stringify({
-          cursor: "2026-05-09T12:00:00.000Z",
+          cursor: JSON.stringify({ createdAt: "2026-05-09T12:00:01.000Z", commandId: "cmd-device-2" }),
           commands: [
             {
               commandId: "cmd-device-1",
@@ -127,6 +131,47 @@ describe("ConvexSyncBridge", () => {
       name: "Captain A",
       role: "captain",
       status: "revoked"
+    });
+
+    database.close();
+  });
+
+  it("records bad cloud commands without blocking later commands or cursor advancement", async () => {
+    const { database } = createTestHub();
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          cursor: JSON.stringify({ createdAt: "2026-05-09T12:00:01.000Z", commandId: "cmd-good" }),
+          commands: [
+            {
+              commandId: "cmd-bad",
+              type: "production_unit.upsert",
+              payloadJson: JSON.stringify({ id: "unit-bad" }),
+              createdAt: "2026-05-09T12:00:00.000Z"
+            },
+            {
+              commandId: "cmd-good",
+              type: "menu_item.upsert",
+              payloadJson: JSON.stringify({ id: "item-cloud-updated-dal", name: "Cloud Dal", pricePaise: 25_000, productionUnitId: "unit-kitchen", active: true }),
+              createdAt: "2026-05-09T12:00:01.000Z"
+            }
+          ]
+        }),
+        { status: 200 }
+      )
+    );
+
+    const sync = new ConvexSyncBridge(database.orm, "https://example.convex.site", "secret", "install-main");
+
+    await expect(sync.pullCloudSnapshot()).resolves.toMatchObject({ applied: 1, failed: 1, skipped: false });
+    expect(database.db.prepare("SELECT error FROM cloud_command_failures WHERE command_id = 'cmd-bad'").get()).toMatchObject({
+      error: "Cloud command missing production unit name"
+    });
+    expect(database.db.prepare("SELECT name FROM menu_items WHERE id = 'item-cloud-updated-dal'").get()).toEqual({
+      name: "Cloud Dal"
+    });
+    expect(database.db.prepare("SELECT value FROM hub_settings WHERE key = 'cloud_snapshot_cursor'").get()).toEqual({
+      value: JSON.stringify({ createdAt: "2026-05-09T12:00:01.000Z", commandId: "cmd-good" })
     });
 
     database.close();

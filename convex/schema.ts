@@ -37,7 +37,7 @@ export default defineSchema({
     restaurantId: v.id("restaurants"),
     hubDeviceId: v.optional(v.string()),
     name: v.string(),
-    role: v.union(v.literal("admin"), v.literal("cashier"), v.literal("captain"), v.literal("waiter"), v.literal("kitchen")),
+    role: v.union(v.literal("admin"), v.literal("captain"), v.literal("waiter"), v.literal("kitchen")),
     pairedAt: v.string(),
     revokedAt: v.optional(v.string())
   }).index("by_restaurant", ["restaurantId"])
@@ -66,6 +66,7 @@ export default defineSchema({
     payloadJson: v.string(),
     createdAt: v.string()
   }).index("by_restaurant_and_createdAt", ["restaurantId", "createdAt"])
+    .index("by_restaurant_createdAt_and_commandId", ["restaurantId", "createdAt", "commandId"])
     .index("by_command_id", ["commandId"]),
   syncedEvents: defineTable({
     eventId: v.string(),

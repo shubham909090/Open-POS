@@ -20,7 +20,7 @@ import {
   Wine,
   X
 } from "lucide-react";
-import { FormEvent, type ReactNode, useEffect, useState } from "react";
+import { FormEvent, type ReactNode, useEffect, useRef, useState } from "react";
 import { hubApi, setAuthToken, getAuthToken, type AlcoholCatalog, type AlcoholStockMovement, type AlcoholStorageRow, type Bootstrap, type Floor, type MenuItem, type MenuItemVariant, type ProductionUnit, type Table, type TableOrder } from "./hub-api.js";
 import { useHubStore, type HubView } from "./store.js";
 import "./styles.css";
@@ -34,6 +34,19 @@ const queryClient = new QueryClient({
     }
   }
 });
+
+function useOperationKeys() {
+  const keysRef = useRef<Record<string, string>>({});
+  const keyFor = (prefix: string, scope: unknown) => {
+    const mapKey = `${prefix}:${JSON.stringify(scope)}`;
+    keysRef.current[mapKey] ??= `${prefix}-${Date.now()}-${crypto.randomUUID?.() ?? Math.random().toString(36).slice(2)}`;
+    return keysRef.current[mapKey];
+  };
+  const clear = (prefix: string, scope: unknown) => {
+    delete keysRef.current[`${prefix}:${JSON.stringify(scope)}`];
+  };
+  return { keyFor, clear };
+}
 
 export default function App() {
   return (
@@ -924,6 +937,7 @@ function TableWorkspace({ tableId, tableName, bootstrap, setNotice }: { tableId:
   const [managerPin, setManagerPin] = useState("");
   const [managerReason, setManagerReason] = useState("");
   const [shiftTargetTableId, setShiftTargetTableId] = useState("");
+  const operationKeys = useOperationKeys();
   const draft = tableId ? Object.values(drafts[tableId] ?? {}) : [];
   const tableOrder = useQuery({
     queryKey: ["tableOrder", tableId],
@@ -944,7 +958,7 @@ function TableWorkspace({ tableId, tableName, bootstrap, setNotice }: { tableId:
   const submitOrder = useMutation({
     mutationFn: () => {
       if (!tableId || draft.length === 0) throw new Error("Add at least one new dish before sending to kitchen.");
-      return hubApi.submitOrder({
+      const payload = {
         tableId,
         pax: Number(guests || 1),
         items: draft.map((item) =>
@@ -958,7 +972,8 @@ function TableWorkspace({ tableId, tableName, bootstrap, setNotice }: { tableId:
               }
             : { menuItemId: item.menuItemId, menuItemVariantId: item.menuItemVariantId, quantity: item.quantity }
         )
-      });
+      };
+      return hubApi.submitOrder(payload, operationKeys.keyFor("orders-submit", payload));
     },
     onSuccess: async () => {
       if (tableId) clearDraft(tableId);
@@ -973,7 +988,7 @@ function TableWorkspace({ tableId, tableName, bootstrap, setNotice }: { tableId:
     mutationFn: () => {
       const orderId = data?.order?.id;
       if (!orderId) throw new Error("No active order to bill.");
-      return hubApi.generateBill(orderId);
+      return hubApi.generateBill(orderId, operationKeys.keyFor("bill-generate", { orderId }));
     },
     onSuccess: async () => {
       await refreshTable();
@@ -1214,6 +1229,8 @@ function BillingPanel({
   const [revisionItems, setRevisionItems] = useState<RevisionItem[]>([]);
   const [revisionAddMenuItemId, setRevisionAddMenuItemId] = useState("");
   const [revisionAddVariantId, setRevisionAddVariantId] = useState("");
+  const operationKeys = useOperationKeys();
+  const pendingScopes = useRef<Record<string, unknown>>({});
   const bill = tableOrder?.bill;
   const revisionAddMenuItem = menuItems.find((menuItem) => menuItem.id === revisionAddMenuItemId);
   const revisionAddVariants = menuItemVariantOptions(revisionAddMenuItem);
@@ -1227,6 +1244,7 @@ function BillingPanel({
   const finalTotal = bill ? Math.max(0, bill.total_paise - discountPaise + tipPaise) : 0;
   const newPaid = Object.values(payments).reduce((total, value) => total + Math.round(Number(value || 0) * 100), 0);
   const remaining = Math.max(0, finalTotal - existingPaid - newPaid);
+  const overpaid = Math.max(0, existingPaid + newPaid - finalTotal);
 
   const settle = useMutation({
     mutationFn: () => {
@@ -1236,9 +1254,14 @@ function BillingPanel({
         .filter((row) => row.amountPaise > 0);
       if (rows.length === 0) throw new Error("Enter at least one payment.");
       if (remaining > 0) throw new Error("Payment is less than the bill balance.");
-      return hubApi.settleBill(bill.id, { discountType, discountValue: discountType === "percent" ? Number(discount || 0) : discountPaise, tipPaise, payments: rows });
+      if (overpaid > 0) throw new Error(`Payment is ${formatInr(overpaid)} more than the bill balance.`);
+      const payload = { discountType, discountValue: discountType === "percent" ? Number(discount || 0) : discountPaise, tipPaise, payments: rows };
+      const scope = { billId: bill.id, existingPaid, payload };
+      pendingScopes.current["bill-settle"] = scope;
+      return hubApi.settleBill(bill.id, payload, operationKeys.keyFor("bill-settle", scope));
     },
     onSuccess: async () => {
+      if (pendingScopes.current["bill-settle"]) operationKeys.clear("bill-settle", pendingScopes.current["bill-settle"]);
       await onSettled();
       await queryClient.invalidateQueries({ queryKey: ["dailyReports"] });
       setPayments({ cash: "0", upi: "0", card: "0", online: "0" });
@@ -1250,7 +1273,7 @@ function BillingPanel({
   const printBill = useMutation({
     mutationFn: () => {
       if (!bill) throw new Error("Generate the bill first.");
-      return hubApi.printBill(bill.id);
+      return hubApi.printBill(bill.id, operationKeys.keyFor("bill-print", { billId: bill.id }));
     },
     onSuccess: () => setNotice({ tone: "good", text: "Bill print queued." }),
     onError: (error) => setNotice({ tone: "bad", text: messageOf(error) })
@@ -1258,9 +1281,13 @@ function BillingPanel({
   const reprintBill = useMutation({
     mutationFn: () => {
       if (!bill) throw new Error("Generate the bill first.");
-      return hubApi.reprintBill(bill.id, { managerApproval: { pin: managerPin, reason: managerReason || "Bill reprint", approvedBy: "manager" } });
+      const payload = { managerApproval: { pin: managerPin, reason: managerReason || "Bill reprint", approvedBy: "manager" } };
+      const scope = { billId: bill.id, payload };
+      pendingScopes.current["bill-reprint"] = scope;
+      return hubApi.reprintBill(bill.id, payload, operationKeys.keyFor("bill-reprint", scope));
     },
     onSuccess: () => {
+      if (pendingScopes.current["bill-reprint"]) operationKeys.clear("bill-reprint", pendingScopes.current["bill-reprint"]);
       setManagerPin("");
       setManagerReason("");
       setNotice({ tone: "good", text: "Reprint queued after manager approval." });
@@ -1270,9 +1297,13 @@ function BillingPanel({
   const markNc = useMutation({
     mutationFn: () => {
       if (!bill) throw new Error("Generate the bill first.");
-      return hubApi.markBillNc(bill.id, { managerApproval: { pin: managerPin, reason: managerReason || "NC bill", approvedBy: "manager" } });
+      const payload = { managerApproval: { pin: managerPin, reason: managerReason || "NC bill", approvedBy: "manager" } };
+      const scope = { billId: bill.id, payload };
+      pendingScopes.current["bill-nc"] = scope;
+      return hubApi.markBillNc(bill.id, payload, operationKeys.keyFor("bill-nc", scope));
     },
     onSuccess: async () => {
+      if (pendingScopes.current["bill-nc"]) operationKeys.clear("bill-nc", pendingScopes.current["bill-nc"]);
       setManagerPin("");
       setManagerReason("");
       await onSettled();
@@ -1298,9 +1329,13 @@ function BillingPanel({
               }
         );
       if (items.length === 0) throw new Error("A revised bill needs at least one item.");
-      return hubApi.reviseBill(bill.id, { items, managerApproval: { pin: managerPin, reason: managerReason || "Bill revised", approvedBy: "manager" } });
+      const payload = { items, managerApproval: { pin: managerPin, reason: managerReason || "Bill revised", approvedBy: "manager" } };
+      const scope = { billId: bill.id, payload };
+      pendingScopes.current["bill-revise"] = scope;
+      return hubApi.reviseBill(bill.id, payload, operationKeys.keyFor("bill-revise", scope));
     },
     onSuccess: async () => {
+      if (pendingScopes.current["bill-revise"]) operationKeys.clear("bill-revise", pendingScopes.current["bill-revise"]);
       setRevisionOpen(false);
       setManagerPin("");
       setManagerReason("");
@@ -1423,11 +1458,12 @@ function BillingPanel({
       </div>
       <label>
         Payment note
-        <input value={reference} onChange={(event) => setReference(event.target.value)} placeholder="UPI ref, card slip, or cashier note" />
+        <input value={reference} onChange={(event) => setReference(event.target.value)} placeholder="UPI ref, card slip, or captain note" />
       </label>
-      <button type="button" className="punch-button" disabled={settle.isPending || newPaid <= 0 || remaining > 0} onClick={() => settle.mutate()}>
+      <button type="button" className="punch-button" disabled={settle.isPending || newPaid <= 0 || remaining > 0 || overpaid > 0} onClick={() => settle.mutate()}>
         {settle.isPending ? "Punching..." : `Punch bill · ${remaining > 0 ? `${formatInr(remaining)} left` : "paid"}`}
       </button>
+      {overpaid > 0 ? <p className="plain-state bad">Payment is {formatInr(overpaid)} more than the balance.</p> : null}
       <ManagerApprovalBox
         title="Manager-only bill actions"
         pin={managerPin}
@@ -1657,7 +1693,15 @@ function AdvancedView({ bootstrap, setNotice }: { bootstrap: Bootstrap; setNotic
     mutationFn: hubApi.pullCloud,
     onSuccess: async (result) => {
       await queryClient.invalidateQueries();
-      setNotice({ tone: "good", text: `Cloud updates applied: ${result.applied}` });
+      setNotice({ tone: result.failed ? "bad" : "good", text: `Cloud updates applied: ${result.applied}${result.failed ? `, failed: ${result.failed}` : ""}` });
+    },
+    onError: (error) => setNotice({ tone: "bad", text: messageOf(error) })
+  });
+  const requeueSync = useMutation({
+    mutationFn: hubApi.requeueFailedSync,
+    onSuccess: async (result) => {
+      await queryClient.invalidateQueries();
+      setNotice({ tone: "good", text: `Sync events requeued: ${result.requeued}` });
     },
     onError: (error) => setNotice({ tone: "bad", text: messageOf(error) })
   });
@@ -1666,6 +1710,14 @@ function AdvancedView({ bootstrap, setNotice }: { bootstrap: Bootstrap; setNotic
     onSuccess: async (result) => {
       await queryClient.invalidateQueries({ queryKey: ["bootstrap"] });
       setNotice({ tone: "good", text: `Print queue checked. Printed ${result.printed}, failed ${result.failed}.` });
+    },
+    onError: (error) => setNotice({ tone: "bad", text: messageOf(error) })
+  });
+  const resolveCommandFailure = useMutation({
+    mutationFn: hubApi.resolveCloudCommandFailure,
+    onSuccess: async (result) => {
+      await queryClient.invalidateQueries({ queryKey: ["bootstrap"] });
+      setNotice({ tone: result.resolved ? "good" : "bad", text: result.resolved ? "Cloud command warning marked resolved." : "That warning was already gone." });
     },
     onError: (error) => setNotice({ tone: "bad", text: messageOf(error) })
   });
@@ -1737,10 +1789,29 @@ function AdvancedView({ bootstrap, setNotice }: { bootstrap: Bootstrap; setNotic
           <button type="button" onClick={() => pullCloud.mutate()} disabled={pullCloud.isPending}>
             <CloudDownload size={18} /> Get cloud updates
           </button>
+          <button type="button" onClick={() => requeueSync.mutate()} disabled={requeueSync.isPending}>
+            Retry failed sync
+          </button>
           <button type="button" onClick={() => prints.mutate()} disabled={prints.isPending}>
             <Printer size={18} /> Run print queue
           </button>
         </div>
+        {bootstrap.syncStatus.commandFailures?.length ? (
+          <div className="record-list compact-list">
+            <p className="soft-note">These cloud setup updates failed on this hub. Fix the setup in the cloud portal, send a new update, then mark the old warning resolved.</p>
+            {bootstrap.syncStatus.commandFailures.map((failure) => (
+              <article key={failure.commandId} className="record-row">
+                <div>
+                  <strong>{failure.type}</strong>
+                  <span>{failure.error} · {new Date(failure.failedAt).toLocaleString()}</span>
+                </div>
+                <button type="button" onClick={() => resolveCommandFailure.mutate(failure.commandId)} disabled={resolveCommandFailure.isPending}>
+                  Mark resolved
+                </button>
+              </article>
+            ))}
+          </div>
+        ) : null}
       </section>
       <section className="panel">
         <div className="panel-title">

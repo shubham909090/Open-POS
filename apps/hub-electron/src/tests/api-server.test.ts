@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
+import { createHash } from "node:crypto";
 import { createHubServer, isRealtimeEventVisibleForRole } from "../api/server.js";
 import { BackupService } from "../db/backup-service.js";
+import { cloudCommandFailures, idempotencyRecords } from "../db/drizzle-schema.js";
 import { EventBus } from "../domain/event-bus.js";
 import { DryRunPrinterAdapter } from "../printing/escpos.js";
 import { PrintJobService } from "../printing/print-job-service.js";
+import { ConvexSyncBridge } from "../sync/convex-sync.js";
 import { createTestHub } from "./helpers.js";
 
 function createTestServer() {
@@ -15,6 +18,7 @@ function createTestServer() {
     authService: hub.authService,
     orderService: hub.orderService,
     printJobService,
+    syncBridge: new ConvexSyncBridge(hub.database.orm, undefined, undefined),
     eventBus: new EventBus<unknown>(),
     printerDryRun: true
   });
@@ -87,12 +91,17 @@ describe("Hub API auth and service flow", () => {
       method: "POST",
       url: "/bills/not-real/settle",
       headers: { "x-device-token": device.token },
-      payload: { method: "cash", amountPaise: 1, receivedBy: "cashier-1" }
+      payload: { method: "cash", amountPaise: 1, receivedBy: "captain-1" }
     });
     await app.inject({
       method: "POST",
       url: `/bills/${order.orderId}/generate`,
       headers: adminHeaders
+    });
+    const waiterFullOrderResponse = await app.inject({
+      method: "GET",
+      url: `/orders/${order.orderId}`,
+      headers: { "x-device-token": device.token }
     });
     const waiterTableOrderResponse = await app.inject({
       method: "GET",
@@ -105,6 +114,7 @@ describe("Hub API auth and service flow", () => {
       headers: { "x-device-token": device.token }
     });
     const waiterTableOrder = waiterTableOrderResponse.json<Record<string, unknown>>();
+    const waiterFullOrder = waiterFullOrderResponse.json<Record<string, unknown>>();
     const waiterBootstrap = waiterBootstrapResponse.json<Record<string, unknown>>();
 
     expect(pairing.qrDataUrl).toMatch(/^data:image\/png;base64,/);
@@ -123,6 +133,10 @@ describe("Hub API auth and service flow", () => {
     expect(waiterTableOrder.bill).toBeNull();
     expect(waiterTableOrder).not.toHaveProperty("payments");
     expect(waiterTableOrder).not.toHaveProperty("kots");
+    expect(waiterFullOrderResponse.statusCode).toBe(200);
+    expect(waiterFullOrder.bill).toBeNull();
+    expect(waiterFullOrder).not.toHaveProperty("payments");
+    expect(waiterFullOrder).not.toHaveProperty("kots");
     expect(waiterBootstrap).not.toHaveProperty("syncStatus");
     expect(waiterBootstrap).not.toHaveProperty("printJobs");
     expect(waiterBootstrap).not.toHaveProperty("ticketTemplate");
@@ -131,9 +145,87 @@ describe("Hub API auth and service flow", () => {
     database.close();
   });
 
+  it("requeues failed sync outbox rows from the admin endpoint", async () => {
+    const { app, database } = createTestServer();
+    database.db
+      .prepare("INSERT INTO event_log (event_id, type, aggregate_type, aggregate_id, payload, created_at) VALUES (?, ?, ?, ?, ?, ?)")
+      .run("event-requeue-1", "test.event", "test", "test-1", "{}", new Date().toISOString());
+    database.db
+      .prepare("INSERT INTO sync_outbox (event_id, status, attempts, last_error, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)")
+      .run("event-requeue-1", "failed", 10, "old outage", new Date().toISOString(), new Date().toISOString());
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/sync/requeue-failed",
+      headers: { "x-device-token": "test-admin-token" }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ requeued: 1 });
+    expect(database.db.prepare("SELECT status, attempts, last_error FROM sync_outbox").get()).toEqual({
+      status: "pending",
+      attempts: 0,
+      last_error: null
+    });
+
+    await app.close();
+    database.close();
+  });
+
+  it("lets admins mark cloud command failures resolved", async () => {
+    const { app, database } = createTestServer();
+    database.orm
+      .insert(cloudCommandFailures)
+      .values({
+        commandId: "cmd-bad-menu",
+        type: "menu_item.upsert",
+        payloadJson: "{}",
+        error: "Menu item id is required",
+        failedAt: new Date().toISOString(),
+        createdAt: new Date().toISOString()
+      })
+      .run();
+
+    const response = await app.inject({
+      method: "DELETE",
+      url: "/sync/cloud-command-failures/cmd-bad-menu",
+      headers: { "x-device-token": "test-admin-token" }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ commandId: "cmd-bad-menu", resolved: true });
+    expect(database.db.prepare("SELECT COUNT(*) AS count FROM cloud_command_failures").get()).toEqual({ count: 0 });
+
+    await app.close();
+    database.close();
+  });
+
+  it("throttles repeated invalid pairing code exchanges", async () => {
+    const { app, database } = createTestServer();
+
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      const response = await app.inject({
+        method: "POST",
+        url: "/devices/pair/exchange",
+        payload: { code: "000000", deviceName: "Unknown phone" }
+      });
+      expect(response.statusCode).toBe(401);
+    }
+    const locked = await app.inject({
+      method: "POST",
+      url: "/devices/pair/exchange",
+      payload: { code: "000000", deviceName: "Unknown phone" }
+    });
+
+    expect(locked.statusCode).toBe(429);
+
+    await app.close();
+    database.close();
+  });
+
   it("filters realtime event visibility by device role", () => {
-    expect(isRealtimeEventVisibleForRole({ type: "bill.settled" }, "cashier")).toBe(true);
-    expect(isRealtimeEventVisibleForRole({ type: "bill.settled" }, "captain")).toBe(false);
+    expect(isRealtimeEventVisibleForRole({ type: "bill.settled" }, "captain")).toBe(true);
+    expect(isRealtimeEventVisibleForRole({ type: "bill.settled" }, "waiter")).toBe(false);
     expect(isRealtimeEventVisibleForRole({ type: "receipt_printer.updated" }, "kitchen")).toBe(false);
     expect(isRealtimeEventVisibleForRole({ type: "kot.status_changed" }, "kitchen")).toBe(true);
     expect(isRealtimeEventVisibleForRole({ type: "table.shifted" }, "waiter")).toBe(true);
@@ -206,6 +298,12 @@ describe("Hub API auth and service flow", () => {
       headers: { "x-device-token": captainOne.token },
       payload: { fromTableId: "table-t2", toTableId: "table-t1", reason: "Split table", items: [{ orderItemId: item.id, quantity: 1 }] }
     });
+    const captainKdsStatus = await app.inject({
+      method: "PATCH",
+      url: "/kot/not-real/status",
+      headers: { "x-device-token": captainOne.token },
+      payload: { status: "ready" }
+    });
 
     expect(orderRow.captain_id).toBe("Captain One");
     expect(orderRow.captain_device_id).toMatch(/^device_/);
@@ -213,6 +311,7 @@ describe("Hub API auth and service flow", () => {
     expect(otherCaptainMove.statusCode).toBe(403);
     expect(ownMove.statusCode).toBe(200);
     expect(ownItemMove.statusCode).toBe(200);
+    expect(captainKdsStatus.statusCode).toBe(403);
 
     await app.close();
     database.close();
@@ -312,7 +411,7 @@ describe("Hub API auth and service flow", () => {
       method: "POST",
       url: `/bills/${bill.billId}/settle`,
       headers,
-      payload: { method: "cash", amountPaise: bill.totalPaise, receivedBy: "cashier-1" }
+      payload: { method: "cash", amountPaise: bill.totalPaise, receivedBy: "captain-1" }
     });
     const printResponse = await app.inject({
       method: "POST",
@@ -330,22 +429,22 @@ describe("Hub API auth and service flow", () => {
     database.close();
   });
 
-  it("allows cashier stock edits with manager PIN and exposes alcohol movement reports", async () => {
+  it("allows captain stock edits with manager PIN and exposes alcohol movement reports", async () => {
     const { app, database } = createTestServer();
     const adminHeaders = { "x-device-token": "test-admin-token" };
     const pairingResponse = await app.inject({
       method: "POST",
       url: "/devices/pairing-codes",
       headers: adminHeaders,
-      payload: { deviceName: "Cashier tablet", role: "cashier", expiresInMinutes: 10 }
+      payload: { deviceName: "Captain tablet", role: "captain", expiresInMinutes: 10 }
     });
     const pairing = pairingResponse.json<{ code: string }>();
     const exchangeResponse = await app.inject({
       method: "POST",
       url: "/devices/pair/exchange",
-      payload: { code: pairing.code, deviceName: "Cashier tablet" }
+      payload: { code: pairing.code, deviceName: "Captain tablet" }
     });
-    const cashier = exchangeResponse.json<{ token: string }>();
+    const captain = exchangeResponse.json<{ token: string }>();
     await app.inject({
       method: "PUT",
       url: "/settings/manager-pin",
@@ -358,7 +457,7 @@ describe("Hub API auth and service flow", () => {
       headers: adminHeaders,
       payload: {
         type: "plain_liquor",
-        name: "Cashier Whisky",
+        name: "Captain Whisky",
         productionUnitId: "unit-bar",
         largeBottleMl: 750,
         smallBottleMl: 180,
@@ -374,7 +473,7 @@ describe("Hub API auth and service flow", () => {
     const adjustResponse = await app.inject({
       method: "POST",
       url: `/alcohol/stock/${alcohol.id}/adjust`,
-      headers: { "x-device-token": cashier.token },
+      headers: { "x-device-token": captain.token },
       payload: {
         mode: "delta",
         sealedLargeCount: 2,
@@ -384,13 +483,13 @@ describe("Hub API auth and service flow", () => {
     const movementsResponse = await app.inject({
       method: "GET",
       url: "/reports/alcohol-stock-movements",
-      headers: { "x-device-token": cashier.token }
+      headers: { "x-device-token": captain.token }
     });
 
     expect(adjustResponse.statusCode).toBe(200);
     expect(movementsResponse.statusCode).toBe(200);
     expect(movementsResponse.json<Array<{ item_name: string; source_type: string }>>()[0]).toMatchObject({
-      item_name: "Cashier Whisky",
+      item_name: "Captain Whisky",
       source_type: "manual_adjustment"
     });
 
@@ -398,9 +497,22 @@ describe("Hub API auth and service flow", () => {
     database.close();
   });
 
-  it("reprints a generated bill and exposes current business-day summary after settlement", async () => {
+  it("requires manager approval after first bill print and exposes current business-day summary after settlement", async () => {
     const { app, database } = createTestServer();
     const headers = { "x-device-token": "test-admin-token" };
+    const pairingResponse = await app.inject({
+      method: "POST",
+      url: "/devices/pairing-codes",
+      headers,
+      payload: { deviceName: "Captain billing tablet", role: "captain", expiresInMinutes: 10 }
+    });
+    const pairing = pairingResponse.json<{ code: string }>();
+    const exchangeResponse = await app.inject({
+      method: "POST",
+      url: "/devices/pair/exchange",
+      payload: { code: pairing.code, deviceName: "Captain billing tablet" }
+    });
+    const captainHeaders = { "x-device-token": exchangeResponse.json<{ token: string }>().token };
     await app.inject({
       method: "PUT",
       url: "/settings/receipt-printer",
@@ -416,46 +528,59 @@ describe("Hub API auth and service flow", () => {
     const orderResponse = await app.inject({
       method: "POST",
       url: "/orders/submit",
-      headers,
+      headers: captainHeaders,
       payload: {
         tableId: "table-t1",
-        captainId: "waiter-1",
+        captainId: "spoofed-captain",
         pax: 1,
         orderType: "dine_in",
         items: [{ menuItemId: "item-dal-fry", quantity: 1 }]
       }
     });
     const order = orderResponse.json<{ orderId: string }>();
-    const billResponse = await app.inject({ method: "POST", url: `/bills/${order.orderId}/generate`, headers });
+    const billResponse = await app.inject({ method: "POST", url: `/bills/${order.orderId}/generate`, headers: captainHeaders });
     const bill = billResponse.json<{ billId: string; totalPaise: number }>();
 
+    const firstPrintResponse = await app.inject({
+      method: "POST",
+      url: `/bills/${bill.billId}/print`,
+      headers: captainHeaders
+    });
+    const repeatedPrintResponse = await app.inject({
+      method: "POST",
+      url: `/bills/${bill.billId}/print`,
+      headers: captainHeaders
+    });
     const reprintResponse = await app.inject({
       method: "POST",
       url: `/bills/${bill.billId}/reprint`,
-      headers,
+      headers: captainHeaders,
       payload: {
         reason: "Customer copy",
-        requestedBy: "cashier-1",
+        requestedBy: "captain-1",
         managerApproval: { pin: "1234", reason: "Customer copy", approvedBy: "manager" }
       }
     });
     await app.inject({
       method: "POST",
       url: `/bills/${bill.billId}/settle`,
-      headers,
-      payload: { method: "cash", amountPaise: bill.totalPaise, receivedBy: "cashier-1" }
+      headers: captainHeaders,
+      payload: { method: "cash", amountPaise: bill.totalPaise, receivedBy: "captain-1" }
     });
     const summaryResponse = await app.inject({
       method: "GET",
       url: "/business-day/current-summary",
-      headers
+      headers: captainHeaders
     });
 
+    expect(firstPrintResponse.statusCode).toBe(200);
+    expect(repeatedPrintResponse.statusCode).toBe(400);
+    expect(repeatedPrintResponse.json()).toMatchObject({ error: "Bill was already printed. Use manager-approved reprint." });
     expect(reprintResponse.statusCode).toBe(200);
     expect(summaryResponse.statusCode).toBe(200);
     expect(summaryResponse.json()).toMatchObject({ paidBills: 1, unpaidBills: 0 });
     expect(database.db.prepare("SELECT COUNT(*) AS count FROM print_jobs WHERE target_type = 'BILL'").get()).toEqual({
-      count: 2
+      count: 3
     });
 
     await app.close();
@@ -520,6 +645,46 @@ describe("Hub API auth and service flow", () => {
     });
 
     expect(replayWithDifferentBody.statusCode).toBe(409);
+
+    await app.close();
+    database.close();
+  });
+
+  it("rejects duplicate idempotent requests while the first request is in progress", async () => {
+    const { app, database } = createTestServer();
+    const payload = {
+      tableId: "table-t1",
+      captainId: "waiter-1",
+      pax: 1,
+      orderType: "dine_in",
+      items: [{ menuItemId: "item-dal-fry", quantity: 1 }]
+    };
+    const requestHash = createHash("sha256").update(JSON.stringify(payload)).digest("hex");
+    database.orm
+      .insert(idempotencyRecords)
+      .values({
+        key: "android-submit-progress",
+        route: "orders.submit",
+        requestHash,
+        status: "in_progress",
+        responseJson: "",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      })
+      .run();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/orders/submit",
+      headers: {
+        "x-device-token": "test-admin-token",
+        "idempotency-key": "android-submit-progress"
+      },
+      payload
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toEqual({ error: "Request is already in progress. Retry shortly." });
 
     await app.close();
     database.close();

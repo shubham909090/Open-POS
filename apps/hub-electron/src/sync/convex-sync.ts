@@ -1,6 +1,6 @@
 import { and, asc, eq, inArray, lt, sql } from "drizzle-orm";
 import type { HubOrm } from "../db/database.js";
-import { eventLog, hubSettings, localDevices, menuItems, productionUnits, syncOutbox } from "../db/drizzle-schema.js";
+import { cloudCommandFailures, eventLog, hubSettings, localDevices, menuItemVariants, menuItems, productionUnits, syncOutbox } from "../db/drizzle-schema.js";
 
 interface OutboxRow {
   id: number;
@@ -81,7 +81,8 @@ export class ConvexSyncBridge {
     });
 
     if (!response.ok) {
-      const message = `Convex sync failed with ${response.status}`;
+      const body = (await response.json().catch(() => ({}))) as { error?: string };
+      const message = `Convex sync failed with ${response.status}${body.error ? `: ${body.error}` : ""}`;
       this.markFailed(events, message);
       throw new Error(message);
     }
@@ -96,9 +97,18 @@ export class ConvexSyncBridge {
     return { pushed: events.length, skipped: false };
   }
 
-  async pullCloudSnapshot(): Promise<{ applied: number; skipped: boolean; cursor?: string }> {
+  requeueFailedEvents(): { requeued: number } {
+    const result = this.db
+      .update(syncOutbox)
+      .set({ status: "pending", attempts: 0, lastError: null, updatedAt: new Date().toISOString() })
+      .where(eq(syncOutbox.status, "failed"))
+      .run();
+    return { requeued: Number(result.changes ?? 0) };
+  }
+
+  async pullCloudSnapshot(): Promise<{ applied: number; failed: number; skipped: boolean; cursor?: string }> {
     if (!this.convexUrl || !this.syncSecret || !this.installationId) {
-      return { applied: 0, skipped: true };
+      return { applied: 0, failed: 0, skipped: true };
     }
 
     const cursor = this.getSetting("cloud_snapshot_cursor");
@@ -113,16 +123,29 @@ export class ConvexSyncBridge {
       body: JSON.stringify({ cursor })
     });
 
-    if (!response.ok) throw new Error(`Convex pull failed with ${response.status}`);
+    if (!response.ok) {
+      const body = (await response.json().catch(() => ({}))) as { error?: string };
+      throw new Error(`Convex pull failed with ${response.status}${body.error ? `: ${body.error}` : ""}`);
+    }
 
     const body = (await response.json()) as { cursor?: string; commands?: CloudCommand[] };
     const commands = body.commands ?? [];
+    let applied = 0;
+    let failed = 0;
     this.db.transaction((tx) => {
-      for (const command of commands) this.applyCommand(command, tx);
+      for (const command of commands) {
+        try {
+          this.applyCommand(command, tx);
+          applied += 1;
+        } catch (error) {
+          failed += 1;
+          this.recordCommandFailure(command, error, tx);
+        }
+      }
       if (body.cursor) this.upsertSetting("cloud_snapshot_cursor", body.cursor, tx);
     });
 
-    return { applied: commands.length, skipped: false, cursor: body.cursor };
+    return { applied, failed, skipped: false, cursor: body.cursor };
   }
 
   private applyCommand(command: CloudCommand, db: LocalWriteDb): void {
@@ -183,11 +206,12 @@ export class ConvexSyncBridge {
 
     if (command.type === "menu_item.upsert") {
       const id = this.requiredString(payload.id, "menu item id");
+      const pricePaise = this.requiredNumber(payload.pricePaise, "menu item price");
       db.insert(menuItems)
         .values({
           id,
           name: this.requiredString(payload.name, "menu item name"),
-          pricePaise: this.requiredNumber(payload.pricePaise, "menu item price"),
+          pricePaise,
           productionUnitId: typeof payload.productionUnitId === "string" && payload.productionUnitId ? payload.productionUnitId : null,
           active: typeof payload.active === "boolean" ? payload.active : true
         })
@@ -195,10 +219,27 @@ export class ConvexSyncBridge {
           target: menuItems.id,
           set: {
             name: this.requiredString(payload.name, "menu item name"),
-            pricePaise: this.requiredNumber(payload.pricePaise, "menu item price"),
+            pricePaise,
             productionUnitId: typeof payload.productionUnitId === "string" && payload.productionUnitId ? payload.productionUnitId : null,
             active: typeof payload.active === "boolean" ? payload.active : true
           }
+        })
+        .run();
+      db.insert(menuItemVariants)
+        .values({
+          id: `${id}-default`,
+          menuItemId: id,
+          label: "Regular",
+          kind: "default",
+          pricePaise,
+          volumeMl: null,
+          inventoryAction: "none",
+          sortOrder: 0,
+          active: true
+        })
+        .onConflictDoUpdate({
+          target: [menuItemVariants.menuItemId, menuItemVariants.kind],
+          set: { pricePaise, active: typeof payload.active === "boolean" ? payload.active : true }
         })
         .run();
       return;
@@ -237,6 +278,25 @@ export class ConvexSyncBridge {
           .run();
       }
     });
+  }
+
+  private recordCommandFailure(command: CloudCommand, error: unknown, db: LocalWriteDb): void {
+    const now = new Date().toISOString();
+    const message = error instanceof Error ? error.message : "Cloud command failed";
+    db.insert(cloudCommandFailures)
+      .values({
+        commandId: command.commandId,
+        type: command.type,
+        payloadJson: command.payloadJson,
+        error: message,
+        failedAt: now,
+        createdAt: command.createdAt
+      })
+      .onConflictDoUpdate({
+        target: cloudCommandFailures.commandId,
+        set: { type: command.type, payloadJson: command.payloadJson, error: message, failedAt: now }
+      })
+      .run();
   }
 
   private getSetting(key: string): string | undefined {

@@ -1,4 +1,4 @@
-export type Role = "admin" | "cashier" | "captain" | "waiter" | "kitchen";
+export type Role = "admin" | "captain" | "waiter" | "kitchen";
 
 export interface PosDay {
   id: string;
@@ -94,7 +94,11 @@ export interface Bootstrap {
   menuItems: MenuItem[];
   ticketTemplate?: { billHeader: string; billFooter: string; kotHeader: string; kotFooter: string; restaurantName: string; taxRegistrationText: string };
   printJobs: PrintJob[];
-  syncStatus: { counts?: Record<string, number>; lastEvent?: unknown };
+  syncStatus: {
+    counts?: Record<string, number>;
+    lastEvent?: unknown;
+    commandFailures?: Array<{ commandId: string; type: string; error: string; failedAt: string }>;
+  };
   setup?: { printerDryRun: boolean };
 }
 
@@ -257,11 +261,12 @@ function idempotencyKey(prefix: string) {
   return `${prefix}-${Date.now()}-${crypto.randomUUID?.() ?? Math.random().toString(36).slice(2)}`;
 }
 
-export async function apiFetch<T>(path: string, options: RequestInit & { idempotent?: string } = {}): Promise<T> {
+export async function apiFetch<T>(path: string, options: RequestInit & { idempotent?: string; idempotencyKey?: string } = {}): Promise<T> {
   const headers = new Headers(options.headers);
   headers.set("authorization", `Bearer ${authToken}`);
   if (options.body && !headers.has("content-type")) headers.set("content-type", "application/json");
-  if (options.idempotent) headers.set("idempotency-key", idempotencyKey(options.idempotent));
+  if (options.idempotencyKey) headers.set("idempotency-key", options.idempotencyKey);
+  else if (options.idempotent) headers.set("idempotency-key", idempotencyKey(options.idempotent));
 
   const response = await fetch(path, { ...options, headers });
   const body = await response.json().catch(() => ({}));
@@ -315,14 +320,17 @@ export const hubApi = {
         | { menuItemId: string; menuItemVariantId: string; quantity: number }
         | { openName: string; openPricePaise: number; saleGroupId: string; productionUnitId?: string | null; quantity: number }
       >;
-    }
+    },
+    idempotencyKey?: string
   ) =>
     apiFetch<{ orderId: string; kotIds: string[] }>("/orders/submit", {
       method: "POST",
       idempotent: "orders-submit",
+      idempotencyKey,
       body: JSON.stringify({ ...payload, orderType: "dine_in" })
     }),
-  generateBill: (orderId: string) => apiFetch<{ billId: string; totalPaise: number }>(`/bills/${orderId}/generate`, { method: "POST", idempotent: "bill-generate" }),
+  generateBill: (orderId: string, idempotencyKey?: string) =>
+    apiFetch<{ billId: string; totalPaise: number }>(`/bills/${orderId}/generate`, { method: "POST", idempotent: "bill-generate", idempotencyKey }),
   settleBill: (
     billId: string,
     payload: {
@@ -330,15 +338,17 @@ export const hubApi = {
       discountValue: number;
       tipPaise: number;
       payments: Array<{ method: "cash" | "upi" | "card" | "online"; amountPaise: number; reference?: string }>;
-    }
+    },
+    idempotencyKey?: string
   ) =>
     apiFetch<{ billId: string; status: string; remainingPaise: number }>(`/bills/${billId}/settle`, {
       method: "POST",
       idempotent: "bill-settle",
+      idempotencyKey,
       body: JSON.stringify(payload)
     }),
-  printBill: (billId: string) =>
-    apiFetch<{ printJobId: string }>(`/bills/${billId}/print`, { method: "POST", idempotent: "bill-print", body: JSON.stringify({}) }),
+  printBill: (billId: string, idempotencyKey?: string) =>
+    apiFetch<{ printJobId: string }>(`/bills/${billId}/print`, { method: "POST", idempotent: "bill-print", idempotencyKey, body: JSON.stringify({}) }),
   reviseBill: (
     billId: string,
     payload: ManagerApprovalPayload & {
@@ -346,17 +356,19 @@ export const hubApi = {
         | { orderItemId?: string; menuItemId: string; menuItemVariantId?: string; quantity: number }
         | { orderItemId?: string; openName: string; openPricePaise: number; saleGroupId: string; productionUnitId?: string | null; quantity: number }
       >;
-    }
+    },
+    idempotencyKey?: string
   ) =>
     apiFetch<{ billId: string; revisionNumber: number; totalPaise: number; kotIds: string[] }>(`/bills/${billId}/revise`, {
       method: "POST",
       idempotent: "bill-revise",
+      idempotencyKey,
       body: JSON.stringify(payload)
     }),
-  reprintBill: (billId: string, payload: ManagerApprovalPayload) =>
-    apiFetch<{ printJobId: string }>(`/bills/${billId}/reprint`, { method: "POST", idempotent: "bill-reprint", body: JSON.stringify({ reason: payload.managerApproval.reason, ...payload }) }),
-  markBillNc: (billId: string, payload: ManagerApprovalPayload) =>
-    apiFetch<{ printJobId: string }>(`/bills/${billId}/nc`, { method: "POST", idempotent: "bill-nc", body: JSON.stringify(payload) }),
+  reprintBill: (billId: string, payload: ManagerApprovalPayload, idempotencyKey?: string) =>
+    apiFetch<{ printJobId: string }>(`/bills/${billId}/reprint`, { method: "POST", idempotent: "bill-reprint", idempotencyKey, body: JSON.stringify({ reason: payload.managerApproval.reason, ...payload }) }),
+  markBillNc: (billId: string, payload: ManagerApprovalPayload, idempotencyKey?: string) =>
+    apiFetch<{ printJobId: string }>(`/bills/${billId}/nc`, { method: "POST", idempotent: "bill-nc", idempotencyKey, body: JSON.stringify(payload) }),
   cancelOrder: (orderId: string, payload: ManagerApprovalPayload) =>
     apiFetch<{ orderId: string }>(`/orders/${orderId}/cancel`, {
       method: "POST",
@@ -373,7 +385,10 @@ export const hubApi = {
   updateKotStatus: (kotId: string, status: string) =>
     apiFetch<{ id: string }>(`/kot/${kotId}/status`, { method: "PATCH", body: JSON.stringify({ status }) }),
   processPrints: () => apiFetch<{ printed: number; failed: number }>("/print-jobs/process", { method: "POST" }),
-  pullCloud: () => apiFetch<{ applied: number }>("/sync/pull", { method: "POST" })
+  pullCloud: () => apiFetch<{ applied: number; failed?: number }>("/sync/pull", { method: "POST" }),
+  requeueFailedSync: () => apiFetch<{ requeued: number }>("/sync/requeue-failed", { method: "POST" }),
+  resolveCloudCommandFailure: (commandId: string) =>
+    apiFetch<{ commandId: string; resolved: boolean }>(`/sync/cloud-command-failures/${encodeURIComponent(commandId)}`, { method: "DELETE" })
 };
 
 export interface ManagerApprovalPayload {

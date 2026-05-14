@@ -26,6 +26,7 @@ describe("shared command schemas", () => {
       printerMode: "system"
     });
     expect(createPairingCodeSchema.parse({ deviceName: "Captain phone", role: "captain" })).toMatchObject({ role: "captain" });
+    expect(() => createPairingCodeSchema.parse({ deviceName: "Old role", role: "cashier" })).toThrow();
     expect(() => createPairingCodeSchema.parse({ deviceName: "Phone", role: "owner" })).toThrow();
   });
 

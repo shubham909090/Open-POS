@@ -9,6 +9,27 @@ import { DryRunPrinterAdapter, RoutedPrinterAdapter } from "./printing/escpos.js
 import { PrintJobService } from "./printing/print-job-service.js";
 import { ConvexSyncBridge } from "./sync/convex-sync.js";
 
+type SyncBridgeLike = Pick<ConvexSyncBridge, "pushPending" | "pullCloudSnapshot">;
+type SyncLogger = { warn: (error: unknown, message: string) => void };
+
+export function createSyncTick(syncBridge: SyncBridgeLike, log: SyncLogger) {
+  let running = false;
+  return async () => {
+    if (running) return { skipped: true, reason: "already_running" as const };
+    running = true;
+    try {
+      const pushed = await syncBridge.pushPending();
+      const pulled = await syncBridge.pullCloudSnapshot();
+      return { skipped: false, pushed, pulled };
+    } catch (error) {
+      log.warn(error, "Convex sync skipped or failed");
+      return { skipped: false, error };
+    } finally {
+      running = false;
+    }
+  };
+}
+
 export async function startHub() {
   const config = loadHubConfig();
   BackupService.applyPendingRestore(config.databasePath, config.backupDir);
@@ -36,8 +57,9 @@ export async function startHub() {
   });
 
   await app.listen({ host: config.host, port: config.port });
+  const runSyncTick = createSyncTick(syncBridge, app.log);
   const syncInterval = setInterval(() => {
-    void syncBridge.pushPending().catch((error) => app.log.warn(error, "Convex sync skipped or failed"));
+    void runSyncTick();
   }, 60_000);
   syncInterval.unref();
 

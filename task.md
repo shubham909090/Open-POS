@@ -61,7 +61,7 @@ Goal: implement manager PIN approvals, configurable sale/tax groups, open items,
 
 ## Implementation Notes From This Pass
 
-- Role model is now explicit: `admin`, `cashier`, `captain`, `waiter`, `kitchen`.
+- Role model is now explicit: `admin`, `captain`, `waiter`, `kitchen`.
 - `captain` is the tablet role for trusted floor captains; `waiter` remains basic order-taking without table/item shift power.
 - Order ownership is device-based for captain controls, using the paired device token session rather than free-text names.
 - Open items are order-item snapshots with nullable `menu_item_id`; they remain billable, printable, and reportable without polluting dish setup.
@@ -107,7 +107,7 @@ Implement the full restaurant workflow pass from your brother’s notes in one d
   - revise bill after print
   - edit item price on a running table
   - mark bill as NC / Non Customer
-- Add approval audit events with action, reason, table/order/bill id, cashier/device id, and timestamp.
+- Add approval audit events with action, reason, table/order/bill id, captain/device id, and timestamp.
 
 ### Billing, Tax Groups, Open Items, NC
 - Add configurable sale/tax groups:

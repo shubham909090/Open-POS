@@ -330,6 +330,11 @@ label {
   color: var(--muted);
 }
 
+.plain-state.bad {
+  color: var(--danger);
+  font-weight: 800;
+}
+
 .warning-text {
   color: var(--warning);
   font-weight: 800;

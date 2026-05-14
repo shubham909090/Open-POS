@@ -9,7 +9,7 @@
     "dev:cloud": "pnpm --filter @gaurav-pos/cloud-admin dev",
     "dev:hub": "pnpm --filter @gaurav-pos/hub-electron dev",
     "lint": "pnpm -r --if-present lint",
-    "test": "pnpm -r --if-present test",
+    "test": "vitest run convex/*.test.ts && pnpm -r --if-present test",
     "typecheck": "pnpm -r --if-present typecheck"
   },
   "devDependencies": {

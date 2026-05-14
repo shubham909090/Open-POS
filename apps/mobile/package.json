@@ -10,6 +10,7 @@
     "android:prebuild": "expo prebuild --platform android",
     "android:apk": "eas build --platform android --profile preview",
     "android:aab": "eas build --platform android --profile production",
+    "lint": "tsc --noEmit",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },

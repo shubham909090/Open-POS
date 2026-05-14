@@ -871,7 +871,7 @@ function renderPrintJobs() {
       retry.addEventListener("click", async () => {
         await api(`/print-jobs/${job.id}/retry`, {
           method: "POST",
-          body: JSON.stringify({ requestedBy: "cashier-1" })
+          body: JSON.stringify({ requestedBy: "captain-1" })
         });
         await loadBootstrap();
       });
@@ -1117,7 +1117,7 @@ async function loadKds() {
     reprint.addEventListener("click", async () => {
       await api(`/kot/${kot.id}/reprint`, {
         method: "POST",
-        body: JSON.stringify({ reason: "KDS reprint", requestedBy: "cashier-1" })
+        body: JSON.stringify({ reason: "KDS reprint", requestedBy: "captain-1" })
       });
       await loadBootstrap();
     });
@@ -1171,7 +1171,7 @@ $("reprintBill").addEventListener("click", async () => {
   await runAction(async () => {
     await api(`/bills/${bill.id}/reprint`, {
       method: "POST",
-      body: JSON.stringify({ reason: "Cashier reprint", requestedBy: "cashier-1" })
+      body: JSON.stringify({ reason: "Captain reprint", requestedBy: "captain-1" })
     });
     await loadBootstrap();
   }, "Bill reprint queued");
@@ -1199,7 +1199,7 @@ $("settleBill").addEventListener("click", async () => {
         discountValue: $("discountType").value === "percent" ? Number($("billDiscount").value || 0) : Number($("billDiscount").value || 0) * 100,
         tipPaise: Number($("billTip").value || 0) * 100,
         payments,
-        receivedBy: "cashier-1"
+        receivedBy: "captain-1"
       })
     });
     await loadBootstrap();
@@ -1212,7 +1212,7 @@ $("cancelOrder").addEventListener("click", async () => {
   const orderId = state.selectedOrder?.order?.id;
   if (!orderId) return;
   await runAction(async () => {
-    await api(`/orders/${orderId}/cancel`, { method: "POST", body: JSON.stringify({ reason: "Cancelled from cashier" }) });
+    await api(`/orders/${orderId}/cancel`, { method: "POST", body: JSON.stringify({ reason: "Cancelled from captain" }) });
     state.selectedOrder = null;
     state.draft.clear();
     await loadBootstrap();

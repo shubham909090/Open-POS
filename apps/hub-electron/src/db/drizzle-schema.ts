@@ -1,4 +1,4 @@
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import { index, integer, primaryKey, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 export const migrationsTable = sqliteTable("migrations", {
@@ -393,6 +393,19 @@ export const hubSettings = sqliteTable("hub_settings", {
   updatedAt: text("updated_at").notNull()
 });
 
+export const cloudCommandFailures = sqliteTable(
+  "cloud_command_failures",
+  {
+    commandId: text("command_id").primaryKey(),
+    type: text("type").notNull(),
+    payloadJson: text("payload_json").notNull(),
+    error: text("error").notNull(),
+    failedAt: text("failed_at").notNull(),
+    createdAt: text("created_at").notNull()
+  },
+  (table) => [index("idx_cloud_command_failures_failed_at").on(table.failedAt)]
+);
+
 export const ticketTemplates = sqliteTable("ticket_templates", {
   id: text("id").primaryKey(),
   billHeader: text("bill_header").notNull().default(""),
@@ -437,8 +450,10 @@ export const idempotencyRecords = sqliteTable(
     key: text("key").notNull(),
     route: text("route").notNull(),
     requestHash: text("request_hash").notNull(),
+    status: text("status").notNull().default("completed"),
     responseJson: text("response_json").notNull(),
-    createdAt: text("created_at").notNull()
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`)
   },
   (table) => [primaryKey({ columns: [table.key, table.route] })]
 );

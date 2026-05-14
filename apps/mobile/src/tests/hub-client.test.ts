@@ -54,6 +54,66 @@ describe("HubClient", () => {
     );
   });
 
+  it("sends an idempotency key with order submissions", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ orderId: "order-1", kotIds: ["kot-1"] }), { status: 200 })
+    );
+
+    const client = new HubClient("http://hub.local:3737", "captain-token");
+    await client.submitOrder({
+      tableId: "table-1",
+      captainId: "Captain",
+      pax: 2,
+      orderType: "dine_in",
+      items: [{ menuItemId: "item-1", quantity: 1 }]
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://hub.local:3737/orders/submit",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({
+          "x-device-token": "captain-token",
+          "Idempotency-Key": expect.stringMatching(/^mobile-order-/)
+        })
+      })
+    );
+  });
+
+  it("reuses caller-provided idempotency keys for one logical action", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+      new Response(JSON.stringify({ billId: "bill-1", status: "paid", remainingPaise: 0 }), { status: 200 })
+    );
+
+    const client = new HubClient("http://hub.local:3737", "captain-token");
+    const actionKey = "mobile-bill-settle-action-1";
+    const payload = {
+      discountType: "amount" as const,
+      discountValue: 0,
+      tipPaise: 0,
+      payments: [{ method: "cash" as const, amountPaise: 5000 }]
+    };
+
+    await client.settleBill("bill-1", payload, { idempotencyKey: actionKey });
+    await client.settleBill("bill-1", payload, { idempotencyKey: actionKey });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "http://hub.local:3737/bills/bill-1/settle",
+      expect.objectContaining({
+        headers: expect.objectContaining({ "Idempotency-Key": actionKey })
+      })
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "http://hub.local:3737/bills/bill-1/settle",
+      expect.objectContaining({
+        headers: expect.objectContaining({ "Idempotency-Key": actionKey })
+      })
+    );
+  });
+
   it("moves selected order items and reads ready notifications", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(new Response(JSON.stringify({ fromOrderId: "order-1", toOrderId: "order-2" }), { status: 200 }))

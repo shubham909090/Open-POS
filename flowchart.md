@@ -85,7 +85,8 @@ flowchart TD
   MobileApp --> MobileReady["Ready alerts polling"]
 
   CloudApp --> CloudAuth["WorkOS Google auth"]
-  CloudApp --> CloudSetup["Restaurant + staff + hub connection"]
+  CloudApp --> CloudSetup["Restaurant + staff"]
+  CloudApp --> CloudHub["Owner-only hub connection"]
   CloudApp --> CloudReports["Finalized business-day reports"]
   CloudApp --> CloudAdvanced["Advanced hub command queue"]
 
@@ -101,7 +102,8 @@ flowchart TD
 
 ```mermaid
 sequenceDiagram
-  participant Owner as Owner/Admin
+  participant Owner as Owner
+  participant Admin as Cloud Admin
   participant Cloud as Cloud Admin
   participant WorkOS as WorkOS AuthKit
   participant Convex as Convex
@@ -112,7 +114,9 @@ sequenceDiagram
   Owner->>Cloud: Open owner portal
   Cloud->>WorkOS: Google sign-in
   WorkOS-->>Cloud: Authenticated session
-  Cloud->>Convex: Create/list restaurant, staff, hub connection
+  Cloud->>Convex: Create/list restaurant and staff
+  Admin->>Cloud: Manage staff/support commands after owner grants admin role
+  Owner->>Convex: Create hub connection
   Convex-->>Cloud: POS_INSTALLATION_ID + POS_SYNC_SECRET
   Owner->>Hub: Paste hub env values and start hub
   Owner->>Hub: Unlock with HUB_ADMIN_TOKEN
@@ -130,7 +134,6 @@ sequenceDiagram
 ```mermaid
 flowchart TD
   Role["Local device role"] --> Admin["admin"]
-  Role --> Cashier["cashier"]
   Role --> Captain["captain"]
   Role --> Waiter["waiter"]
   Role --> Kitchen["kitchen"]
@@ -138,14 +141,11 @@ flowchart TD
   Admin --> A1["Setup/admin/device/printer/tax/sync/backups"]
   Admin --> A2["Billing, movement, reports"]
 
-  Cashier --> C1["Billing, reports, print operation"]
-  Cashier --> C2["Generate, print, revise, NC, settle bills"]
-  Cashier --> C3["Move valid tables/items"]
-
-  Captain --> P1["Submit orders"]
-  Captain --> P2["View running table order"]
-  Captain --> P3["Shift own open table/items"]
-  Captain --> P4["Receive ready alerts"]
+  Captain --> C1["Operations, billing, current reports, print"]
+  Captain --> C2["Generate, print, revise, NC, settle bills"]
+  Captain --> C3["Submit orders and open items"]
+  Captain --> C4["Shift own open table/items"]
+  Captain --> C5["Receive ready alerts"]
 
   Waiter --> W1["Submit orders"]
   Waiter --> W2["View running table order"]
@@ -159,13 +159,13 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-  Start["Cashier starts hub app"]
+  Start["Captain starts hub app"]
   Unlock["Unlock hub using HUB_ADMIN_TOKEN"]
   AutoDay["Hub assigns current business day<br/>6 AM IST to 6 AM IST"]
   Service["Restaurant service"]
   Orders["Captains/waiters take orders"]
   Kitchen["Kitchen/bar handles KOT/BOT"]
-  Billing["Cashier bills occupied tables"]
+  Billing["Captain bills occupied tables"]
   Boundary{"6 AM IST boundary passed?"}
   ReadyFinalize{"Old day has open/billed tables?"}
   FixTables["Settle or cancel remaining old tables"]
@@ -202,7 +202,7 @@ flowchart TD
   ManagerPin["Set manager PIN"]
   SaleGroups["Configure Food/Alcohol/Beverage/Other tax groups"]
   PrintText["Configure bill/KOT/BOT text"]
-  PairDevices["Pair admin/cashier/captain/waiter/kitchen devices"]
+  PairDevices["Pair admin/captain/waiter/kitchen devices"]
   Ready["Ready for service"]
 
   Setup --> BusinessDay
@@ -276,7 +276,7 @@ flowchart TD
   SentItems{"Has sent items?"}
   Generate["Generate bill<br/>POST /bills/:orderId/generate"]
   PendingBill["Bill pending"]
-  Adjust["Cashier applies discount/tip"]
+  Adjust["Captain applies discount/tip"]
   PayChoice["Record payment rows"]
   Cash["Cash"]
   UPI["UPI"]
@@ -376,7 +376,7 @@ flowchart TD
   Role{"Actor role"}
   Waiter["waiter"]
   Captain["captain"]
-  CashierAdmin["cashier/admin"]
+  CaptainAdmin["admin"]
   Deny["Deny"]
   OwnCheck{"Captain owns open table/order?"}
   ValidCheck{"Valid source and target?"}
@@ -388,7 +388,7 @@ flowchart TD
   Request --> Auth --> Role
   Role --> Waiter --> Deny
   Role --> Captain --> OwnCheck
-  Role --> CashierAdmin --> ValidCheck
+  Role --> CaptainAdmin --> ValidCheck
   OwnCheck -- "No" --> Deny
   OwnCheck -- "Yes" --> ValidCheck
   ValidCheck -- "No" --> Deny
@@ -490,9 +490,9 @@ flowchart LR
   HubTruth --> Print["print_jobs"]
   HubTruth --> Events["event_log/sync_outbox"]
 
-  CloudOwner["Owner/admin cloud work"] --> ConvexTruth["Convex is cloud/admin source"]
+  CloudOwner["Owner/admin/reporting cloud work"] --> ConvexTruth["Convex is cloud/admin source"]
   ConvexTruth --> Restaurants["restaurants/memberships"]
-  ConvexTruth --> Installations["installations"]
+  ConvexTruth --> Installations["installations<br/>created by owner only"]
   ConvexTruth --> Commands["hubCommands"]
   ConvexTruth --> Reports["daily reports after sync"]
 
