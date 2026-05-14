@@ -302,7 +302,25 @@ label {
 }
 
 .dish-form {
-  grid-template-columns: minmax(170px, 1fr) 120px minmax(150px, 190px) auto;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+}
+
+.dish-form label,
+.dish-edit-form label {
+  min-width: 0;
+}
+
+.dish-form input,
+.dish-form select,
+.dish-edit-form input,
+.dish-edit-form select {
+  width: 100%;
+  min-width: 0;
+}
+
+.dish-form button {
+  width: 100%;
+  min-height: 48px;
 }
 
 .plain-state,
@@ -341,6 +359,11 @@ label {
   align-items: start;
 }
 
+.record-row .row-actions {
+  justify-content: flex-end;
+  min-width: 0;
+}
+
 .row-edit-form {
   grid-column: 1 / -1;
   display: grid;
@@ -352,7 +375,7 @@ label {
 }
 
 .dish-edit-form {
-  grid-template-columns: minmax(180px, 1fr) 120px minmax(160px, 220px) auto;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
 }
 
 .row-actions button:not(.icon-button) {
@@ -407,6 +430,18 @@ label {
   gap: 10px;
 }
 
+.floor-table-list,
+.floor-group {
+  display: grid;
+  gap: 12px;
+}
+
+.floor-group h3 {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
 .table-tile {
   min-height: 88px;
   display: grid;
@@ -417,9 +452,14 @@ label {
   border: 2px solid var(--line);
 }
 
-.table-tile.occupied {
+.table-tile.running {
   border-color: #f59e0b;
   background: #fffbeb;
+}
+
+.table-tile.bill-printed {
+  border-color: #60a5fa;
+  background: #eff6ff;
 }
 
 .table-tile.active {
@@ -521,6 +561,57 @@ label {
   align-items: end;
 }
 
+.open-item-form,
+.template-form,
+.approval-grid {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) 120px minmax(130px, 160px) minmax(150px, 180px) auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.template-form {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.template-form button {
+  grid-column: 1 / -1;
+}
+
+.manager-approval {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.approval-grid {
+  grid-template-columns: minmax(120px, 160px) minmax(180px, 1fr) auto;
+}
+
+.shift-panel {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.shift-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.shift-actions button {
+  background: #eef6ff;
+  color: #1d4ed8;
+  border: 1px solid #93c5fd;
+}
+
 .guest-row label {
   max-width: 130px;
 }
@@ -548,6 +639,35 @@ label {
   background: #fff0ed;
   color: var(--danger);
   border: 1px solid #ffc1b8;
+}
+
+.secondary-button {
+  background: #eef3ec;
+  color: var(--ink);
+  border: 1px solid var(--line-strong);
+}
+
+.revision-box {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.revision-head,
+.revision-add-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+
+.revision-add-row select {
+  flex: 1;
+  min-width: 180px;
 }
 
 .bill-start {
@@ -742,6 +862,9 @@ label {
   .setup-board,
   .inline-form,
   .dish-form,
+  .open-item-form,
+  .template-form,
+  .approval-grid,
   .close-day-form,
   .row-edit-form,
   .dish-edit-form,

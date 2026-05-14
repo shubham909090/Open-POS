@@ -2,10 +2,13 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   SafeAreaView,
   ScrollView,
+  StatusBar,
   StyleSheet,
   Text,
   TextInput,
@@ -13,35 +16,53 @@ import {
   View
 } from "react-native";
 import { CameraView, useCameraPermissions } from "expo-camera";
-import type { OrderItemInput } from "@gaurav-pos/shared";
+import { getTableDisplayState, tableDisplayLabel, type OrderItemInput } from "@gaurav-pos/shared";
 import { HubClient, type HubBootstrap, type HubOrder } from "./lib/hub-client";
 import { clearDraft, getDeviceToken, getHubUrl, loadDraft, saveDraft, setDeviceToken, setHubUrl } from "./lib/draft-store";
 
 type ConnectionState = "checking" | "online" | "offline";
 type ViewMode = "tables" | "menu" | "ticket";
 
+interface PairingPayload {
+  kind: "gaurav-pos-pairing";
+  version: number;
+  hubUrl: string;
+  code: string;
+  deviceName?: string;
+  role?: string;
+  expiresAt?: string;
+}
+
 export default function App() {
   const { width } = useWindowDimensions();
-  const isWide = width >= 760;
-  const tableColumns = width >= 900 ? 5 : width >= 640 ? 4 : 3;
+  const isWide = width >= 780;
+  const contentWidth = Math.max(320, width - 32);
+  const tablePanelWidth = isWide ? Math.min(360, Math.floor(contentWidth * 0.34)) : contentWidth;
+  const tableColumns = tablePanelWidth >= 340 ? 2 : 1;
+  const tableTileWidth = Math.floor((tablePanelWidth - 28 - 10 * (tableColumns - 1)) / tableColumns);
 
+  const [initializing, setInitializing] = useState(true);
   const [hubUrl, setHubUrlState] = useState("http://192.168.1.10:3737");
   const [deviceToken, setDeviceTokenState] = useState("");
-  const [showToken, setShowToken] = useState(false);
+  const [deviceRole, setDeviceRoleState] = useState("");
+  const [deviceName, setDeviceNameState] = useState("");
+  const [hubUrlDraft, setHubUrlDraft] = useState("http://192.168.1.10:3737");
+  const [deviceTokenDraft, setDeviceTokenDraft] = useState("");
   const [pairingCode, setPairingCode] = useState("");
   const [pairingPayload, setPairingPayload] = useState("");
+  const [formRevision, setFormRevision] = useState(0);
   const [scannerOpen, setScannerOpen] = useState(false);
   const [setupOpen, setSetupOpen] = useState(false);
   const scanLockRef = useRef(false);
 
   const [connection, setConnection] = useState<ConnectionState>("checking");
   const [loading, setLoading] = useState(false);
+  const [sending, setSending] = useState(false);
   const [savingDraft, setSavingDraft] = useState(false);
   const [message, setMessage] = useState("Checking hub connection...");
   const [bootstrap, setBootstrap] = useState<HubBootstrap | null>(null);
   const [selectedTableId, setSelectedTableId] = useState<string | null>(null);
   const [currentOrder, setCurrentOrder] = useState<HubOrder | null>(null);
-  const [captainId, setCaptainId] = useState("waiter-1");
   const [pax, setPax] = useState("2");
   const [items, setItems] = useState<OrderItemInput[]>([]);
   const [menuSearch, setMenuSearch] = useState("");
@@ -51,7 +72,7 @@ export default function App() {
   const client = useMemo(() => new HubClient(hubUrl, deviceToken), [deviceToken, hubUrl]);
   const selectedTable = bootstrap?.tables.find((table) => table.id === selectedTableId) ?? null;
   const openDay = Boolean(bootstrap?.openDay);
-  const activeTables = (bootstrap?.tables ?? []).filter((table) => table.status !== "disabled");
+  const activeTables = (bootstrap?.tables ?? []).filter((table) => getTableDisplayState(table) !== "disabled");
   const sentItems = (currentOrder?.items ?? []).filter((item) => item.status !== "cancelled" && item.quantity > 0);
   const sentTotal = sentItems.reduce((total, item) => total + item.unit_price_paise * item.quantity, 0);
   const draftTotal = items.reduce((total, item) => {
@@ -59,6 +80,8 @@ export default function App() {
     return total + (menuItem?.price_paise ?? 0) * item.quantity;
   }, 0);
   const tableTotal = sentTotal + draftTotal;
+  const hasNewItems = items.length > 0;
+  const shouldShowOnboarding = setupOpen || !deviceToken || connection === "offline";
 
   const visibleMenu = (bootstrap?.menuItems ?? []).filter((item) => {
     if (!item.active) return false;
@@ -67,15 +90,28 @@ export default function App() {
   });
 
   useEffect(() => {
-    void getHubUrl().then(setHubUrlState);
-    void getDeviceToken().then(setDeviceTokenState);
+    let alive = true;
+    async function hydrate() {
+      const [savedHubUrl, savedToken] = await Promise.all([getHubUrl(), getDeviceToken()]);
+      if (!alive) return;
+      setHubUrlState(savedHubUrl);
+      setHubUrlDraft(savedHubUrl);
+      setDeviceTokenState(savedToken);
+      setDeviceTokenDraft(savedToken);
+      setInitializing(false);
+    }
+    void hydrate();
+    return () => {
+      alive = false;
+    };
   }, []);
 
   useEffect(() => {
+    if (initializing) return;
     void refresh();
     const interval = setInterval(() => void refresh(false), 8_000);
     return () => clearInterval(interval);
-  }, [client, selectedTableId]);
+  }, [client, initializing, selectedTableId]);
 
   async function refresh(showSpinner = true) {
     if (showSpinner) setLoading(true);
@@ -84,13 +120,17 @@ export default function App() {
       const isOnline = await client.health();
       setConnection(isOnline ? "online" : "offline");
       if (!isOnline) {
-        setMessage("Hub is offline. Drafts stay on this phone until the hub is back.");
+        setMessage("Hub is not reachable. Check Wi-Fi and hub address. Drafts stay on this phone.");
         return;
       }
 
       const nextBootstrap = await client.bootstrap();
       setBootstrap(nextBootstrap);
-      setMessage(nextBootstrap.openDay ? "Connected to hub. Ready for service." : "Hub connected, but today's POS day is not open.");
+      const session = await client.me();
+      setDeviceNameState(session.name);
+      setDeviceRoleState(session.role);
+      await checkReadyNotifications();
+      setMessage(nextBootstrap.openDay ? "Connected. Ready for orders." : "Hub connected. Ask cashier to open today's POS day.");
       if (selectedTableId) await loadTableOrder(selectedTableId);
     } catch (error) {
       setConnection("offline");
@@ -100,8 +140,20 @@ export default function App() {
     }
   }
 
+  async function checkReadyNotifications() {
+    if (!deviceToken) return;
+    try {
+      const ready = await client.readyNotifications();
+      for (const notification of ready) {
+        const itemText = notification.items.map((item) => `${item.quantity} x ${item.name}`).join(", ");
+        Alert.alert("Order ready", `${notification.productionUnitName} says Table ${notification.tableName} is ready.\n${itemText}`);
+      }
+    } catch {
+      // Non-captain devices or older hubs may not expose ready alerts; the main refresh still works.
+    }
+  }
+
   async function loadTableOrder(tableId: string) {
-    if (connection === "offline") return;
     try {
       setCurrentOrder(await client.tableOrder(tableId));
     } catch (error) {
@@ -117,20 +169,18 @@ export default function App() {
     const draft = await loadDraft(tableId);
     setItems(draft?.items ?? []);
     if (draft) {
-      setCaptainId(draft.captainId);
       setPax(String(draft.pax));
       setMessage("Draft restored for this table.");
     }
-    await loadTableOrder(tableId);
+    if (connection === "online") await loadTableOrder(tableId);
   }
 
-  async function persistDraft(nextItems = items) {
+  async function persistDraft(nextItems = items, nextPax = pax) {
     if (!selectedTableId) return;
     setSavingDraft(true);
     await saveDraft({
       tableId: selectedTableId,
-      captainId,
-      pax: Number(pax || 1),
+      pax: normalisePax(nextPax),
       items: nextItems,
       updatedAt: new Date().toISOString()
     });
@@ -148,7 +198,6 @@ export default function App() {
       ? items.map((item) => (item.menuItemId === menuItemId ? { ...item, quantity: item.quantity + 1 } : item))
       : [...items, { menuItemId, quantity: 1 }];
     setItems(next);
-    setMode("ticket");
     void persistDraft(next);
   }
 
@@ -171,20 +220,21 @@ export default function App() {
 
   function confirmSendKot(): Promise<boolean> {
     return new Promise((resolve) => {
-      Alert.alert("Send these new items?", orderSummary(), [
+      Alert.alert("Send new items?", orderSummary(), [
         { text: "Review", style: "cancel", onPress: () => resolve(false) },
-        { text: "Send To Kitchen", onPress: () => resolve(true) }
+        { text: "Send", onPress: () => resolve(true) }
       ]);
     });
   }
 
   async function submitOrder() {
+    if (sending) return;
     if (!selectedTableId) {
       setMessage("Choose a table first.");
       setMode("tables");
       return;
     }
-    if (items.length === 0) {
+    if (!hasNewItems) {
       setMessage("Add at least one dish before sending.");
       setMode("menu");
       return;
@@ -201,11 +251,10 @@ export default function App() {
     if (!(await confirmSendKot())) return;
 
     try {
-      setLoading(true);
+      setSending(true);
       await client.submitOrder({
         tableId: selectedTableId,
-        captainId,
-        pax: Number(pax || 1),
+        pax: normalisePax(pax),
         orderType: "dine_in",
         items
       });
@@ -214,45 +263,107 @@ export default function App() {
       await refresh(false);
       await loadTableOrder(selectedTableId);
       setMode("ticket");
-      setMessage("Sent to kitchen. New items cleared; table check stays visible.");
+      setMessage("Sent. New items are cleared; sent items stay on the table check.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not send order.");
     } finally {
-      setLoading(false);
+      setSending(false);
     }
   }
 
-  async function saveHub() {
-    await setHubUrl(hubUrl);
-    await setDeviceToken(deviceToken);
-    await refresh();
-    setSetupOpen(false);
+  async function shiftTable(toTableId: string) {
+    if (!selectedTableId) {
+      setMessage("Choose a running table before shifting.");
+      return;
+    }
+    if (connection !== "online") {
+      setMessage("Reconnect to the hub before shifting a table.");
+      return;
+    }
+    try {
+      setSending(true);
+      await client.moveTable({
+        fromTableId: selectedTableId,
+        toTableId,
+        reason: "Shifted from captain app"
+      });
+      await refresh(false);
+      setSelectedTableId(toTableId);
+      await loadTableOrder(toTableId);
+      setMode("ticket");
+      setMessage("Table shifted. The running order is now on the new table.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not shift table.");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  async function shiftItem(orderItemId: string, quantity: number, toTableId: string) {
+    if (!selectedTableId) {
+      setMessage("Choose a running table before shifting an item.");
+      return;
+    }
+    if (connection !== "online") {
+      setMessage("Reconnect to the hub before shifting items.");
+      return;
+    }
+    try {
+      setSending(true);
+      await client.moveItems({
+        fromTableId: selectedTableId,
+        toTableId,
+        reason: "Items shifted from captain app",
+        items: [{ orderItemId, quantity }]
+      });
+      await refresh(false);
+      await loadTableOrder(selectedTableId);
+      setMessage("Item shifted. The table checks have been refreshed.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not shift item.");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  async function saveHubConnection() {
+    const cleanHubUrl = normaliseHubUrl(hubUrlDraft);
+    const cleanToken = deviceTokenDraft.trim();
+    await setHubUrl(cleanHubUrl);
+    await setDeviceToken(cleanToken);
+    setHubUrlState(cleanHubUrl);
+    setHubUrlDraft(cleanHubUrl);
+    setDeviceTokenState(cleanToken);
+    setDeviceTokenDraft(cleanToken);
+    setMessage("Connection saved. Checking hub...");
   }
 
   async function pairDevice() {
     const payload = parsePairingPayload(pairingPayload || pairingCode);
-    const pairHubUrl = payload?.hubUrl ?? hubUrl;
+    const pairHubUrl = normaliseHubUrl(payload?.hubUrl ?? hubUrlDraft);
     const pairCode = payload?.code ?? pairingCode.trim();
     if (!pairCode) {
       Alert.alert("Pairing code needed", "Scan the hub QR, paste the QR payload, or type the six-digit code.");
       return;
     }
-    if (payload?.hubUrl && payload.hubUrl !== hubUrl) {
-      setHubUrlState(payload.hubUrl);
-      await setHubUrl(payload.hubUrl);
-    }
     try {
-      const pairClient = new HubClient(pairHubUrl, deviceToken);
+      const pairClient = new HubClient(pairHubUrl, deviceTokenDraft.trim());
       const result = await pairClient.exchangePairingCode({
         code: pairCode,
-        deviceName: captainId || payload?.deviceName || "Android waiter"
+        deviceName: payload?.deviceName || "Captain phone"
       });
-      setDeviceTokenState(result.token);
+      await setHubUrl(pairHubUrl);
       await setDeviceToken(result.token);
+      setHubUrlState(pairHubUrl);
+      setHubUrlDraft(pairHubUrl);
+      setDeviceTokenState(result.token);
+      setDeviceTokenDraft(result.token);
+      setDeviceRoleState(result.role);
+      setDeviceNameState(result.deviceName);
       setPairingCode("");
       setPairingPayload("");
       setSetupOpen(false);
-      await refresh();
+      setMessage(`${result.deviceName} is paired and ready.`);
       Alert.alert("Device paired", `${result.deviceName} is ready as ${result.role}.`);
     } catch (error) {
       Alert.alert("Pairing failed", error instanceof Error ? error.message : "Try a fresh code from the hub.");
@@ -280,8 +391,9 @@ export default function App() {
     }
     setPairingPayload(data);
     setPairingCode(payload.code);
-    if (payload.hubUrl) setHubUrlState(payload.hubUrl);
-    Alert.alert("Pair this device?", `${payload.deviceName ?? "Android waiter"} as ${payload.role ?? "waiter"}`, [
+    setHubUrlDraft(normaliseHubUrl(payload.hubUrl));
+    setFormRevision((value) => value + 1);
+    Alert.alert("Pair this phone?", `${payload.deviceName ?? "Captain phone"} as ${payload.role ?? "captain"}`, [
       { text: "Later", style: "cancel" },
       { text: "Pair Now", onPress: () => void pairDeviceFromPayload(payload) }
     ]);
@@ -289,260 +401,146 @@ export default function App() {
 
   async function pairDeviceFromPayload(payload: PairingPayload) {
     try {
-      const pairClient = new HubClient(payload.hubUrl, deviceToken);
+      const pairHubUrl = normaliseHubUrl(payload.hubUrl);
+      const pairClient = new HubClient(pairHubUrl, deviceTokenDraft.trim());
       const result = await pairClient.exchangePairingCode({
         code: payload.code,
-        deviceName: captainId || payload.deviceName || "Android waiter"
+        deviceName: payload.deviceName || "Captain phone"
       });
-      setHubUrlState(payload.hubUrl);
-      setDeviceTokenState(result.token);
-      await setHubUrl(payload.hubUrl);
+      await setHubUrl(pairHubUrl);
       await setDeviceToken(result.token);
+      setHubUrlState(pairHubUrl);
+      setHubUrlDraft(pairHubUrl);
+      setDeviceTokenState(result.token);
+      setDeviceTokenDraft(result.token);
+      setDeviceRoleState(result.role);
+      setDeviceNameState(result.deviceName);
       setPairingCode("");
       setPairingPayload("");
       setSetupOpen(false);
-      await refresh();
+      setMessage(`${result.deviceName} is paired and ready.`);
       Alert.alert("Device paired", `${result.deviceName} is ready as ${result.role}.`);
     } catch (error) {
       Alert.alert("Pairing failed", error instanceof Error ? error.message : "Try a fresh code from the hub.");
     }
   }
 
+  if (initializing) {
+    return (
+      <SafeAreaView style={styles.safe}>
+        <View style={styles.loadingShell}>
+          <ActivityIndicator size="large" color={palette.green} />
+          <Text style={styles.loadingText}>Opening waiter app...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.safe}>
-      <View style={styles.header}>
-        <View style={styles.headerText}>
-          <Text style={styles.kicker}>Gaurav POS</Text>
-          <Text style={styles.title}>{selectedTable ? `Table ${selectedTable.name}` : "Waiter App"}</Text>
-          <Text style={styles.muted}>{selectedTable ? "Add new items or review the table check." : "Pick a table to start taking an order."}</Text>
-        </View>
-        <View style={styles.headerActions}>
-          <View style={[styles.statusPill, styles[`status_${connection}`]]}>
-            {connection === "checking" ? <ActivityIndicator size="small" /> : <View style={[styles.dot, styles[connection]]} />}
-            <Text style={styles.statusText}>{connection === "online" ? "Online" : connection === "offline" ? "Offline" : "Checking"}</Text>
-          </View>
-          <Pressable style={styles.ghostButton} onPress={() => setSetupOpen((value) => !value)}>
-            <Text style={styles.ghostButtonText}>{setupOpen ? "Hide Setup" : "Setup"}</Text>
-          </Pressable>
-        </View>
-      </View>
+      <StatusBar barStyle="dark-content" backgroundColor={palette.wash} />
+      <KeyboardAvoidingView style={styles.keyboardShell} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+        <AppHeader
+          connection={connection}
+          title={selectedTable ? `Table ${selectedTable.name}` : "Waiter"}
+          subtitle={selectedTable ? "Add dishes or review sent items" : "Pick a table to start"}
+          onSetupPress={() => {
+            setHubUrlDraft(hubUrl);
+            setDeviceTokenDraft(deviceToken);
+            setSetupOpen(true);
+          }}
+        />
 
-      <ScrollView style={styles.screen} contentContainerStyle={styles.screenContent} keyboardShouldPersistTaps="handled">
-        <View style={styles.banner}>
-          <Text style={styles.bannerText}>{message}</Text>
-          {savingDraft ? <Text style={styles.bannerMeta}>Saving draft...</Text> : null}
-        </View>
-
-        {setupOpen || connection === "offline" ? (
-          <View style={styles.setupCard}>
-            <View style={styles.cardHeader}>
-              <View>
-                <Text style={styles.sectionTitle}>Connect This Phone</Text>
-                <Text style={styles.muted}>Scan the QR from the hub or enter the hub address manually.</Text>
+        {shouldShowOnboarding ? (
+          <OnboardingScreen
+            connection={connection}
+            formRevision={formRevision}
+            hubUrl={hubUrlDraft}
+            deviceToken={deviceTokenDraft}
+            pairingCode={pairingCode}
+            pairingPayload={pairingPayload}
+            hasSavedToken={Boolean(deviceToken)}
+            loading={loading}
+            message={message}
+            onHubUrlChange={setHubUrlDraft}
+            onDeviceTokenChange={setDeviceTokenDraft}
+            onPairingCodeChange={(value) => setPairingCode(value.replace(/\D/g, "").slice(0, 6))}
+            onPairingPayloadChange={setPairingPayload}
+            onRetry={() => void refresh()}
+            onSaveConnection={() => void saveHubConnection()}
+            onScan={() => void openScanner()}
+            onPair={() => void pairDevice()}
+            onStart={() => setSetupOpen(false)}
+          />
+        ) : (
+          <>
+            <ScrollView style={styles.screen} contentContainerStyle={styles.screenContent} keyboardShouldPersistTaps="always">
+              <ConnectionBanner message={message} savingDraft={savingDraft} openDay={openDay} />
+              <ModeTabs mode={mode} onModeChange={setMode} />
+              <View style={[styles.workArea, isWide && styles.workAreaWide]}>
+                {(mode === "tables" || isWide) && (
+                  <TablePicker
+                    activeTables={activeTables}
+                    selectedTableId={selectedTableId}
+                    openDay={openDay}
+                    loading={loading}
+                    tileWidth={tableTileWidth}
+                    onSelectTable={(tableId) => void selectTable(tableId)}
+                  />
+                )}
+                {(mode === "menu" || isWide) && (
+                  <MenuScreen
+                    selectedTableName={selectedTable?.name ?? null}
+                    visibleMenu={visibleMenu}
+                    draftTotal={draftTotal}
+                    searchKey={selectedTableId ?? "no-table"}
+                    onSearchChange={setMenuSearch}
+                    onAddItem={addItem}
+                  />
+                )}
+                {(mode === "ticket" || isWide) && (
+                  <TicketScreen
+                    selectedTableName={selectedTable?.name ?? null}
+                    deviceName={deviceName}
+                    pax={pax}
+                    items={items}
+                    sentItems={sentItems}
+                    menuItems={bootstrap?.menuItems ?? []}
+                    tables={activeTables}
+                    selectedTableId={selectedTableId}
+                    draftTotal={draftTotal}
+                    tableTotal={tableTotal}
+                    connection={connection}
+                    sending={sending}
+                    canShift={deviceRole === "captain"}
+                    onPaxChange={(value) => {
+                      const clean = value.replace(/\D/g, "").slice(0, 3);
+                      setPax(clean);
+                      void persistDraft(items, clean);
+                    }}
+                    onChangeQty={changeQty}
+                    onShiftTable={(tableId) => void shiftTable(tableId)}
+                    onShiftItem={(orderItemId, quantity, toTableId) => void shiftItem(orderItemId, quantity, toTableId)}
+                    onSubmit={() => void submitOrder()}
+                  />
+                )}
               </View>
-              <Pressable style={styles.secondaryButton} onPress={() => void refresh()}>
-                <Text style={styles.secondaryButtonText}>Retry</Text>
-              </Pressable>
-            </View>
-            <LabeledInput label="Hub address" value={hubUrl} onChangeText={setHubUrlState} autoCapitalize="none" />
-            <View style={styles.secretRow}>
-              <View style={styles.secretInput}>
-                <LabeledInput
-                  label="Device password"
-                  value={deviceToken}
-                  onChangeText={setDeviceTokenState}
-                  autoCapitalize="none"
-                  secureTextEntry={!showToken}
-                />
-              </View>
-              <Pressable style={styles.secondaryButton} onPress={() => setShowToken((value) => !value)}>
-                <Text style={styles.secondaryButtonText}>{showToken ? "Hide" : "Show"}</Text>
-              </Pressable>
-            </View>
-            <View style={styles.actionRow}>
-              <Pressable style={styles.primaryButton} onPress={saveHub}>
-                <Text style={styles.primaryButtonText}>Save Connection</Text>
-              </Pressable>
-              <Pressable style={styles.secondaryButton} onPress={() => void openScanner()}>
-                <Text style={styles.secondaryButtonText}>Scan QR</Text>
-              </Pressable>
-            </View>
-            <LabeledInput label="Six digit pairing code" value={pairingCode} onChangeText={setPairingCode} keyboardType="number-pad" />
-            <TextInput
-              value={pairingPayload}
-              onChangeText={setPairingPayload}
-              style={styles.payloadInput}
-              placeholder="Paste QR payload if scanning is not available"
-              placeholderTextColor="#81786b"
-              autoCapitalize="none"
-              multiline
-            />
-            <Pressable style={styles.primaryButton} onPress={() => void pairDevice()}>
-              <Text style={styles.primaryButtonText}>Pair Device</Text>
-            </Pressable>
-          </View>
-        ) : null}
-
-        <View style={styles.modeTabs}>
-          {(["tables", "menu", "ticket"] as ViewMode[]).map((entry) => (
-            <Pressable key={entry} style={[styles.modeTab, mode === entry && styles.modeTabActive]} onPress={() => setMode(entry)}>
-              <Text style={[styles.modeTabText, mode === entry && styles.modeTabTextActive]}>
-                {entry === "tables" ? "Tables" : entry === "menu" ? "Menu" : "Ticket"}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
-
-        <View style={[styles.workArea, isWide && styles.workAreaWide]}>
-          {(mode === "tables" || isWide) && (
-            <View style={[styles.panel, isWide && styles.sidePanel]}>
-              <View style={styles.cardHeader}>
-                <View>
-                  <Text style={styles.sectionTitle}>Tables</Text>
-                  <Text style={styles.muted}>{openDay ? `${activeTables.length} tables available` : "Open POS day on the hub first"}</Text>
-                </View>
-                {loading ? <ActivityIndicator /> : null}
-              </View>
-              {activeTables.length === 0 ? (
-                <EmptyState title="No tables yet" text="Add rooms and tables on the hub setup screen." />
-              ) : (
-                <View style={styles.tableGrid}>
-                  {activeTables.map((table) => (
-                    <Pressable
-                      key={table.id}
-                      style={[
-                        styles.tableTile,
-                        { width: `${100 / tableColumns - 2}%` },
-                        table.status !== "free" && styles.busyTable,
-                        table.id === selectedTableId && styles.selectedTable
-                      ]}
-                      onPress={() => void selectTable(table.id)}
-                    >
-                      <Text style={styles.tableName}>{table.name}</Text>
-                      <Text style={[styles.tableStatus, table.status !== "free" && styles.tableStatusBusy]}>
-                        {table.status === "free" ? "Free" : "Occupied"}
-                      </Text>
-                    </Pressable>
-                  ))}
-                </View>
-              )}
-            </View>
-          )}
-
-          {(mode === "menu" || isWide) && (
-            <View style={[styles.panel, styles.menuPanel]}>
-              <View style={styles.cardHeader}>
-                <View>
-                  <Text style={styles.sectionTitle}>Add Dishes</Text>
-                  <Text style={styles.muted}>{selectedTable ? `New items for Table ${selectedTable.name}` : "Choose a table first"}</Text>
-                </View>
-                <Text style={styles.totalText}>Rs {(draftTotal / 100).toFixed(0)}</Text>
-              </View>
-              <TextInput
-                value={menuSearch}
-                onChangeText={setMenuSearch}
-                style={styles.input}
-                placeholder="Search dishes"
-                placeholderTextColor="#81786b"
+            </ScrollView>
+            {hasNewItems && mode !== "ticket" ? (
+              <DraftBar
+                count={items.reduce((total, item) => total + item.quantity, 0)}
+                total={draftTotal}
+                onReview={() => setMode("ticket")}
               />
-              {!selectedTable ? (
-                <EmptyState title="No table selected" text="Tap a table, then add dishes here." />
-              ) : visibleMenu.length === 0 ? (
-                <EmptyState title="No dishes found" text="Try another search or add dishes on the hub." />
-              ) : (
-                <View style={styles.menuList}>
-                  {visibleMenu.map((menuItem) => (
-                    <Pressable key={menuItem.id} style={styles.menuItem} onPress={() => addItem(menuItem.id)}>
-                      <View style={styles.menuText}>
-                        <Text style={styles.menuName}>{menuItem.name}</Text>
-                        <Text style={styles.muted}>{menuItem.production_unit_name ?? "No kitchen assigned"}</Text>
-                      </View>
-                      <View style={styles.menuPriceBlock}>
-                        <Text style={styles.price}>Rs {(menuItem.price_paise / 100).toFixed(0)}</Text>
-                        <Text style={styles.addText}>Add</Text>
-                      </View>
-                    </Pressable>
-                  ))}
-                </View>
-              )}
-            </View>
-          )}
-
-          {(mode === "ticket" || isWide) && (
-            <View style={[styles.panel, isWide && styles.sidePanel]}>
-              <View style={styles.cardHeader}>
-                <View>
-                  <Text style={styles.sectionTitle}>Table Check</Text>
-                  <Text style={styles.muted}>{selectedTable ? `Table ${selectedTable.name}` : "No table selected"}</Text>
-                </View>
-                <Text style={styles.totalText}>Rs {(tableTotal / 100).toFixed(0)}</Text>
-              </View>
-
-              <View style={styles.formRow}>
-                <LabeledInput label="Waiter" value={captainId} onChangeText={setCaptainId} />
-                <View style={styles.paxBox}>
-                  <LabeledInput label="Pax" value={pax} onChangeText={setPax} keyboardType="number-pad" />
-                </View>
-              </View>
-
-              <Text style={styles.subhead}>New Items</Text>
-              {items.length === 0 ? (
-                <EmptyState title="No new dishes" text="Add dishes from the menu. Sent items stay below for reference." compact />
-              ) : (
-                <View style={styles.ticketList}>
-                  {items.map((item, index) => {
-                    const menuItem = bootstrap?.menuItems.find((entry) => entry.id === item.menuItemId);
-                    return (
-                      <View key={`${item.menuItemId}-${index}`} style={styles.ticketLine}>
-                        <View style={styles.ticketText}>
-                          <Text style={styles.ticketName}>{menuItem?.name ?? item.menuItemId}</Text>
-                          <Text style={styles.muted}>Rs {(((menuItem?.price_paise ?? 0) * item.quantity) / 100).toFixed(0)}</Text>
-                        </View>
-                        <View style={styles.qtyControls}>
-                          <Pressable style={styles.qtyButton} onPress={() => changeQty(index, -1)}>
-                            <Text style={styles.qtyText}>-</Text>
-                          </Pressable>
-                          <Text style={styles.qtyValue}>{item.quantity}</Text>
-                          <Pressable style={styles.qtyButton} onPress={() => changeQty(index, 1)}>
-                            <Text style={styles.qtyText}>+</Text>
-                          </Pressable>
-                        </View>
-                      </View>
-                    );
-                  })}
-                </View>
-              )}
-
-              <Text style={styles.subhead}>Already Sent</Text>
-              {sentItems.length === 0 ? (
-                <Text style={styles.smallMuted}>Nothing has been sent for this table yet.</Text>
-              ) : (
-                <View style={styles.sentList}>
-                  {sentItems.map((item) => (
-                    <View key={item.menu_item_id} style={styles.sentLine}>
-                      <Text style={styles.sentName}>{item.quantity} x {item.name_snapshot}</Text>
-                      <Text style={styles.muted}>Rs {((item.unit_price_paise * item.quantity) / 100).toFixed(0)}</Text>
-                    </View>
-                  ))}
-                </View>
-              )}
-
-              <View style={styles.totalStrip}>
-                <Text style={styles.totalLabel}>New Rs {(draftTotal / 100).toFixed(0)}</Text>
-                <Text style={styles.totalLabel}>Table Rs {(tableTotal / 100).toFixed(0)}</Text>
-              </View>
-              <Pressable style={[styles.primaryButton, styles.sendButton, (!selectedTable || items.length === 0) && styles.buttonDisabled]} onPress={() => void submitOrder()}>
-                <Text style={styles.primaryButtonText}>{connection === "online" ? "Send New Items" : "Save Draft"}</Text>
-              </Pressable>
-            </View>
-          )}
-        </View>
-      </ScrollView>
+            ) : null}
+          </>
+        )}
+      </KeyboardAvoidingView>
 
       <Modal visible={scannerOpen} animationType="slide" onRequestClose={() => setScannerOpen(false)}>
         <SafeAreaView style={styles.scannerShell}>
           <View style={styles.scannerHeader}>
-            <View>
+            <View style={styles.flexText}>
               <Text style={styles.title}>Scan Pairing QR</Text>
               <Text style={styles.muted}>Use the QR shown on the hub PC.</Text>
             </View>
@@ -561,14 +559,573 @@ export default function App() {
   );
 }
 
-interface PairingPayload {
-  kind: "gaurav-pos-pairing";
-  version: number;
+function AppHeader({
+  connection,
+  title,
+  subtitle,
+  onSetupPress
+}: {
+  connection: ConnectionState;
+  title: string;
+  subtitle: string;
+  onSetupPress: () => void;
+}) {
+  return (
+    <View style={styles.header}>
+      <View style={styles.headerText}>
+        <Text style={styles.kicker}>Gaurav POS</Text>
+        <Text style={styles.title} numberOfLines={1}>{title}</Text>
+        <Text style={styles.muted} numberOfLines={1}>{subtitle}</Text>
+      </View>
+      <View style={styles.headerActions}>
+        <StatusPill connection={connection} />
+        <Pressable style={styles.iconButton} onPress={onSetupPress} hitSlop={8}>
+          <Text style={styles.iconButtonText}>Setup</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+function StatusPill({ connection }: { connection: ConnectionState }) {
+  return (
+    <View style={[styles.statusPill, styles[`status_${connection}`]]}>
+      {connection === "checking" ? <ActivityIndicator size="small" /> : <View style={[styles.dot, styles[connection]]} />}
+      <Text style={styles.statusText}>{connection === "online" ? "Online" : connection === "offline" ? "Offline" : "Checking"}</Text>
+    </View>
+  );
+}
+
+function OnboardingScreen({
+  connection,
+  formRevision,
+  hubUrl,
+  deviceToken,
+  pairingCode,
+  pairingPayload,
+  hasSavedToken,
+  loading,
+  message,
+  onHubUrlChange,
+  onDeviceTokenChange,
+  onPairingCodeChange,
+  onPairingPayloadChange,
+  onRetry,
+  onSaveConnection,
+  onScan,
+  onPair,
+  onStart
+}: {
+  connection: ConnectionState;
+  formRevision: number;
   hubUrl: string;
-  code: string;
-  deviceName?: string;
-  role?: string;
-  expiresAt?: string;
+  deviceToken: string;
+  pairingCode: string;
+  pairingPayload: string;
+  hasSavedToken: boolean;
+  loading: boolean;
+  message: string;
+  onHubUrlChange: (value: string) => void;
+  onDeviceTokenChange: (value: string) => void;
+  onPairingCodeChange: (value: string) => void;
+  onPairingPayloadChange: (value: string) => void;
+  onRetry: () => void;
+  onSaveConnection: () => void;
+  onScan: () => void;
+  onPair: () => void;
+  onStart: () => void;
+}) {
+  return (
+    <ScrollView style={styles.screen} contentContainerStyle={styles.onboardingContent} keyboardShouldPersistTaps="always">
+      <View style={styles.heroPanel}>
+        <Text style={styles.kicker}>Phone Setup</Text>
+        <Text style={styles.heroTitle}>Connect this phone to the hub PC.</Text>
+        <Text style={styles.heroCopy}>Keep this phone on the same Wi-Fi as the hub. Scanning the QR is the easiest way.</Text>
+      </View>
+
+      <View style={styles.stepCard}>
+        <StepNumber value="1" label="Find Hub" />
+        <Text style={styles.muted}>{message}</Text>
+        <UncontrolledInput
+          inputKey={`hub-${formRevision}`}
+          label="Hub address"
+          defaultValue={hubUrl}
+          onChangeText={onHubUrlChange}
+          autoCapitalize="none"
+          autoCorrect={false}
+          keyboardType="url"
+          returnKeyType="done"
+          placeholder="http://192.168.1.202:3737"
+        />
+        <View style={styles.buttonStack}>
+          <Pressable style={styles.primaryButton} onPress={onSaveConnection} disabled={loading}>
+            <Text style={styles.primaryButtonText}>{loading ? "Checking..." : "Save And Check Hub"}</Text>
+          </Pressable>
+          <Pressable style={styles.secondaryButton} onPress={onRetry} disabled={loading}>
+            <Text style={styles.secondaryButtonText}>Retry</Text>
+          </Pressable>
+        </View>
+      </View>
+
+      <View style={styles.stepCard}>
+        <StepNumber value="2" label="Pair This Phone" />
+        <Pressable style={styles.scanButton} onPress={onScan}>
+          <Text style={styles.scanButtonText}>Scan Hub QR</Text>
+          <Text style={styles.scanButtonMeta}>Recommended</Text>
+        </Pressable>
+        <UncontrolledInput
+          inputKey={`pair-code-${formRevision}`}
+          label="Pairing code"
+          defaultValue={pairingCode}
+          onChangeText={onPairingCodeChange}
+          keyboardType="number-pad"
+          returnKeyType="done"
+          placeholder="Six digits"
+        />
+        <UncontrolledInput
+          inputKey={`payload-${formRevision}`}
+          label="Paste QR text"
+          defaultValue={pairingPayload}
+          onChangeText={onPairingPayloadChange}
+          autoCapitalize="none"
+          autoCorrect={false}
+          multiline
+          placeholder="Use this only if scanning is not available"
+        />
+        <Pressable style={styles.primaryButton} onPress={onPair}>
+          <Text style={styles.primaryButtonText}>Pair Phone</Text>
+        </Pressable>
+      </View>
+
+      <View style={styles.stepCard}>
+        <StepNumber value="3" label="Ready For Orders" />
+        <Text style={styles.muted}>
+          {connection === "online" && hasSavedToken
+            ? "This phone is connected. Start taking table orders."
+            : "Once the phone is paired and the hub is online, orders can be sent to the kitchen."}
+        </Text>
+        <UncontrolledInput
+          inputKey={`token-${formRevision}`}
+          label="Saved device password"
+          defaultValue={deviceToken}
+          onChangeText={onDeviceTokenChange}
+          autoCapitalize="none"
+          autoCorrect={false}
+          secureTextEntry
+          placeholder="Filled by pairing"
+        />
+        <Pressable
+          style={[styles.primaryButton, (connection !== "online" || !hasSavedToken) && styles.buttonDisabled]}
+          onPress={onStart}
+          disabled={connection !== "online" || !hasSavedToken}
+        >
+          <Text style={styles.primaryButtonText}>Start Taking Orders</Text>
+        </Pressable>
+      </View>
+    </ScrollView>
+  );
+}
+
+function StepNumber({ value, label }: { value: string; label: string }) {
+  return (
+    <View style={styles.stepHeader}>
+      <View style={styles.stepCircle}>
+        <Text style={styles.stepCircleText}>{value}</Text>
+      </View>
+      <Text style={styles.sectionTitle}>{label}</Text>
+    </View>
+  );
+}
+
+function ConnectionBanner({ message, savingDraft, openDay }: { message: string; savingDraft: boolean; openDay: boolean }) {
+  return (
+    <View style={[styles.banner, !openDay && styles.bannerWarning]}>
+      <Text style={styles.bannerText}>{message}</Text>
+      {savingDraft ? <Text style={styles.bannerMeta}>Saving draft...</Text> : null}
+    </View>
+  );
+}
+
+function ModeTabs({ mode, onModeChange }: { mode: ViewMode; onModeChange: (mode: ViewMode) => void }) {
+  return (
+    <View style={styles.modeTabs}>
+      {(["tables", "menu", "ticket"] as ViewMode[]).map((entry) => (
+        <Pressable key={entry} style={[styles.modeTab, mode === entry && styles.modeTabActive]} onPress={() => onModeChange(entry)}>
+          <Text style={[styles.modeTabText, mode === entry && styles.modeTabTextActive]}>
+            {entry === "tables" ? "Tables" : entry === "menu" ? "Menu" : "Review"}
+          </Text>
+        </Pressable>
+      ))}
+    </View>
+  );
+}
+
+function TablePicker({
+  activeTables,
+  selectedTableId,
+  openDay,
+  loading,
+  tileWidth,
+  onSelectTable
+}: {
+  activeTables: HubBootstrap["tables"];
+  selectedTableId: string | null;
+  openDay: boolean;
+  loading: boolean;
+  tileWidth: number;
+  onSelectTable: (tableId: string) => void;
+}) {
+  return (
+    <View style={styles.panel}>
+      <View style={styles.cardHeader}>
+        <View style={styles.flexText}>
+          <Text style={styles.sectionTitle}>Tables</Text>
+          <Text style={styles.muted}>{openDay ? `${activeTables.length} tables available` : "Open POS day on the hub first"}</Text>
+        </View>
+        {loading ? <ActivityIndicator /> : null}
+      </View>
+      {activeTables.length === 0 ? (
+        <EmptyState title="No tables yet" text="Add floors and tables on the hub setup screen." />
+      ) : (
+        <View style={styles.tableGrid}>
+          {activeTables.map((table) => (
+            <TableTile key={table.id} table={table} selected={table.id === selectedTableId} tileWidth={tileWidth} onSelectTable={onSelectTable} />
+          ))}
+        </View>
+      )}
+    </View>
+  );
+}
+
+function TableTile({
+  table,
+  selected,
+  tileWidth,
+  onSelectTable
+}: {
+  table: HubBootstrap["tables"][number];
+  selected: boolean;
+  tileWidth: number;
+  onSelectTable: (tableId: string) => void;
+}) {
+  const state = getTableDisplayState(table);
+  return (
+    <Pressable
+      style={[
+        styles.tableTile,
+        { width: tileWidth },
+        state === "running" && styles.busyTable,
+        state === "bill_printed" && styles.billedTable,
+        selected && styles.selectedTable
+      ]}
+      onPress={() => onSelectTable(table.id)}
+    >
+      <Text style={styles.tableName} numberOfLines={1}>{table.name}</Text>
+      <Text style={[styles.tableStatus, state !== "free" && styles.tableStatusBusy, state === "bill_printed" && styles.tableStatusBilled]}>
+        {tableDisplayLabel(state)}
+      </Text>
+    </Pressable>
+  );
+}
+
+function MenuScreen({
+  selectedTableName,
+  visibleMenu,
+  draftTotal,
+  searchKey,
+  onSearchChange,
+  onAddItem
+}: {
+  selectedTableName: string | null;
+  visibleMenu: HubBootstrap["menuItems"];
+  draftTotal: number;
+  searchKey: string;
+  onSearchChange: (value: string) => void;
+  onAddItem: (menuItemId: string) => void;
+}) {
+  return (
+    <View style={[styles.panel, styles.menuPanel]}>
+      <View style={styles.cardHeader}>
+        <View style={styles.flexText}>
+          <Text style={styles.sectionTitle}>Menu</Text>
+          <Text style={styles.muted}>{selectedTableName ? `Adding for Table ${selectedTableName}` : "Choose a table first"}</Text>
+        </View>
+        <Text style={styles.totalText}>Rs {formatRupees(draftTotal)}</Text>
+      </View>
+      <UncontrolledInput
+        inputKey={`search-${searchKey}`}
+        label="Search dishes"
+        defaultValue=""
+        onChangeText={onSearchChange}
+        autoCorrect={false}
+        returnKeyType="search"
+        placeholder="Type dish name"
+      />
+      {!selectedTableName ? (
+        <EmptyState title="No table selected" text="Tap a table, then add dishes here." />
+      ) : visibleMenu.length === 0 ? (
+        <EmptyState title="No dishes found" text="Try another search or add dishes on the hub." />
+      ) : (
+        <View style={styles.menuList}>
+          {visibleMenu.map((menuItem) => (
+            <Pressable key={menuItem.id} style={styles.menuItem} onPress={() => onAddItem(menuItem.id)}>
+              <View style={styles.menuText}>
+                <Text style={styles.menuName} numberOfLines={2}>{menuItem.name}</Text>
+                <Text style={styles.muted} numberOfLines={1}>{menuItem.production_unit_name ?? "No kitchen assigned"}</Text>
+              </View>
+              <View style={styles.menuPriceBlock}>
+                <Text style={styles.price}>Rs {formatRupees(menuItem.price_paise)}</Text>
+                <Text style={styles.addText}>Add</Text>
+              </View>
+            </Pressable>
+          ))}
+        </View>
+      )}
+    </View>
+  );
+}
+
+function TicketScreen({
+  selectedTableName,
+  selectedTableId,
+  deviceName,
+  pax,
+  items,
+  sentItems,
+  menuItems,
+  tables,
+  draftTotal,
+  tableTotal,
+  connection,
+  sending,
+  canShift,
+  onPaxChange,
+  onChangeQty,
+  onShiftTable,
+  onShiftItem,
+  onSubmit
+}: {
+  selectedTableName: string | null;
+  selectedTableId: string | null;
+  deviceName: string;
+  pax: string;
+  items: OrderItemInput[];
+  sentItems: HubOrder["items"];
+  menuItems: HubBootstrap["menuItems"];
+  tables: HubBootstrap["tables"];
+  draftTotal: number;
+  tableTotal: number;
+  connection: ConnectionState;
+  sending: boolean;
+  canShift: boolean;
+  onPaxChange: (value: string) => void;
+  onChangeQty: (index: number, delta: number) => void;
+  onShiftTable: (tableId: string) => void;
+  onShiftItem: (orderItemId: string, quantity: number, toTableId: string) => void;
+  onSubmit: () => void;
+}) {
+  const [itemShiftTargetId, setItemShiftTargetId] = useState("");
+  const [itemShiftQty, setItemShiftQty] = useState<Record<string, string>>({});
+  const canSubmit = Boolean(selectedTableName && items.length > 0 && !sending);
+  const shiftTargets = tables.filter((table) => table.id !== selectedTableId && table.status === "free");
+  return (
+    <View style={styles.panel}>
+      <View style={styles.cardHeader}>
+        <View style={styles.flexText}>
+          <Text style={styles.sectionTitle}>Review</Text>
+          <Text style={styles.muted}>{selectedTableName ? `Table ${selectedTableName}` : "No table selected"}</Text>
+        </View>
+        <Text style={styles.totalText}>Rs {formatRupees(tableTotal)}</Text>
+      </View>
+
+      <View style={styles.formStack}>
+        <Text style={styles.smallMuted}>Device: {deviceName || "paired waiter phone"}</Text>
+        <UncontrolledInput
+          inputKey={`pax-${selectedTableName ?? "none"}`}
+          label="Pax"
+          defaultValue={pax}
+          onChangeText={onPaxChange}
+          keyboardType="number-pad"
+          returnKeyType="done"
+        />
+      </View>
+
+      <Text style={styles.subhead}>New Items</Text>
+      {items.length === 0 ? (
+        <EmptyState title="No new dishes" text="Add dishes from the menu. Sent items stay below." compact />
+      ) : (
+        <View style={styles.ticketList}>
+          {items.map((item, index) => {
+            const menuItem = menuItems.find((entry) => entry.id === item.menuItemId);
+            return (
+              <View key={`${item.menuItemId}-${index}`} style={styles.ticketLine}>
+                <View style={styles.ticketText}>
+                  <Text style={styles.ticketName} numberOfLines={2}>{menuItem?.name ?? item.menuItemId}</Text>
+                  <Text style={styles.muted}>Rs {formatRupees((menuItem?.price_paise ?? 0) * item.quantity)}</Text>
+                </View>
+                <View style={styles.qtyControls}>
+                  <Pressable style={styles.qtyButton} onPress={() => onChangeQty(index, -1)}>
+                    <Text style={styles.qtyText}>-</Text>
+                  </Pressable>
+                  <Text style={styles.qtyValue}>{item.quantity}</Text>
+                  <Pressable style={styles.qtyButton} onPress={() => onChangeQty(index, 1)}>
+                    <Text style={styles.qtyText}>+</Text>
+                  </Pressable>
+                </View>
+              </View>
+            );
+          })}
+        </View>
+      )}
+
+      <Text style={styles.subhead}>Already Sent</Text>
+      {sentItems.length === 0 ? (
+        <Text style={styles.smallMuted}>Nothing has been sent for this table yet.</Text>
+      ) : (
+        <View style={styles.sentList}>
+          {sentItems.map((item) => (
+            <View key={item.id} style={styles.sentLine}>
+              <Text style={styles.sentName} numberOfLines={2}>{item.quantity} x {item.name_snapshot}</Text>
+              <Text style={styles.muted}>Rs {formatRupees(item.unit_price_paise * item.quantity)}</Text>
+            </View>
+          ))}
+        </View>
+      )}
+
+      {selectedTableId && sentItems.length > 0 && canShift ? (
+        <>
+          <Text style={styles.subhead}>Shift Table Or Items</Text>
+          {shiftTargets.length === 0 ? (
+            <Text style={styles.smallMuted}>No free table is available for shifting.</Text>
+          ) : (
+            <>
+              <Text style={styles.smallMuted}>Full table</Text>
+              <View style={styles.shiftGrid}>
+                {shiftTargets.map((table) => (
+                  <Pressable key={table.id} style={styles.shiftButton} onPress={() => onShiftTable(table.id)}>
+                    <Text style={styles.shiftButtonText}>{table.name}</Text>
+                  </Pressable>
+                ))}
+              </View>
+              <Text style={styles.smallMuted}>Selected item</Text>
+              <View style={styles.fieldBlock}>
+                <Text style={styles.inputLabel}>Move item to</Text>
+                <View style={styles.shiftGrid}>
+                  {shiftTargets.map((table) => (
+                    <Pressable key={table.id} style={[styles.shiftButton, itemShiftTargetId === table.id && styles.shiftButtonActive]} onPress={() => setItemShiftTargetId(table.id)}>
+                      <Text style={styles.shiftButtonText}>{table.name}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+              </View>
+              {sentItems.map((item) => {
+                const quantityText = itemShiftQty[item.id] ?? "1";
+                const quantity = Math.min(item.quantity, Math.max(1, Number(quantityText.replace(/\D/g, "") || 1)));
+                return (
+                  <View key={`shift-${item.id}`} style={styles.itemShiftRow}>
+                    <Text style={styles.sentName} numberOfLines={2}>{item.name_snapshot}</Text>
+                    <TextInput
+                      style={styles.shiftQtyInput}
+                      value={quantityText}
+                      onChangeText={(value) => setItemShiftQty((current) => ({ ...current, [item.id]: value.replace(/\D/g, "").slice(0, 3) }))}
+                      keyboardType="number-pad"
+                    />
+                    <Pressable
+                      style={[styles.shiftButton, (!itemShiftTargetId || sending) && styles.buttonDisabled]}
+                      disabled={!itemShiftTargetId || sending}
+                      onPress={() => onShiftItem(item.id, quantity, itemShiftTargetId)}
+                    >
+                      <Text style={styles.shiftButtonText}>Move</Text>
+                    </Pressable>
+                  </View>
+                );
+              })}
+            </>
+          )}
+        </>
+      ) : selectedTableId && sentItems.length > 0 ? (
+        <Text style={styles.smallMuted}>Only captain devices can shift tables or items.</Text>
+      ) : null}
+
+      <View style={styles.totalStrip}>
+        <Text style={styles.totalLabel}>New Rs {formatRupees(draftTotal)}</Text>
+        <Text style={styles.totalLabel}>Table Rs {formatRupees(tableTotal)}</Text>
+      </View>
+      <Pressable style={[styles.primaryButton, styles.sendButton, !canSubmit && styles.buttonDisabled]} onPress={onSubmit} disabled={!canSubmit}>
+        <Text style={styles.primaryButtonText}>{sending ? "Sending..." : connection === "online" ? "Send New Items" : "Save Draft"}</Text>
+      </Pressable>
+    </View>
+  );
+}
+
+function DraftBar({ count, total, onReview }: { count: number; total: number; onReview: () => void }) {
+  return (
+    <View style={styles.draftBar}>
+      <View>
+        <Text style={styles.draftBarTitle}>{count} new item{count === 1 ? "" : "s"}</Text>
+        <Text style={styles.draftBarMeta}>Rs {formatRupees(total)} ready to review</Text>
+      </View>
+      <Pressable style={styles.draftBarButton} onPress={onReview}>
+        <Text style={styles.draftBarButtonText}>Review</Text>
+      </Pressable>
+    </View>
+  );
+}
+
+function UncontrolledInput({
+  inputKey,
+  label,
+  defaultValue,
+  onChangeText,
+  secureTextEntry,
+  autoCapitalize,
+  autoCorrect,
+  keyboardType,
+  returnKeyType,
+  placeholder,
+  multiline
+}: {
+  inputKey: string;
+  label: string;
+  defaultValue: string;
+  onChangeText: (value: string) => void;
+  secureTextEntry?: boolean;
+  autoCapitalize?: "none" | "sentences" | "words" | "characters";
+  autoCorrect?: boolean;
+  keyboardType?: "default" | "number-pad" | "url";
+  returnKeyType?: "done" | "next" | "search";
+  placeholder?: string;
+  multiline?: boolean;
+}) {
+  return (
+    <View style={styles.inputGroup}>
+      <Text style={styles.inputLabel}>{label}</Text>
+      <TextInput
+        key={inputKey}
+        defaultValue={defaultValue}
+        onChangeText={onChangeText}
+        style={[styles.input, multiline && styles.multilineInput]}
+        secureTextEntry={secureTextEntry}
+        autoCapitalize={autoCapitalize}
+        autoCorrect={autoCorrect}
+        keyboardType={keyboardType}
+        returnKeyType={returnKeyType}
+        placeholder={placeholder}
+        placeholderTextColor="#81786b"
+        multiline={multiline}
+        textAlignVertical={multiline ? "top" : "center"}
+      />
+    </View>
+  );
+}
+
+function EmptyState({ title, text, compact = false }: { title: string; text: string; compact?: boolean }) {
+  return (
+    <View style={[styles.empty, compact && styles.emptyCompact]}>
+      <Text style={styles.emptyTitle}>{title}</Text>
+      <Text style={styles.muted}>{text}</Text>
+    </View>
+  );
 }
 
 function parsePairingPayload(value: string): PairingPayload | null {
@@ -591,156 +1148,153 @@ function parsePairingPayload(value: string): PairingPayload | null {
   }
 }
 
-function LabeledInput({
-  label,
-  value,
-  onChangeText,
-  secureTextEntry,
-  autoCapitalize,
-  keyboardType
-}: {
-  label: string;
-  value: string;
-  onChangeText: (value: string) => void;
-  secureTextEntry?: boolean;
-  autoCapitalize?: "none" | "sentences" | "words" | "characters";
-  keyboardType?: "default" | "number-pad";
-}) {
-  return (
-    <View style={styles.inputGroup}>
-      <Text style={styles.inputLabel}>{label}</Text>
-      <TextInput
-        value={value}
-        onChangeText={onChangeText}
-        style={styles.input}
-        secureTextEntry={secureTextEntry}
-        autoCapitalize={autoCapitalize}
-        keyboardType={keyboardType}
-        placeholderTextColor="#81786b"
-      />
-    </View>
-  );
+function normaliseHubUrl(value: string) {
+  const trimmed = value.trim().replace(/\/$/, "");
+  if (!trimmed) return "http://192.168.1.10:3737";
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  return `http://${trimmed}`;
 }
 
-function EmptyState({ title, text, compact = false }: { title: string; text: string; compact?: boolean }) {
-  return (
-    <View style={[styles.empty, compact && styles.emptyCompact]}>
-      <Text style={styles.emptyTitle}>{title}</Text>
-      <Text style={styles.muted}>{text}</Text>
-    </View>
-  );
+function normalisePax(value: string) {
+  const parsed = Number(value || 1);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
+}
+
+function formatRupees(paise: number) {
+  return (paise / 100).toFixed(0);
 }
 
 const palette = {
-  ink: "#1c1915",
+  ink: "#191815",
   muted: "#6f675d",
-  paper: "#fffdf7",
-  wash: "#f3eee3",
-  line: "#d7cdbc",
-  green: "#16645d",
-  greenSoft: "#e8f4ef",
-  amber: "#9d5d20",
-  amberSoft: "#fff0dc",
-  red: "#a6422b"
+  paper: "#fffdf8",
+  wash: "#f2ecdf",
+  line: "#d8cebd",
+  green: "#14665d",
+  greenSoft: "#e5f3ed",
+  amber: "#986022",
+  amberSoft: "#fff0d6",
+  red: "#a83a2f",
+  redSoft: "#fff0ed"
 };
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: palette.wash },
+  keyboardShell: { flex: 1 },
+  loadingShell: { flex: 1, alignItems: "center", justifyContent: "center", gap: 12 },
+  loadingText: { color: palette.ink, fontWeight: "800" },
   screen: { flex: 1 },
-  screenContent: { padding: 12, gap: 12, paddingBottom: 28 },
+  screenContent: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 118, gap: 12 },
+  onboardingContent: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 34, gap: 12 },
   header: {
     paddingHorizontal: 16,
-    paddingVertical: 14,
+    paddingTop: Platform.OS === "android" ? 14 : 8,
+    paddingBottom: 12,
     backgroundColor: palette.paper,
     borderBottomWidth: 1,
     borderColor: palette.line,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    gap: 12
+    gap: 10
   },
   headerText: { flex: 1, minWidth: 0 },
-  headerActions: { alignItems: "flex-end", gap: 8 },
+  headerActions: { alignItems: "flex-end", gap: 6 },
+  flexText: { flex: 1, minWidth: 0 },
   kicker: { color: palette.green, fontWeight: "800", fontSize: 11, textTransform: "uppercase", letterSpacing: 0 },
-  title: { fontSize: 25, fontWeight: "900", color: palette.ink },
+  title: { fontSize: 23, fontWeight: "900", color: palette.ink },
+  heroTitle: { color: palette.ink, fontSize: 25, fontWeight: "900", lineHeight: 31 },
+  heroCopy: { color: palette.muted, fontSize: 14, lineHeight: 21 },
   muted: { color: palette.muted, fontSize: 12, lineHeight: 17 },
   smallMuted: { color: palette.muted, fontSize: 12, lineHeight: 18, paddingVertical: 4 },
+  heroPanel: {
+    borderRadius: 10,
+    backgroundColor: palette.paper,
+    borderWidth: 1,
+    borderColor: palette.line,
+    padding: 16,
+    gap: 7
+  },
+  stepCard: {
+    padding: 14,
+    gap: 12,
+    backgroundColor: palette.paper,
+    borderWidth: 1,
+    borderColor: palette.line,
+    borderRadius: 10
+  },
+  stepHeader: { flexDirection: "row", alignItems: "center", gap: 10 },
+  stepCircle: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: palette.ink,
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  stepCircleText: { color: "#fffdfa", fontWeight: "900" },
   banner: {
     borderWidth: 1,
     borderColor: palette.line,
     backgroundColor: "#fbf6eb",
-    borderRadius: 8,
+    borderRadius: 10,
     padding: 12,
     gap: 3
   },
-  bannerText: { color: palette.ink, fontWeight: "700", lineHeight: 20 },
+  bannerWarning: { borderColor: "#e4c17d", backgroundColor: palette.amberSoft },
+  bannerText: { color: palette.ink, fontWeight: "800", lineHeight: 20 },
   bannerMeta: { color: palette.green, fontSize: 12, fontWeight: "800" },
-  dot: { width: 12, height: 12, borderRadius: 6 },
+  dot: { width: 10, height: 10, borderRadius: 5 },
   online: { backgroundColor: palette.green },
   offline: { backgroundColor: palette.red },
   checking: { backgroundColor: palette.amber },
   statusPill: {
-    minHeight: 34,
+    minHeight: 30,
     borderRadius: 999,
     borderWidth: 1,
-    paddingHorizontal: 10,
+    paddingHorizontal: 9,
     flexDirection: "row",
     alignItems: "center",
-    gap: 7
+    gap: 6
   },
   status_online: { borderColor: "#a7cbc3", backgroundColor: palette.greenSoft },
-  status_offline: { borderColor: "#e4b1a6", backgroundColor: "#fff0ed" },
+  status_offline: { borderColor: "#e4b1a6", backgroundColor: palette.redSoft },
   status_checking: { borderColor: "#ead4a9", backgroundColor: palette.amberSoft },
-  statusText: { color: palette.ink, fontWeight: "800", fontSize: 12 },
-  ghostButton: {
-    minHeight: 34,
+  statusText: { color: palette.ink, fontWeight: "800", fontSize: 11 },
+  iconButton: {
+    minHeight: 32,
     borderRadius: 8,
     borderWidth: 1,
     borderColor: palette.line,
-    paddingHorizontal: 12,
+    paddingHorizontal: 10,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: palette.paper
   },
-  ghostButtonText: { color: palette.ink, fontWeight: "800", fontSize: 12 },
-  setupCard: {
-    padding: 12,
-    gap: 10,
-    backgroundColor: palette.paper,
-    borderWidth: 1,
-    borderColor: palette.line,
-    borderRadius: 8
-  },
-  cardHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 },
-  sectionTitle: { fontSize: 19, fontWeight: "900", color: palette.ink },
-  inputGroup: { flex: 1, gap: 5 },
+  iconButtonText: { color: palette.ink, fontWeight: "800", fontSize: 11 },
+  cardHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10 },
+  sectionTitle: { fontSize: 18, fontWeight: "900", color: palette.ink },
+  inputGroup: { gap: 5 },
   inputLabel: { color: palette.muted, fontSize: 11, fontWeight: "800", textTransform: "uppercase", letterSpacing: 0 },
   input: {
-    minHeight: 46,
+    minHeight: 48,
     borderWidth: 1,
     borderColor: "#cfc4b2",
-    borderRadius: 8,
-    paddingHorizontal: 11,
+    borderRadius: 9,
+    paddingHorizontal: 12,
     color: palette.ink,
     backgroundColor: "#fffaf1",
     fontWeight: "700"
   },
-  payloadInput: {
-    minHeight: 58,
-    borderWidth: 1,
-    borderColor: "#cfc4b2",
-    borderRadius: 8,
-    paddingHorizontal: 11,
-    paddingVertical: 9,
-    color: palette.ink,
-    backgroundColor: "#fffaf1"
+  multilineInput: {
+    minHeight: 76,
+    paddingTop: 11,
+    paddingBottom: 11
   },
-  secretRow: { flexDirection: "row", gap: 8, alignItems: "flex-end" },
-  secretInput: { flex: 1 },
-  actionRow: { flexDirection: "row", gap: 8, flexWrap: "wrap" },
+  buttonStack: { gap: 8 },
   primaryButton: {
-    minHeight: 46,
-    borderRadius: 8,
+    minHeight: 48,
+    borderRadius: 9,
     backgroundColor: palette.ink,
     alignItems: "center",
     justifyContent: "center",
@@ -748,8 +1302,8 @@ const styles = StyleSheet.create({
   },
   primaryButtonText: { color: "#fffdfa", fontWeight: "900" },
   secondaryButton: {
-    minHeight: 46,
-    borderRadius: 8,
+    minHeight: 48,
+    borderRadius: 9,
     borderWidth: 1,
     borderColor: palette.ink,
     alignItems: "center",
@@ -758,15 +1312,25 @@ const styles = StyleSheet.create({
     backgroundColor: palette.paper
   },
   secondaryButtonText: { color: palette.ink, fontWeight: "900" },
+  scanButton: {
+    minHeight: 62,
+    borderRadius: 10,
+    backgroundColor: palette.green,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 3
+  },
+  scanButtonText: { color: "#fffdfa", fontSize: 17, fontWeight: "900" },
+  scanButtonMeta: { color: "#d6f1e9", fontSize: 12, fontWeight: "800" },
   modeTabs: {
     flexDirection: "row",
     padding: 4,
-    borderRadius: 8,
+    borderRadius: 10,
     backgroundColor: "#e6ded0",
     borderWidth: 1,
     borderColor: palette.line
   },
-  modeTab: { flex: 1, minHeight: 42, alignItems: "center", justifyContent: "center", borderRadius: 7 },
+  modeTab: { flex: 1, minHeight: 42, alignItems: "center", justifyContent: "center", borderRadius: 8 },
   modeTabActive: { backgroundColor: palette.ink },
   modeTabText: { color: palette.ink, fontWeight: "900" },
   modeTabTextActive: { color: "#fffdfa" },
@@ -775,34 +1339,72 @@ const styles = StyleSheet.create({
   panel: {
     borderWidth: 1,
     borderColor: palette.line,
-    borderRadius: 8,
+    borderRadius: 10,
     backgroundColor: palette.paper,
-    padding: 12,
+    padding: 14,
     gap: 12
   },
-  sidePanel: { flex: 1 },
-  menuPanel: { flex: 1.35 },
-  tableGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  menuPanel: { flex: 1 },
+  tableGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
   tableTile: {
-    minHeight: 78,
-    padding: 11,
+    minHeight: 82,
+    padding: 12,
     borderWidth: 2,
     borderColor: "#a8cdbf",
-    borderRadius: 8,
+    borderRadius: 10,
     backgroundColor: "#f5fff9",
     justifyContent: "space-between"
   },
   busyTable: { borderColor: "#d08a4d", backgroundColor: palette.amberSoft },
+  billedTable: { borderColor: "#78a6dd", backgroundColor: "#eef6ff" },
   selectedTable: { borderColor: palette.green, backgroundColor: palette.greenSoft },
-  tableName: { fontSize: 20, fontWeight: "900", color: palette.ink },
+  tableName: { fontSize: 21, fontWeight: "900", color: palette.ink },
   tableStatus: { color: palette.green, fontWeight: "900", fontSize: 12 },
   tableStatusBusy: { color: palette.amber },
-  totalText: { color: palette.green, fontSize: 20, fontWeight: "900" },
+  tableStatusBilled: { color: "#2867b2" },
+  shiftGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  shiftButton: {
+    minHeight: 42,
+    minWidth: 76,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    backgroundColor: "#eef6ff",
+    borderWidth: 1,
+    borderColor: "#78a6dd",
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  shiftButtonActive: { backgroundColor: palette.greenSoft, borderColor: palette.green },
+  shiftButtonText: { color: "#1b4d84", fontWeight: "900" },
+  fieldBlock: { gap: 8 },
+  itemShiftRow: {
+    minHeight: 52,
+    borderWidth: 1,
+    borderColor: "#e5dccd",
+    backgroundColor: "#fffaf1",
+    borderRadius: 10,
+    padding: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8
+  },
+  shiftQtyInput: {
+    width: 54,
+    minHeight: 42,
+    borderWidth: 1,
+    borderColor: "#cfc4b2",
+    borderRadius: 9,
+    textAlign: "center",
+    color: palette.ink,
+    fontWeight: "900",
+    backgroundColor: palette.paper
+  },
+  totalText: { color: palette.green, fontSize: 19, fontWeight: "900" },
   menuList: { gap: 8 },
   menuItem: {
-    minHeight: 68,
+    minHeight: 72,
     padding: 12,
-    borderRadius: 8,
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: "#e5dccd",
     backgroundColor: "#fbf6eb",
@@ -812,18 +1414,17 @@ const styles = StyleSheet.create({
     gap: 10
   },
   menuText: { flex: 1, minWidth: 0 },
-  menuName: { fontSize: 16, fontWeight: "900", color: palette.ink },
+  menuName: { fontSize: 16, fontWeight: "900", color: palette.ink, lineHeight: 20 },
   menuPriceBlock: { alignItems: "flex-end", gap: 4 },
   price: { color: palette.green, fontWeight: "900" },
   addText: { color: palette.ink, fontSize: 12, fontWeight: "900" },
-  formRow: { flexDirection: "row", gap: 8 },
-  paxBox: { width: 88 },
+  formStack: { gap: 9 },
   subhead: { color: palette.ink, fontWeight: "900", fontSize: 13, textTransform: "uppercase", letterSpacing: 0 },
   ticketList: { gap: 8 },
   ticketLine: {
-    minHeight: 72,
+    minHeight: 74,
     padding: 10,
-    borderRadius: 8,
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: "#e5dccd",
     backgroundColor: "#fffaf1",
@@ -833,12 +1434,12 @@ const styles = StyleSheet.create({
     gap: 10
   },
   ticketText: { flex: 1, minWidth: 0 },
-  ticketName: { color: palette.ink, fontWeight: "900", fontSize: 15 },
-  qtyControls: { flexDirection: "row", alignItems: "center", gap: 10 },
+  ticketName: { color: palette.ink, fontWeight: "900", fontSize: 15, lineHeight: 19 },
+  qtyControls: { flexDirection: "row", alignItems: "center", gap: 8 },
   qtyButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 8,
+    width: 42,
+    height: 42,
+    borderRadius: 9,
     borderWidth: 1,
     borderColor: "#cfc4b2",
     alignItems: "center",
@@ -857,9 +1458,9 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     gap: 8
   },
-  sentName: { color: palette.ink, fontWeight: "800", flex: 1 },
+  sentName: { color: palette.ink, fontWeight: "800", flex: 1, lineHeight: 18 },
   totalStrip: {
-    borderRadius: 8,
+    borderRadius: 10,
     backgroundColor: palette.greenSoft,
     padding: 10,
     flexDirection: "row",
@@ -867,11 +1468,37 @@ const styles = StyleSheet.create({
     gap: 8
   },
   totalLabel: { color: palette.green, fontWeight: "900" },
-  sendButton: { minHeight: 52 },
+  sendButton: { minHeight: 54 },
   buttonDisabled: { opacity: 0.45 },
+  draftBar: {
+    position: "absolute",
+    left: 16,
+    right: 16,
+    bottom: Platform.OS === "android" ? 14 : 24,
+    minHeight: 68,
+    borderRadius: 14,
+    backgroundColor: palette.ink,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12
+  },
+  draftBarTitle: { color: "#fffdfa", fontWeight: "900", fontSize: 15 },
+  draftBarMeta: { color: "#dfd7c7", fontSize: 12, fontWeight: "700", marginTop: 2 },
+  draftBarButton: {
+    minHeight: 44,
+    borderRadius: 10,
+    backgroundColor: "#fffdfa",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 18
+  },
+  draftBarButtonText: { color: palette.ink, fontWeight: "900" },
   empty: {
     minHeight: 120,
-    borderRadius: 8,
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: "#eadfce",
     backgroundColor: "#fffaf1",

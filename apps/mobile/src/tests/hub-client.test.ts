@@ -40,4 +40,33 @@ describe("HubClient", () => {
       expect.objectContaining({ method: "POST" })
     );
   });
+
+  it("moves selected order items and reads ready notifications", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response(JSON.stringify({ fromOrderId: "order-1", toOrderId: "order-2" }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify([{ id: "ready-1", tableName: "T1", productionUnitName: "Kitchen", items: [] }]), { status: 200 }));
+
+    const client = new HubClient("http://hub.local:3737", "captain-token");
+    await client.moveItems({
+      fromTableId: "table-1",
+      toTableId: "table-2",
+      reason: "Split table",
+      items: [{ orderItemId: "item-1", quantity: 1 }]
+    });
+    const notifications = await client.readyNotifications();
+
+    expect(notifications).toHaveLength(1);
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "http://hub.local:3737/orders/items/move",
+      expect.objectContaining({ method: "POST" })
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "http://hub.local:3737/notifications/ready",
+      expect.objectContaining({
+        headers: expect.objectContaining({ "x-device-token": "captain-token" })
+      })
+    );
+  });
 });

@@ -49,7 +49,7 @@ CREATE TABLE `kot_items` (
 	`id` text PRIMARY KEY NOT NULL,
 	`kot_id` text NOT NULL,
 	`order_item_id` text,
-	`menu_item_id` text NOT NULL,
+	`menu_item_id` text,
 	`name_snapshot` text NOT NULL,
 	`quantity_delta` integer NOT NULL,
 	FOREIGN KEY (`kot_id`) REFERENCES `kots`(`id`) ON UPDATE no action ON DELETE no action
@@ -99,7 +99,7 @@ CREATE TABLE `migrations` (
 CREATE TABLE `order_items` (
 	`id` text PRIMARY KEY NOT NULL,
 	`order_id` text NOT NULL,
-	`menu_item_id` text NOT NULL,
+	`menu_item_id` text,
 	`name_snapshot` text NOT NULL,
 	`unit_price_paise` integer NOT NULL,
 	`quantity` integer NOT NULL,

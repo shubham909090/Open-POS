@@ -89,4 +89,46 @@ describe("ConvexSyncBridge", () => {
 
     database.close();
   });
+
+  it("applies cloud device commands by canonical hubDeviceId", async () => {
+    const { database } = createTestHub();
+    database.db
+      .prepare(
+        "INSERT INTO local_devices (id, name, role, token_hash, status, created_at) VALUES (?, ?, ?, ?, ?, ?)"
+      )
+      .run("device-captain-1", "Old name", "captain", "hash-captain-1", "active", new Date().toISOString());
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          cursor: "2026-05-09T12:00:00.000Z",
+          commands: [
+            {
+              commandId: "cmd-device-1",
+              type: "device.updated",
+              payloadJson: JSON.stringify({ hubDeviceId: "device-captain-1", name: "Captain A", role: "captain" }),
+              createdAt: "2026-05-09T12:00:00.000Z"
+            },
+            {
+              commandId: "cmd-device-2",
+              type: "device.revoked",
+              payloadJson: JSON.stringify({ hubDeviceId: "device-captain-1" }),
+              createdAt: "2026-05-09T12:00:01.000Z"
+            }
+          ]
+        }),
+        { status: 200 }
+      )
+    );
+
+    const sync = new ConvexSyncBridge(database.orm, "https://example.convex.site", "secret", "install-main");
+
+    await expect(sync.pullCloudSnapshot()).resolves.toMatchObject({ applied: 2, skipped: false });
+    expect(database.db.prepare("SELECT name, role, status FROM local_devices WHERE id = ?").get("device-captain-1")).toEqual({
+      name: "Captain A",
+      role: "captain",
+      status: "revoked"
+    });
+
+    database.close();
+  });
 });

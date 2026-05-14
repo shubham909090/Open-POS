@@ -13,6 +13,10 @@ describe("hub UI draft store", () => {
       price_paise: 18000,
       production_unit_id: null,
       production_unit_name: null,
+      sale_group_id: "sg-food",
+      sale_group_name: "Food",
+      sale_group_kind: "food",
+      ticket_label: "KOT" as const,
       active: true
     };
 

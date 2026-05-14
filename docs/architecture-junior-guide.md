@@ -7,7 +7,7 @@ This guide explains the current POS architecture in simple terms. The main idea 
 The system has three major areas:
 
 - The Windows hub app inside the restaurant.
-- Android devices used by waiters/cashiers/kitchen staff.
+- Android devices used by captains, waiters, cashiers, and kitchen staff.
 - Convex cloud used for account management, event sync, command sync, and reporting.
 
 The Windows hub is the most important part during service hours. Orders, KOTs, billing, table status, local device tokens, print jobs, and the SQLite database all live there.
@@ -20,7 +20,7 @@ flowchart TD
   convex -->|installation commands| hubPull["Hub Cloud Pull<br/>/sync/pull"]
   hubPull --> hub["Windows Electron Hub<br/>Fastify API + local UI"]
 
-  waiter["Android Waiter App"] -->|LAN REST commands| hub
+  waiter["Android Captain / Waiter App"] -->|LAN REST commands| hub
   cashierPhone["Android Cashier Device"] -->|LAN REST commands| hub
   kitchenScreen["Kitchen/KDS Screen"] -->|LAN REST + WebSocket| hub
 
@@ -64,16 +64,17 @@ This runs on the cashier/admin PC. It is the local server, local database owner,
 
 It has four main areas:
 
-- Setup: POS day, printers, rooms/tables, kitchens, menu, device pairing, backups, and sync.
+- Setup: POS day, printers, floors/tables, kitchens/counters, menu, sale groups, manager PIN, device pairing, backups, and sync.
 - Service: live table order entry, menu search, draft totals, and KOT submission.
 - Kitchen: KOT/KDS status and print queue handling.
-- Billing: bill generation, receipt reprint, discounts, tips, split payments, and settlement.
+- Billing: bill generation, receipt reprint, discounts, tips, split payments, NC bills, and settlement.
+- Reports: day close, cash reconciliation, sale-group summaries, and local backup/report history.
 
 If the internet is down, this app still runs the restaurant.
 
-### 2. Android Waiter App
+### 2. Android Captain / Waiter App
 
-This is for the waiter on the floor.
+This is for the floor team. A paired `captain` device is trusted for table service and movement. A paired `waiter` device is more limited.
 
 It does a smaller set of tasks:
 
@@ -84,6 +85,9 @@ It does a smaller set of tasks:
 - add simple dish quantities
 - review the KOT before sending
 - save a draft if the hub is temporarily unreachable
+- captain only: shift a full running table to another free table
+- captain only: shift selected items to another table
+- captain only: receive kitchen/bar ready alerts
 
 It does not write directly to SQLite. It sends final orders to the hub.
 
@@ -97,6 +101,21 @@ For now, a dish is deliberately simple:
 - active or inactive
 
 The kitchen/counter is optional during setup. If a dish has no kitchen assigned, it can still be sold and billed, but it will not create a KOT until the owner assigns it to a kitchen/counter. Extra dish-customization catalogs are not part of the current product.
+
+## Restaurant Workflow Rules
+
+The current workflow is built around real restaurant operations:
+
+- Use **Floor** everywhere, not room. Tables are shown by floor.
+- Table colours mean: free is white, running is amber, and bill printed / pending payment is blue.
+- Food, Alcohol, Beverage, and Other are sale groups. Each group can have its own tax lines and default kitchen/counter.
+- Alcohol defaults to BOT, food/beverage defaults to KOT. A dish can override its kitchen/counter.
+- Open items are allowed for off-menu sale entries. Cashier chooses name, price, group, and optional print counter.
+- Manager PIN is required for sensitive actions: cancelling an order, bill reprint/regeneration, revised bill changes, price edit, and NC bill.
+- Captain movement is device-owned: a captain can shift only tables/items opened by that captain device. Cashier/admin can correct any valid table.
+- Open items are stored as order snapshots, not hidden dishes, so setup stays clean.
+- NC bills print like normal bills but do not count into sales, tax, or payment totals. Their item quantities still appear in usage/group summaries.
+- Day close stores local grouped reports and queues them to Convex so the owner can review closed days later.
 
 ### 3. Cloud Admin App
 
@@ -185,6 +204,7 @@ The Android device can scan the QR code with the camera, paste the QR payload ma
 
 - admin
 - cashier
+- captain
 - waiter
 - kitchen
 

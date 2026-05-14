@@ -1,4 +1,4 @@
-export type Role = "admin" | "cashier" | "waiter" | "kitchen";
+export type Role = "admin" | "cashier" | "captain" | "waiter" | "kitchen";
 
 export interface PosDay {
   id: string;
@@ -18,7 +18,7 @@ export interface Table {
   floor_name: string;
   name: string;
   active: boolean;
-  status: "free" | "occupied" | string;
+  status: "free" | "occupied" | "billed" | string;
   current_order_id: string | null;
   occupied_at: string | null;
 }
@@ -40,6 +40,22 @@ export interface MenuItem {
   price_paise: number;
   production_unit_id: string | null;
   production_unit_name: string | null;
+  sale_group_id: string;
+  sale_group_name: string;
+  sale_group_kind: string;
+  ticket_label: "KOT" | "BOT";
+  active: boolean;
+}
+
+export interface SaleGroup {
+  id: string;
+  name: string;
+  kind: "food" | "alcohol" | "beverage" | "other";
+  report_label: string;
+  ticket_label: "KOT" | "BOT";
+  tax_components_json: string;
+  default_production_unit_id: string | null;
+  default_production_unit_name?: string | null;
   active: boolean;
 }
 
@@ -59,7 +75,9 @@ export interface Bootstrap {
   floors: Floor[];
   tables: Table[];
   productionUnits: ProductionUnit[];
+  saleGroups: SaleGroup[];
   menuItems: MenuItem[];
+  ticketTemplate?: { billHeader: string; billFooter: string; kotHeader: string; kotFooter: string; restaurantName: string; taxRegistrationText: string };
   printJobs: PrintJob[];
   syncStatus: { counts?: Record<string, number>; lastEvent?: unknown };
   setup?: { printerDryRun: boolean };
@@ -68,12 +86,17 @@ export interface Bootstrap {
 export interface OrderItem {
   id: string;
   order_id: string;
-  menu_item_id: string;
+  menu_item_id: string | null;
   name_snapshot: string;
   unit_price_paise: number;
   quantity: number;
   production_unit_id: string | null;
   production_unit_name?: string | null;
+  sale_group_id: string;
+  sale_group_name_snapshot: string;
+  sale_group_kind_snapshot: string;
+  ticket_label_snapshot: "KOT" | "BOT";
+  is_open_item?: boolean | number;
   status: string;
 }
 
@@ -85,6 +108,9 @@ export interface Bill {
   discount_paise: number;
   tip_paise: number;
   final_total_paise: number;
+  revision_number?: number;
+  is_nc?: boolean;
+  nc_reason?: string | null;
   paid_paise?: number;
 }
 
@@ -132,6 +158,7 @@ export interface CloseSummary {
   totalPaymentsPaise: number;
   nonCashPaymentsPaise: number;
   expectedClosingCashPaise: number;
+  groupSummaries?: Array<{ name: string; kind: string; quantity: number; grossSalesPaise: number; taxPaise: number; finalSalesPaise: number; ncQuantity: number; ncGrossSalesPaise: number }>;
 }
 
 export interface DailyReportRow {
@@ -222,12 +249,27 @@ export const hubApi = {
   updateUnit: (id: string, payload: { name?: string; active?: boolean }) =>
     apiFetch<{ id: string }>(`/production-units/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
   deleteUnit: (id: string) => apiFetch<{ id: string; deleted: boolean }>(`/production-units/${id}`, { method: "DELETE" }),
-  createDish: (payload: { name: string; pricePaise: number; productionUnitId: string | null; active: boolean }) =>
+  createDish: (payload: { name: string; pricePaise: number; productionUnitId: string | null; saleGroupId?: string; active: boolean }) =>
     apiFetch<{ id: string }>("/menu-items", { method: "POST", body: JSON.stringify(payload) }),
-  updateDish: (id: string, payload: { name?: string; pricePaise?: number; productionUnitId?: string | null; active?: boolean }) =>
+  updateDish: (id: string, payload: { name?: string; pricePaise?: number; productionUnitId?: string | null; saleGroupId?: string; active?: boolean }) =>
     apiFetch<{ id: string }>(`/menu-items/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
   deleteDish: (id: string) => apiFetch<{ id: string; deleted: boolean }>(`/menu-items/${id}`, { method: "DELETE" }),
-  submitOrder: (payload: { tableId: string; captainId: string; pax: number; items: Array<{ menuItemId: string; quantity: number }> }) =>
+  setManagerPin: (payload: { currentPin?: string; newPin: string; updatedBy: string }) =>
+    apiFetch<{ configured: boolean }>("/settings/manager-pin", { method: "PUT", body: JSON.stringify(payload) }),
+  updateTicketTemplate: (payload: { billHeader?: string; billFooter?: string; kotHeader?: string; kotFooter?: string; restaurantName?: string; taxRegistrationText?: string }) =>
+    apiFetch("/settings/ticket-template", { method: "PUT", body: JSON.stringify(payload) }),
+  updateSaleGroup: (id: string, payload: { defaultProductionUnitId?: string | null; taxComponents?: Array<{ name: string; rateBps: number }>; ticketLabel?: "KOT" | "BOT"; active?: boolean }) =>
+    apiFetch<{ id: string }>(`/sale-groups/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
+  submitOrder: (
+    payload: {
+      tableId: string;
+      pax: number;
+      items: Array<
+        | { menuItemId: string; quantity: number }
+        | { openName: string; openPricePaise: number; saleGroupId: string; productionUnitId?: string | null; quantity: number }
+      >;
+    }
+  ) =>
     apiFetch<{ orderId: string; kotIds: string[] }>("/orders/submit", {
       method: "POST",
       idempotent: "orders-submit",
@@ -246,15 +288,47 @@ export const hubApi = {
     apiFetch<{ billId: string; status: string; remainingPaise: number }>(`/bills/${billId}/settle`, {
       method: "POST",
       idempotent: "bill-settle",
-      body: JSON.stringify({ ...payload, receivedBy: "cashier" })
+      body: JSON.stringify(payload)
     }),
-  cancelOrder: (orderId: string) =>
+  printBill: (billId: string) =>
+    apiFetch<{ printJobId: string }>(`/bills/${billId}/print`, { method: "POST", idempotent: "bill-print", body: JSON.stringify({}) }),
+  reviseBill: (
+    billId: string,
+    payload: ManagerApprovalPayload & {
+      items: Array<
+        | { orderItemId?: string; menuItemId: string; quantity: number }
+        | { orderItemId?: string; openName: string; openPricePaise: number; saleGroupId: string; productionUnitId?: string | null; quantity: number }
+      >;
+    }
+  ) =>
+    apiFetch<{ billId: string; revisionNumber: number; totalPaise: number; kotIds: string[] }>(`/bills/${billId}/revise`, {
+      method: "POST",
+      idempotent: "bill-revise",
+      body: JSON.stringify(payload)
+    }),
+  reprintBill: (billId: string, payload: ManagerApprovalPayload) =>
+    apiFetch<{ printJobId: string }>(`/bills/${billId}/reprint`, { method: "POST", idempotent: "bill-reprint", body: JSON.stringify({ reason: payload.managerApproval.reason, ...payload }) }),
+  markBillNc: (billId: string, payload: ManagerApprovalPayload) =>
+    apiFetch<{ printJobId: string }>(`/bills/${billId}/nc`, { method: "POST", idempotent: "bill-nc", body: JSON.stringify(payload) }),
+  cancelOrder: (orderId: string, payload: ManagerApprovalPayload) =>
     apiFetch<{ orderId: string }>(`/orders/${orderId}/cancel`, {
       method: "POST",
-      body: JSON.stringify({ reason: "Cancelled by cashier" })
+      body: JSON.stringify({ reason: payload.managerApproval.reason, ...payload })
     }),
+  moveTable: (payload: { fromTableId: string; toTableId: string; reason: string }) =>
+    apiFetch<{ orderId: string; kotIds: string[] }>("/tables/move", { method: "POST", body: JSON.stringify(payload) }),
+  moveItems: (payload: { fromTableId: string; toTableId: string; reason: string; items: Array<{ orderItemId: string; quantity: number }> }) =>
+    apiFetch<{ fromOrderId: string; toOrderId: string; sourceKotIds: string[]; targetKotIds: string[] }>("/orders/items/move", { method: "POST", body: JSON.stringify(payload) }),
   updateKotStatus: (kotId: string, status: string) =>
     apiFetch<{ id: string }>(`/kot/${kotId}/status`, { method: "PATCH", body: JSON.stringify({ status }) }),
   processPrints: () => apiFetch<{ printed: number; failed: number }>("/print-jobs/process", { method: "POST" }),
   pullCloud: () => apiFetch<{ applied: number }>("/sync/pull", { method: "POST" })
 };
+
+export interface ManagerApprovalPayload {
+  managerApproval: {
+    pin: string;
+    reason: string;
+    approvedBy: string;
+  };
+}

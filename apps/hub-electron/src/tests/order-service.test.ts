@@ -107,7 +107,12 @@ describe("OrderService KOT lifecycle", () => {
       items: [{ menuItemId: "item-paneer-tikka", quantity: 1 }]
     });
 
-    const cancelled = orderService.cancelOrder(order.orderId, "Guest left");
+    orderService.setManagerPin({ newPin: "1234", updatedBy: "admin" });
+    const cancelled = orderService.cancelOrder(order.orderId, {
+      reason: "Guest left",
+      requestedBy: "cashier-1",
+      managerApproval: { pin: "1234", reason: "Guest left", approvedBy: "manager" }
+    });
 
     expect(cancelled.kotIds).toHaveLength(1);
     expect(database.db.prepare("SELECT type FROM kots ORDER BY sequence DESC LIMIT 1").get()).toEqual({
@@ -310,7 +315,12 @@ describe("OrderService KOT lifecycle", () => {
       orderType: "dine_in",
       items: [{ menuItemId: "item-dal-fry", quantity: 1 }]
     });
-    orderService.cancelOrder(order.orderId, "Test cleanup");
+    orderService.setManagerPin({ newPin: "1234", updatedBy: "admin" });
+    orderService.cancelOrder(order.orderId, {
+      reason: "Test cleanup",
+      requestedBy: "cashier-1",
+      managerApproval: { pin: "1234", reason: "Test cleanup", approvedBy: "manager" }
+    });
 
     expect(orderService.removeTable("table-t1")).toEqual({ id: "table-t1", deleted: false, active: false });
     expect(database.db.prepare("SELECT active FROM restaurant_tables WHERE id = 'table-t1'").get()).toEqual({ active: 0 });
@@ -409,6 +419,9 @@ describe("OrderService KOT lifecycle", () => {
       totalPaymentsPaise: finalTotalPaise,
       expectedClosingCashPaise: 110_000
     });
+    expect((orderService.getCloseSummary() as { groupSummaries: Array<{ kind: string; finalSalesPaise: number }> }).groupSummaries).toContainEqual(
+      expect.objectContaining({ kind: "food", finalSalesPaise: finalTotalPaise })
+    );
 
     const closeResult = orderService.closePosDay({ closingCashPaise: 110_000, closedBy: "cashier-1" });
     expect(closeResult.report).toMatchObject({
@@ -423,6 +436,258 @@ describe("OrderService KOT lifecycle", () => {
     expect(database.db.prepare("SELECT COUNT(*) AS count FROM event_log WHERE type = 'daily_report.finalized'").get()).toEqual({
       count: 1
     });
+
+    database.close();
+  });
+
+  it("supports sale groups, open bar items, BOT routing, NC bills, and group reports", () => {
+    const { database, orderService } = createTestHub();
+    orderService.setManagerPin({ newPin: "1234", updatedBy: "admin" });
+    const order = orderService.submitOrder({
+      tableId: "table-t1",
+      captainId: "waiter-1",
+      pax: 1,
+      orderType: "dine_in",
+      items: [{ openName: "Open Bar", openPricePaise: 10_000, saleGroupId: "sg-alcohol", productionUnitId: "unit-bar", quantity: 2 }]
+    });
+
+    expect(database.db.prepare("SELECT COUNT(*) AS count FROM menu_items WHERE active = 0").get()).toEqual({ count: 0 });
+    expect(database.db.prepare("SELECT menu_item_id, is_open_item FROM order_items WHERE order_id = ?").get(order.orderId)).toEqual({
+      menu_item_id: null,
+      is_open_item: 1
+    });
+    expect(database.db.prepare("SELECT target_type FROM print_jobs ORDER BY created_at DESC LIMIT 1").get()).toEqual({ target_type: "BOT" });
+    const bill = orderService.generateBill(order.orderId);
+    expect(bill.totalPaise).toBe(22_000);
+    orderService.markBillNc(bill.billId, {
+      managerApproval: { pin: "1234", reason: "Owner tasting", approvedBy: "manager" }
+    });
+
+    const summary = orderService.getCloseSummary() as {
+      finalSalesPaise: number;
+      groupSummaries: Array<{ kind: string; ncQuantity: number; ncGrossSalesPaise: number; finalSalesPaise: number }>;
+    };
+    expect(summary.finalSalesPaise).toBe(0);
+    expect(summary.groupSummaries).toContainEqual(
+      expect.objectContaining({ kind: "alcohol", ncQuantity: 2, ncGrossSalesPaise: 20_000, finalSalesPaise: 0 })
+    );
+
+    database.close();
+  });
+
+  it("allocates discounts and tips into group report totals", () => {
+    const { database, orderService } = createTestHub();
+    const order = orderService.submitOrder({
+      tableId: "table-t1",
+      captainId: "waiter-1",
+      pax: 1,
+      orderType: "dine_in",
+      items: [
+        { menuItemId: "item-dal-fry", quantity: 1 },
+        { openName: "Open Bar", openPricePaise: 10_000, saleGroupId: "sg-alcohol", productionUnitId: "unit-bar", quantity: 1 }
+      ]
+    });
+    const bill = orderService.generateBill(order.orderId);
+    const discountPaise = 1_000;
+    const tipPaise = 500;
+    const finalTotalPaise = bill.totalPaise - discountPaise + tipPaise;
+    orderService.settleBill(bill.billId, {
+      receivedBy: "cashier",
+      discountType: "amount",
+      discountValue: discountPaise,
+      tipPaise,
+      payments: [{ method: "cash", amountPaise: finalTotalPaise }]
+    });
+
+    const summary = orderService.getCloseSummary() as {
+      finalSalesPaise: number;
+      groupSummaries: Array<{ kind: string; finalSalesPaise: number }>;
+    };
+    expect(summary.groupSummaries.map((group) => group.kind).sort()).toEqual(["alcohol", "food"]);
+    expect(summary.groupSummaries.reduce((total, group) => total + group.finalSalesPaise, 0)).toBe(summary.finalSalesPaise);
+
+    database.close();
+  });
+
+  it("blocks NC marking after a normal payment has been recorded", () => {
+    const { database, orderService } = createTestHub();
+    orderService.setManagerPin({ newPin: "1234", updatedBy: "admin" });
+    const order = orderService.submitOrder({
+      tableId: "table-t1",
+      captainId: "waiter-1",
+      pax: 1,
+      orderType: "dine_in",
+      items: [{ menuItemId: "item-dal-fry", quantity: 1 }]
+    });
+    const bill = orderService.generateBill(order.orderId);
+    orderService.settleBill(bill.billId, {
+      discountType: "amount",
+      discountValue: 0,
+      tipPaise: 0,
+      payments: [{ method: "cash", amountPaise: 100 }],
+      receivedBy: "cashier"
+    });
+
+    expect(() =>
+      orderService.markBillNc(bill.billId, {
+        managerApproval: { pin: "1234", reason: "Too late", approvedBy: "manager" }
+      })
+    ).toThrow("Remove or reverse recorded payments before marking this bill NC");
+
+    database.close();
+  });
+
+  it("blocks bill revision after partial payment has been recorded", () => {
+    const { database, orderService } = createTestHub();
+    orderService.setManagerPin({ newPin: "1234", updatedBy: "admin" });
+    const order = orderService.submitOrder({
+      tableId: "table-t1",
+      captainId: "waiter-1",
+      pax: 1,
+      orderType: "dine_in",
+      items: [{ menuItemId: "item-dal-fry", quantity: 2 }]
+    });
+    const bill = orderService.generateBill(order.orderId);
+    orderService.settleBill(bill.billId, {
+      discountType: "amount",
+      discountValue: 0,
+      tipPaise: 0,
+      payments: [{ method: "cash", amountPaise: 100 }],
+      receivedBy: "cashier"
+    });
+
+    expect(() =>
+      orderService.reviseBill(bill.billId, {
+        items: [{ menuItemId: "item-dal-fry", quantity: 1 }],
+        managerApproval: { pin: "1234", reason: "After payment", approvedBy: "manager" }
+      })
+    ).toThrow("Remove or reverse recorded payments before revising this bill");
+
+    database.close();
+  });
+
+  it("links duplicate open-item KOT rows to the inserted order items", () => {
+    const { database, orderService } = createTestHub();
+    const order = orderService.submitOrder({
+      tableId: "table-t1",
+      captainId: "waiter-1",
+      pax: 1,
+      orderType: "dine_in",
+      items: [
+        { openName: "Open Food", openPricePaise: 10_000, saleGroupId: "sg-food", productionUnitId: "unit-kitchen", quantity: 1 },
+        { openName: "Open Food", openPricePaise: 12_000, saleGroupId: "sg-food", productionUnitId: "unit-kitchen", quantity: 1 }
+      ]
+    });
+
+    const linked = database.db
+      .prepare(
+        `SELECT COUNT(DISTINCT ki.order_item_id) AS count
+         FROM kot_items ki
+         JOIN order_items oi ON oi.id = ki.order_item_id
+         WHERE oi.order_id = ?`
+      )
+      .get(order.orderId);
+    expect(linked).toEqual({ count: 2 });
+
+    database.close();
+  });
+
+  it("shifts a running table order to a free table", () => {
+    const { database, orderService } = createTestHub();
+    const order = orderService.submitOrder({
+      tableId: "table-t1",
+      captainId: "waiter-1",
+      pax: 1,
+      orderType: "dine_in",
+      items: [{ menuItemId: "item-dal-fry", quantity: 1 }]
+    });
+
+    const movement = orderService.moveTable(
+      { fromTableId: "table-t1", toTableId: "table-t2", reason: "Guest moved outside" },
+      { id: "device-local-admin", name: "Cashier", role: "cashier" }
+    );
+
+    expect(movement.kotIds).toHaveLength(1);
+    expect(database.db.prepare("SELECT table_id FROM orders WHERE id = ?").get(order.orderId)).toEqual({ table_id: "table-t2" });
+    expect(database.db.prepare("SELECT status, current_order_id FROM restaurant_tables WHERE id = 'table-t1'").get()).toEqual({
+      status: "free",
+      current_order_id: null
+    });
+    expect(database.db.prepare("SELECT current_order_id FROM restaurant_tables WHERE id = 'table-t2'").get()).toEqual({
+      current_order_id: order.orderId
+    });
+
+    database.close();
+  });
+
+  it("shifts selected items and creates source and target KOT transfer tickets", () => {
+    const { database, orderService } = createTestHub();
+    const order = orderService.submitOrder({
+      tableId: "table-t1",
+      captainId: "waiter-1",
+      pax: 1,
+      orderType: "dine_in",
+      items: [{ menuItemId: "item-dal-fry", quantity: 2 }]
+    });
+    const item = database.db.prepare("SELECT id FROM order_items WHERE order_id = ?").get(order.orderId) as { id: string };
+
+    const movement = orderService.moveOrderItems(
+      { fromTableId: "table-t1", toTableId: "table-t2", reason: "Split table", items: [{ orderItemId: item.id, quantity: 1 }] },
+      { id: "device-local-admin", name: "Cashier", role: "cashier" }
+    );
+
+    expect(movement.sourceKotIds).toHaveLength(1);
+    expect(movement.targetKotIds).toHaveLength(1);
+    expect(database.db.prepare("SELECT status, current_order_id FROM restaurant_tables WHERE id = 'table-t2'").get()).toMatchObject({
+      status: "occupied"
+    });
+    expect(
+      database.db
+        .prepare(
+          `SELECT COUNT(*) AS count
+           FROM kot_items
+           WHERE order_item_id IN (SELECT id FROM order_items WHERE order_id = ?)`
+        )
+        .get(movement.toOrderId)
+    ).toEqual({ count: 1 });
+    expect(database.db.prepare("SELECT COUNT(*) AS count FROM print_jobs WHERE target_type = 'KOT'").get()).toEqual({ count: 3 });
+
+    database.close();
+  });
+
+  it("reactivates a cancelled target item when shifted items merge into it", () => {
+    const { database, orderService } = createTestHub();
+    const source = orderService.submitOrder({
+      tableId: "table-t1",
+      captainId: "waiter-1",
+      pax: 1,
+      orderType: "dine_in",
+      items: [{ menuItemId: "item-dal-fry", quantity: 2 }]
+    });
+    const target = orderService.submitOrder({
+      tableId: "table-t2",
+      captainId: "waiter-2",
+      pax: 1,
+      orderType: "dine_in",
+      items: [{ menuItemId: "item-dal-fry", quantity: 1 }]
+    });
+    database.db
+      .prepare("UPDATE order_items SET quantity = 0, status = 'cancelled' WHERE order_id = ? AND menu_item_id = ?")
+      .run(target.orderId, "item-dal-fry");
+    const sourceItem = database.db
+      .prepare("SELECT id FROM order_items WHERE order_id = ? AND menu_item_id = ?")
+      .get(source.orderId, "item-dal-fry") as { id: string };
+
+    orderService.moveOrderItems(
+      { fromTableId: "table-t1", toTableId: "table-t2", reason: "Restore cancelled item", items: [{ orderItemId: sourceItem.id, quantity: 1 }] },
+      { id: "device-local-admin", name: "Cashier", role: "cashier" }
+    );
+
+    expect(
+      database.db
+        .prepare("SELECT quantity, status FROM order_items WHERE order_id = ? AND menu_item_id = ?")
+        .get(target.orderId, "item-dal-fry")
+    ).toEqual({ quantity: 1, status: "active" });
 
     database.close();
   });

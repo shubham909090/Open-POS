@@ -8,6 +8,7 @@ export interface HubBootstrap {
     floor_name: string;
     name: string;
     status: string;
+    active?: number | boolean;
     current_order_id: string | null;
   }>;
   productionUnits: Array<{ id: string; name: string }>;
@@ -19,19 +20,37 @@ export interface HubBootstrap {
     production_unit_name: string | null;
     active: number;
   }>;
-  syncStatus: { counts: Record<string, number> };
+  syncStatus?: { counts: Record<string, number> };
+}
+
+export interface HubDeviceSession {
+  id: string;
+  name: string;
+  role: string;
 }
 
 export interface HubOrder {
   order: { id: string; status: string; table_id: string; pax: number };
   items: Array<{
-    menu_item_id: string;
+    id: string;
+    menu_item_id: string | null;
     name_snapshot: string;
     unit_price_paise: number;
     quantity: number;
     status: string;
   }>;
   bill: { id: string; total_paise: number; status: string } | null;
+}
+
+export interface ReadyNotification {
+  id: string;
+  kotId: string;
+  orderId: string;
+  tableId: string;
+  tableName: string;
+  productionUnitName: string;
+  items: Array<{ name: string; quantity: number }>;
+  createdAt: string;
 }
 
 export class HubClient {
@@ -53,6 +72,10 @@ export class HubClient {
     return this.request("/sync/bootstrap");
   }
 
+  async me(): Promise<HubDeviceSession> {
+    return this.request("/devices/me");
+  }
+
   async tableOrder(tableId: string): Promise<HubOrder | null> {
     return this.request(`/tables/${tableId}/order`);
   }
@@ -62,6 +85,24 @@ export class HubClient {
       method: "POST",
       body: JSON.stringify(input)
     });
+  }
+
+  async moveTable(input: { fromTableId: string; toTableId: string; reason: string }): Promise<{ orderId: string; kotIds: string[] }> {
+    return this.request("/tables/move", {
+      method: "POST",
+      body: JSON.stringify(input)
+    });
+  }
+
+  async moveItems(input: { fromTableId: string; toTableId: string; reason: string; items: Array<{ orderItemId: string; quantity: number }> }): Promise<{ fromOrderId: string; toOrderId: string; sourceKotIds: string[]; targetKotIds: string[] }> {
+    return this.request("/orders/items/move", {
+      method: "POST",
+      body: JSON.stringify(input)
+    });
+  }
+
+  async readyNotifications(): Promise<ReadyNotification[]> {
+    return this.request("/notifications/ready");
   }
 
   async exchangePairingCode(input: { code: string; deviceName: string }): Promise<{

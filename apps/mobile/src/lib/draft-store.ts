@@ -7,7 +7,6 @@ const DRAFT_PREFIX = "gaurav-pos:draft:";
 
 export interface DraftOrder {
   tableId: string;
-  captainId: string;
   pax: number;
   items: OrderItemInput[];
   updatedAt: string;

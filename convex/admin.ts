@@ -12,6 +12,13 @@ const hubCommandType = v.union(
   v.literal("production_unit.upsert"),
   v.literal("receipt_printer.updated")
 );
+type HubCommandType =
+  | "device.revoked"
+  | "device.updated"
+  | "menu_item.upsert"
+  | "menu_item.disabled"
+  | "production_unit.upsert"
+  | "receipt_printer.updated";
 
 async function requireIdentity(ctx: QueryCtx | MutationCtx) {
   const identity = await ctx.auth.getUserIdentity();
@@ -27,6 +34,26 @@ function randomHex(bytes: number) {
   const values = new Uint8Array(bytes);
   crypto.getRandomValues(values);
   return Array.from(values, (value) => value.toString(16).padStart(2, "0")).join("");
+}
+
+function normalizeHubCommandPayload(type: HubCommandType, payloadJson: string): string {
+  if (!payloadJson.trim()) throw new Error("Command payload JSON is required");
+  const payload = JSON.parse(payloadJson) as unknown;
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    throw new Error("Command payload must be a JSON object");
+  }
+  const normalized = { ...(payload as Record<string, unknown>) };
+
+  if (type === "device.revoked" || type === "device.updated") {
+    const hubDeviceId = normalized.hubDeviceId;
+    if (typeof hubDeviceId !== "string" || !hubDeviceId.trim()) {
+      throw new Error("Device commands require hubDeviceId");
+    }
+    normalized.hubDeviceId = hubDeviceId.trim();
+    delete normalized.localDeviceId;
+  }
+
+  return JSON.stringify(normalized);
 }
 
 async function requireRestaurantAdmin(ctx: QueryCtx | MutationCtx, restaurantId: Id<"restaurants">) {
@@ -507,14 +534,13 @@ export const enqueueHubCommand = mutation({
   returns: v.object({ commandId: v.string(), inserted: v.boolean() }),
   handler: async (ctx, args) => {
     await requireRestaurantAdmin(ctx, args.restaurantId);
-    if (!args.payloadJson.trim()) throw new Error("Command payload JSON is required");
-    JSON.parse(args.payloadJson);
+    const payloadJson = normalizeHubCommandPayload(args.type, args.payloadJson);
     const commandId = `cmd_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
     await ctx.db.insert("hubCommands", {
       commandId,
       restaurantId: args.restaurantId,
       type: args.type,
-      payloadJson: args.payloadJson,
+      payloadJson,
       createdAt: new Date().toISOString()
     });
     return { commandId, inserted: true };
@@ -636,6 +662,9 @@ export const getDailyReport = query({
           tipPaise: v.number(),
           finalTotalPaise: v.number(),
           paidPaise: v.number(),
+          isNc: v.optional(v.boolean()),
+          ncReason: v.optional(v.string()),
+          revisionNumber: v.optional(v.number()),
           paymentsJson: v.string(),
           settledAt: v.optional(v.string())
         })
@@ -644,8 +673,26 @@ export const getDailyReport = query({
         v.object({
           menuItemId: v.string(),
           name: v.string(),
+          saleGroupId: v.optional(v.string()),
+          saleGroupName: v.optional(v.string()),
+          saleGroupKind: v.optional(v.string()),
           quantity: v.number(),
-          grossSalesPaise: v.number()
+          grossSalesPaise: v.number(),
+          ncQuantity: v.optional(v.number()),
+          ncGrossSalesPaise: v.optional(v.number())
+        })
+      ),
+      groups: v.array(
+        v.object({
+          saleGroupId: v.string(),
+          name: v.string(),
+          kind: v.string(),
+          quantity: v.number(),
+          grossSalesPaise: v.number(),
+          taxPaise: v.number(),
+          finalSalesPaise: v.number(),
+          ncQuantity: v.number(),
+          ncGrossSalesPaise: v.number()
         })
       )
     })
@@ -674,6 +721,12 @@ export const getDailyReport = query({
         q.eq("restaurantId", args.restaurantId).eq("businessDate", args.businessDate)
       )
       .take(500);
+    const groups = await ctx.db
+      .query("dailyReportGroups")
+      .withIndex("by_restaurant_and_businessDate", (q) =>
+        q.eq("restaurantId", args.restaurantId).eq("businessDate", args.businessDate)
+      )
+      .take(100);
 
     return {
       report: {
@@ -712,14 +765,33 @@ export const getDailyReport = query({
         tipPaise: bill.tipPaise,
         finalTotalPaise: bill.finalTotalPaise,
         paidPaise: bill.paidPaise,
+        isNc: bill.isNc,
+        ...(bill.ncReason ? { ncReason: bill.ncReason } : {}),
+        revisionNumber: bill.revisionNumber,
         paymentsJson: bill.paymentsJson,
         ...(bill.settledAt ? { settledAt: bill.settledAt } : {})
       })),
       items: items.map((item) => ({
         menuItemId: item.menuItemId,
         name: item.name,
+        saleGroupId: item.saleGroupId,
+        saleGroupName: item.saleGroupName,
+        saleGroupKind: item.saleGroupKind,
         quantity: item.quantity,
-        grossSalesPaise: item.grossSalesPaise
+        grossSalesPaise: item.grossSalesPaise,
+        ncQuantity: item.ncQuantity,
+        ncGrossSalesPaise: item.ncGrossSalesPaise
+      })),
+      groups: groups.map((group) => ({
+        saleGroupId: group.saleGroupId,
+        name: group.name,
+        kind: group.kind,
+        quantity: group.quantity,
+        grossSalesPaise: group.grossSalesPaise,
+        taxPaise: group.taxPaise,
+        finalSalesPaise: group.finalSalesPaise,
+        ncQuantity: group.ncQuantity,
+        ncGrossSalesPaise: group.ncGrossSalesPaise
       }))
     };
   }

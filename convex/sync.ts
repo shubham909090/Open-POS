@@ -10,6 +10,33 @@ const hubCommandType = v.union(
   v.literal("production_unit.upsert"),
   v.literal("receipt_printer.updated")
 );
+type HubCommandType =
+  | "device.revoked"
+  | "device.updated"
+  | "menu_item.upsert"
+  | "menu_item.disabled"
+  | "production_unit.upsert"
+  | "receipt_printer.updated";
+
+function normalizeHubCommandPayload(type: HubCommandType, payloadJson: string): string {
+  if (!payloadJson.trim()) throw new Error("Command payload JSON is required");
+  const payload = JSON.parse(payloadJson) as unknown;
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    throw new Error("Command payload must be a JSON object");
+  }
+  const normalized = { ...(payload as Record<string, unknown>) };
+
+  if (type === "device.revoked" || type === "device.updated") {
+    const hubDeviceId = normalized.hubDeviceId;
+    if (typeof hubDeviceId !== "string" || !hubDeviceId.trim()) {
+      throw new Error("Device commands require hubDeviceId");
+    }
+    normalized.hubDeviceId = hubDeviceId.trim();
+    delete normalized.localDeviceId;
+  }
+
+  return JSON.stringify(normalized);
+}
 
 async function requireRestaurantAdmin(ctx: MutationCtx, restaurantId: Id<"restaurants">) {
   const identity = await ctx.auth.getUserIdentity();
@@ -66,12 +93,31 @@ type DailyReportPayload = {
     paidPaise: number;
     settledAt: string | null;
     payments: Array<{ method: string; amountPaise: number; reference: string | null }>;
+    isNc?: boolean;
+    ncReason?: string | null;
+    revisionNumber?: number;
   }>;
   itemSummaries?: Array<{
     menuItemId: string;
     name: string;
+    saleGroupId?: string;
+    saleGroupName?: string;
+    saleGroupKind?: string;
     quantity: number;
     grossSalesPaise: number;
+    ncQuantity?: number;
+    ncGrossSalesPaise?: number;
+  }>;
+  groupSummaries?: Array<{
+    saleGroupId: string;
+    name: string;
+    kind: string;
+    quantity: number;
+    grossSalesPaise: number;
+    taxPaise: number;
+    finalSalesPaise: number;
+    ncQuantity: number;
+    ncGrossSalesPaise: number;
   }>;
 };
 
@@ -146,6 +192,9 @@ async function upsertDailyReport(
       tipPaise: numberOrZero(bill.tipPaise),
       finalTotalPaise: numberOrZero(bill.finalTotalPaise),
       paidPaise: numberOrZero(bill.paidPaise),
+      isNc: Boolean(bill.isNc),
+      ...(bill.ncReason ? { ncReason: bill.ncReason } : {}),
+      revisionNumber: numberOrZero(bill.revisionNumber),
       paymentsJson: JSON.stringify(bill.payments ?? []),
       ...(bill.settledAt ? { settledAt: bill.settledAt } : {}),
       updatedAt: receivedAt
@@ -169,12 +218,45 @@ async function upsertDailyReport(
       posDayId,
       menuItemId: item.menuItemId,
       name: item.name,
+      saleGroupId: item.saleGroupId ?? "",
+      saleGroupName: item.saleGroupName ?? "",
+      saleGroupKind: item.saleGroupKind ?? "",
       quantity: numberOrZero(item.quantity),
       grossSalesPaise: numberOrZero(item.grossSalesPaise),
+      ncQuantity: numberOrZero(item.ncQuantity),
+      ncGrossSalesPaise: numberOrZero(item.ncGrossSalesPaise),
       updatedAt: receivedAt
     };
     if (existingItem) await ctx.db.patch(existingItem._id, itemDoc);
     else await ctx.db.insert("dailyReportItems", itemDoc);
+  }
+
+  for (const group of payload.groupSummaries ?? []) {
+    const existingGroup = (
+      await ctx.db
+        .query("dailyReportGroups")
+        .withIndex("by_restaurant_date_and_group", (q) =>
+          q.eq("restaurantId", restaurantId).eq("businessDate", businessDate).eq("saleGroupId", group.saleGroupId)
+        )
+        .take(1)
+    )[0];
+    const groupDoc = {
+      restaurantId,
+      businessDate,
+      posDayId,
+      saleGroupId: group.saleGroupId,
+      name: group.name,
+      kind: group.kind,
+      quantity: numberOrZero(group.quantity),
+      grossSalesPaise: numberOrZero(group.grossSalesPaise),
+      taxPaise: numberOrZero(group.taxPaise),
+      finalSalesPaise: numberOrZero(group.finalSalesPaise),
+      ncQuantity: numberOrZero(group.ncQuantity),
+      ncGrossSalesPaise: numberOrZero(group.ncGrossSalesPaise),
+      updatedAt: receivedAt
+    };
+    if (existingGroup) await ctx.db.patch(existingGroup._id, groupDoc);
+    else await ctx.db.insert("dailyReportGroups", groupDoc);
   }
 }
 
@@ -292,6 +374,7 @@ export const enqueueHubCommand = mutation({
   returns: v.object({ commandId: v.string(), inserted: v.boolean() }),
   handler: async (ctx, args) => {
     await requireRestaurantAdmin(ctx, args.restaurantId);
+    const payloadJson = normalizeHubCommandPayload(args.type, args.payloadJson);
     const existing = await ctx.db
       .query("hubCommands")
       .withIndex("by_command_id", (q) => q.eq("commandId", args.commandId))
@@ -300,6 +383,7 @@ export const enqueueHubCommand = mutation({
 
     await ctx.db.insert("hubCommands", {
       ...args,
+      payloadJson,
       createdAt: new Date().toISOString()
     });
     return { commandId: args.commandId, inserted: true };

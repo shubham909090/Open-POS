@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { formatInr } from "@gaurav-pos/shared";
+import { formatInr, getTableDisplayState, tableDisplayClass, tableDisplayLabel } from "@gaurav-pos/shared";
 import {
   BadgeIndianRupee,
   CalendarCheck,
@@ -144,6 +144,7 @@ function SetupView({ bootstrap, setNotice }: { bootstrap: Bootstrap; setNotice: 
   const [dishName, setDishName] = useState("");
   const [dishPrice, setDishPrice] = useState("");
   const [dishUnit, setDishUnit] = useState("");
+  const [dishGroup, setDishGroup] = useState("sg-food");
   const [tableFloorId, setTableFloorId] = useState("");
   const firstFloorId = bootstrap.floors.find((floor) => floor.active)?.id ?? bootstrap.floors[0]?.id ?? "";
   const activeFloors = bootstrap.floors.filter((floor) => floor.active);
@@ -194,12 +195,14 @@ function SetupView({ bootstrap, setNotice }: { bootstrap: Bootstrap; setNotice: 
         name: dishName,
         pricePaise: dishPricePaise,
         productionUnitId: dishUnit || null,
+        saleGroupId: dishGroup,
         active: true
       }),
     onSuccess: async () => {
       setDishName("");
       setDishPrice("");
       setDishUnit("");
+      setDishGroup("sg-food");
       await invalidate();
     },
     onError: (error) => setNotice({ tone: "bad", text: messageOf(error) })
@@ -221,17 +224,17 @@ function SetupView({ bootstrap, setNotice }: { bootstrap: Bootstrap; setNotice: 
         )}
       </SetupCard>
 
-      <SetupCard title="Rooms And Tables" done={bootstrap.tables.some((table) => table.active)} icon={<Users size={20} />}>
+      <SetupCard title="Floors And Tables" done={bootstrap.tables.some((table) => table.active)} icon={<Users size={20} />}>
         <form className="inline-form" onSubmit={(event) => { event.preventDefault(); createFloor.mutate(); }}>
           <label>
-            Room name
+            Floor name
             <input value={floorName} onChange={(event) => setFloorName(event.target.value)} placeholder="Main hall" />
           </label>
-          <button disabled={!floorName.trim() || createFloor.isPending} type="submit">Add room</button>
+          <button disabled={!floorName.trim() || createFloor.isPending} type="submit">Add floor</button>
         </form>
         <form className="inline-form" onSubmit={(event) => { event.preventDefault(); createTable.mutate(); }}>
           <label>
-            Room
+            Floor
             <select value={tableFloorId} onChange={(event) => setTableFloorId(event.target.value)}>
               {activeFloors.map((floor) => (
                 <option key={floor.id} value={floor.id}>{floor.name}</option>
@@ -263,7 +266,7 @@ function SetupView({ bootstrap, setNotice }: { bootstrap: Bootstrap; setNotice: 
           rows={bootstrap.floors.map((floor) => ({
             id: floor.id,
             title: floor.name,
-            meta: floor.active ? "Room active" : "Room disabled",
+            meta: floor.active ? "Floor active" : "Floor disabled",
             active: floor.active,
             onToggle: () => hubApi.updateFloor(floor.id, { active: !floor.active }).then(invalidate),
             onDelete: () => hubApi.deleteFloor(floor.id).then(invalidate),
@@ -317,6 +320,14 @@ function SetupView({ bootstrap, setNotice }: { bootstrap: Bootstrap; setNotice: 
               ))}
             </select>
           </label>
+          <label>
+            Group
+            <select value={dishGroup} onChange={(event) => setDishGroup(event.target.value)}>
+              {bootstrap.saleGroups.filter((group) => group.active).map((group) => (
+                <option key={group.id} value={group.id}>{group.name}</option>
+              ))}
+            </select>
+          </label>
           <button disabled={!dishName.trim() || dishPricePaise <= 0 || createDish.isPending} type="submit">Add dish</button>
         </form>
         <EditableRecordList
@@ -324,12 +335,12 @@ function SetupView({ bootstrap, setNotice }: { bootstrap: Bootstrap; setNotice: 
           rows={bootstrap.menuItems.map((item) => ({
             id: item.id,
             title: item.name,
-            meta: `${formatInr(item.price_paise)} · ${item.production_unit_name ?? "No kitchen assigned"} · ${item.active ? "active" : "disabled"}`,
+            meta: `${formatInr(item.price_paise)} · ${item.sale_group_name} · ${item.production_unit_name ?? "No kitchen assigned"} · ${item.active ? "active" : "disabled"}`,
             active: item.active,
             onToggle: () => hubApi.updateDish(item.id, { active: !item.active }).then(invalidate),
             onDelete: () => hubApi.deleteDish(item.id).then(invalidate),
             editForm: (close) => (
-              <DishEditForm item={item} units={bootstrap.productionUnits.filter((unit) => unit.active)} onSaved={async () => { close(); await invalidate(); }} setNotice={setNotice} />
+              <DishEditForm item={item} units={bootstrap.productionUnits.filter((unit) => unit.active)} saleGroups={bootstrap.saleGroups.filter((group) => group.active)} onSaved={async () => { close(); await invalidate(); }} setNotice={setNotice} />
             )
           }))}
         />
@@ -362,18 +373,33 @@ function OrdersView({ bootstrap, setNotice }: { bootstrap: Bootstrap; setNotice:
           <h2>Tables</h2>
           <span>{bootstrap.tables.filter((table) => table.active).length} active</span>
         </div>
-        <div className="table-list">
-          {bootstrap.tables.filter((table) => table.active).map((table) => (
-            <button
-              key={table.id}
-              type="button"
-              className={table.id === selectedTable?.id ? "table-tile active" : `table-tile ${table.status}`}
-              onClick={() => selectTable(table.id)}
-            >
-              <strong>{table.name}</strong>
-              <span>{table.status === "occupied" ? "Occupied" : "Free"}</span>
-            </button>
-          ))}
+        <div className="floor-table-list">
+          {bootstrap.floors.filter((floor) => floor.active).map((floor) => {
+            const floorTables = bootstrap.tables.filter((table) => table.active && table.floor_id === floor.id);
+            if (!floorTables.length) return null;
+            return (
+              <div className="floor-group" key={floor.id}>
+                <h3>{floor.name}</h3>
+                <div className="table-list">
+                  {floorTables.map((table) => (
+                    <button
+                      key={table.id}
+                      type="button"
+                      className={
+                        table.id === selectedTable?.id
+                          ? `table-tile ${tableDisplayClass(getTableDisplayState(table))} active`
+                          : `table-tile ${tableDisplayClass(getTableDisplayState(table))}`
+                      }
+                      onClick={() => selectTable(table.id)}
+                    >
+                      <strong>{table.name}</strong>
+                      <span>{tableDisplayLabel(getTableDisplayState(table))}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
         </div>
       </section>
 
@@ -393,7 +419,7 @@ function OrdersView({ bootstrap, setNotice }: { bootstrap: Bootstrap; setNotice:
         )}
       </section>
 
-      <TableWorkspace tableId={selectedTable?.id ?? null} tableName={selectedTable?.name ?? ""} setNotice={setNotice} />
+      <TableWorkspace tableId={selectedTable?.id ?? null} tableName={selectedTable?.name ?? ""} bootstrap={bootstrap} setNotice={setNotice} />
     </div>
   );
 }
@@ -415,14 +441,22 @@ function MenuCard({ item, onAdd }: { item: MenuItem; onAdd: () => void }) {
   );
 }
 
-function TableWorkspace({ tableId, tableName, setNotice }: { tableId: string | null; tableName: string; setNotice: NoticeSetter }) {
+function TableWorkspace({ tableId, tableName, bootstrap, setNotice }: { tableId: string | null; tableName: string; bootstrap: Bootstrap; setNotice: NoticeSetter }) {
   const queryClient = useQueryClient();
   const orderPanel = useHubStore((state) => state.orderPanel);
   const setOrderPanel = useHubStore((state) => state.setOrderPanel);
   const drafts = useHubStore((state) => state.drafts);
+  const addOpenDraftItem = useHubStore((state) => state.addOpenDraftItem);
   const changeDraftQty = useHubStore((state) => state.changeDraftQty);
   const clearDraft = useHubStore((state) => state.clearDraft);
   const [guests, setGuests] = useState("2");
+  const [openName, setOpenName] = useState("");
+  const [openPrice, setOpenPrice] = useState("");
+  const [openGroup, setOpenGroup] = useState("sg-food");
+  const [openUnit, setOpenUnit] = useState("");
+  const [managerPin, setManagerPin] = useState("");
+  const [managerReason, setManagerReason] = useState("");
+  const [shiftTargetTableId, setShiftTargetTableId] = useState("");
   const draft = tableId ? Object.values(drafts[tableId] ?? {}) : [];
   const tableOrder = useQuery({
     queryKey: ["tableOrder", tableId],
@@ -431,6 +465,7 @@ function TableWorkspace({ tableId, tableName, setNotice }: { tableId: string | n
   });
   const data = tableOrder.data;
   const sentItems = (data?.items ?? []).filter((item) => item.status !== "cancelled" && item.quantity > 0);
+  const shiftTargets = bootstrap.tables.filter((table) => table.active && table.id !== tableId && table.status === "free");
   const draftTotal = draft.reduce((total, item) => total + item.pricePaise * item.quantity, 0);
   const sentTotal = sentItems.reduce((total, item) => total + item.unit_price_paise * item.quantity, 0);
 
@@ -444,9 +479,18 @@ function TableWorkspace({ tableId, tableName, setNotice }: { tableId: string | n
       if (!tableId || draft.length === 0) throw new Error("Add at least one new dish before sending to kitchen.");
       return hubApi.submitOrder({
         tableId,
-        captainId: "cashier",
         pax: Number(guests || 1),
-        items: draft.map((item) => ({ menuItemId: item.menuItemId, quantity: item.quantity }))
+        items: draft.map((item) =>
+          item.openName
+            ? {
+                openName: item.openName,
+                openPricePaise: item.pricePaise,
+                saleGroupId: item.saleGroupId ?? "sg-food",
+                productionUnitId: item.productionUnitId ?? null,
+                quantity: item.quantity
+              }
+            : { menuItemId: item.menuItemId, quantity: item.quantity }
+        )
       });
     },
     onSuccess: async () => {
@@ -475,12 +519,30 @@ function TableWorkspace({ tableId, tableName, setNotice }: { tableId: string | n
     mutationFn: () => {
       const orderId = data?.order?.id;
       if (!orderId) throw new Error("No active order to cancel.");
-      return hubApi.cancelOrder(orderId);
+      return hubApi.cancelOrder(orderId, { managerApproval: { pin: managerPin, reason: managerReason || "Order cancelled", approvedBy: "manager" } });
     },
     onSuccess: async () => {
       if (tableId) clearDraft(tableId);
+      setManagerPin("");
+      setManagerReason("");
       await refreshTable();
       setOrderPanel("new");
+    },
+    onError: (error) => setNotice({ tone: "bad", text: messageOf(error) })
+  });
+  const shiftItem = useMutation({
+    mutationFn: (itemId: string) => {
+      if (!tableId || !shiftTargetTableId) throw new Error("Choose a free target table first.");
+      return hubApi.moveItems({
+        fromTableId: tableId,
+        toTableId: shiftTargetTableId,
+        reason: "Items shifted from hub",
+        items: [{ orderItemId: itemId, quantity: 1 }]
+      });
+    },
+    onSuccess: async () => {
+      await refreshTable();
+      setNotice({ tone: "good", text: "Item shifted to the selected table." });
     },
     onError: (error) => setNotice({ tone: "bad", text: messageOf(error) })
   });
@@ -519,6 +581,52 @@ function TableWorkspace({ tableId, tableName, setNotice }: { tableId: string | n
               {submitOrder.isPending ? "Sending..." : "Send to kitchen"}
             </button>
           </div>
+          <form
+            className="open-item-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const pricePaise = Math.round(Number(openPrice || 0) * 100);
+              if (!openName.trim() || pricePaise <= 0) {
+                setNotice({ tone: "bad", text: "Enter open item name and price." });
+                return;
+              }
+              addOpenDraftItem(tableId, {
+                name: openName.trim(),
+                pricePaise,
+                saleGroupId: openGroup,
+                productionUnitId: openUnit || null
+              });
+              setOpenName("");
+              setOpenPrice("");
+            }}
+          >
+            <label>
+              Open item
+              <input value={openName} onChange={(event) => setOpenName(event.target.value)} placeholder="Open food / bar item" />
+            </label>
+            <label>
+              Price
+              <input value={openPrice} onChange={(event) => setOpenPrice(event.target.value)} inputMode="decimal" />
+            </label>
+            <label>
+              Group
+              <select value={openGroup} onChange={(event) => setOpenGroup(event.target.value)}>
+                {bootstrap.saleGroups.filter((group) => group.active).map((group) => (
+                  <option key={group.id} value={group.id}>{group.name}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Print to
+              <select value={openUnit} onChange={(event) => setOpenUnit(event.target.value)}>
+                <option value="">Group default / no KOT</option>
+                {bootstrap.productionUnits.filter((unit) => unit.active).map((unit) => (
+                  <option key={unit.id} value={unit.id}>{unit.name}</option>
+                ))}
+              </select>
+            </label>
+            <button type="submit">Add open item</button>
+          </form>
           <LineItems
             emptyTitle="No new dishes selected"
             emptyText="Tap dishes from the menu. This list is only new items not sent yet."
@@ -549,9 +657,35 @@ function TableWorkspace({ tableId, tableName, setNotice }: { tableId: string | n
             }))}
           />
           {data?.order ? (
-            <button type="button" className="danger-link" disabled={cancelOrder.isPending} onClick={() => cancelOrder.mutate()}>
-              Cancel order
-            </button>
+            <div className="shift-panel">
+              <label>
+                Shift one item to
+                <select value={shiftTargetTableId} onChange={(event) => setShiftTargetTableId(event.target.value)}>
+                  <option value="">Choose free table</option>
+                  {shiftTargets.map((table) => <option key={table.id} value={table.id}>{table.name}</option>)}
+                </select>
+              </label>
+              <div className="shift-actions">
+                {sentItems.map((item) => (
+                  <button key={item.id} type="button" disabled={!shiftTargetTableId || shiftItem.isPending} onClick={() => shiftItem.mutate(item.id)}>
+                    Move 1 x {item.name_snapshot}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+          {data?.order ? (
+            <ManagerApprovalBox
+              title="Cancel running order"
+              pin={managerPin}
+              reason={managerReason}
+              onPin={setManagerPin}
+              onReason={setManagerReason}
+              buttonLabel={cancelOrder.isPending ? "Cancelling..." : "Cancel order"}
+              danger
+              disabled={cancelOrder.isPending || managerPin.length < 4 || managerReason.trim().length < 3}
+              onSubmit={() => cancelOrder.mutate()}
+            />
           ) : null}
         </div>
       ) : null}
@@ -559,6 +693,7 @@ function TableWorkspace({ tableId, tableName, setNotice }: { tableId: string | n
       {orderPanel === "bill" ? (
         <BillingPanel
           tableOrder={data}
+          menuItems={bootstrap.menuItems}
           sentTotal={sentTotal}
           generateBill={() => generateBill.mutate()}
           generating={generateBill.isPending || tableOrder.isFetching}
@@ -572,6 +707,7 @@ function TableWorkspace({ tableId, tableName, setNotice }: { tableId: string | n
 
 function BillingPanel({
   tableOrder,
+  menuItems,
   sentTotal,
   generateBill,
   generating,
@@ -579,6 +715,7 @@ function BillingPanel({
   setNotice
 }: {
   tableOrder?: TableOrder | null;
+  menuItems: MenuItem[];
   sentTotal: number;
   generateBill: () => void;
   generating: boolean;
@@ -591,6 +728,11 @@ function BillingPanel({
   const [tip, setTip] = useState("0");
   const [reference, setReference] = useState("");
   const [payments, setPayments] = useState({ cash: "0", upi: "0", card: "0", online: "0" });
+  const [managerPin, setManagerPin] = useState("");
+  const [managerReason, setManagerReason] = useState("");
+  const [revisionOpen, setRevisionOpen] = useState(false);
+  const [revisionItems, setRevisionItems] = useState<Array<{ key: string; orderItemId?: string; menuItemId?: string; openName?: string; pricePaise: number; saleGroupId: string; productionUnitId?: string | null; name: string; quantity: number }>>([]);
+  const [revisionAddMenuItemId, setRevisionAddMenuItemId] = useState("");
   const bill = tableOrder?.bill;
   const existingPaid = bill?.paid_paise ?? (tableOrder?.payments ?? []).reduce((total, payment) => total + payment.amount_paise, 0);
   const discountPaise = bill
@@ -622,9 +764,114 @@ function BillingPanel({
     },
     onError: (error) => setNotice({ tone: "bad", text: messageOf(error) })
   });
+  const printBill = useMutation({
+    mutationFn: () => {
+      if (!bill) throw new Error("Generate the bill first.");
+      return hubApi.printBill(bill.id);
+    },
+    onSuccess: () => setNotice({ tone: "good", text: "Bill print queued." }),
+    onError: (error) => setNotice({ tone: "bad", text: messageOf(error) })
+  });
+  const reprintBill = useMutation({
+    mutationFn: () => {
+      if (!bill) throw new Error("Generate the bill first.");
+      return hubApi.reprintBill(bill.id, { managerApproval: { pin: managerPin, reason: managerReason || "Bill reprint", approvedBy: "manager" } });
+    },
+    onSuccess: () => {
+      setManagerPin("");
+      setManagerReason("");
+      setNotice({ tone: "good", text: "Reprint queued after manager approval." });
+    },
+    onError: (error) => setNotice({ tone: "bad", text: messageOf(error) })
+  });
+  const markNc = useMutation({
+    mutationFn: () => {
+      if (!bill) throw new Error("Generate the bill first.");
+      return hubApi.markBillNc(bill.id, { managerApproval: { pin: managerPin, reason: managerReason || "NC bill", approvedBy: "manager" } });
+    },
+    onSuccess: async () => {
+      setManagerPin("");
+      setManagerReason("");
+      await onSettled();
+      setNotice({ tone: "good", text: "NC bill printed and excluded from sales totals." });
+    },
+    onError: (error) => setNotice({ tone: "bad", text: messageOf(error) })
+  });
+  const reviseBill = useMutation({
+    mutationFn: () => {
+      if (!bill) throw new Error("Generate the bill first.");
+      const items = revisionItems
+        .filter((item) => item.quantity > 0)
+        .map((item) =>
+          item.menuItemId
+            ? { orderItemId: item.orderItemId, menuItemId: item.menuItemId, quantity: item.quantity }
+            : {
+                orderItemId: item.orderItemId,
+                openName: item.openName ?? item.name,
+                openPricePaise: item.pricePaise,
+                saleGroupId: item.saleGroupId,
+                productionUnitId: item.productionUnitId ?? null,
+                quantity: item.quantity
+              }
+        );
+      if (items.length === 0) throw new Error("A revised bill needs at least one item.");
+      return hubApi.reviseBill(bill.id, { items, managerApproval: { pin: managerPin, reason: managerReason || "Bill revised", approvedBy: "manager" } });
+    },
+    onSuccess: async () => {
+      setRevisionOpen(false);
+      setManagerPin("");
+      setManagerReason("");
+      await onSettled();
+      setNotice({ tone: "good", text: "Bill revised and totals refreshed." });
+    },
+    onError: (error) => setNotice({ tone: "bad", text: messageOf(error) })
+  });
 
   function fillFull(method: keyof typeof payments) {
     setPayments({ cash: "0", upi: "0", card: "0", online: "0", [method]: String(Math.max(0, finalTotal - existingPaid) / 100) });
+  }
+
+  function openRevisionEditor() {
+    const rows = (tableOrder?.items ?? [])
+      .filter((item) => item.status !== "cancelled" && item.quantity > 0)
+      .map((item) => ({
+        key: item.id,
+        orderItemId: item.id,
+        menuItemId: item.menu_item_id ?? undefined,
+        openName: item.menu_item_id ? undefined : item.name_snapshot,
+        pricePaise: item.unit_price_paise,
+        saleGroupId: item.sale_group_id,
+        productionUnitId: item.production_unit_id,
+        name: item.name_snapshot,
+        quantity: item.quantity
+      }));
+    setRevisionItems(rows);
+    setRevisionOpen(true);
+  }
+
+  function changeRevisionQty(key: string, delta: number) {
+    setRevisionItems((current) => current.map((item) => item.key === key ? { ...item, quantity: Math.max(0, item.quantity + delta) } : item));
+  }
+
+  function addRevisionDish() {
+    const item = menuItems.find((menuItem) => menuItem.id === revisionAddMenuItemId);
+    if (!item) return;
+    setRevisionItems((current) => {
+      const existing = current.find((row) => row.menuItemId === item.id);
+      if (existing) return current.map((row) => row.key === existing.key ? { ...row, quantity: row.quantity + 1 } : row);
+      return [
+        ...current,
+        {
+          key: `new-${item.id}`,
+          menuItemId: item.id,
+          pricePaise: item.price_paise,
+          saleGroupId: item.sale_group_id,
+          productionUnitId: item.production_unit_id,
+          name: item.name,
+          quantity: 1
+        }
+      ];
+    });
   }
 
   if (!tableOrder?.order) {
@@ -651,6 +898,10 @@ function BillingPanel({
         <Metric label="Bill total" value={formatInr(finalTotal)} />
         <Metric label="Already paid" value={formatInr(existingPaid)} />
         <Metric label="Balance" value={formatInr(Math.max(0, finalTotal - existingPaid))} />
+      </div>
+      {bill.revision_number ? <p className="plain-state">Bill revision {bill.revision_number}{bill.is_nc ? ` · NC: ${bill.nc_reason ?? ""}` : ""}</p> : null}
+      <div className="action-strip">
+        <button type="button" disabled={printBill.isPending} onClick={() => printBill.mutate()}>Print bill only</button>
       </div>
       <div className="adjust-grid">
         <label>
@@ -688,6 +939,66 @@ function BillingPanel({
       </label>
       <button type="button" className="punch-button" disabled={settle.isPending || newPaid <= 0 || remaining > 0} onClick={() => settle.mutate()}>
         {settle.isPending ? "Punching..." : `Punch bill · ${remaining > 0 ? `${formatInr(remaining)} left` : "paid"}`}
+      </button>
+      <ManagerApprovalBox
+        title="Manager-only bill actions"
+        pin={managerPin}
+        reason={managerReason}
+        onPin={setManagerPin}
+        onReason={setManagerReason}
+        buttonLabel={reprintBill.isPending ? "Queueing..." : "Reprint bill"}
+        disabled={reprintBill.isPending || managerPin.length < 4 || managerReason.trim().length < 3}
+        onSubmit={() => reprintBill.mutate()}
+      />
+      {!revisionOpen ? (
+        <button type="button" className="secondary-button" disabled={Boolean(bill.is_nc) || existingPaid > 0} onClick={openRevisionEditor}>
+          Revise printed bill
+        </button>
+      ) : (
+        <div className="revision-box">
+          <div className="revision-head">
+            <strong>Revise bill items</strong>
+            <button type="button" onClick={() => setRevisionOpen(false)}>Cancel</button>
+          </div>
+          <div className="revision-add-row">
+            <select value={revisionAddMenuItemId} onChange={(event) => setRevisionAddMenuItemId(event.target.value)}>
+              <option value="">Add dish</option>
+              {menuItems.filter((item) => item.active).map((item) => (
+                <option key={item.id} value={item.id}>{item.name}</option>
+              ))}
+            </select>
+            <button type="button" disabled={!revisionAddMenuItemId} onClick={addRevisionDish}>Add</button>
+          </div>
+          <LineItems
+            emptyTitle="No bill items"
+            emptyText="Add at least one item before saving the revised bill."
+            rows={revisionItems.map((item) => ({
+              id: item.key,
+              title: item.name,
+              meta: `${formatInr(item.pricePaise)} each`,
+              quantity: item.quantity,
+              amount: item.pricePaise * item.quantity,
+              onMinus: () => changeRevisionQty(item.key, -1),
+              onPlus: () => changeRevisionQty(item.key, 1)
+            }))}
+          />
+          <button
+            type="button"
+            className="secondary-button"
+            disabled={reviseBill.isPending || managerPin.length < 4 || managerReason.trim().length < 3 || revisionItems.every((item) => item.quantity <= 0)}
+            onClick={() => reviseBill.mutate()}
+          >
+            {reviseBill.isPending ? "Saving revision..." : "Save revised bill"}
+          </button>
+        </div>
+      )}
+      <button
+        type="button"
+        className="danger-link"
+        disabled={markNc.isPending || managerPin.length < 4 || managerReason.trim().length < 3}
+        onClick={() => markNc.mutate()}
+      >
+        {markNc.isPending ? "Marking NC..." : "Mark NC bill"}
       </button>
     </div>
   );
@@ -822,6 +1133,16 @@ function ReportsView({ setNotice }: { setNotice: NoticeSetter }) {
 
 function AdvancedView({ bootstrap, setNotice }: { bootstrap: Bootstrap; setNotice: NoticeSetter }) {
   const queryClient = useQueryClient();
+  const [newPin, setNewPin] = useState("");
+  const [currentPin, setCurrentPin] = useState("");
+  const [template, setTemplate] = useState({
+    restaurantName: bootstrap.ticketTemplate?.restaurantName ?? "",
+    taxRegistrationText: bootstrap.ticketTemplate?.taxRegistrationText ?? "",
+    billHeader: bootstrap.ticketTemplate?.billHeader ?? "",
+    billFooter: bootstrap.ticketTemplate?.billFooter ?? "",
+    kotHeader: bootstrap.ticketTemplate?.kotHeader ?? "",
+    kotFooter: bootstrap.ticketTemplate?.kotFooter ?? ""
+  });
   const pullCloud = useMutation({
     mutationFn: hubApi.pullCloud,
     onSuccess: async (result) => {
@@ -838,9 +1159,66 @@ function AdvancedView({ bootstrap, setNotice }: { bootstrap: Bootstrap; setNotic
     },
     onError: (error) => setNotice({ tone: "bad", text: messageOf(error) })
   });
+  const savePin = useMutation({
+    mutationFn: () => hubApi.setManagerPin({ currentPin: currentPin || undefined, newPin, updatedBy: "admin" }),
+    onSuccess: () => {
+      setCurrentPin("");
+      setNewPin("");
+      setNotice({ tone: "good", text: "Manager PIN saved." });
+    },
+    onError: (error) => setNotice({ tone: "bad", text: messageOf(error) })
+  });
+  const saveTemplate = useMutation({
+    mutationFn: () => hubApi.updateTicketTemplate(template),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["bootstrap"] });
+      setNotice({ tone: "good", text: "Bill and KOT text saved." });
+    },
+    onError: (error) => setNotice({ tone: "bad", text: messageOf(error) })
+  });
 
   return (
     <div className="advanced-layout">
+      <section className="panel">
+        <div className="panel-title">
+          <h2>Manager approval</h2>
+        </div>
+        <form className="inline-form" onSubmit={(event) => { event.preventDefault(); savePin.mutate(); }}>
+          <label>
+            Current PIN
+            <input value={currentPin} onChange={(event) => setCurrentPin(event.target.value)} type="password" placeholder="Only needed when changing PIN" />
+          </label>
+          <label>
+            New manager PIN
+            <input value={newPin} onChange={(event) => setNewPin(event.target.value)} type="password" />
+          </label>
+          <button type="submit" disabled={newPin.length < 4 || savePin.isPending}>Save PIN</button>
+        </form>
+      </section>
+      <section className="panel">
+        <div className="panel-title">
+          <h2>Tax groups</h2>
+        </div>
+        <div className="record-list">
+          {bootstrap.saleGroups.map((group) => (
+            <SaleGroupRow key={group.id} group={group} units={bootstrap.productionUnits} setNotice={setNotice} onSaved={() => queryClient.invalidateQueries({ queryKey: ["bootstrap"] })} />
+          ))}
+        </div>
+      </section>
+      <section className="panel">
+        <div className="panel-title">
+          <h2>Bill and KOT text</h2>
+        </div>
+        <form className="template-form" onSubmit={(event) => { event.preventDefault(); saveTemplate.mutate(); }}>
+          {(["restaurantName", "taxRegistrationText", "billHeader", "billFooter", "kotHeader", "kotFooter"] as const).map((field) => (
+            <label key={field}>
+              {fieldLabel(field)}
+              <input value={template[field]} onChange={(event) => setTemplate((current) => ({ ...current, [field]: event.target.value }))} />
+            </label>
+          ))}
+          <button type="submit" disabled={saveTemplate.isPending}>Save print text</button>
+        </form>
+      </section>
       <section className="panel">
         <div className="panel-title">
           <h2>Support tools</h2>
@@ -953,12 +1331,12 @@ function FloorEditForm({ floor, onSaved, setNotice }: { floor: Floor; onSaved: (
       setSaving(true);
       hubApi.updateFloor(floor.id, { name })
         .then(onSaved)
-        .then(() => setNotice({ tone: "good", text: "Room updated." }))
+        .then(() => setNotice({ tone: "good", text: "Floor updated." }))
         .catch((error) => setNotice({ tone: "bad", text: messageOf(error) }))
         .finally(() => setSaving(false));
     }}>
       <label>
-        Room name
+        Floor name
         <input value={name} onChange={(event) => setName(event.target.value)} />
       </label>
       <button type="submit" disabled={!name.trim() || saving}>Save</button>
@@ -995,7 +1373,7 @@ function TableEditForm({
         <input value={name} onChange={(event) => setName(event.target.value)} />
       </label>
       <label>
-        Room
+        Floor
         <select value={floorId} onChange={(event) => setFloorId(event.target.value)}>
           {floors.map((floor) => <option key={floor.id} value={floor.id}>{floor.name}</option>)}
         </select>
@@ -1030,24 +1408,27 @@ function UnitEditForm({ unit, onSaved, setNotice }: { unit: ProductionUnit; onSa
 function DishEditForm({
   item,
   units,
+  saleGroups,
   onSaved,
   setNotice
 }: {
   item: MenuItem;
   units: ProductionUnit[];
+  saleGroups: Bootstrap["saleGroups"];
   onSaved: () => Promise<void>;
   setNotice: NoticeSetter;
 }) {
   const [name, setName] = useState(item.name);
   const [price, setPrice] = useState(String(item.price_paise / 100));
   const [productionUnitId, setProductionUnitId] = useState(item.production_unit_id ?? "");
+  const [saleGroupId, setSaleGroupId] = useState(item.sale_group_id ?? "sg-food");
   const [saving, setSaving] = useState(false);
   const pricePaise = Math.round(Number(price || 0) * 100);
   return (
     <form className="row-edit-form dish-edit-form" onSubmit={(event) => {
       event.preventDefault();
       setSaving(true);
-      hubApi.updateDish(item.id, { name, pricePaise, productionUnitId: productionUnitId || null })
+      hubApi.updateDish(item.id, { name, pricePaise, productionUnitId: productionUnitId || null, saleGroupId })
         .then(onSaved)
         .then(() => setNotice({ tone: "good", text: "Dish updated." }))
         .catch((error) => setNotice({ tone: "bad", text: messageOf(error) }))
@@ -1068,8 +1449,91 @@ function DishEditForm({
           {units.map((unit) => <option key={unit.id} value={unit.id}>{unit.name}</option>)}
         </select>
       </label>
+      <label>
+        Group
+        <select value={saleGroupId} onChange={(event) => setSaleGroupId(event.target.value)}>
+          {saleGroups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}
+        </select>
+      </label>
       <button type="submit" disabled={!name.trim() || pricePaise <= 0 || saving}>Save</button>
     </form>
+  );
+}
+
+function SaleGroupRow({
+  group,
+  units,
+  setNotice,
+  onSaved
+}: {
+  group: Bootstrap["saleGroups"][number];
+  units: ProductionUnit[];
+  setNotice: NoticeSetter;
+  onSaved: () => Promise<unknown>;
+}) {
+  const [defaultProductionUnitId, setDefaultProductionUnitId] = useState(group.default_production_unit_id ?? "");
+  const [ticketLabel, setTicketLabel] = useState<"KOT" | "BOT">(group.ticket_label);
+  const [taxText, setTaxText] = useState(() => {
+    try {
+      return (JSON.parse(group.tax_components_json) as Array<{ name: string; rateBps: number }>)
+        .map((component) => `${component.name}:${component.rateBps / 100}`)
+        .join(", ");
+    } catch {
+      return "";
+    }
+  });
+  const [saving, setSaving] = useState(false);
+  function parseTaxComponents() {
+    return taxText
+      .split(",")
+      .map((part) => part.trim())
+      .filter(Boolean)
+      .map((part) => {
+        const [name, percent] = part.split(":").map((value) => value.trim());
+        return { name: name ?? "", rateBps: Math.round(Number(percent || 0) * 100) };
+      })
+      .filter((component) => component.name && Number.isFinite(component.rateBps));
+  }
+  return (
+    <article className="record-row">
+      <div>
+        <strong>{group.name}</strong>
+        <span>{group.kind} · {ticketLabel} · {group.default_production_unit_name ?? "No default counter"}</span>
+      </div>
+      <form className="row-edit-form" onSubmit={(event) => {
+        event.preventDefault();
+        setSaving(true);
+        hubApi.updateSaleGroup(group.id, {
+          defaultProductionUnitId: defaultProductionUnitId || null,
+          ticketLabel,
+          taxComponents: parseTaxComponents()
+        })
+          .then(onSaved)
+          .then(() => setNotice({ tone: "good", text: "Tax group saved." }))
+          .catch((error) => setNotice({ tone: "bad", text: messageOf(error) }))
+          .finally(() => setSaving(false));
+      }}>
+        <label>
+          Default counter
+          <select value={defaultProductionUnitId} onChange={(event) => setDefaultProductionUnitId(event.target.value)}>
+            <option value="">None</option>
+            {units.filter((unit) => unit.active).map((unit) => <option key={unit.id} value={unit.id}>{unit.name}</option>)}
+          </select>
+        </label>
+        <label>
+          Ticket
+          <select value={ticketLabel} onChange={(event) => setTicketLabel(event.target.value as "KOT" | "BOT")}>
+            <option value="KOT">KOT</option>
+            <option value="BOT">BOT</option>
+          </select>
+        </label>
+        <label>
+          Taxes
+          <input value={taxText} onChange={(event) => setTaxText(event.target.value)} placeholder="CGST:2.5, SGST:2.5" />
+        </label>
+        <button type="submit" disabled={saving}>Save</button>
+      </form>
+    </article>
   );
 }
 
@@ -1103,6 +1567,47 @@ function LineItems({
   );
 }
 
+function ManagerApprovalBox({
+  title,
+  pin,
+  reason,
+  onPin,
+  onReason,
+  buttonLabel,
+  disabled,
+  danger,
+  onSubmit
+}: {
+  title: string;
+  pin: string;
+  reason: string;
+  onPin: (value: string) => void;
+  onReason: (value: string) => void;
+  buttonLabel: string;
+  disabled: boolean;
+  danger?: boolean;
+  onSubmit: () => void;
+}) {
+  return (
+    <section className="manager-approval">
+      <strong>{title}</strong>
+      <div className="approval-grid">
+        <label>
+          Manager PIN
+          <input value={pin} onChange={(event) => onPin(event.target.value)} type="password" placeholder="4+ digit PIN" />
+        </label>
+        <label>
+          Reason
+          <input value={reason} onChange={(event) => onReason(event.target.value)} placeholder="Reason required" />
+        </label>
+        <button type="button" className={danger ? "danger-link" : undefined} disabled={disabled} onClick={onSubmit}>
+          {buttonLabel}
+        </button>
+      </div>
+    </section>
+  );
+}
+
 function Metric({ label, value }: { label: string; value: string }) {
   return (
     <article className="metric-tile">
@@ -1132,6 +1637,18 @@ function titleForView(view: HubView) {
     advanced: "Advanced"
   };
   return titles[view];
+}
+
+function fieldLabel(field: string) {
+  const labels: Record<string, string> = {
+    restaurantName: "Restaurant name",
+    taxRegistrationText: "GST / VAT line",
+    billHeader: "Bill header",
+    billFooter: "Bill footer",
+    kotHeader: "KOT/BOT header",
+    kotFooter: "KOT/BOT footer"
+  };
+  return labels[field] ?? field;
 }
 
 function messageOf(error: unknown) {

@@ -14,7 +14,6 @@ describe("shared command schemas", () => {
   it("validates a waiter order command", () => {
     const input = submitOrderSchema.parse({
       tableId: "table-1",
-      captainId: "waiter-1",
       pax: 2,
       items: [{ menuItemId: "item-1", quantity: 1 }]
     });
@@ -26,6 +25,7 @@ describe("shared command schemas", () => {
     expect(updateReceiptPrinterSchema.parse({ printerName: "EPSON_TM_T88", printerPort: 9100 })).toMatchObject({
       printerMode: "system"
     });
+    expect(createPairingCodeSchema.parse({ deviceName: "Captain phone", role: "captain" })).toMatchObject({ role: "captain" });
     expect(() => createPairingCodeSchema.parse({ deviceName: "Phone", role: "owner" })).toThrow();
   });
 

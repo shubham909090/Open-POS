@@ -1,6 +1,7 @@
 import { and, asc, eq, inArray, lt, sql } from "drizzle-orm";
 import type { HubOrm } from "../db/database.js";
-import { printJobs } from "../db/drizzle-schema.js";
+import { eventLog, printJobs, syncOutbox } from "../db/drizzle-schema.js";
+import { makeId } from "../domain/ids.js";
 import type { PrinterAdapter } from "./escpos.js";
 
 interface PrintJobRow {
@@ -63,19 +64,38 @@ export class PrintJobService {
           .run();
         printed += 1;
       } catch (error) {
+        const message = error instanceof Error ? error.message : "Unknown print error";
         this.db
           .update(printJobs)
           .set({
             status: "failed",
-            lastError: error instanceof Error ? error.message : "Unknown print error",
+            lastError: message,
             updatedAt: new Date().toISOString()
           })
           .where(eq(printJobs.id, job.id))
           .run();
+        this.appendFailureEvent(job.id, message);
         failed += 1;
       }
     }
 
     return { printed, failed };
+  }
+
+  private appendFailureEvent(printJobId: string, message: string): void {
+    const now = new Date().toISOString();
+    const event = {
+      eventId: makeId("evt"),
+      type: "print_job.failed",
+      aggregateType: "print_job",
+      aggregateId: printJobId,
+      payload: JSON.stringify({ printJobId, message }),
+      createdAt: now
+    };
+    this.db.insert(eventLog).values(event).run();
+    this.db
+      .insert(syncOutbox)
+      .values({ eventId: event.eventId, status: "pending", attempts: 0, createdAt: now, updatedAt: now })
+      .run();
   }
 }

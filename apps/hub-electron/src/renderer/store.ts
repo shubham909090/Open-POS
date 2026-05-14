@@ -9,6 +9,9 @@ export interface DraftItem {
   name: string;
   pricePaise: number;
   quantity: number;
+  openName?: string;
+  saleGroupId?: string;
+  productionUnitId?: string | null;
 }
 
 interface HubUiState {
@@ -24,6 +27,7 @@ interface HubUiState {
   setMenuSearch: (value: string) => void;
   setSelectedKdsUnitId: (unitId: string | null) => void;
   addDraftItem: (tableId: string, item: MenuItem) => void;
+  addOpenDraftItem: (tableId: string, item: Omit<DraftItem, "menuItemId" | "quantity">) => void;
   changeDraftQty: (tableId: string, menuItemId: string, delta: number) => void;
   clearDraft: (tableId: string) => void;
 }
@@ -54,6 +58,28 @@ export const useHubStore = create<HubUiState>((set) => ({
               name: item.name,
               pricePaise: item.price_paise,
               quantity: (current?.quantity ?? 0) + 1
+            }
+          }
+        }
+      };
+    }),
+  addOpenDraftItem: (tableId, item) =>
+    set((state) => {
+      const tableDraft = state.drafts[tableId] ?? {};
+      const id = `open-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      return {
+        drafts: {
+          ...state.drafts,
+          [tableId]: {
+            ...tableDraft,
+            [id]: {
+              menuItemId: id,
+              name: item.name,
+              openName: item.name,
+              pricePaise: item.pricePaise,
+              saleGroupId: item.saleGroupId,
+              productionUnitId: item.productionUnitId ?? null,
+              quantity: 1
             }
           }
         }

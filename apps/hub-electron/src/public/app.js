@@ -1417,16 +1417,24 @@ $("pairingForm").addEventListener("submit", async (event) => {
         expiresInMinutes: 10
       })
     });
-    $("pairingResult").innerHTML = `
-      <div class="pairing-card">
-        <img src="${result.qrDataUrl}" alt="Device pairing QR code" />
-        <div>
-          <strong>Code ${result.code}</strong>
-          <span>Scan QR or enter code manually. Expires ${new Date(result.expiresAt).toLocaleTimeString()}.</span>
-          <textarea readonly>${result.pairingPayloadText}</textarea>
-        </div>
-      </div>
-    `;
+    const pairingResult = $("pairingResult");
+    pairingResult.replaceChildren();
+    const card = document.createElement("div");
+    card.className = "pairing-card";
+    const qr = document.createElement("img");
+    qr.src = result.qrDataUrl;
+    qr.alt = "Device pairing QR code";
+    const detail = document.createElement("div");
+    const code = document.createElement("strong");
+    code.textContent = `Code ${result.code}`;
+    const help = document.createElement("span");
+    help.textContent = `Scan QR or enter code manually. Expires ${new Date(result.expiresAt).toLocaleTimeString()}.`;
+    const payload = document.createElement("textarea");
+    payload.readOnly = true;
+    payload.value = result.pairingPayloadText;
+    detail.append(code, help, payload);
+    card.append(qr, detail);
+    pairingResult.append(card);
     await loadAdminPanels();
     focusNextSetupStep();
   }, "Pairing code created");

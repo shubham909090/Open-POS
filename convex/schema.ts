@@ -37,7 +37,7 @@ export default defineSchema({
     restaurantId: v.id("restaurants"),
     hubDeviceId: v.optional(v.string()),
     name: v.string(),
-    role: v.union(v.literal("admin"), v.literal("cashier"), v.literal("waiter"), v.literal("kitchen")),
+    role: v.union(v.literal("admin"), v.literal("cashier"), v.literal("captain"), v.literal("waiter"), v.literal("kitchen")),
     pairedAt: v.string(),
     revokedAt: v.optional(v.string())
   }).index("by_restaurant", ["restaurantId"])
@@ -122,6 +122,9 @@ export default defineSchema({
     tipPaise: v.number(),
     finalTotalPaise: v.number(),
     paidPaise: v.number(),
+    isNc: v.optional(v.boolean()),
+    ncReason: v.optional(v.string()),
+    revisionNumber: v.optional(v.number()),
     paymentsJson: v.string(),
     settledAt: v.optional(v.string()),
     updatedAt: v.string()
@@ -134,10 +137,32 @@ export default defineSchema({
     posDayId: v.string(),
     menuItemId: v.string(),
     name: v.string(),
+    saleGroupId: v.optional(v.string()),
+    saleGroupName: v.optional(v.string()),
+    saleGroupKind: v.optional(v.string()),
     quantity: v.number(),
     grossSalesPaise: v.number(),
+    ncQuantity: v.optional(v.number()),
+    ncGrossSalesPaise: v.optional(v.number()),
     updatedAt: v.string()
   })
     .index("by_restaurant_and_businessDate", ["restaurantId", "businessDate"])
-    .index("by_restaurant_date_and_menuItem", ["restaurantId", "businessDate", "menuItemId"])
+    .index("by_restaurant_date_and_menuItem", ["restaurantId", "businessDate", "menuItemId"]),
+  dailyReportGroups: defineTable({
+    restaurantId: v.id("restaurants"),
+    businessDate: v.string(),
+    posDayId: v.string(),
+    saleGroupId: v.string(),
+    name: v.string(),
+    kind: v.string(),
+    quantity: v.number(),
+    grossSalesPaise: v.number(),
+    taxPaise: v.number(),
+    finalSalesPaise: v.number(),
+    ncQuantity: v.number(),
+    ncGrossSalesPaise: v.number(),
+    updatedAt: v.string()
+  })
+    .index("by_restaurant_and_businessDate", ["restaurantId", "businessDate"])
+    .index("by_restaurant_date_and_group", ["restaurantId", "businessDate", "saleGroupId"])
 });

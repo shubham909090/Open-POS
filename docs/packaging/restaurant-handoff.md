@@ -80,7 +80,7 @@ Building a Windows `.exe` from macOS may require Wine. If the command fails on M
 4. Set the PC LAN IP in `HUB_PUBLIC_URL`.
 5. Start **Gaurav POS Hub**.
 6. Unlock with `HUB_ADMIN_TOKEN`.
-7. Set up rooms, tables, kitchens/counters, dishes, and printers.
+7. Set up floors, tables, kitchens/counters, dishes, sale groups, manager PIN, and printers.
 8. Create pairing QR codes for tablets.
 
 ## Build Android APK

@@ -1,50 +1,71 @@
 import {
   calculateLineTotal,
-  calculateTax,
+  calculateTaxComponents,
+  type TaxComponentAmount,
+  type CancelOrderInput,
+  type CreateSaleGroupInput,
   type ClosePosDayInput,
   type CreateFloorInput,
   type CreateMenuItemInput,
   type CreateProductionUnitInput,
   type CreateTableInput,
   type DomainEvent,
+  type ManagerApprovalInput,
+  type ManagerPinInput,
+  type MarkNcBillInput,
+  type MoveOrderItemsInput,
+  type MoveTableInput,
   type KotType,
   type OpenPosDayInput,
   type ReprintKotInput,
+  type ReviseBillInput,
   type RetryPrintJobInput,
   type SettleBillInput,
   type SubmitOrderInput,
+  type TicketTemplateInput,
+  type UpdateSaleGroupInput,
   type UpdateFloorInput,
   type UpdateKotStatusInput,
   type UpdateMenuItemInput,
   type UpdateProductionUnitInput,
   type UpdateReceiptPrinterInput,
-  type UpdateTableInput
+  type UpdateTableInput,
+  type UserRole
 } from "@gaurav-pos/shared";
 import { and, count, desc, eq, inArray, max, sql, sum } from "drizzle-orm";
+import { createHash, pbkdf2Sync, randomBytes, timingSafeEqual } from "node:crypto";
 import type { HubOrm, SqliteDatabase } from "../db/database.js";
 import {
   bills,
+  billRevisions,
   dailyReportSnapshots,
   eventLog,
   floors,
   hubSettings,
+  managerApprovals,
   kotItems,
   kots,
   menuItems,
   orderItems,
+  orderMovements,
   orders,
   payments,
   posDays,
   printJobs,
+  readyNotifications,
   productionUnits,
   restaurantTables,
+  saleGroups,
   syncOutbox
 } from "../db/drizzle-schema.js";
 import { DomainError } from "./errors.js";
 import { makeId } from "./ids.js";
 import { renderBillTicket, renderKotTicket, type KotTicketItem } from "./tickets.js";
 
-const DEFAULT_GST_BPS = 500;
+const DEFAULT_TAX_COMPONENTS = [
+  { name: "CGST", rateBps: 250 },
+  { name: "SGST", rateBps: 250 }
+];
 
 interface ActivePosDayRow {
   id: string;
@@ -64,6 +85,11 @@ interface MenuItemRow {
   name: string;
   price_paise: number;
   production_unit_id: string | null;
+  sale_group_id: string;
+  sale_group_name: string;
+  sale_group_kind: string;
+  ticket_label: string;
+  tax_components_json: string;
   unit_name: string | null;
   printer_host: string | null;
   printer_port: number | null;
@@ -76,6 +102,9 @@ interface OrderRow {
   pos_day_id: string;
   status: string;
   captain_id: string;
+  captain_device_id: string | null;
+  created_by_device_id: string | null;
+  created_by_role: UserRole | null;
   created_at: string;
   updated_at: string;
 }
@@ -83,11 +112,18 @@ interface OrderRow {
 interface OrderItemRow {
   id: string;
   order_id: string;
-  menu_item_id: string;
+  menu_item_id: string | null;
   name_snapshot: string;
   unit_price_paise: number;
   quantity: number;
   production_unit_id: string | null;
+  sale_group_id: string;
+  sale_group_name_snapshot: string;
+  sale_group_kind_snapshot: string;
+  ticket_label_snapshot: string;
+  tax_components_json: string;
+  tax_paise: number;
+  is_open_item: boolean;
 }
 
 interface UnitRow {
@@ -109,6 +145,27 @@ interface BillRow {
   discount_paise: number;
   tip_paise: number;
   final_total_paise: number;
+  tax_breakdown_json: string;
+  revision_number: number;
+  is_nc: boolean;
+  nc_reason: string | null;
+}
+
+interface SaleGroupRow {
+  id: string;
+  name: string;
+  kind: string;
+  report_label: string;
+  ticket_label: "KOT" | "BOT";
+  tax_components_json: string;
+  default_production_unit_id: string | null;
+}
+
+interface BillTotals {
+  subtotalPaise: number;
+  taxPaise: number;
+  totalPaise: number;
+  taxBreakdown: TaxComponentAmount[];
 }
 
 interface DaySummary {
@@ -149,17 +206,36 @@ interface DaySummary {
     paidPaise: number;
     settledAt: string | null;
     payments: Array<{ method: string; amountPaise: number; reference: string | null }>;
+    isNc?: boolean;
+    ncReason?: string | null;
+    revisionNumber?: number;
   }>;
   itemSummaries: Array<{
     menuItemId: string;
     name: string;
+    saleGroupId: string;
+    saleGroupName: string;
+    saleGroupKind: string;
     quantity: number;
     grossSalesPaise: number;
+    ncQuantity: number;
+    ncGrossSalesPaise: number;
+  }>;
+  groupSummaries: Array<{
+    saleGroupId: string;
+    name: string;
+    kind: string;
+    quantity: number;
+    grossSalesPaise: number;
+    taxPaise: number;
+    finalSalesPaise: number;
+    ncQuantity: number;
+    ncGrossSalesPaise: number;
   }>;
 }
 
 interface KotItemChange {
-  menuItemId: string;
+  menuItemId: string | null;
   orderItemId: string | null;
   name: string;
   quantityDelta: number;
@@ -168,11 +244,40 @@ interface KotItemChange {
   printerHost: string | null;
   printerPort: number | null;
   printerName: string | null;
+  ticketLabel: string;
+}
+
+interface GroupSummaryAccumulator {
+  saleGroupId: string;
+  name: string;
+  kind: string;
+  quantity: number;
+  grossSalesPaise: number;
+  taxPaise: number;
+  finalSalesPaise: number;
+  ncQuantity: number;
+  ncGrossSalesPaise: number;
 }
 
 interface RequestedOrderItem {
-  menuItemId: string;
+  itemKey: string;
+  menuItemId: string | null;
   quantity: number;
+  name: string;
+  unitPricePaise: number;
+  productionUnitId: string | null;
+  saleGroupId: string;
+  saleGroupName: string;
+  saleGroupKind: string;
+  ticketLabel: string;
+  taxComponentsJson: string;
+  isOpenItem: boolean;
+}
+
+interface DeviceActor {
+  id: string;
+  name: string;
+  role: UserRole;
 }
 
 export class OrderService {
@@ -260,6 +365,7 @@ export class OrderService {
           nonCashPaymentsPaise: report.nonCashPaymentsPaise,
           billSummariesJson: JSON.stringify(report.billSummaries),
           itemSummariesJson: JSON.stringify(report.itemSummaries),
+          groupSummariesJson: JSON.stringify(report.groupSummaries),
           finalizedAt: now,
           updatedAt: now
         })
@@ -288,6 +394,7 @@ export class OrderService {
             nonCashPaymentsPaise: report.nonCashPaymentsPaise,
             billSummariesJson: JSON.stringify(report.billSummaries),
             itemSummariesJson: JSON.stringify(report.itemSummaries),
+            groupSummariesJson: JSON.stringify(report.groupSummaries),
             finalizedAt: now,
             updatedAt: now
           }
@@ -308,22 +415,24 @@ export class OrderService {
     return run();
   }
 
-  submitOrder(input: SubmitOrderInput): { orderId: string; kotIds: string[] } {
+  submitOrder(input: SubmitOrderInput, actor?: DeviceActor): { orderId: string; kotIds: string[] } {
     const run = this.db.transaction(() => {
       const posDay = this.requireOpenPosDay();
       const table = this.requireTable(input.tableId);
       const now = new Date().toISOString();
+      const normalizedItems = this.prepareSubmittedItems(input.items, now);
       const isNewOrder = !table.current_order_id;
       const order = table.current_order_id
         ? this.requireEditableOrder(table.current_order_id)
-        : this.createOrder(input, posDay.id, now);
+        : this.createOrder(this.orderInputForActor(input, actor), posDay.id, now, actor);
+      this.assertCanEditOrder(order, actor);
 
       const previousItems = this.getOrderItems(order.id);
       const menuById = this.getMenuItems([
-        ...input.items.map((item) => item.menuItemId),
-        ...previousItems.map((item) => item.menu_item_id)
+        ...normalizedItems.map((item) => item.menuItemId).filter((id): id is string => Boolean(id)),
+        ...previousItems.map((item) => item.menu_item_id).filter((id): id is string => Boolean(id))
       ]);
-      const changes = this.applyOrderItemDiff(order.id, input.items, previousItems, menuById, now);
+      const changes = this.applyOrderItemDiff(order.id, normalizedItems, previousItems, menuById, now);
       const kotIds = this.createKotsForChanges(order, table, changes, now, isNewOrder, false);
 
       this.orm
@@ -354,8 +463,11 @@ export class OrderService {
     return run();
   }
 
-  cancelOrder(orderId: string, reason: string): { kotIds: string[] } {
+  cancelOrder(orderId: string, input: CancelOrderInput): { kotIds: string[] } {
     const run = this.db.transaction(() => {
+      const reason = input.reason;
+      const requestedBy = input.requestedBy;
+      this.verifyManagerApproval(input.managerApproval, "order.cancel", "order", orderId, requestedBy);
       const order = this.requireEditableOrder(orderId);
       const table = this.requireTable(order.table_id);
       const now = new Date().toISOString();
@@ -376,7 +488,8 @@ export class OrderService {
           productionUnitName: unit.name,
           printerHost: unit.printer_host,
           printerPort: unit.printer_port,
-          printerName: unit.printer_name
+          printerName: unit.printer_name,
+          ticketLabel: item.ticket_label_snapshot as "KOT" | "BOT"
         }];
       });
 
@@ -389,7 +502,7 @@ export class OrderService {
         .where(eq(orderItems.orderId, order.id))
         .run();
       this.freeTable(table.id);
-      this.appendEvent("order.cancelled", "order", order.id, { orderId, reason, kotIds });
+      this.appendEvent("order.cancelled", "order", order.id, { orderId, reason, requestedBy, kotIds });
 
       return { kotIds };
     });
@@ -465,6 +578,7 @@ export class OrderService {
 
   reprintBill(billId: string, input: ReprintKotInput): { printJobId: string } {
     const run = this.db.transaction(() => {
+      this.verifyManagerApproval(input.managerApproval, "bill.reprint", "bill", billId, input.requestedBy);
       const bill = this.db
         .prepare(
           `SELECT b.*, t.name AS table_name
@@ -483,6 +597,10 @@ export class OrderService {
             discount_paise: number;
             tip_paise: number;
             final_total_paise: number;
+            tax_breakdown_json: string;
+            revision_number: number;
+            is_nc: number;
+            nc_reason: string | null;
             created_at: string;
           }
         | undefined;
@@ -498,7 +616,11 @@ export class OrderService {
         discountPaise: bill.discount_paise,
         tipPaise: bill.tip_paise,
         finalTotalPaise: bill.final_total_paise,
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        taxBreakdown: this.parseTaxBreakdown(bill.tax_breakdown_json),
+        revisionNumber: bill.revision_number,
+        ncReason: bill.nc_reason,
+        ...this.getTicketTemplate()
       })}\nREPRINT\nReason: ${input.reason}\nRequested by: ${input.requestedBy}\n`;
 
       const printJobId = this.enqueuePrintJob({
@@ -510,6 +632,7 @@ export class OrderService {
       });
 
       this.appendEvent("bill.reprinted", "bill", billId, { ...input, printJobId });
+      this.orm.update(bills).set({ printCount: sql`${bills.printCount} + 1` }).where(eq(bills.id, billId)).run();
       return { printJobId };
     });
 
@@ -520,6 +643,92 @@ export class OrderService {
     return this.getOpenPosDay();
   }
 
+  listSaleGroups(includeInactive = true): unknown[] {
+    const where = includeInactive ? "" : "WHERE sg.active = 1";
+    return this.db
+      .prepare(
+        `SELECT sg.id, sg.name, sg.kind, sg.report_label, sg.ticket_label, sg.tax_components_json,
+          sg.default_production_unit_id, pu.name AS default_production_unit_name, sg.active
+         FROM sale_groups sg
+         LEFT JOIN production_units pu ON pu.id = sg.default_production_unit_id
+         ${where}
+         ORDER BY sg.active DESC, sg.name`
+      )
+      .all();
+  }
+
+  createSaleGroup(input: CreateSaleGroupInput): { id: string } {
+    if (input.defaultProductionUnitId) this.requireProductionUnit(input.defaultProductionUnitId);
+    const id = this.createEntityId("sg", input.customId, (candidate) =>
+      Boolean(this.orm.select({ id: saleGroups.id }).from(saleGroups).where(eq(saleGroups.id, candidate)).get())
+    );
+    this.orm
+      .insert(saleGroups)
+      .values({
+        id,
+        name: input.name,
+        kind: input.kind,
+        reportLabel: input.reportLabel ?? input.name,
+        ticketLabel: input.ticketLabel ?? "KOT",
+        taxComponentsJson: JSON.stringify(input.taxComponents ?? []),
+        defaultProductionUnitId: input.defaultProductionUnitId ?? null,
+        active: input.active ?? true
+      })
+      .run();
+    this.appendEvent("sale_group.created", "sale_group", id, { ...input, id });
+    return { id };
+  }
+
+  updateSaleGroup(id: string, input: UpdateSaleGroupInput): { id: string } {
+    if (input.defaultProductionUnitId) this.requireProductionUnit(input.defaultProductionUnitId);
+    const result = this.orm
+      .update(saleGroups)
+      .set({
+        ...(input.name !== undefined ? { name: input.name } : {}),
+        ...(input.kind !== undefined ? { kind: input.kind } : {}),
+        ...(input.reportLabel !== undefined ? { reportLabel: input.reportLabel } : {}),
+        ...(input.ticketLabel !== undefined ? { ticketLabel: input.ticketLabel } : {}),
+        ...(input.taxComponents !== undefined ? { taxComponentsJson: JSON.stringify(input.taxComponents) } : {}),
+        ...(input.defaultProductionUnitId !== undefined ? { defaultProductionUnitId: input.defaultProductionUnitId } : {}),
+        ...(input.active !== undefined ? { active: input.active } : {})
+      })
+      .where(eq(saleGroups.id, id))
+      .run();
+    if (result.changes === 0) throw new DomainError("Sale group not found", 404);
+    this.appendEvent("sale_group.updated", "sale_group", id, { id, ...input });
+    return { id };
+  }
+
+  setManagerPin(input: ManagerPinInput): { configured: boolean } {
+    const currentHash = this.getSetting("manager_pin_hash");
+    if (currentHash) this.verifyManagerApproval({ pin: input.currentPin ?? "", reason: "Manager PIN changed", approvedBy: input.updatedBy }, "manager_pin.update", "hub_setting", "manager_pin");
+    this.upsertSetting("manager_pin_hash", this.hashManagerPin(input.newPin));
+    this.appendEvent("manager_pin.updated", "hub_setting", "manager_pin", { updatedBy: input.updatedBy });
+    return { configured: true };
+  }
+
+  getTicketTemplate(): TicketTemplateInput {
+    return {
+      billHeader: this.getSetting("ticket_bill_header") ?? "",
+      billFooter: this.getSetting("ticket_bill_footer") ?? "",
+      kotHeader: this.getSetting("ticket_kot_header") ?? "",
+      kotFooter: this.getSetting("ticket_kot_footer") ?? "",
+      restaurantName: this.getSetting("ticket_restaurant_name") ?? "",
+      taxRegistrationText: this.getSetting("ticket_tax_registration_text") ?? ""
+    };
+  }
+
+  updateTicketTemplate(input: TicketTemplateInput): TicketTemplateInput {
+    this.upsertSetting("ticket_bill_header", input.billHeader ?? "");
+    this.upsertSetting("ticket_bill_footer", input.billFooter ?? "");
+    this.upsertSetting("ticket_kot_header", input.kotHeader ?? "");
+    this.upsertSetting("ticket_kot_footer", input.kotFooter ?? "");
+    this.upsertSetting("ticket_restaurant_name", input.restaurantName ?? "");
+    this.upsertSetting("ticket_tax_registration_text", input.taxRegistrationText ?? "");
+    this.appendEvent("ticket_template.updated", "hub_setting", "ticket_template", input);
+    return this.getTicketTemplate();
+  }
+
   generateBill(orderId: string): { billId: string; totalPaise: number } {
     const run = this.db.transaction(() => {
       const order = this.requireEditableOrder(orderId);
@@ -527,12 +736,7 @@ export class OrderService {
       const items = this.getOrderItems(orderId).filter((item) => item.quantity > 0);
       if (items.length === 0) throw new DomainError("Cannot bill an empty order");
 
-      const subtotalPaise = items.reduce(
-        (total, item) => total + calculateLineTotal(item.unit_price_paise, item.quantity),
-        0
-      );
-      const taxPaise = calculateTax(subtotalPaise, DEFAULT_GST_BPS);
-      const totalPaise = subtotalPaise + taxPaise;
+      const totals = this.calculateBillTotals(items);
       const billId = makeId("bill");
       const now = new Date().toISOString();
 
@@ -542,20 +746,24 @@ export class OrderService {
           id: billId,
           orderId,
           status: "pending",
-          subtotalPaise,
-          taxPaise,
-          totalPaise,
+          subtotalPaise: totals.subtotalPaise,
+          taxPaise: totals.taxPaise,
+          totalPaise: totals.totalPaise,
           discountPaise: 0,
           tipPaise: 0,
-          finalTotalPaise: totalPaise,
+          finalTotalPaise: totals.totalPaise,
+          taxBreakdownJson: JSON.stringify(totals.taxBreakdown),
+          revisionNumber: 1,
           createdAt: now
         })
         .run();
 
       this.orm.update(orders).set({ status: "billed", updatedAt: now }).where(eq(orders.id, orderId)).run();
+      this.orm.update(restaurantTables).set({ status: "billed" }).where(eq(restaurantTables.id, table.id)).run();
+      this.recordBillRevision(billId, 1, totals, "Initial bill", "cashier", now);
 
-      this.appendEvent("bill.generated", "bill", billId, { orderId, totalPaise });
-      return { billId, totalPaise };
+      this.appendEvent("bill.generated", "bill", billId, { orderId, totalPaise: totals.totalPaise, taxBreakdown: totals.taxBreakdown });
+      return { billId, totalPaise: totals.totalPaise };
     });
 
     return run();
@@ -618,7 +826,8 @@ export class OrderService {
           tipPaise,
           finalTotalPaise,
           status: isPaid ? "paid" : "pending",
-          settledAt: isPaid ? now : null
+          settledAt: isPaid ? now : null,
+          printCount: isPaid ? sql`${bills.printCount} + 1` : sql`${bills.printCount}`
         })
         .where(eq(bills.id, billId))
         .run();
@@ -635,7 +844,11 @@ export class OrderService {
           discountPaise,
           tipPaise,
           finalTotalPaise,
-          createdAt: now
+          createdAt: now,
+          taxBreakdown: this.parseTaxBreakdown(bill.tax_breakdown_json),
+          revisionNumber: bill.revision_number,
+          ncReason: bill.nc_reason,
+          ...this.getTicketTemplate()
         });
         this.enqueuePrintJob({
           targetType: "BILL",
@@ -693,7 +906,9 @@ export class OrderService {
       floors: this.listFloors(),
       tables: this.listTables(),
       productionUnits: this.listProductionUnits(),
+      saleGroups: this.listSaleGroups(true),
       menuItems: this.listMenuItems(true),
+      ticketTemplate: this.getTicketTemplate(),
       printJobs: this.listPrintJobs(20),
       syncStatus: this.getSyncStatus()
     };
@@ -718,7 +933,7 @@ export class OrderService {
       .set({ ...(input.name !== undefined ? { name: input.name } : {}), ...(input.active !== undefined ? { active: input.active } : {}) })
       .where(eq(floors.id, id))
       .run();
-    if (result.changes === 0) throw new DomainError("Room not found", 404);
+    if (result.changes === 0) throw new DomainError("Floor not found", 404);
     this.appendEvent("floor.updated", "floor", id, { id, ...input });
     return { id };
   }
@@ -730,7 +945,7 @@ export class OrderService {
       return { id, deleted: false, active: false };
     }
     const result = this.orm.delete(floors).where(eq(floors.id, id)).run();
-    if (result.changes === 0) throw new DomainError("Room not found", 404);
+    if (result.changes === 0) throw new DomainError("Floor not found", 404);
     this.appendEvent("floor.deleted", "floor", id, { id });
     return { id, deleted: true, active: false };
   }
@@ -855,17 +1070,23 @@ export class OrderService {
     const where = includeInactive ? "" : "WHERE mi.active = 1";
     return this.db
       .prepare(
-        `SELECT mi.id, mi.name, mi.price_paise, mi.production_unit_id, mi.active, pu.name AS production_unit_name
+        `SELECT mi.id, mi.name, mi.price_paise, mi.production_unit_id, mi.sale_group_id, mi.active,
+          pu.name AS production_unit_name,
+          sg.name AS sale_group_name,
+          sg.kind AS sale_group_kind,
+          sg.ticket_label
          FROM menu_items mi
+         JOIN sale_groups sg ON sg.id = mi.sale_group_id
          LEFT JOIN production_units pu ON pu.id = mi.production_unit_id
          ${where}
-         ORDER BY mi.active DESC, mi.name`
+         ORDER BY mi.active DESC, sg.name, mi.name`
       )
       .all();
   }
 
   createMenuItem(input: CreateMenuItemInput): { id: string } {
     if (input.productionUnitId) this.requireProductionUnit(input.productionUnitId);
+    this.requireSaleGroup(input.saleGroupId ?? "sg-food");
     const id = this.createEntityId("menu", input.customId, (candidate) =>
       Boolean(this.orm.select({ id: menuItems.id }).from(menuItems).where(eq(menuItems.id, candidate)).get())
     );
@@ -876,6 +1097,7 @@ export class OrderService {
         name: input.name,
         pricePaise: input.pricePaise,
         productionUnitId: input.productionUnitId ?? null,
+        saleGroupId: input.saleGroupId ?? "sg-food",
         active: input.active ?? true
       })
       .run();
@@ -885,11 +1107,13 @@ export class OrderService {
 
   updateMenuItem(id: string, input: UpdateMenuItemInput): { id: string } {
     if (input.productionUnitId) this.requireProductionUnit(input.productionUnitId);
+    if (input.saleGroupId) this.requireSaleGroup(input.saleGroupId);
     const existing = this.orm
       .select({
         name: menuItems.name,
         pricePaise: menuItems.pricePaise,
         productionUnitId: menuItems.productionUnitId,
+        saleGroupId: menuItems.saleGroupId,
         active: menuItems.active
       })
       .from(menuItems)
@@ -903,6 +1127,7 @@ export class OrderService {
         name: input.name ?? existing.name,
         pricePaise: input.pricePaise ?? existing.pricePaise,
         productionUnitId: input.productionUnitId !== undefined ? input.productionUnitId : existing.productionUnitId,
+        saleGroupId: input.saleGroupId ?? existing.saleGroupId,
         active: input.active ?? existing.active
       })
       .where(eq(menuItems.id, id))
@@ -932,10 +1157,44 @@ export class OrderService {
   }
 
   updateKotStatus(kotId: string, input: UpdateKotStatusInput): { id: string; status: string } {
-    const result = this.orm.update(kots).set({ status: input.status }).where(eq(kots.id, kotId)).run();
-    if (result.changes === 0) throw new DomainError("KOT not found", 404);
-    this.appendEvent("kot.status_changed", "kot", kotId, { kotId, status: input.status });
-    return { id: kotId, status: input.status };
+    const run = this.db.transaction(() => {
+      const result = this.orm.update(kots).set({ status: input.status }).where(eq(kots.id, kotId)).run();
+      if (result.changes === 0) throw new DomainError("KOT not found", 404);
+      if (input.status === "ready") this.createReadyNotification(kotId);
+      this.appendEvent("kot.status_changed", "kot", kotId, { kotId, status: input.status });
+      return { id: kotId, status: input.status };
+    });
+    return run();
+  }
+
+  listReadyNotifications(actor: DeviceActor): unknown[] {
+    if (actor.role !== "captain") return [];
+    const rows = this.orm
+      .select()
+      .from(readyNotifications)
+      .where(
+        and(
+          eq(readyNotifications.captainDeviceId, actor.id),
+          eq(readyNotifications.status, "unread")
+        )
+      )
+      .orderBy(desc(readyNotifications.createdAt))
+      .limit(20)
+      .all();
+    const now = new Date().toISOString();
+    for (const row of rows) {
+      this.orm.update(readyNotifications).set({ status: "seen", acknowledgedAt: now }).where(eq(readyNotifications.id, row.id)).run();
+    }
+    return rows.map((row) => ({
+      id: row.id,
+      kotId: row.kotId,
+      orderId: row.orderId,
+      tableId: row.tableId,
+      tableName: row.tableName,
+      productionUnitName: row.productionUnitName,
+      items: JSON.parse(row.itemsJson) as Array<{ name: string; quantity: number }>,
+      createdAt: row.createdAt
+    }));
   }
 
   getTableOrder(tableId: string): unknown {
@@ -1115,14 +1374,321 @@ export class OrderService {
 
   getDailyReport(posDayId: string): unknown {
     const row = this.db.prepare("SELECT * FROM daily_report_snapshots WHERE pos_day_id = ?").get(posDayId) as
-      | (Record<string, unknown> & { bill_summaries_json: string; item_summaries_json: string })
+      | (Record<string, unknown> & { bill_summaries_json: string; item_summaries_json: string; group_summaries_json?: string })
       | undefined;
     if (!row) throw new DomainError("Daily report not found", 404);
     return {
       ...row,
       billSummaries: JSON.parse(row.bill_summaries_json),
-      itemSummaries: JSON.parse(row.item_summaries_json)
+      itemSummaries: JSON.parse(row.item_summaries_json),
+      groupSummaries: row.group_summaries_json ? JSON.parse(row.group_summaries_json) : []
     };
+  }
+
+  reviseBill(billId: string, input: ReviseBillInput): { billId: string; revisionNumber: number; totalPaise: number; kotIds: string[] } {
+    const run = this.db.transaction(() => {
+      this.verifyManagerApproval(input.managerApproval, "bill.revise", "bill", billId, input.managerApproval.approvedBy);
+      const bill = this.getBillById(billId);
+      if (!bill) throw new DomainError("Bill not found", 404);
+      if (bill.status !== "pending") throw new DomainError("Only pending printed bills can be revised");
+      if (this.getBillPaidPaise(billId) > 0) throw new DomainError("Remove or reverse recorded payments before revising this bill");
+      const order = this.requireOrderById(bill.order_id);
+      if (!["billed", "open"].includes(order.status)) throw new DomainError("Order cannot be revised");
+      const table = this.requireTable(order.table_id);
+      const now = new Date().toISOString();
+      const normalizedItems = this.prepareSubmittedItems(input.items, now);
+      const previousItems = this.getOrderItems(order.id);
+      const menuById = this.getMenuItems([
+        ...normalizedItems.map((item) => item.menuItemId).filter((id): id is string => Boolean(id)),
+        ...previousItems.map((item) => item.menu_item_id).filter((id): id is string => Boolean(id))
+      ]);
+      const changes = this.applyOrderItemDiff(order.id, normalizedItems, previousItems, menuById, now, true);
+      const kotIds = this.createKotsForChanges(order, table, changes, now, false, false, input.managerApproval.reason);
+      const totals = this.calculateBillTotals(this.getOrderItems(order.id).filter((item) => item.quantity > 0));
+      const revisionNumber = (bill.revision_number ?? 1) + 1;
+
+      this.orm
+        .update(bills)
+        .set({
+          subtotalPaise: totals.subtotalPaise,
+          taxPaise: totals.taxPaise,
+          totalPaise: totals.totalPaise,
+          finalTotalPaise: Math.max(0, totals.totalPaise - bill.discount_paise + bill.tip_paise),
+          taxBreakdownJson: JSON.stringify(totals.taxBreakdown),
+          revisionNumber,
+          status: "pending"
+        })
+        .where(eq(bills.id, billId))
+        .run();
+      this.orm.update(orders).set({ status: "billed", updatedAt: now }).where(eq(orders.id, order.id)).run();
+      this.orm.update(restaurantTables).set({ status: "billed" }).where(eq(restaurantTables.id, table.id)).run();
+      this.recordBillRevision(billId, revisionNumber, totals, input.managerApproval.reason, input.managerApproval.approvedBy, now);
+      this.appendEvent("bill.revised", "bill", billId, { billId, revisionNumber, totalPaise: totals.totalPaise, kotIds });
+      return { billId, revisionNumber, totalPaise: totals.totalPaise, kotIds };
+    });
+    return run();
+  }
+
+  markBillNc(billId: string, input: MarkNcBillInput): { billId: string; printJobId: string } {
+    const run = this.db.transaction(() => {
+      this.verifyManagerApproval(input.managerApproval, "bill.nc", "bill", billId, input.managerApproval.approvedBy);
+      const bill = this.getBillById(billId);
+      if (!bill) throw new DomainError("Bill not found", 404);
+      if (bill.status !== "pending") throw new DomainError("Only unpaid bills can be marked NC");
+      const existingPaid = this.getBillPaidPaise(billId);
+      if (existingPaid > 0) throw new DomainError("Remove or reverse recorded payments before marking this bill NC");
+      const order = this.requireOrderById(bill.order_id);
+      const table = this.requireTable(order.table_id);
+      const now = new Date().toISOString();
+      this.orm
+        .update(bills)
+        .set({
+          isNc: true,
+          ncReason: input.managerApproval.reason,
+          ncApprovedBy: input.managerApproval.approvedBy,
+          ncMarkedAt: now,
+          status: "paid",
+          settledAt: now,
+          printCount: sql`${bills.printCount} + 1`
+        })
+        .where(eq(bills.id, billId))
+        .run();
+      this.orm.update(orders).set({ status: "paid", updatedAt: now }).where(eq(orders.id, order.id)).run();
+      this.freeTable(order.table_id);
+
+      const printJobId = this.enqueuePrintJob({
+        targetType: "BILL",
+        targetId: billId,
+        productionUnitId: null,
+        ...this.getReceiptPrinter(),
+        payload: renderBillTicket({
+          tableName: table.name,
+          billId,
+          subtotalPaise: bill.subtotal_paise,
+          taxPaise: bill.tax_paise,
+          totalPaise: bill.total_paise,
+          discountPaise: bill.discount_paise,
+          tipPaise: bill.tip_paise,
+          finalTotalPaise: bill.final_total_paise,
+          createdAt: now,
+          taxBreakdown: this.parseTaxBreakdown(bill.tax_breakdown_json),
+          revisionNumber: bill.revision_number,
+          ncReason: input.managerApproval.reason,
+          ...this.getTicketTemplate()
+        })
+      });
+      this.appendEvent("bill.nc_marked", "bill", billId, { billId, reason: input.managerApproval.reason, printJobId });
+      return { billId, printJobId };
+    });
+    return run();
+  }
+
+  printBill(billId: string, requestedBy: string): { printJobId: string } {
+    const run = this.db.transaction(() => {
+      const bill = this.getBillById(billId);
+      if (!bill) throw new DomainError("Bill not found", 404);
+      const order = this.requireOrderById(bill.order_id);
+      const table = this.requireTable(order.table_id);
+      const now = new Date().toISOString();
+      const printJobId = this.enqueuePrintJob({
+        targetType: "BILL",
+        targetId: billId,
+        productionUnitId: null,
+        ...this.getReceiptPrinter(),
+        payload: renderBillTicket({
+          tableName: table.name,
+          billId,
+          subtotalPaise: bill.subtotal_paise,
+          taxPaise: bill.tax_paise,
+          totalPaise: bill.total_paise,
+          discountPaise: bill.discount_paise,
+          tipPaise: bill.tip_paise,
+          finalTotalPaise: bill.final_total_paise,
+          createdAt: now,
+          taxBreakdown: this.parseTaxBreakdown(bill.tax_breakdown_json),
+          revisionNumber: bill.revision_number,
+          ncReason: bill.nc_reason,
+          ...this.getTicketTemplate()
+        })
+      });
+      this.orm.update(bills).set({ printCount: sql`${bills.printCount} + 1` }).where(eq(bills.id, billId)).run();
+      this.appendEvent("bill.printed", "bill", billId, { billId, requestedBy, printJobId });
+      return { printJobId };
+    });
+    return run();
+  }
+
+  moveTable(input: MoveTableInput, actor: DeviceActor): { fromTableId: string; toTableId: string; orderId: string; kotIds: string[] } {
+    const run = this.db.transaction(() => {
+      const fromTable = this.requireTable(input.fromTableId);
+      const toTable = this.requireTable(input.toTableId);
+      if (!fromTable.current_order_id) throw new DomainError("Source table has no running order");
+      if (toTable.current_order_id) throw new DomainError("Target table already has a running order");
+      const order = this.requireOrderById(fromTable.current_order_id);
+      this.assertCanMoveOrder(order, actor, "table");
+      const now = new Date().toISOString();
+      this.orm.update(orders).set({ tableId: toTable.id, updatedAt: now }).where(eq(orders.id, order.id)).run();
+      this.freeTable(fromTable.id);
+      this.orm
+        .update(restaurantTables)
+        .set({ status: order.status === "billed" ? "billed" : "occupied", currentOrderId: order.id, occupiedAt: now })
+        .where(eq(restaurantTables.id, toTable.id))
+        .run();
+      const kotIds = this.createKotsForChanges(
+        order,
+        { ...toTable, current_order_id: order.id, status: order.status === "billed" ? "billed" : "occupied" },
+        this.getOrderItems(order.id)
+          .filter((item) => item.quantity > 0)
+          .map((item) => this.kotChangeFromOrderItem(item, item.quantity))
+          .filter((change): change is KotItemChange => Boolean(change)),
+        now,
+        false,
+        false,
+        `Table shifted from ${fromTable.name} to ${toTable.name}: ${input.reason}`
+      );
+      const movementId = makeId("move");
+      this.orm
+        .insert(orderMovements)
+        .values({
+          id: movementId,
+          fromTableId: fromTable.id,
+          toTableId: toTable.id,
+          sourceOrderId: order.id,
+          movedItemsJson: JSON.stringify({ type: "table" }),
+          reason: input.reason,
+          movedBy: actor.name,
+          createdAt: now
+        })
+        .run();
+      this.appendEvent("table.shifted", "order", order.id, { ...input, movedBy: actor.name, movedByDeviceId: actor.id, orderId: order.id, movementId, kotIds });
+      return { fromTableId: fromTable.id, toTableId: toTable.id, orderId: order.id, kotIds };
+    });
+    return run();
+  }
+
+  moveOrderItems(input: MoveOrderItemsInput, actor: DeviceActor): { fromOrderId: string; toOrderId: string; movementId: string; sourceKotIds: string[]; targetKotIds: string[] } {
+    const run = this.db.transaction(() => {
+      const fromTable = this.requireTable(input.fromTableId);
+      const toTable = this.requireTable(input.toTableId);
+      if (!fromTable.current_order_id) throw new DomainError("Source table has no running order");
+      const fromOrder = this.requireEditableOrder(fromTable.current_order_id);
+      this.assertCanMoveOrder(fromOrder, actor, "items");
+      const now = new Date().toISOString();
+      const posDay = this.requireOpenPosDay();
+      const toOrder = toTable.current_order_id
+        ? this.requireEditableOrder(toTable.current_order_id)
+        : this.createOrder({ tableId: toTable.id, captainId: actor.name, pax: 1, orderType: "dine_in" }, posDay.id, now, actor);
+      if (toTable.current_order_id) this.assertCanMoveOrder(toOrder, actor, "items");
+      const movementPayload: Array<{ orderItemId: string; quantity: number; name: string }> = [];
+      const sourceChanges: KotItemChange[] = [];
+      const targetChanges: KotItemChange[] = [];
+
+      for (const moveItem of input.items) {
+        const source = this.getOrderItemById(moveItem.orderItemId);
+        if (!source || source.order_id !== fromOrder.id || source.quantity < moveItem.quantity) {
+          throw new DomainError("Cannot shift more items than the source table has");
+        }
+        const target = source.menu_item_id ? this.getOrderItemByKey(toOrder.id, source.menu_item_id) : undefined;
+        let targetOrderItemId = target?.id;
+        if (target) {
+          this.orm
+            .update(orderItems)
+            .set({ quantity: target.quantity + moveItem.quantity, status: "active", updatedAt: now })
+            .where(eq(orderItems.id, target.id))
+            .run();
+        } else {
+          targetOrderItemId = makeId("item");
+          this.orm
+            .insert(orderItems)
+            .values({
+              id: targetOrderItemId,
+              orderId: toOrder.id,
+              menuItemId: source.menu_item_id,
+              nameSnapshot: source.name_snapshot,
+              unitPricePaise: source.unit_price_paise,
+              quantity: moveItem.quantity,
+              productionUnitId: source.production_unit_id,
+              saleGroupId: source.sale_group_id,
+              saleGroupNameSnapshot: source.sale_group_name_snapshot,
+              saleGroupKindSnapshot: source.sale_group_kind_snapshot,
+              ticketLabelSnapshot: source.ticket_label_snapshot,
+              taxComponentsJson: source.tax_components_json,
+              taxPaise: source.tax_paise,
+              isOpenItem: Boolean(source.is_open_item),
+              status: "active",
+              createdAt: now,
+              updatedAt: now
+            })
+            .run();
+        }
+        const sourceChange = this.kotChangeFromOrderItem(source, -moveItem.quantity);
+        if (sourceChange) sourceChanges.push(sourceChange);
+        const targetChange = this.kotChangeFromOrderItem(source, moveItem.quantity);
+        if (targetChange) targetChanges.push({ ...targetChange, orderItemId: targetOrderItemId ?? source.id });
+        const remaining = source.quantity - moveItem.quantity;
+        this.orm
+          .update(orderItems)
+          .set({ quantity: remaining, status: remaining === 0 ? "cancelled" : "active", updatedAt: now })
+          .where(eq(orderItems.id, source.id))
+          .run();
+        movementPayload.push({ orderItemId: source.id, quantity: moveItem.quantity, name: source.name_snapshot });
+      }
+
+      if (this.getOrderItems(fromOrder.id).every((item) => item.quantity === 0)) {
+        this.orm.update(orders).set({ status: "cancelled", updatedAt: now }).where(eq(orders.id, fromOrder.id)).run();
+        this.freeTable(fromTable.id);
+      }
+      this.orm
+        .update(restaurantTables)
+        .set({ status: "occupied", currentOrderId: toOrder.id, occupiedAt: sql`COALESCE(${restaurantTables.occupiedAt}, ${now})` })
+        .where(eq(restaurantTables.id, toTable.id))
+        .run();
+      const sourceKotIds = this.createKotsForChanges(
+        fromOrder,
+        fromTable,
+        sourceChanges,
+        now,
+        false,
+        false,
+        `Items shifted to ${toTable.name}: ${input.reason}`
+      );
+      const targetKotIds = this.createKotsForChanges(
+        toOrder,
+        { ...toTable, current_order_id: toOrder.id, status: "occupied" },
+        targetChanges,
+        now,
+        false,
+        false,
+        `Items shifted from ${fromTable.name}: ${input.reason}`
+      );
+
+      const movementId = makeId("move");
+      this.orm
+        .insert(orderMovements)
+        .values({
+          id: movementId,
+          fromTableId: fromTable.id,
+          toTableId: toTable.id,
+          sourceOrderId: fromOrder.id,
+          targetOrderId: toOrder.id,
+          movedItemsJson: JSON.stringify(movementPayload),
+          reason: input.reason,
+          movedBy: actor.name,
+          createdAt: now
+        })
+        .run();
+      this.appendEvent("order_items.shifted", "order", fromOrder.id, {
+        ...input,
+        movedBy: actor.name,
+        movedByDeviceId: actor.id,
+        toOrderId: toOrder.id,
+        movementId,
+        sourceKotIds,
+        targetKotIds
+      });
+      return { fromOrderId: fromOrder.id, toOrderId: toOrder.id, movementId, sourceKotIds, targetKotIds };
+    });
+    return run();
   }
 
   private buildDaySummary(posDayId: string, closingCashPaise?: number): DaySummary {
@@ -1154,7 +1720,7 @@ export class OrderService {
          FROM payments p
          JOIN bills b ON b.id = p.bill_id
          JOIN orders o ON o.id = b.order_id
-         WHERE o.pos_day_id = ?
+         WHERE o.pos_day_id = ? AND b.is_nc = 0
          GROUP BY p.method`
       )
       .all(posDayId) as Array<{ method: string; total: number }>;
@@ -1168,7 +1734,7 @@ export class OrderService {
            COALESCE(SUM(final_total_paise), 0) AS final_sales_paise
          FROM bills b
          JOIN orders o ON o.id = b.order_id
-         WHERE o.pos_day_id = ?`
+         WHERE o.pos_day_id = ? AND b.is_nc = 0`
       )
       .get(posDayId) as {
       bill_count: number;
@@ -1180,7 +1746,7 @@ export class OrderService {
     const billRows = this.db
       .prepare(
         `SELECT b.id AS bill_id, b.order_id, b.status, b.total_paise, b.discount_paise, b.tip_paise,
-          b.final_total_paise, b.settled_at, t.name AS table_name
+          b.final_total_paise, b.settled_at, b.is_nc, b.nc_reason, b.revision_number, t.name AS table_name
          FROM bills b
          JOIN orders o ON o.id = b.order_id
          JOIN restaurant_tables t ON t.id = o.table_id
@@ -1197,6 +1763,9 @@ export class OrderService {
       tip_paise: number;
       final_total_paise: number;
       settled_at: string | null;
+      is_nc: number;
+      nc_reason: string | null;
+      revision_number: number;
     }>;
     const paymentRows = this.db
       .prepare(
@@ -1204,21 +1773,111 @@ export class OrderService {
          FROM payments p
          JOIN bills b ON b.id = p.bill_id
          JOIN orders o ON o.id = b.order_id
-         WHERE o.pos_day_id = ?
+         WHERE o.pos_day_id = ? AND b.is_nc = 0
          ORDER BY p.created_at ASC`
       )
       .all(posDayId) as Array<{ bill_id: string; method: string; amount_paise: number; reference: string | null }>;
     const itemSummaries = this.db
       .prepare(
-        `SELECT oi.menu_item_id, oi.name_snapshot AS name, COALESCE(SUM(oi.quantity), 0) AS quantity,
-          COALESCE(SUM(oi.quantity * oi.unit_price_paise), 0) AS gross_sales_paise
+        `SELECT COALESCE(oi.menu_item_id, oi.id) AS menu_item_id, oi.name_snapshot AS name, oi.sale_group_id, oi.sale_group_name_snapshot,
+          oi.sale_group_kind_snapshot,
+          COALESCE(SUM(CASE WHEN COALESCE(b.is_nc, 0) = 0 THEN oi.quantity ELSE 0 END), 0) AS quantity,
+          COALESCE(SUM(CASE WHEN COALESCE(b.is_nc, 0) = 0 THEN oi.quantity * oi.unit_price_paise ELSE 0 END), 0) AS gross_sales_paise,
+          COALESCE(SUM(CASE WHEN COALESCE(b.is_nc, 0) = 1 THEN oi.quantity ELSE 0 END), 0) AS nc_quantity,
+          COALESCE(SUM(CASE WHEN COALESCE(b.is_nc, 0) = 1 THEN oi.quantity * oi.unit_price_paise ELSE 0 END), 0) AS nc_gross_sales_paise
          FROM order_items oi
          JOIN orders o ON o.id = oi.order_id
+         LEFT JOIN bills b ON b.order_id = o.id
          WHERE o.pos_day_id = ? AND oi.status != 'cancelled'
-         GROUP BY oi.menu_item_id, oi.name_snapshot
+         GROUP BY COALESCE(oi.menu_item_id, oi.id), oi.name_snapshot, oi.sale_group_id, oi.sale_group_name_snapshot, oi.sale_group_kind_snapshot
          ORDER BY oi.name_snapshot ASC`
       )
-      .all(posDayId) as Array<{ menu_item_id: string; name: string; quantity: number; gross_sales_paise: number }>;
+      .all(posDayId) as Array<{
+        menu_item_id: string;
+        name: string;
+        sale_group_id: string;
+        sale_group_name_snapshot: string;
+        sale_group_kind_snapshot: string;
+        quantity: number;
+        gross_sales_paise: number;
+        nc_quantity: number;
+        nc_gross_sales_paise: number;
+      }>;
+    const groupSummaries = this.db
+      .prepare(
+        `SELECT oi.sale_group_id, oi.sale_group_name_snapshot, oi.sale_group_kind_snapshot,
+          COALESCE(SUM(CASE WHEN COALESCE(b.is_nc, 0) = 0 THEN oi.quantity ELSE 0 END), 0) AS quantity,
+          COALESCE(SUM(CASE WHEN COALESCE(b.is_nc, 0) = 0 THEN oi.quantity * oi.unit_price_paise ELSE 0 END), 0) AS gross_sales_paise,
+          COALESCE(SUM(CASE WHEN COALESCE(b.is_nc, 0) = 0 THEN oi.tax_paise ELSE 0 END), 0) AS tax_paise,
+          COALESCE(SUM(CASE WHEN COALESCE(b.is_nc, 0) = 1 THEN oi.quantity ELSE 0 END), 0) AS nc_quantity,
+          COALESCE(SUM(CASE WHEN COALESCE(b.is_nc, 0) = 1 THEN oi.quantity * oi.unit_price_paise ELSE 0 END), 0) AS nc_gross_sales_paise
+         FROM order_items oi
+         JOIN orders o ON o.id = oi.order_id
+         LEFT JOIN bills b ON b.order_id = o.id
+         WHERE o.pos_day_id = ? AND oi.status != 'cancelled'
+         GROUP BY oi.sale_group_id, oi.sale_group_name_snapshot, oi.sale_group_kind_snapshot
+         ORDER BY oi.sale_group_name_snapshot`
+      )
+      .all(posDayId) as Array<{
+        sale_group_id: string;
+        sale_group_name_snapshot: string;
+        sale_group_kind_snapshot: string;
+        quantity: number;
+        gross_sales_paise: number;
+        tax_paise: number;
+        nc_quantity: number;
+        nc_gross_sales_paise: number;
+      }>;
+    const billGroupRows = this.db
+      .prepare(
+        `SELECT b.id AS bill_id, oi.sale_group_id, oi.sale_group_name_snapshot, oi.sale_group_kind_snapshot,
+          COALESCE(SUM(oi.quantity * oi.unit_price_paise), 0) AS gross_sales_paise,
+          COALESCE(SUM(oi.tax_paise), 0) AS tax_paise
+         FROM order_items oi
+         JOIN orders o ON o.id = oi.order_id
+         JOIN bills b ON b.order_id = o.id
+         WHERE o.pos_day_id = ? AND oi.status != 'cancelled' AND b.is_nc = 0
+         GROUP BY b.id, oi.sale_group_id, oi.sale_group_name_snapshot, oi.sale_group_kind_snapshot`
+      )
+      .all(posDayId) as Array<{
+        bill_id: string;
+        sale_group_id: string;
+        sale_group_name_snapshot: string;
+        sale_group_kind_snapshot: string;
+        gross_sales_paise: number;
+        tax_paise: number;
+      }>;
+    const groupSummaryMap = new Map<string, GroupSummaryAccumulator>();
+    for (const group of groupSummaries) {
+      groupSummaryMap.set(group.sale_group_id, {
+        saleGroupId: group.sale_group_id,
+        name: group.sale_group_name_snapshot,
+        kind: group.sale_group_kind_snapshot,
+        quantity: group.quantity,
+        grossSalesPaise: group.gross_sales_paise,
+        taxPaise: group.tax_paise,
+        finalSalesPaise: 0,
+        ncQuantity: group.nc_quantity,
+        ncGrossSalesPaise: group.nc_gross_sales_paise
+      });
+    }
+    const billRowsById = new Map(billRows.map((bill) => [bill.bill_id, bill]));
+    const billGroupRowsByBill = new Map<string, typeof billGroupRows>();
+    for (const row of billGroupRows) {
+      billGroupRowsByBill.set(row.bill_id, [...(billGroupRowsByBill.get(row.bill_id) ?? []), row]);
+    }
+    for (const [billId, rows] of billGroupRowsByBill.entries()) {
+      const bill = billRowsById.get(billId);
+      if (!bill || bill.is_nc) continue;
+      const bases = rows.map((row) => row.gross_sales_paise + row.tax_paise);
+      const discountShares = this.allocateByWeight(bill.discount_paise, bases);
+      const tipShares = this.allocateByWeight(bill.tip_paise, bases);
+      rows.forEach((row, index) => {
+        const summary = groupSummaryMap.get(row.sale_group_id);
+        if (!summary) return;
+        summary.finalSalesPaise += row.gross_sales_paise + row.tax_paise - (discountShares[index] ?? 0) + (tipShares[index] ?? 0);
+      });
+    }
 
     const orderCounts = Object.fromEntries(orders.map((row) => [row.status, row.count]));
     const billCounts = Object.fromEntries(bills.map((row) => [row.status, row.count]));
@@ -1269,18 +1928,243 @@ export class OrderService {
         finalTotalPaise: bill.final_total_paise,
         paidPaise: (paymentsByBill.get(bill.bill_id) ?? []).reduce((total, payment) => total + payment.amountPaise, 0),
         settledAt: bill.settled_at,
-        payments: paymentsByBill.get(bill.bill_id) ?? []
+        payments: paymentsByBill.get(bill.bill_id) ?? [],
+        isNc: Boolean(bill.is_nc),
+        ncReason: bill.nc_reason,
+        revisionNumber: bill.revision_number
       })),
       itemSummaries: itemSummaries.map((item) => ({
         menuItemId: item.menu_item_id,
         name: item.name,
+        saleGroupId: item.sale_group_id,
+        saleGroupName: item.sale_group_name_snapshot,
+        saleGroupKind: item.sale_group_kind_snapshot,
         quantity: item.quantity,
-        grossSalesPaise: item.gross_sales_paise
-      }))
+        grossSalesPaise: item.gross_sales_paise,
+        ncQuantity: item.nc_quantity,
+        ncGrossSalesPaise: item.nc_gross_sales_paise
+      })),
+      groupSummaries: [...groupSummaryMap.values()]
     };
   }
 
-  private createOrder(input: SubmitOrderInput, posDayId: string, now: string): OrderRow {
+  private prepareSubmittedItems(items: SubmitOrderInput["items"], now: string): RequestedOrderItem[] {
+    return items
+      .filter((item) => item.quantity > 0)
+      .map((item) => {
+        if (item.menuItemId) {
+          const menuItem = this.getMenuItems([item.menuItemId]).get(item.menuItemId);
+          if (!menuItem) throw new DomainError(`Menu item ${item.menuItemId} is not available`);
+          if (item.unitPricePaise !== undefined && item.unitPricePaise !== menuItem.price_paise) {
+            this.verifyManagerApproval(item.managerApproval, "order_item.price_edit", "menu_item", menuItem.id, item.managerApproval?.approvedBy ?? "cashier");
+          }
+          return {
+            itemKey: this.itemKey(menuItem.id),
+            menuItemId: menuItem.id,
+            quantity: item.quantity,
+            name: menuItem.name,
+            unitPricePaise: item.unitPricePaise ?? menuItem.price_paise,
+            productionUnitId: item.productionUnitId !== undefined ? item.productionUnitId : menuItem.production_unit_id,
+            saleGroupId: menuItem.sale_group_id,
+            saleGroupName: menuItem.sale_group_name,
+            saleGroupKind: menuItem.sale_group_kind,
+            ticketLabel: menuItem.ticket_label,
+            taxComponentsJson: menuItem.tax_components_json,
+            isOpenItem: false
+          };
+        }
+
+        const saleGroup = this.requireSaleGroup(item.saleGroupId ?? "sg-food");
+        if (!item.openPricePaise) throw new DomainError("Open item price is required");
+        const productionUnitId = item.productionUnitId !== undefined ? item.productionUnitId : saleGroup.default_production_unit_id;
+        if (productionUnitId) this.requireProductionUnit(productionUnitId);
+        const existingOpenItemId = item.orderItemId?.trim();
+        return {
+          itemKey: existingOpenItemId ? `open:${existingOpenItemId}` : `open:${makeId("line")}`,
+          menuItemId: null,
+          quantity: item.quantity,
+          name: item.openName ?? "Open item",
+          unitPricePaise: item.openPricePaise,
+          productionUnitId,
+          saleGroupId: saleGroup.id,
+          saleGroupName: saleGroup.name,
+          saleGroupKind: saleGroup.kind,
+          ticketLabel: saleGroup.ticket_label,
+          taxComponentsJson: saleGroup.tax_components_json,
+          isOpenItem: true
+        };
+      });
+  }
+
+  private calculateBillTotals(items: OrderItemRow[]): BillTotals {
+    const taxByName = new Map<string, number>();
+    let subtotalPaise = 0;
+    let taxPaise = 0;
+    for (const item of items) {
+      const lineSubtotal = calculateLineTotal(item.unit_price_paise, item.quantity);
+      subtotalPaise += lineSubtotal;
+      const components = calculateTaxComponents(lineSubtotal, this.parseTaxComponents(item.tax_components_json));
+      const itemTax = components.reduce((total, component) => total + component.amountPaise, 0);
+      taxPaise += itemTax;
+      for (const component of components) {
+        const key = `${item.sale_group_name_snapshot} ${component.name}`.trim();
+        taxByName.set(key, (taxByName.get(key) ?? 0) + component.amountPaise);
+      }
+      this.orm.update(orderItems).set({ taxPaise: itemTax }).where(eq(orderItems.id, item.id)).run();
+    }
+    return {
+      subtotalPaise,
+      taxPaise,
+      totalPaise: subtotalPaise + taxPaise,
+      taxBreakdown: [...taxByName.entries()].map(([name, amountPaise]) => ({ name, rateBps: 0, amountPaise }))
+    };
+  }
+
+  private parseTaxComponents(value: string | null | undefined): Array<{ name: string; rateBps: number }> {
+    if (!value) return DEFAULT_TAX_COMPONENTS;
+    try {
+      const parsed = JSON.parse(value) as Array<{ name?: unknown; rateBps?: unknown }>;
+      if (!Array.isArray(parsed) || parsed.length === 0) return DEFAULT_TAX_COMPONENTS;
+      return parsed
+        .map((component) => ({ name: String(component.name ?? "Tax"), rateBps: Number(component.rateBps ?? 0) }))
+        .filter((component) => component.name && Number.isFinite(component.rateBps));
+    } catch {
+      return DEFAULT_TAX_COMPONENTS;
+    }
+  }
+
+  private parseTaxBreakdown(value: string | null | undefined): TaxComponentAmount[] {
+    if (!value) return [];
+    try {
+      const parsed = JSON.parse(value) as TaxComponentAmount[];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+
+  private recordBillRevision(billId: string, revisionNumber: number, totals: BillTotals, reason: string, changedBy: string, now: string): void {
+    this.orm
+      .insert(billRevisions)
+      .values({
+        id: makeId("billrev"),
+        billId,
+        revisionNumber,
+        subtotalPaise: totals.subtotalPaise,
+        taxPaise: totals.taxPaise,
+        totalPaise: totals.totalPaise,
+        discountPaise: 0,
+        tipPaise: 0,
+        finalTotalPaise: totals.totalPaise,
+        taxBreakdownJson: JSON.stringify(totals.taxBreakdown),
+        reason,
+        approvedBy: changedBy,
+        createdAt: now
+      })
+      .run();
+  }
+
+  private hashManagerPin(pin: string): string {
+    const salt = randomBytes(16).toString("hex");
+    const hash = pbkdf2Sync(pin, salt, 210_000, 32, "sha256").toString("hex");
+    return `pbkdf2-sha256:210000:${salt}:${hash}`;
+  }
+
+  private legacyHashManagerPin(pin: string): string {
+    return createHash("sha256").update(`gaurav-pos:${pin}`).digest("hex");
+  }
+
+  private verifyManagerPin(pin: string, configuredHash: string): "valid" | "valid_legacy" | "invalid" {
+    const parts = configuredHash.split(":");
+    if (parts[0] === "pbkdf2-sha256" && parts.length === 4) {
+      const iterations = Number(parts[1]);
+      const salt = parts[2];
+      const hash = parts[3];
+      if (!Number.isInteger(iterations) || iterations < 100_000 || !salt || !hash) return "invalid";
+      const expected = Buffer.from(hash, "hex");
+      if (expected.length === 0) return "invalid";
+      const actual = pbkdf2Sync(pin, salt, iterations, expected.length, "sha256");
+      return timingSafeEqual(actual, expected) ? "valid" : "invalid";
+    }
+    return this.legacyHashManagerPin(pin) === configuredHash ? "valid_legacy" : "invalid";
+  }
+
+  private verifyManagerApproval(
+    approval: ManagerApprovalInput | undefined,
+    action: string,
+    aggregateType: string,
+    aggregateId: string,
+    requestedBy = "cashier"
+  ): void {
+    const configuredHash = this.getSetting("manager_pin_hash");
+    if (!configuredHash) throw new DomainError("Set a manager PIN before using manager-only actions", 403);
+    if (!approval) throw new DomainError("Manager approval is required for this action", 403);
+    const verification = this.verifyManagerPin(approval.pin, configuredHash);
+    if (verification === "invalid") throw new DomainError("Manager PIN is incorrect", 403);
+    if (verification === "valid_legacy") this.upsertSetting("manager_pin_hash", this.hashManagerPin(approval.pin));
+    this.orm
+      .insert(managerApprovals)
+      .values({
+        id: makeId("approval"),
+        action,
+        aggregateType,
+        aggregateId,
+        reason: approval.reason,
+        approvedBy: approval.approvedBy,
+        requestedBy,
+        createdAt: new Date().toISOString()
+      })
+      .run();
+  }
+
+  private upsertSetting(key: string, value: string): void {
+    const now = new Date().toISOString();
+    this.orm
+      .insert(hubSettings)
+      .values({ key, value, updatedAt: now })
+      .onConflictDoUpdate({ target: hubSettings.key, set: { value, updatedAt: now } })
+      .run();
+  }
+
+  private requireSaleGroup(id: string): SaleGroupRow {
+    const group = this.db
+      .prepare(
+        `SELECT id, name, kind, report_label, ticket_label, tax_components_json, default_production_unit_id
+         FROM sale_groups
+         WHERE id = ? AND active = 1`
+      )
+      .get(id) as SaleGroupRow | undefined;
+    if (!group) throw new DomainError("Sale group not found", 404);
+    return group;
+  }
+
+  private orderInputForActor(input: SubmitOrderInput, actor?: DeviceActor): Pick<SubmitOrderInput, "tableId" | "pax" | "orderType"> & { captainId: string } {
+    return {
+      tableId: input.tableId,
+      captainId: actor?.name || input.captainId || "cashier",
+      pax: input.pax,
+      orderType: input.orderType
+    };
+  }
+
+  private assertCanEditOrder(order: OrderRow, actor?: DeviceActor): void {
+    if (!actor || ["admin", "cashier", "waiter"].includes(actor.role)) return;
+    if (actor.role === "captain" && order.captain_device_id === actor.id) return;
+    throw new DomainError("Captain devices can only edit their own running tables", 403);
+  }
+
+  private assertCanMoveOrder(order: OrderRow, actor: DeviceActor, action: "table" | "items"): void {
+    if (["admin", "cashier"].includes(actor.role)) {
+      if (action === "items" && order.status !== "open") throw new DomainError("Only running tables can have selected items shifted");
+      if (action === "table" && !["open", "billed"].includes(order.status)) throw new DomainError("Only running or billed tables can be shifted");
+      return;
+    }
+    if (actor.role !== "captain") throw new DomainError("Only captains can shift tables from the APK", 403);
+    if (order.status !== "open") throw new DomainError("Captains can shift only running tables before billing", 403);
+    if (order.captain_device_id !== actor.id) throw new DomainError("Captains can shift only their own tables", 403);
+  }
+
+  private createOrder(input: Pick<SubmitOrderInput, "tableId" | "pax" | "orderType"> & { captainId: string }, posDayId: string, now: string, actor?: DeviceActor): OrderRow {
     const orderId = makeId("order");
     this.orm
       .insert(orders)
@@ -1292,6 +2176,9 @@ export class OrderService {
         status: "open",
         pax: input.pax,
         captainId: input.captainId,
+        captainDeviceId: actor?.role === "captain" ? actor.id : null,
+        createdByDeviceId: actor?.id ?? null,
+        createdByRole: actor?.role ?? null,
         createdAt: now,
         updatedAt: now
       })
@@ -1302,61 +2189,98 @@ export class OrderService {
 
   private applyOrderItemDiff(
     orderId: string,
-    requestedItems: SubmitOrderInput["items"],
+    requestedItems: RequestedOrderItem[],
     previousItems: OrderItemRow[],
     menuById: Map<string, MenuItemRow>,
-    now: string
+    now: string,
+    cancelMissing = false
   ): KotItemChange[] {
-    const previousByKey = new Map(previousItems.map((item) => [this.itemKey(item.menu_item_id), item]));
+    const previousByKey = new Map(previousItems.map((item) => [this.itemKey(item.menu_item_id, item.id), item]));
     const requestedByKey = new Map<string, RequestedOrderItem>();
 
     for (const item of requestedItems) {
-      const menuItem = menuById.get(item.menuItemId);
-      if (!menuItem) throw new DomainError(`Menu item ${item.menuItemId} is not available`);
-      const key = this.itemKey(item.menuItemId);
+      const menuItem = item.menuItemId ? menuById.get(item.menuItemId) : undefined;
+      if (item.menuItemId && !menuItem) throw new DomainError(`Menu item ${item.menuItemId} is not available`);
+      const key = item.itemKey;
       const current = requestedByKey.get(key);
       const previous = previousByKey.get(key);
       requestedByKey.set(key, {
+        itemKey: key,
         menuItemId: item.menuItemId,
-        quantity: (current?.quantity ?? previous?.quantity ?? 0) + item.quantity
+        quantity: (current?.quantity ?? previous?.quantity ?? 0) + item.quantity,
+        name: item.name,
+        unitPricePaise: item.unitPricePaise,
+        productionUnitId: item.productionUnitId,
+        saleGroupId: item.saleGroupId,
+        saleGroupName: item.saleGroupName,
+        saleGroupKind: item.saleGroupKind,
+        ticketLabel: item.ticketLabel,
+        taxComponentsJson: item.taxComponentsJson,
+        isOpenItem: item.isOpenItem
       });
     }
 
     const changes: KotItemChange[] = [];
-    const allKeys = new Set([...requestedByKey.keys()]);
+    const allKeys = new Set(cancelMissing ? [...requestedByKey.keys(), ...previousByKey.keys()] : [...requestedByKey.keys()]);
 
     for (const key of allKeys) {
       const previous = previousByKey.get(key);
       const requested = requestedByKey.get(key);
       const menuItemId = requested?.menuItemId ?? previous?.menu_item_id;
-      if (!menuItemId) continue;
+      let changedOrderItemId = previous?.id ?? null;
 
-      const menuItem = menuById.get(menuItemId);
-      if (!menuItem) throw new DomainError(`Menu item ${menuItemId} is not available`);
+      const menuItem = menuItemId ? menuById.get(menuItemId) : undefined;
+      if (menuItemId && !menuItem) throw new DomainError(`Menu item ${menuItemId} is not available`);
 
       const oldQuantity = previous?.quantity ?? 0;
       const newQuantity = requested?.quantity ?? 0;
       const delta = newQuantity - oldQuantity;
-      const unitPricePaise = menuItem.price_paise;
+      const unitPricePaise = requested?.unitPricePaise ?? previous?.unit_price_paise ?? menuItem?.price_paise ?? 0;
+      const productionUnitId = requested?.productionUnitId ?? previous?.production_unit_id ?? menuItem?.production_unit_id ?? null;
+      const saleGroupId = requested?.saleGroupId ?? previous?.sale_group_id ?? menuItem?.sale_group_id ?? "sg-food";
+      const saleGroupName = requested?.saleGroupName ?? previous?.sale_group_name_snapshot ?? menuItem?.sale_group_name ?? "Food";
+      const saleGroupKind = requested?.saleGroupKind ?? previous?.sale_group_kind_snapshot ?? menuItem?.sale_group_kind ?? "food";
+      const ticketLabel = (requested?.ticketLabel ?? previous?.ticket_label_snapshot ?? menuItem?.ticket_label ?? "KOT") as "KOT" | "BOT";
+      const taxComponentsJson = requested?.taxComponentsJson ?? previous?.tax_components_json ?? menuItem?.tax_components_json ?? "[]";
+      const isOpenItem = requested?.isOpenItem ?? Boolean(previous?.is_open_item);
 
       if (newQuantity > 0 && previous) {
         this.orm
           .update(orderItems)
-          .set({ quantity: newQuantity, status: "active", updatedAt: now, unitPricePaise, productionUnitId: menuItem.production_unit_id })
+          .set({
+            quantity: newQuantity,
+            status: "active",
+            updatedAt: now,
+            unitPricePaise,
+            productionUnitId,
+            saleGroupId,
+            saleGroupNameSnapshot: saleGroupName,
+            saleGroupKindSnapshot: saleGroupKind,
+            ticketLabelSnapshot: ticketLabel,
+            taxComponentsJson,
+            isOpenItem
+          })
           .where(eq(orderItems.id, previous.id))
           .run();
       } else if (newQuantity > 0) {
         const orderItemId = makeId("item");
+        changedOrderItemId = orderItemId;
         this.orm
           .insert(orderItems)
           .values({
             id: orderItemId,
             orderId,
-            menuItemId: menuItem.id,
-            nameSnapshot: menuItem.name,
+            menuItemId: menuItem?.id ?? null,
+            nameSnapshot: requested?.name ?? menuItem?.name ?? "Open item",
             unitPricePaise,
             quantity: newQuantity,
-            productionUnitId: menuItem.production_unit_id,
+            productionUnitId,
+            saleGroupId,
+            saleGroupNameSnapshot: saleGroupName,
+            saleGroupKindSnapshot: saleGroupKind,
+            ticketLabelSnapshot: ticketLabel,
+            taxComponentsJson,
+            isOpenItem,
             status: "active",
             createdAt: now,
             updatedAt: now
@@ -1370,18 +2294,19 @@ export class OrderService {
           .run();
       }
 
-      if (delta !== 0 && menuItem.production_unit_id) {
-        const orderItem = previous ?? this.getOrderItemByKey(orderId, menuItem.id);
+      if (delta !== 0 && productionUnitId) {
+        const unit = menuItem ? null : this.getUnit(productionUnitId);
         changes.push({
-          menuItemId: menuItem.id,
-          orderItemId: orderItem?.id ?? null,
-          name: menuItem.name,
+          menuItemId: menuItem?.id ?? null,
+          orderItemId: changedOrderItemId,
+          name: requested?.name ?? menuItem?.name ?? "Open item",
           quantityDelta: delta,
-          productionUnitId: menuItem.production_unit_id,
-          productionUnitName: menuItem.unit_name ?? "Kitchen",
-          printerHost: menuItem.printer_host,
-          printerPort: menuItem.printer_port,
-          printerName: menuItem.printer_name
+          productionUnitId,
+          productionUnitName: menuItem?.unit_name ?? unit?.name ?? "Kitchen",
+          printerHost: menuItem?.printer_host ?? unit?.printer_host ?? null,
+          printerPort: menuItem?.printer_port ?? unit?.printer_port ?? null,
+          printerName: menuItem?.printer_name ?? unit?.printer_name ?? null,
+          ticketLabel
         });
       }
     }
@@ -1410,13 +2335,13 @@ export class OrderService {
           : change.quantityDelta > 0
             ? "modified"
             : "partial_cancel";
-      const key = `${change.productionUnitId}:${type}`;
+      const key = `${change.productionUnitId}:${type}:${change.ticketLabel}`;
       grouped.set(key, [...(grouped.get(key) ?? []), change]);
     }
 
     const kotIds: string[] = [];
     for (const [key, items] of grouped) {
-      const [productionUnitId, type] = key.split(":") as [string, KotType];
+      const [productionUnitId, type, ticketLabel] = key.split(":") as [string, KotType, "KOT" | "BOT"];
       const firstItem = items[0];
       if (!firstItem) continue;
 
@@ -1461,11 +2386,14 @@ export class OrderService {
         captainId: order.captain_id,
         createdAt: now,
         reason,
-        items: ticketItems
+        items: ticketItems,
+        ticketLabel,
+        header: this.getTicketTemplate().kotHeader,
+        footer: this.getTicketTemplate().kotFooter
       });
 
       this.enqueuePrintJob({
-        targetType: "KOT",
+        targetType: ticketLabel,
         targetId: kotId,
         productionUnitId,
         printerHost: firstItem.printerHost,
@@ -1487,7 +2415,7 @@ export class OrderService {
   }
 
   private enqueuePrintJob(input: {
-    targetType: "KOT" | "BILL";
+    targetType: "KOT" | "BOT" | "BILL";
     targetId: string;
     productionUnitId: string | null;
     printerHost: string | null;
@@ -1624,21 +2552,26 @@ export class OrderService {
     const uniqueIds = [...new Set(ids)];
     if (uniqueIds.length === 0) return new Map();
 
-    const rows = this.orm
-      .select({
-        id: menuItems.id,
-        name: menuItems.name,
-        price_paise: menuItems.pricePaise,
-        production_unit_id: menuItems.productionUnitId,
-        unit_name: productionUnits.name,
-        printer_host: productionUnits.printerHost,
-        printer_port: productionUnits.printerPort,
-        printer_name: productionUnits.printerName
-      })
-      .from(menuItems)
-      .leftJoin(productionUnits, eq(productionUnits.id, menuItems.productionUnitId))
-      .where(and(eq(menuItems.active, true), inArray(menuItems.id, uniqueIds)))
-      .all();
+    const placeholders = uniqueIds.map(() => "?").join(",");
+    const rows = this.db
+      .prepare(
+        `SELECT mi.id, mi.name, mi.price_paise,
+          COALESCE(mi.production_unit_id, sg.default_production_unit_id) AS production_unit_id,
+          sg.id AS sale_group_id,
+          sg.name AS sale_group_name,
+          sg.kind AS sale_group_kind,
+          sg.ticket_label,
+          sg.tax_components_json,
+          pu.name AS unit_name,
+          pu.printer_host,
+          pu.printer_port,
+          pu.printer_name
+         FROM menu_items mi
+         JOIN sale_groups sg ON sg.id = mi.sale_group_id
+         LEFT JOIN production_units pu ON pu.id = COALESCE(mi.production_unit_id, sg.default_production_unit_id)
+         WHERE mi.id IN (${placeholders})`
+      )
+      .all(...uniqueIds) as MenuItemRow[];
 
     return new Map(rows.map((row) => [row.id, row]));
   }
@@ -1659,6 +2592,23 @@ export class OrderService {
     return new Map(rows.map((row) => [row.id, row]));
   }
 
+  private kotChangeFromOrderItem(item: OrderItemRow, quantityDelta: number): KotItemChange | null {
+    if (!item.production_unit_id || quantityDelta === 0) return null;
+    const unit = this.getUnit(item.production_unit_id);
+    return {
+      menuItemId: item.menu_item_id,
+      orderItemId: item.id,
+      name: item.name_snapshot,
+      quantityDelta,
+      productionUnitId: item.production_unit_id,
+      productionUnitName: unit?.name ?? "Kitchen",
+      printerHost: unit?.printer_host ?? null,
+      printerPort: unit?.printer_port ?? null,
+      printerName: unit?.printer_name ?? null,
+      ticketLabel: item.ticket_label_snapshot
+    };
+  }
+
   private getOrderItems(orderId: string): OrderItemRow[] {
     return this.orm
       .select({
@@ -1668,7 +2618,14 @@ export class OrderService {
         name_snapshot: orderItems.nameSnapshot,
         unit_price_paise: orderItems.unitPricePaise,
         quantity: orderItems.quantity,
-        production_unit_id: orderItems.productionUnitId
+        production_unit_id: orderItems.productionUnitId,
+        sale_group_id: orderItems.saleGroupId,
+        sale_group_name_snapshot: orderItems.saleGroupNameSnapshot,
+        sale_group_kind_snapshot: orderItems.saleGroupKindSnapshot,
+        ticket_label_snapshot: orderItems.ticketLabelSnapshot,
+        tax_components_json: orderItems.taxComponentsJson,
+        tax_paise: orderItems.taxPaise,
+        is_open_item: orderItems.isOpenItem
       })
       .from(orderItems)
       .where(eq(orderItems.orderId, orderId))
@@ -1684,7 +2641,14 @@ export class OrderService {
         name_snapshot: orderItems.nameSnapshot,
         unit_price_paise: orderItems.unitPricePaise,
         quantity: orderItems.quantity,
-        production_unit_id: orderItems.productionUnitId
+        production_unit_id: orderItems.productionUnitId,
+        sale_group_id: orderItems.saleGroupId,
+        sale_group_name_snapshot: orderItems.saleGroupNameSnapshot,
+        sale_group_kind_snapshot: orderItems.saleGroupKindSnapshot,
+        ticket_label_snapshot: orderItems.ticketLabelSnapshot,
+        tax_components_json: orderItems.taxComponentsJson,
+        tax_paise: orderItems.taxPaise,
+        is_open_item: orderItems.isOpenItem
       })
       .from(orderItems)
       .where(
@@ -1696,8 +2660,123 @@ export class OrderService {
       .get();
   }
 
-  private itemKey(menuItemId: string): string {
-    return menuItemId;
+  private getOrderItemByKeyOrName(orderId: string, menuItemId: string | null, name: string): OrderItemRow | undefined {
+    if (menuItemId) return this.getOrderItemByKey(orderId, menuItemId);
+    return this.orm
+      .select({
+        id: orderItems.id,
+        order_id: orderItems.orderId,
+        menu_item_id: orderItems.menuItemId,
+        name_snapshot: orderItems.nameSnapshot,
+        unit_price_paise: orderItems.unitPricePaise,
+        quantity: orderItems.quantity,
+        production_unit_id: orderItems.productionUnitId,
+        sale_group_id: orderItems.saleGroupId,
+        sale_group_name_snapshot: orderItems.saleGroupNameSnapshot,
+        sale_group_kind_snapshot: orderItems.saleGroupKindSnapshot,
+        ticket_label_snapshot: orderItems.ticketLabelSnapshot,
+        tax_components_json: orderItems.taxComponentsJson,
+        tax_paise: orderItems.taxPaise,
+        is_open_item: orderItems.isOpenItem
+      })
+      .from(orderItems)
+      .where(
+        and(
+          eq(orderItems.orderId, orderId),
+          eq(orderItems.nameSnapshot, name),
+          eq(orderItems.isOpenItem, true)
+        )
+      )
+      .get();
+  }
+
+  private getUnit(productionUnitId: string): UnitRow | undefined {
+    return this.orm
+      .select({
+        id: productionUnits.id,
+        name: productionUnits.name,
+        printer_host: productionUnits.printerHost,
+        printer_port: productionUnits.printerPort,
+        printer_name: productionUnits.printerName
+      })
+      .from(productionUnits)
+      .where(eq(productionUnits.id, productionUnitId))
+      .get();
+  }
+
+  private createReadyNotification(kotId: string): void {
+    const row = this.db
+      .prepare(
+        `SELECT k.id, k.order_id, k.production_unit_id, o.table_id, o.captain_id, o.captain_device_id,
+          t.name AS table_name, pu.name AS production_unit_name
+         FROM kots k
+         JOIN orders o ON o.id = k.order_id
+         JOIN restaurant_tables t ON t.id = o.table_id
+         JOIN production_units pu ON pu.id = k.production_unit_id
+         WHERE k.id = ?`
+      )
+      .get(kotId) as
+      | {
+          id: string;
+          order_id: string;
+          production_unit_id: string;
+          table_id: string;
+          captain_id: string;
+          captain_device_id: string | null;
+          table_name: string;
+          production_unit_name: string;
+        }
+      | undefined;
+    if (!row || !row.captain_device_id) return;
+    const exists = this.orm.select({ id: readyNotifications.id }).from(readyNotifications).where(eq(readyNotifications.kotId, kotId)).get();
+    if (exists) return;
+    const items = this.db
+      .prepare("SELECT name_snapshot, ABS(quantity_delta) AS quantity FROM kot_items WHERE kot_id = ? AND quantity_delta > 0 ORDER BY id")
+      .all(kotId) as Array<{ name_snapshot: string; quantity: number }>;
+    this.orm
+      .insert(readyNotifications)
+      .values({
+        id: makeId("ready"),
+        kotId,
+        orderId: row.order_id,
+        tableId: row.table_id,
+        tableName: row.table_name,
+        productionUnitId: row.production_unit_id,
+        productionUnitName: row.production_unit_name,
+        captainDeviceId: row.captain_device_id,
+        captainId: row.captain_id,
+        itemsJson: JSON.stringify(items.map((item) => ({ name: item.name_snapshot, quantity: item.quantity }))),
+        status: "unread",
+        createdAt: new Date().toISOString()
+      })
+      .run();
+  }
+
+  private getOrderItemById(orderItemId: string): OrderItemRow | undefined {
+    return this.orm
+      .select({
+        id: orderItems.id,
+        order_id: orderItems.orderId,
+        menu_item_id: orderItems.menuItemId,
+        name_snapshot: orderItems.nameSnapshot,
+        unit_price_paise: orderItems.unitPricePaise,
+        quantity: orderItems.quantity,
+        production_unit_id: orderItems.productionUnitId,
+        sale_group_id: orderItems.saleGroupId,
+        sale_group_name_snapshot: orderItems.saleGroupNameSnapshot,
+        sale_group_kind_snapshot: orderItems.saleGroupKindSnapshot,
+        ticket_label_snapshot: orderItems.ticketLabelSnapshot,
+        tax_components_json: orderItems.taxComponentsJson,
+        tax_paise: orderItems.taxPaise,
+        is_open_item: orderItems.isOpenItem
+      })
+      .from(orderItems)
+      .where(eq(orderItems.id, orderItemId))
+      .get();
+  }
+
+  private itemKey(menuItemId: string | null, orderItemId?: string): string {
+    return menuItemId ? `menu:${menuItemId}` : `open:${orderItemId ?? makeId("line")}`;
   }
 
   private nextKotSequence(): number {
@@ -1731,20 +2810,38 @@ export class OrderService {
     return Math.min(totalPaise, Math.round(input.discountValue ?? 0));
   }
 
+  private allocateByWeight(totalPaise: number, bases: number[]): number[] {
+    if (totalPaise <= 0 || bases.length === 0) return bases.map(() => 0);
+    const baseTotal = bases.reduce((total, base) => total + Math.max(0, base), 0);
+    if (baseTotal <= 0) return bases.map(() => 0);
+    const shares = bases.map((base) => Math.floor((totalPaise * Math.max(0, base)) / baseTotal));
+    let remainder = totalPaise - shares.reduce((total, share) => total + share, 0);
+    for (let index = 0; remainder > 0 && index < shares.length; index += 1) {
+      if ((bases[index] ?? 0) <= 0) continue;
+      shares[index] = (shares[index] ?? 0) + 1;
+      remainder -= 1;
+    }
+    return shares;
+  }
+
   private selectOrderById(orderId: string): OrderRow | undefined {
-    return this.orm
+    const row = this.orm
       .select({
         id: orders.id,
         table_id: orders.tableId,
         pos_day_id: orders.posDayId,
         status: orders.status,
         captain_id: orders.captainId,
+        captain_device_id: orders.captainDeviceId,
+        created_by_device_id: orders.createdByDeviceId,
+        created_by_role: orders.createdByRole,
         created_at: orders.createdAt,
         updated_at: orders.updatedAt
       })
       .from(orders)
       .where(eq(orders.id, orderId))
       .get();
+    return row ? { ...row, created_by_role: row.created_by_role as UserRole | null } : undefined;
   }
 
   private requireOrderById(orderId: string): OrderRow {
@@ -1764,7 +2861,11 @@ export class OrderService {
         total_paise: bills.totalPaise,
         discount_paise: bills.discountPaise,
         tip_paise: bills.tipPaise,
-        final_total_paise: bills.finalTotalPaise
+        final_total_paise: bills.finalTotalPaise,
+        tax_breakdown_json: bills.taxBreakdownJson,
+        revision_number: bills.revisionNumber,
+        is_nc: bills.isNc,
+        nc_reason: bills.ncReason
       })
       .from(bills)
       .where(eq(bills.id, billId))

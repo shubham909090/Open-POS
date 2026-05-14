@@ -21,6 +21,37 @@ const commandTypes = [
 ] as const;
 type CommandType = (typeof commandTypes)[number];
 
+function commandPayloadTemplate(type: CommandType) {
+  const templates: Record<CommandType, object> = {
+    "menu_item.upsert": {
+      id: "item-example",
+      name: "Example dish",
+      pricePaise: 10000,
+      productionUnitId: null,
+      active: true
+    },
+    "menu_item.disabled": { id: "item-example" },
+    "production_unit.upsert": {
+      id: "unit-example",
+      name: "Kitchen",
+      printerMode: "network",
+      printerHost: "192.168.1.50",
+      printerPort: 9100,
+      kdsEnabled: true,
+      active: true
+    },
+    "receipt_printer.updated": {
+      printerMode: "system",
+      printerName: "Cash Counter Printer",
+      printerHost: "",
+      printerPort: 9100
+    },
+    "device.updated": { hubDeviceId: "paste-hub-device-id", name: "Captain phone", role: "captain", status: "active" },
+    "device.revoked": { hubDeviceId: "paste-hub-device-id" }
+  };
+  return JSON.stringify(templates[type], null, 2);
+}
+
 function money(paise: number) {
   return new Intl.NumberFormat("en-IN", {
     style: "currency",
@@ -97,7 +128,7 @@ function CloudDashboard({ userLabel }: { userLabel: string }) {
   const [staffEmail, setStaffEmail] = useState("");
   const [staffRole, setStaffRole] = useState<InviteRole>("admin");
   const [commandType, setCommandType] = useState<CommandType>("menu_item.upsert");
-  const [payloadJson, setPayloadJson] = useState("{}");
+  const [payloadJson, setPayloadJson] = useState(() => commandPayloadTemplate("menu_item.upsert"));
   const [status, setStatus] = useState<{ tone: "good" | "bad"; text: string } | null>(null);
 
   const restaurantId = useMemo(() => {
@@ -289,7 +320,10 @@ function CloudDashboard({ userLabel }: { userLabel: string }) {
             commandType={commandType}
             payloadJson={payloadJson}
             commands={commands ?? []}
-            onCommandTypeChange={setCommandType}
+            onCommandTypeChange={(value) => {
+              setCommandType(value);
+              setPayloadJson(commandPayloadTemplate(value));
+            }}
             onPayloadChange={setPayloadJson}
             onQueue={onQueueCommand}
           />
@@ -348,7 +382,8 @@ function ReportsSection({
           paymentsJson: string;
           status: string;
         }>;
-        items: Array<{ menuItemId: string; name: string; quantity: number; grossSalesPaise: number }>;
+        items: Array<{ menuItemId: string; name: string; saleGroupName?: string; quantity: number; grossSalesPaise: number; ncQuantity?: number; ncGrossSalesPaise?: number }>;
+        groups: Array<{ saleGroupId: string; name: string; kind: string; quantity: number; grossSalesPaise: number; taxPaise: number; finalSalesPaise: number; ncQuantity: number; ncGrossSalesPaise: number }>;
       }
     | null
     | undefined;
@@ -411,6 +446,20 @@ function ReportsSection({
 
             <div className="report-detail-grid">
               <section>
+                <h3>Groups</h3>
+                <div className="stack-list">
+                  {(detail.groups ?? []).map((group) => (
+                    <article key={group.saleGroupId} className="list-row split-row">
+                      <div>
+                        <strong>{group.name}</strong>
+                        <span>{group.quantity} sold · tax {money(group.taxPaise)}{group.ncQuantity ? ` · NC ${group.ncQuantity}` : ""}</span>
+                      </div>
+                      <strong>{money(group.finalSalesPaise)}</strong>
+                    </article>
+                  ))}
+                </div>
+              </section>
+              <section>
                 <h3>Bills</h3>
                 <div className="stack-list">
                   {detail.bills.map((bill) => (
@@ -435,7 +484,7 @@ function ReportsSection({
                     <article key={item.menuItemId} className="list-row split-row">
                       <div>
                         <strong>{item.name}</strong>
-                        <span>{item.quantity} sold</span>
+                        <span>{item.quantity} sold{item.saleGroupName ? ` · ${item.saleGroupName}` : ""}{item.ncQuantity ? ` · NC ${item.ncQuantity}` : ""}</span>
                       </div>
                       <strong>{money(item.grossSalesPaise)}</strong>
                     </article>

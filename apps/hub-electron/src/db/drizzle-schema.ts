@@ -47,6 +47,7 @@ export const dailyReportSnapshots = sqliteTable(
     nonCashPaymentsPaise: integer("non_cash_payments_paise").notNull(),
     billSummariesJson: text("bill_summaries_json").notNull(),
     itemSummariesJson: text("item_summaries_json").notNull(),
+    groupSummariesJson: text("group_summaries_json").notNull().default("[]"),
     finalizedAt: text("finalized_at").notNull(),
     updatedAt: text("updated_at").notNull()
   },
@@ -56,6 +57,17 @@ export const dailyReportSnapshots = sqliteTable(
 export const floors = sqliteTable("floors", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
+  active: integer("active", { mode: "boolean" }).notNull().default(true)
+});
+
+export const saleGroups = sqliteTable("sale_groups", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  kind: text("kind").notNull(),
+  reportLabel: text("report_label").notNull(),
+  ticketLabel: text("ticket_label").notNull().default("KOT"),
+  taxComponentsJson: text("tax_components_json").notNull().default("[]"),
+  defaultProductionUnitId: text("default_production_unit_id").references(() => productionUnits.id),
   active: integer("active", { mode: "boolean" }).notNull().default(true)
 });
 
@@ -88,6 +100,7 @@ export const menuItems = sqliteTable("menu_items", {
   name: text("name").notNull(),
   pricePaise: integer("price_paise").notNull(),
   productionUnitId: text("production_unit_id").references(() => productionUnits.id),
+  saleGroupId: text("sale_group_id").notNull().default("sg-food").references(() => saleGroups.id),
   active: integer("active", { mode: "boolean" }).notNull().default(true)
 });
 
@@ -101,6 +114,9 @@ export const orders = sqliteTable(
     status: text("status").notNull(),
     pax: integer("pax").notNull(),
     captainId: text("captain_id").notNull(),
+    captainDeviceId: text("captain_device_id"),
+    createdByDeviceId: text("created_by_device_id"),
+    createdByRole: text("created_by_role"),
     createdAt: text("created_at").notNull(),
     updatedAt: text("updated_at").notNull()
   },
@@ -112,11 +128,18 @@ export const orderItems = sqliteTable(
   {
     id: text("id").primaryKey(),
     orderId: text("order_id").notNull().references(() => orders.id),
-    menuItemId: text("menu_item_id").notNull().references(() => menuItems.id),
+    menuItemId: text("menu_item_id").references(() => menuItems.id),
     nameSnapshot: text("name_snapshot").notNull(),
     unitPricePaise: integer("unit_price_paise").notNull(),
     quantity: integer("quantity").notNull(),
     productionUnitId: text("production_unit_id").references(() => productionUnits.id),
+    saleGroupId: text("sale_group_id").notNull().default("sg-food").references(() => saleGroups.id),
+    saleGroupNameSnapshot: text("sale_group_name_snapshot").notNull().default("Food"),
+    saleGroupKindSnapshot: text("sale_group_kind_snapshot").notNull().default("food"),
+    ticketLabelSnapshot: text("ticket_label_snapshot").notNull().default("KOT"),
+    taxComponentsJson: text("tax_components_json").notNull().default("[]"),
+    taxPaise: integer("tax_paise").notNull().default(0),
+    isOpenItem: integer("is_open_item", { mode: "boolean" }).notNull().default(false),
     status: text("status").notNull(),
     createdAt: text("created_at").notNull(),
     updatedAt: text("updated_at").notNull()
@@ -143,7 +166,7 @@ export const kotItems = sqliteTable("kot_items", {
   id: text("id").primaryKey(),
   kotId: text("kot_id").notNull().references(() => kots.id),
   orderItemId: text("order_item_id"),
-  menuItemId: text("menu_item_id").notNull(),
+  menuItemId: text("menu_item_id"),
   nameSnapshot: text("name_snapshot").notNull(),
   quantityDelta: integer("quantity_delta").notNull()
 });
@@ -154,13 +177,40 @@ export const bills = sqliteTable("bills", {
   status: text("status").notNull(),
   subtotalPaise: integer("subtotal_paise").notNull(),
   taxPaise: integer("tax_paise").notNull(),
-  totalPaise: integer("total_paise").notNull(),
-  discountPaise: integer("discount_paise").notNull().default(0),
-  tipPaise: integer("tip_paise").notNull().default(0),
-  finalTotalPaise: integer("final_total_paise").notNull().default(0),
-  createdAt: text("created_at").notNull(),
-  settledAt: text("settled_at")
+    totalPaise: integer("total_paise").notNull(),
+    discountPaise: integer("discount_paise").notNull().default(0),
+    tipPaise: integer("tip_paise").notNull().default(0),
+    finalTotalPaise: integer("final_total_paise").notNull().default(0),
+    taxBreakdownJson: text("tax_breakdown_json").notNull().default("[]"),
+    revisionNumber: integer("revision_number").notNull().default(1),
+    isNc: integer("is_nc", { mode: "boolean" }).notNull().default(false),
+    ncReason: text("nc_reason"),
+    ncApprovedBy: text("nc_approved_by"),
+    ncMarkedAt: text("nc_marked_at"),
+    printCount: integer("print_count").notNull().default(0),
+    createdAt: text("created_at").notNull(),
+    settledAt: text("settled_at")
 });
+
+export const billRevisions = sqliteTable(
+  "bill_revisions",
+  {
+    id: text("id").primaryKey(),
+    billId: text("bill_id").notNull().references(() => bills.id),
+    revisionNumber: integer("revision_number").notNull(),
+    subtotalPaise: integer("subtotal_paise").notNull(),
+    taxPaise: integer("tax_paise").notNull(),
+    totalPaise: integer("total_paise").notNull(),
+    discountPaise: integer("discount_paise").notNull().default(0),
+    tipPaise: integer("tip_paise").notNull().default(0),
+    finalTotalPaise: integer("final_total_paise").notNull(),
+    taxBreakdownJson: text("tax_breakdown_json").notNull().default("[]"),
+    reason: text("reason").notNull(),
+    approvedBy: text("approved_by").notNull(),
+    createdAt: text("created_at").notNull()
+  },
+  (table) => [index("idx_bill_revisions_bill").on(table.billId, table.revisionNumber)]
+);
 
 export const payments = sqliteTable("payments", {
   id: text("id").primaryKey(),
@@ -193,6 +243,57 @@ export const printJobs = sqliteTable(
   (table) => [index("idx_print_jobs_status").on(table.status, table.createdAt)]
 );
 
+export const managerApprovals = sqliteTable(
+  "manager_approvals",
+  {
+    id: text("id").primaryKey(),
+    action: text("action").notNull(),
+    aggregateType: text("aggregate_type").notNull(),
+    aggregateId: text("aggregate_id").notNull(),
+    reason: text("reason").notNull(),
+    approvedBy: text("approved_by").notNull(),
+    requestedBy: text("requested_by"),
+    createdAt: text("created_at").notNull()
+  },
+  (table) => [index("idx_manager_approvals_aggregate").on(table.aggregateType, table.aggregateId)]
+);
+
+export const orderMovements = sqliteTable(
+  "order_movements",
+  {
+    id: text("id").primaryKey(),
+    fromTableId: text("from_table_id").notNull(),
+    toTableId: text("to_table_id").notNull(),
+    sourceOrderId: text("source_order_id").notNull(),
+    targetOrderId: text("target_order_id"),
+    movedItemsJson: text("moved_items_json").notNull(),
+    reason: text("reason").notNull(),
+    movedBy: text("moved_by").notNull(),
+    createdAt: text("created_at").notNull()
+  },
+  (table) => [index("idx_order_movements_source").on(table.sourceOrderId, table.createdAt)]
+);
+
+export const readyNotifications = sqliteTable(
+  "ready_notifications",
+  {
+    id: text("id").primaryKey(),
+    kotId: text("kot_id").notNull().references(() => kots.id),
+    orderId: text("order_id").notNull().references(() => orders.id),
+    tableId: text("table_id").notNull().references(() => restaurantTables.id),
+    tableName: text("table_name").notNull(),
+    productionUnitId: text("production_unit_id").notNull().references(() => productionUnits.id),
+    productionUnitName: text("production_unit_name").notNull(),
+    captainDeviceId: text("captain_device_id"),
+    captainId: text("captain_id").notNull(),
+    itemsJson: text("items_json").notNull(),
+    status: text("status").notNull().default("unread"),
+    createdAt: text("created_at").notNull(),
+    acknowledgedAt: text("acknowledged_at")
+  },
+  (table) => [index("idx_ready_notifications_device_status").on(table.captainDeviceId, table.status, table.createdAt)]
+);
+
 export const eventLog = sqliteTable("event_log", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   eventId: text("event_id").notNull().unique(),
@@ -220,6 +321,17 @@ export const syncOutbox = sqliteTable(
 export const hubSettings = sqliteTable("hub_settings", {
   key: text("key").primaryKey(),
   value: text("value").notNull(),
+  updatedAt: text("updated_at").notNull()
+});
+
+export const ticketTemplates = sqliteTable("ticket_templates", {
+  id: text("id").primaryKey(),
+  billHeader: text("bill_header").notNull().default(""),
+  billFooter: text("bill_footer").notNull().default(""),
+  kotHeader: text("kot_header").notNull().default(""),
+  kotFooter: text("kot_footer").notNull().default(""),
+  restaurantName: text("restaurant_name").notNull().default(""),
+  taxRegistrationText: text("tax_registration_text").notNull().default(""),
   updatedAt: text("updated_at").notNull()
 });
 

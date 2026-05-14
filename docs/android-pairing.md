@@ -1,6 +1,6 @@
 # Android Pairing Runbook
 
-Use this when adding a waiter, cashier, kitchen, or admin device to the restaurant LAN.
+Use this when adding a captain, waiter, cashier, kitchen, or admin device to the restaurant LAN.
 
 ## Before Pairing
 
@@ -41,4 +41,7 @@ If copying the payload is awkward:
 - Pairing codes expire after 10 minutes.
 - A pairing code can be used once.
 - Revoke lost devices from hub Setup.
+- Captain devices can take orders, send KOT/BOT, view running table checks, shift a full running table, shift selected items, and receive kitchen/bar ready alerts.
+- Waiter devices can take orders and view running checks, but cannot shift tables/items.
+- Billing, reports, manager PIN, NC bills, and setup stay on the hub/cloud admin screens.
 - Keep the hub on the restaurant LAN only. Do not expose the hub port to the public internet.

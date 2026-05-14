@@ -8,25 +8,34 @@ import { fileURLToPath } from "node:url";
 import QRCode from "qrcode";
 import {
   closePosDaySchema,
+  cancelOrderSchema,
   createBackupSchema,
   createFloorSchema,
   createMenuItemSchema,
   createPairingCodeSchema,
   createProductionUnitSchema,
+  createSaleGroupSchema,
   createTableSchema,
   exchangePairingCodeSchema,
+  managerPinSchema,
+  markNcBillSchema,
+  moveOrderItemsSchema,
+  moveTableSchema,
   openPosDaySchema,
   reprintKotSchema,
   revokeDeviceSchema,
+  reviseBillSchema,
   retryPrintJobSchema,
   settleBillSchema,
   scheduleRestoreSchema,
   submitOrderSchema,
+  ticketTemplateSchema,
   updateFloorSchema,
   updateKotStatusSchema,
   updateMenuItemSchema,
   updateProductionUnitSchema,
   updateReceiptPrinterSchema,
+  updateSaleGroupSchema,
   updateTableSchema,
   type UserRole
 } from "@gaurav-pos/shared";
@@ -34,12 +43,23 @@ import type { HubDatabase } from "../db/database.js";
 import type { BackupService } from "../db/backup-service.js";
 import { idempotencyRecords } from "../db/drizzle-schema.js";
 import { AuthService } from "../domain/auth-service.js";
+import type { LocalDeviceSession } from "../domain/auth-service.js";
 import { DomainError } from "../domain/errors.js";
 import { EventBus } from "../domain/event-bus.js";
 import { OrderService } from "../domain/order-service.js";
 import type { PrintJobService } from "../printing/print-job-service.js";
 import { listSystemPrinters } from "../printing/printer-discovery.js";
 import type { ConvexSyncBridge } from "../sync/convex-sync.js";
+
+export function isRealtimeEventVisibleForRole(event: unknown, role: UserRole): boolean {
+  if (role === "admin" || role === "cashier") return true;
+  const type = typeof event === "object" && event !== null && "type" in event ? String((event as { type?: unknown }).type ?? "") : "";
+  if (role === "kitchen") return type.startsWith("kot.");
+  if (role === "captain" || role === "waiter") {
+    return ["order.submitted", "table.shifted", "order_items.shifted", "kot.status_changed", "pos_day.opened", "pos_day.closed"].includes(type);
+  }
+  return false;
+}
 
 export function createHubServer(input: {
   database: HubDatabase;
@@ -100,12 +120,29 @@ export function createHubServer(input: {
     const session = input.authService.authenticate(token);
     if (!roles.includes(session.role)) throw new DomainError("Device role is not allowed for this action", 403);
   };
+  const getSession = (request: { headers: Record<string, string | string[] | undefined> }): LocalDeviceSession =>
+    input.authService.authenticate(getToken(request));
 
-  const anyRole = requireRoles(["admin", "cashier", "waiter", "kitchen"]);
+  const anyRole = requireRoles(["admin", "cashier", "captain", "waiter", "kitchen"]);
   const adminOnly = requireRoles(["admin"]);
   const cashierOrAdmin = requireRoles(["admin", "cashier"]);
-  const orderRole = requireRoles(["admin", "cashier", "waiter"]);
+  const orderRole = requireRoles(["admin", "cashier", "captain", "waiter"]);
+  const orderMoveRole = requireRoles(["admin", "cashier", "captain"]);
   const kitchenRole = requireRoles(["admin", "cashier", "kitchen"]);
+  const publicBootstrapForRole = (bootstrap: Record<string, unknown>, role: UserRole): Record<string, unknown> => {
+    if (role === "admin" || role === "cashier") return bootstrap;
+    const { ticketTemplate: _ticketTemplate, printJobs: _printJobs, syncStatus: _syncStatus, ...safeBootstrap } = bootstrap;
+    return safeBootstrap;
+  };
+  const tableOrderForRole = (tableOrder: unknown, role: UserRole): unknown => {
+    if (role === "admin" || role === "cashier" || tableOrder === null || typeof tableOrder !== "object") return tableOrder;
+    const order = tableOrder as Record<string, unknown>;
+    return {
+      order: order.order,
+      items: order.items,
+      bill: null
+    };
+  };
   const withIdempotency = async <T>(
     request: { body?: unknown; headers: Record<string, string | string[] | undefined> },
     route: string,
@@ -141,10 +178,11 @@ export function createHubServer(input: {
   app.post("/devices/pair/exchange", async (request) =>
     input.authService.exchangePairingCode(exchangePairingCodeSchema.parse(request.body))
   );
-  app.get("/sync/bootstrap", { preHandler: anyRole }, async () => {
+  app.get("/sync/bootstrap", { preHandler: anyRole }, async (request) => {
+    const session = getSession(request);
     const bootstrap = input.orderService.bootstrap() as Record<string, unknown>;
     return {
-      ...bootstrap,
+      ...publicBootstrapForRole(bootstrap, session.role),
       setup: {
         printerDryRun: Boolean(input.printerDryRun)
       }
@@ -191,9 +229,22 @@ export function createHubServer(input: {
   });
   app.get("/tables/:id/order", { preHandler: orderRole }, async (request) => {
     const params = request.params as { id: string };
-    return input.orderService.getTableOrder(params.id);
+    const session = getSession(request);
+    return tableOrderForRole(input.orderService.getTableOrder(params.id), session.role);
   });
   app.get("/production-units", { preHandler: anyRole }, async () => input.orderService.listProductionUnits());
+  app.get("/sale-groups", { preHandler: anyRole }, async () => input.orderService.listSaleGroups(true));
+  app.post("/sale-groups", { preHandler: adminOnly }, async (request) => {
+    const result = input.orderService.createSaleGroup(createSaleGroupSchema.parse(request.body));
+    input.eventBus.publish({ type: "sale_group.created", result });
+    return result;
+  });
+  app.patch("/sale-groups/:id", { preHandler: adminOnly }, async (request) => {
+    const params = request.params as { id: string };
+    const result = input.orderService.updateSaleGroup(params.id, updateSaleGroupSchema.parse(request.body));
+    input.eventBus.publish({ type: "sale_group.updated", result });
+    return result;
+  });
   app.post("/production-units", { preHandler: adminOnly }, async (request) => {
     const result = input.orderService.createProductionUnit(createProductionUnitSchema.parse(request.body));
     input.eventBus.publish({ type: "production_unit.created", result });
@@ -246,6 +297,17 @@ export function createHubServer(input: {
     input.eventBus.publish({ type: "receipt_printer.updated", result });
     return result;
   });
+  app.put("/settings/manager-pin", { preHandler: adminOnly }, async (request) => {
+    const result = input.orderService.setManagerPin(managerPinSchema.parse(request.body));
+    input.eventBus.publish({ type: "manager_pin.updated", result });
+    return result;
+  });
+  app.get("/settings/ticket-template", { preHandler: cashierOrAdmin }, async () => input.orderService.getTicketTemplate());
+  app.put("/settings/ticket-template", { preHandler: adminOnly }, async (request) => {
+    const result = input.orderService.updateTicketTemplate(ticketTemplateSchema.parse(request.body));
+    input.eventBus.publish({ type: "ticket_template.updated", result });
+    return result;
+  });
   app.get("/devices", { preHandler: adminOnly }, async () => input.authService.listDevices());
   app.post("/devices/pairing-codes", { preHandler: adminOnly }, async (request) => {
     const body = createPairingCodeSchema.parse(request.body);
@@ -273,6 +335,7 @@ export function createHubServer(input: {
     const params = request.params as { id: string };
     return input.authService.revokeDevice(params.id, revokeDeviceSchema.parse(request.body));
   });
+  app.get("/devices/me", { preHandler: anyRole }, async (request) => getSession(request));
   app.get("/kds/:productionUnitId", { preHandler: kitchenRole }, async (request) => {
     const params = request.params as { productionUnitId: string };
     return input.orderService.listKds(params.productionUnitId);
@@ -287,15 +350,18 @@ export function createHubServer(input: {
     const params = request.params as { id: string };
     return input.orderService.getOrder(params.id);
   });
+  app.get("/notifications/ready", { preHandler: orderRole }, async (request) => input.orderService.listReadyNotifications(getSession(request)));
 
   app.get("/realtime", { websocket: true }, (socket, request) => {
+    let session: LocalDeviceSession;
     try {
-      input.authService.authenticate(getToken(request));
+      session = input.authService.authenticate(getToken(request));
     } catch {
       socket.close();
       return;
     }
     const unsubscribe = input.eventBus.subscribe((event) => {
+      if (!isRealtimeEventVisibleForRole(event, session.role)) return;
       socket.send(JSON.stringify(event));
     });
     socket.on("close", unsubscribe);
@@ -322,24 +388,43 @@ export function createHubServer(input: {
 
   app.post("/orders/submit", { preHandler: orderRole }, async (request) => {
     const { result, replayed } = await withIdempotency(request, "orders.submit", () =>
-      input.orderService.submitOrder(submitOrderSchema.parse(request.body))
+      input.orderService.submitOrder(submitOrderSchema.parse(request.body), getSession(request))
     );
     if (!replayed) input.eventBus.publish({ type: "order.submitted", result });
     return result;
   });
 
+  app.post("/tables/move", { preHandler: orderMoveRole }, async (request) => {
+    const result = input.orderService.moveTable(moveTableSchema.parse(request.body), getSession(request));
+    input.eventBus.publish({ type: "table.shifted", result });
+    return result;
+  });
+
+  app.post("/orders/items/move", { preHandler: orderMoveRole }, async (request) => {
+    const result = input.orderService.moveOrderItems(moveOrderItemsSchema.parse(request.body), getSession(request));
+    input.eventBus.publish({ type: "order_items.shifted", result });
+    return result;
+  });
+
   app.post("/orders/:id/cancel", { preHandler: cashierOrAdmin }, async (request) => {
     const params = request.params as { id: string };
-    const body = request.body as { reason?: string };
-    const result = input.orderService.cancelOrder(params.id, body.reason ?? "Cancelled from hub");
+    const session = getSession(request);
+    const result = input.orderService.cancelOrder(
+      params.id,
+      cancelOrderSchema.parse({ ...(request.body as Record<string, unknown>), requestedBy: session.name })
+    );
     input.eventBus.publish({ type: "order.cancelled", result });
     return result;
   });
 
   app.post("/kot/:id/reprint", { preHandler: cashierOrAdmin }, async (request) => {
     const params = request.params as { id: string };
+    const session = getSession(request);
     const { result, replayed } = await withIdempotency(request, `kot.reprint.${params.id}`, () =>
-      input.orderService.reprintKot(params.id, reprintKotSchema.parse(request.body))
+      input.orderService.reprintKot(
+        params.id,
+        reprintKotSchema.parse({ ...(request.body as Record<string, unknown>), requestedBy: session.name })
+      )
     );
     if (!replayed) input.eventBus.publish({ type: "kot.reprinted", result });
     return result;
@@ -347,10 +432,42 @@ export function createHubServer(input: {
 
   app.post("/bills/:billId/reprint", { preHandler: cashierOrAdmin }, async (request) => {
     const params = request.params as { billId: string };
+    const session = getSession(request);
     const { result, replayed } = await withIdempotency(request, `bills.reprint.${params.billId}`, () =>
-      input.orderService.reprintBill(params.billId, reprintKotSchema.parse(request.body))
+      input.orderService.reprintBill(
+        params.billId,
+        reprintKotSchema.parse({ ...(request.body as Record<string, unknown>), requestedBy: session.name })
+      )
     );
     if (!replayed) input.eventBus.publish({ type: "bill.reprinted", result });
+    return result;
+  });
+
+  app.post("/bills/:billId/print", { preHandler: cashierOrAdmin }, async (request) => {
+    const params = request.params as { billId: string };
+    const session = getSession(request);
+    const { result, replayed } = await withIdempotency(request, `bills.print.${params.billId}`, () =>
+      input.orderService.printBill(params.billId, session.name)
+    );
+    if (!replayed) input.eventBus.publish({ type: "bill.printed", result });
+    return result;
+  });
+
+  app.post("/bills/:billId/revise", { preHandler: cashierOrAdmin }, async (request) => {
+    const params = request.params as { billId: string };
+    const { result, replayed } = await withIdempotency(request, `bills.revise.${params.billId}`, () =>
+      input.orderService.reviseBill(params.billId, reviseBillSchema.parse(request.body))
+    );
+    if (!replayed) input.eventBus.publish({ type: "bill.revised", result });
+    return result;
+  });
+
+  app.post("/bills/:billId/nc", { preHandler: cashierOrAdmin }, async (request) => {
+    const params = request.params as { billId: string };
+    const { result, replayed } = await withIdempotency(request, `bills.nc.${params.billId}`, () =>
+      input.orderService.markBillNc(params.billId, markNcBillSchema.parse(request.body))
+    );
+    if (!replayed) input.eventBus.publish({ type: "bill.nc_marked", result });
     return result;
   });
 
@@ -365,8 +482,12 @@ export function createHubServer(input: {
 
   app.post("/bills/:billId/settle", { preHandler: cashierOrAdmin }, async (request) => {
     const params = request.params as { billId: string };
+    const session = getSession(request);
     const { result, replayed } = await withIdempotency(request, `bills.settle.${params.billId}`, () =>
-      input.orderService.settleBill(params.billId, settleBillSchema.parse(request.body))
+      input.orderService.settleBill(
+        params.billId,
+        settleBillSchema.parse({ ...(request.body as Record<string, unknown>), receivedBy: session.name })
+      )
     );
     if (!replayed) input.eventBus.publish({ type: "bill.settled", result });
     return result;

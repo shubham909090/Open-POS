@@ -130,24 +130,24 @@ export class ConvexSyncBridge {
     const now = new Date().toISOString();
 
     if (command.type === "device.revoked") {
-      const localDeviceId = typeof payload.localDeviceId === "string" ? payload.localDeviceId : undefined;
-      if (!localDeviceId || localDeviceId === "device-local-admin") return;
+      const hubDeviceId = this.requiredHubDeviceId(payload);
+      if (hubDeviceId === "device-local-admin") return;
       db.update(localDevices)
         .set({ status: "revoked", revokedAt: now })
-        .where(eq(localDevices.id, localDeviceId))
+        .where(eq(localDevices.id, hubDeviceId))
         .run();
       return;
     }
 
     if (command.type === "device.updated") {
-      const localDeviceId = typeof payload.localDeviceId === "string" ? payload.localDeviceId : undefined;
-      if (!localDeviceId || localDeviceId === "device-local-admin") return;
+      const hubDeviceId = this.requiredHubDeviceId(payload);
+      if (hubDeviceId === "device-local-admin") return;
       const update: { name?: string; role?: string; status?: string } = {};
       if (typeof payload.name === "string") update.name = payload.name;
       if (typeof payload.role === "string") update.role = payload.role;
       if (typeof payload.status === "string") update.status = payload.status;
       if (Object.keys(update).length > 0) {
-        db.update(localDevices).set(update).where(eq(localDevices.id, localDeviceId)).run();
+        db.update(localDevices).set(update).where(eq(localDevices.id, hubDeviceId)).run();
       }
       return;
     }
@@ -257,6 +257,14 @@ export class ConvexSyncBridge {
 
   private requiredNumber(value: unknown, label: string): number {
     if (typeof value !== "number") throw new Error(`Cloud command missing ${label}`);
+    return value;
+  }
+
+  private requiredHubDeviceId(payload: Record<string, unknown>): string {
+    const hubDeviceId = typeof payload.hubDeviceId === "string" ? payload.hubDeviceId : undefined;
+    const legacyLocalDeviceId = typeof payload.localDeviceId === "string" ? payload.localDeviceId : undefined;
+    const value = hubDeviceId ?? legacyLocalDeviceId;
+    if (!value) throw new Error("Cloud command missing hub device id");
     return value;
   }
 }
