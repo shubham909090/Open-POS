@@ -1,7 +1,7 @@
 import type { SubmitOrderInput } from "@gaurav-pos/shared";
 
 export interface HubBootstrap {
-  openDay: { id: string } | null;
+  currentBusinessDay: { id: string; business_date: string; period_start_at: string; period_end_at: string; status: string };
   tables: Array<{
     id: string;
     floor_id: string;
@@ -18,7 +18,17 @@ export interface HubBootstrap {
     price_paise: number;
     production_unit_id: string | null;
     production_unit_name: string | null;
+    sale_group_kind?: string;
     active: number;
+    variants?: Array<{
+      id: string;
+      label: string;
+      kind: string;
+      price_paise: number;
+      volume_ml: number | null;
+      inventory_action: string;
+      active: number | boolean;
+    }>;
   }>;
   syncStatus?: { counts: Record<string, number> };
 }

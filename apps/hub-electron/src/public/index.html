@@ -23,7 +23,7 @@
         </nav>
         <div class="rail-status">
           <span id="hubHealth">Starting</span>
-          <span id="dayStatus">POS day</span>
+          <span id="dayStatus">Business day</span>
           <span id="syncStatus">Sync pending: 0</span>
         </div>
       </aside>
@@ -53,7 +53,7 @@
           <header class="view-header">
             <div>
               <h1>Setup</h1>
-              <p>Follow the steps in order. The hub will open the daily POS once the basics are ready.</p>
+              <p>Follow the steps in order. Business days switch automatically at 6 AM IST.</p>
             </div>
           </header>
 
@@ -81,16 +81,8 @@
                 <span>Step 2</span>
                 <button class="secondary setup-edit" data-go-step="day" type="button">Edit</button>
               </div>
-              <h2>Open Today's POS Day</h2>
-              <p>Open the day before waiters can send orders or the cashier can make bills.</p>
-              <form id="openDayForm" class="form-row">
-                <input id="openingCash" type="number" min="0" step="1" placeholder="Opening cash" />
-                <button type="submit">Open Day</button>
-              </form>
-              <form id="closeDayForm" class="form-row">
-                <input id="closingCash" type="number" min="0" step="1" placeholder="Closing cash" />
-                <button type="submit">Close Day</button>
-              </form>
+              <h2>Business Day</h2>
+              <p>The hub automatically uses a 6 AM to 6 AM IST business day. Staff do not press a daily start or end button.</p>
               <div id="closeSummary" class="summary-strip"></div>
             </section>
 
@@ -146,14 +138,14 @@
                 <button class="secondary setup-edit" data-go-step="tables" type="button">Edit</button>
               </div>
               <h2>Add Tables</h2>
-              <p>Create rooms first, then add the tables waiters will select during service.</p>
+              <p>Create floors first, then add the tables waiters will select during service.</p>
               <form id="floorForm" class="form-row">
-                <input id="floorName" placeholder="Floor or room" />
-                <button type="submit">Add Room</button>
+                <input id="floorName" placeholder="Floor name" />
+                <button type="submit">Add Floor</button>
               </form>
               <details class="advanced-fields">
-                <summary>Advanced: custom room ID</summary>
-                <input id="floorCustomId" placeholder="Custom room ID (optional)" />
+                <summary>Advanced: custom floor ID</summary>
+                <input id="floorCustomId" placeholder="Custom floor ID (optional)" />
               </details>
               <form id="tableForm" class="form-row">
                 <select id="tableFloor"></select>
@@ -199,6 +191,7 @@
                 <input id="pairingName" placeholder="Device name" />
                 <select id="pairingRole">
                   <option value="waiter">Waiter</option>
+                  <option value="captain">Captain</option>
                   <option value="kitchen">Kitchen</option>
                   <option value="cashier">Cashier</option>
                   <option value="admin">Admin</option>
@@ -324,12 +317,12 @@
           <header class="view-header">
             <div>
               <h1>Reports & Backups</h1>
-              <p>Check day close numbers and keep a local backup of this hub database.</p>
+              <p>Review the current 6 AM business day and keep a local backup of this hub database.</p>
             </div>
           </header>
           <section class="report-grid">
             <article class="work-pane">
-              <h2>Cash Reconciliation</h2>
+              <h2>Current Business Day</h2>
               <div id="closeSummaryReport" class="summary-strip"></div>
             </article>
             <article class="work-pane">

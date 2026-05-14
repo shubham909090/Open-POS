@@ -7,8 +7,9 @@ import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import QRCode from "qrcode";
 import {
-  closePosDaySchema,
   cancelOrderSchema,
+  adjustAlcoholStockSchema,
+  createAlcoholItemSchema,
   createBackupSchema,
   createFloorSchema,
   createMenuItemSchema,
@@ -21,7 +22,6 @@ import {
   markNcBillSchema,
   moveOrderItemsSchema,
   moveTableSchema,
-  openPosDaySchema,
   reprintKotSchema,
   revokeDeviceSchema,
   reviseBillSchema,
@@ -30,6 +30,7 @@ import {
   scheduleRestoreSchema,
   submitOrderSchema,
   ticketTemplateSchema,
+  updateAlcoholItemSchema,
   updateFloorSchema,
   updateKotStatusSchema,
   updateMenuItemSchema,
@@ -55,9 +56,7 @@ export function isRealtimeEventVisibleForRole(event: unknown, role: UserRole): b
   if (role === "admin" || role === "cashier") return true;
   const type = typeof event === "object" && event !== null && "type" in event ? String((event as { type?: unknown }).type ?? "") : "";
   if (role === "kitchen") return type.startsWith("kot.");
-  if (role === "captain" || role === "waiter") {
-    return ["order.submitted", "table.shifted", "order_items.shifted", "kot.status_changed", "pos_day.opened", "pos_day.closed"].includes(type);
-  }
+  if (role === "captain" || role === "waiter") return ["order.submitted", "table.shifted", "order_items.shifted", "kot.status_changed"].includes(type);
   return false;
 }
 
@@ -290,6 +289,25 @@ export function createHubServer(input: {
     input.eventBus.publish({ type: "menu_item.updated", result });
     return result;
   });
+  app.get("/alcohol", { preHandler: cashierOrAdmin }, async () => input.orderService.listAlcoholCatalog());
+  app.get("/alcohol/storage", { preHandler: cashierOrAdmin }, async () => input.orderService.listAlcoholStorage());
+  app.post("/alcohol/items", { preHandler: adminOnly }, async (request) => {
+    const result = input.orderService.createAlcoholItem(createAlcoholItemSchema.parse(request.body));
+    input.eventBus.publish({ type: "alcohol_item.created", result });
+    return result;
+  });
+  app.patch("/alcohol/items/:id", { preHandler: adminOnly }, async (request) => {
+    const params = request.params as { id: string };
+    const result = input.orderService.updateAlcoholItem(params.id, updateAlcoholItemSchema.parse(request.body));
+    input.eventBus.publish({ type: "alcohol_item.updated", result });
+    return result;
+  });
+  app.post("/alcohol/stock/:id/adjust", { preHandler: cashierOrAdmin }, async (request) => {
+    const params = request.params as { id: string };
+    const result = input.orderService.adjustAlcoholStock(params.id, adjustAlcoholStockSchema.parse(request.body));
+    input.eventBus.publish({ type: "alcohol_stock.adjusted", result });
+    return result;
+  });
   app.get("/settings/receipt-printer", { preHandler: cashierOrAdmin }, async () => input.orderService.getReceiptPrinter());
   app.get("/system-printers", { preHandler: adminOnly }, async () => listSystemPrinters());
   app.put("/settings/receipt-printer", { preHandler: adminOnly }, async (request) => {
@@ -367,23 +385,19 @@ export function createHubServer(input: {
     socket.on("close", unsubscribe);
   });
 
-  app.post("/pos-days/open", { preHandler: cashierOrAdmin }, async (request) => {
-    const result = input.orderService.openPosDay(openPosDaySchema.parse(request.body));
-    input.eventBus.publish({ type: "pos_day.opened", result });
+  app.get("/business-day/current-summary", { preHandler: cashierOrAdmin }, async () => input.orderService.getCurrentBusinessDaySummary());
+  app.get("/reports/daily", { preHandler: cashierOrAdmin }, async () => {
+    const result = input.orderService.listDailyReports();
+    void input.syncBridge?.pushPending().catch((error) => app.log.warn(error, "Daily report sync will retry later"));
     return result;
   });
-
-  app.post("/pos-days/close", { preHandler: cashierOrAdmin }, async (request) => {
-    const result = input.orderService.closePosDay(closePosDaySchema.parse(request.body));
-    input.eventBus.publish({ type: "pos_day.closed", result });
-    void input.syncBridge?.pushPending().catch((error) => app.log.warn(error, "Close-day report sync will retry later"));
-    return result;
-  });
-  app.get("/pos-days/close-summary", { preHandler: cashierOrAdmin }, async () => input.orderService.getCloseSummary());
-  app.get("/reports/daily", { preHandler: cashierOrAdmin }, async () => input.orderService.listDailyReports());
   app.get("/reports/daily/:posDayId", { preHandler: cashierOrAdmin }, async (request) => {
     const params = request.params as { posDayId: string };
     return input.orderService.getDailyReport(params.posDayId);
+  });
+  app.get("/reports/alcohol-stock-movements", { preHandler: cashierOrAdmin }, async (request) => {
+    const query = request.query as { limit?: string };
+    return input.orderService.listAlcoholStockMovements(Number(query.limit ?? 100));
   });
 
   app.post("/orders/submit", { preHandler: orderRole }, async (request) => {

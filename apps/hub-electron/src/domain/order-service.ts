@@ -2,9 +2,10 @@ import {
   calculateLineTotal,
   calculateTaxComponents,
   type TaxComponentAmount,
+  type AdjustAlcoholStockInput,
   type CancelOrderInput,
+  type CreateAlcoholItemInput,
   type CreateSaleGroupInput,
-  type ClosePosDayInput,
   type CreateFloorInput,
   type CreateMenuItemInput,
   type CreateProductionUnitInput,
@@ -16,13 +17,13 @@ import {
   type MoveOrderItemsInput,
   type MoveTableInput,
   type KotType,
-  type OpenPosDayInput,
   type ReprintKotInput,
   type ReviseBillInput,
   type RetryPrintJobInput,
   type SettleBillInput,
   type SubmitOrderInput,
   type TicketTemplateInput,
+  type UpdateAlcoholItemInput,
   type UpdateSaleGroupInput,
   type UpdateFloorInput,
   type UpdateKotStatusInput,
@@ -38,11 +39,16 @@ import type { HubOrm, SqliteDatabase } from "../db/database.js";
 import {
   bills,
   billRevisions,
+  alcoholProfiles,
+  alcoholRecipeIngredients,
+  alcoholStockLevels,
+  alcoholStockMovements,
   dailyReportSnapshots,
   eventLog,
   floors,
   hubSettings,
   managerApprovals,
+  menuItemVariants,
   kotItems,
   kots,
   menuItems,
@@ -61,16 +67,19 @@ import {
 import { DomainError } from "./errors.js";
 import { makeId } from "./ids.js";
 import { renderBillTicket, renderKotTicket, type KotTicketItem } from "./tickets.js";
+import { currentBusinessDayWindow } from "./business-day.js";
 
 const DEFAULT_TAX_COMPONENTS = [
   { name: "CGST", rateBps: 250 },
   { name: "SGST", rateBps: 250 }
 ];
 
-interface ActivePosDayRow {
+interface BusinessDayRow {
   id: string;
   business_date: string;
-  opening_cash_paise: number;
+  period_start_at: string;
+  period_end_at: string;
+  status: string;
 }
 
 interface TableRow {
@@ -96,6 +105,18 @@ interface MenuItemRow {
   printer_name: string | null;
 }
 
+interface MenuItemVariantRow {
+  id: string;
+  menu_item_id: string;
+  label: string;
+  kind: string;
+  price_paise: number;
+  volume_ml: number | null;
+  inventory_action: string;
+  sort_order: number;
+  active: boolean | number;
+}
+
 interface OrderRow {
   id: string;
   table_id: string;
@@ -113,7 +134,12 @@ interface OrderItemRow {
   id: string;
   order_id: string;
   menu_item_id: string | null;
+  menu_item_variant_id: string | null;
   name_snapshot: string;
+  variant_name_snapshot: string;
+  variant_volume_ml: number | null;
+  inventory_action_snapshot: string;
+  alcohol_recipe_snapshot_json: string;
   unit_price_paise: number;
   quantity: number;
   production_unit_id: string | null;
@@ -124,6 +150,7 @@ interface OrderItemRow {
   tax_components_json: string;
   tax_paise: number;
   is_open_item: boolean;
+  status: string;
 }
 
 interface UnitRow {
@@ -169,19 +196,18 @@ interface BillTotals {
 }
 
 interface DaySummary {
-  openDay: {
+  businessDay: {
     id: string;
     business_date: string;
-    opening_cash_paise: number;
+    period_start_at: string;
+    period_end_at: string;
+    status: string;
   };
   openOrders: number;
   billedOrders: number;
   paidBills: number;
   unpaidBills: number;
   cancelledOrders: number;
-  openingCashPaise: number;
-  closingCashPaise: number | null;
-  cashVariancePaise: number | null;
   billCount: number;
   grossSalesPaise: number;
   discountPaise: number;
@@ -193,7 +219,6 @@ interface DaySummary {
   onlinePaymentsPaise: number;
   totalPaymentsPaise: number;
   nonCashPaymentsPaise: number;
-  expectedClosingCashPaise: number;
   billSummaries: Array<{
     billId: string;
     orderId: string;
@@ -247,6 +272,15 @@ interface KotItemChange {
   ticketLabel: string;
 }
 
+interface AlcoholStockRow {
+  menu_item_id: string;
+  sealed_large_count: number;
+  open_large_ml: number;
+  sealed_small_count: number;
+  large_bottle_ml: number;
+  small_bottle_ml: number;
+}
+
 interface GroupSummaryAccumulator {
   saleGroupId: string;
   name: string;
@@ -262,8 +296,13 @@ interface GroupSummaryAccumulator {
 interface RequestedOrderItem {
   itemKey: string;
   menuItemId: string | null;
+  menuItemVariantId: string | null;
   quantity: number;
   name: string;
+  variantName: string;
+  variantVolumeMl: number | null;
+  inventoryAction: string;
+  alcoholRecipeSnapshotJson: string;
   unitPricePaise: number;
   productionUnitId: string | null;
   saleGroupId: string;
@@ -280,6 +319,11 @@ interface DeviceActor {
   role: UserRole;
 }
 
+interface AlcoholRecipeSnapshotIngredient {
+  liquorMenuItemId: string;
+  mlPerUnit: number;
+}
+
 export class OrderService {
   constructor(private readonly orm: HubOrm) {}
 
@@ -287,137 +331,10 @@ export class OrderService {
     return this.orm.$client;
   }
 
-  openPosDay(input: OpenPosDayInput): { id: string } {
-    const existing = this.getOpenPosDay();
-    if (existing) throw new DomainError("A POS day is already open");
-
-    const id = makeId("day");
-    const now = new Date().toISOString();
-
-    this.orm
-      .insert(posDays)
-      .values({
-        id,
-        outletId: input.outletId,
-        businessDate: input.businessDate,
-        status: "open",
-        openingCashPaise: input.openingCashPaise,
-        openedBy: input.openedBy,
-        openedAt: now
-      })
-      .run();
-
-    this.appendEvent("pos_day.opened", "pos_day", id, { ...input, id });
-    return { id };
-  }
-
-  closePosDay(input: ClosePosDayInput): { id: string; report: DaySummary } {
-    const run = this.db.transaction(() => {
-      const openDay = this.requireOpenPosDay();
-      const openOrders = this.orm
-        .select({ count: count() })
-        .from(orders)
-        .where(and(eq(orders.posDayId, openDay.id), inArray(orders.status, ["open", "billed"])))
-        .get();
-
-      if ((openOrders?.count ?? 0) > 0) {
-        throw new DomainError("Cannot close POS day while orders are open or billed");
-      }
-
-      const now = new Date().toISOString();
-      const report = this.buildDaySummary(openDay.id, input.closingCashPaise);
-      this.orm
-        .update(posDays)
-        .set({
-          status: "closed",
-          closingCashPaise: input.closingCashPaise,
-          closedBy: input.closedBy,
-          closedAt: now
-        })
-        .where(eq(posDays.id, openDay.id))
-        .run();
-
-      this.orm
-        .insert(dailyReportSnapshots)
-        .values({
-          posDayId: openDay.id,
-          businessDate: report.openDay.business_date,
-          status: "finalized",
-          openingCashPaise: report.openingCashPaise,
-          closingCashPaise: input.closingCashPaise,
-          expectedClosingCashPaise: report.expectedClosingCashPaise,
-          cashVariancePaise: report.cashVariancePaise ?? 0,
-          billCount: report.billCount,
-          openOrders: report.openOrders,
-          billedOrders: report.billedOrders,
-          paidBills: report.paidBills,
-          unpaidBills: report.unpaidBills,
-          cancelledOrders: report.cancelledOrders,
-          grossSalesPaise: report.grossSalesPaise,
-          discountPaise: report.discountPaise,
-          tipPaise: report.tipPaise,
-          finalSalesPaise: report.finalSalesPaise,
-          cashPaymentsPaise: report.cashPaymentsPaise,
-          upiPaymentsPaise: report.upiPaymentsPaise,
-          cardPaymentsPaise: report.cardPaymentsPaise,
-          onlinePaymentsPaise: report.onlinePaymentsPaise,
-          totalPaymentsPaise: report.totalPaymentsPaise,
-          nonCashPaymentsPaise: report.nonCashPaymentsPaise,
-          billSummariesJson: JSON.stringify(report.billSummaries),
-          itemSummariesJson: JSON.stringify(report.itemSummaries),
-          groupSummariesJson: JSON.stringify(report.groupSummaries),
-          finalizedAt: now,
-          updatedAt: now
-        })
-        .onConflictDoUpdate({
-          target: dailyReportSnapshots.posDayId,
-          set: {
-            status: "finalized",
-            closingCashPaise: input.closingCashPaise,
-            expectedClosingCashPaise: report.expectedClosingCashPaise,
-            cashVariancePaise: report.cashVariancePaise ?? 0,
-            billCount: report.billCount,
-            openOrders: report.openOrders,
-            billedOrders: report.billedOrders,
-            paidBills: report.paidBills,
-            unpaidBills: report.unpaidBills,
-            cancelledOrders: report.cancelledOrders,
-            grossSalesPaise: report.grossSalesPaise,
-            discountPaise: report.discountPaise,
-            tipPaise: report.tipPaise,
-            finalSalesPaise: report.finalSalesPaise,
-            cashPaymentsPaise: report.cashPaymentsPaise,
-            upiPaymentsPaise: report.upiPaymentsPaise,
-            cardPaymentsPaise: report.cardPaymentsPaise,
-            onlinePaymentsPaise: report.onlinePaymentsPaise,
-            totalPaymentsPaise: report.totalPaymentsPaise,
-            nonCashPaymentsPaise: report.nonCashPaymentsPaise,
-            billSummariesJson: JSON.stringify(report.billSummaries),
-            itemSummariesJson: JSON.stringify(report.itemSummaries),
-            groupSummariesJson: JSON.stringify(report.groupSummaries),
-            finalizedAt: now,
-            updatedAt: now
-          }
-        })
-        .run();
-
-      this.appendEvent("daily_report.finalized", "daily_report", openDay.id, {
-        posDayId: openDay.id,
-        businessDate: report.openDay.business_date,
-        closedBy: input.closedBy,
-        finalizedAt: now,
-        ...report
-      });
-      this.appendEvent("pos_day.closed", "pos_day", openDay.id, { ...input, reportId: openDay.id });
-      return { id: openDay.id, report };
-    });
-
-    return run();
-  }
-
   submitOrder(input: SubmitOrderInput, actor?: DeviceActor): { orderId: string; kotIds: string[] } {
     const run = this.db.transaction(() => {
-      const posDay = this.requireOpenPosDay();
+      this.finalizeCompletedBusinessDays();
+      const posDay = this.ensureCurrentBusinessDay();
       const table = this.requireTable(input.tableId);
       const now = new Date().toISOString();
       const normalizedItems = this.prepareSubmittedItems(input.items, now);
@@ -460,7 +377,9 @@ export class OrderService {
       return { orderId: order.id, kotIds };
     });
 
-    return run();
+    const result = run();
+    this.finalizeCompletedBusinessDays();
+    return result;
   }
 
   cancelOrder(orderId: string, input: CancelOrderInput): { kotIds: string[] } {
@@ -507,7 +426,9 @@ export class OrderService {
       return { kotIds };
     });
 
-    return run();
+    const result = run();
+    this.finalizeCompletedBusinessDays();
+    return result;
   }
 
   reprintKot(kotId: string, input: ReprintKotInput): { printJobId: string } {
@@ -639,8 +560,8 @@ export class OrderService {
     return run();
   }
 
-  getOpenDay(): ActivePosDayRow | undefined {
-    return this.getOpenPosDay();
+  getCurrentBusinessDay(): BusinessDayRow {
+    return this.ensureCurrentBusinessDay();
   }
 
   listSaleGroups(includeInactive = true): unknown[] {
@@ -833,6 +754,7 @@ export class OrderService {
         .run();
 
       if (isPaid) {
+        this.deductAlcoholStockForPaidBill(billId, bill.order_id);
         this.orm.update(orders).set({ status: "paid", updatedAt: now }).where(eq(orders.id, bill.order_id)).run();
         this.freeTable(order.table_id);
         const payload = renderBillTicket({
@@ -865,7 +787,9 @@ export class OrderService {
       return { billId, status: isPaid ? "paid" : "pending", paidPaise, remainingPaise, finalTotalPaise };
     });
 
-    return run();
+    const result = run();
+    if (result.status === "paid") this.finalizeCompletedBusinessDays();
+    return result;
   }
 
   listTables(): unknown[] {
@@ -901,8 +825,9 @@ export class OrderService {
   }
 
   bootstrap(): unknown {
+    this.finalizeCompletedBusinessDays();
     return {
-      openDay: this.getOpenPosDay(),
+      currentBusinessDay: this.ensureCurrentBusinessDay(),
       floors: this.listFloors(),
       tables: this.listTables(),
       productionUnits: this.listProductionUnits(),
@@ -1068,7 +993,7 @@ export class OrderService {
 
   listMenuItems(includeInactive = false): unknown[] {
     const where = includeInactive ? "" : "WHERE mi.active = 1";
-    return this.db
+    const rows = this.db
       .prepare(
         `SELECT mi.id, mi.name, mi.price_paise, mi.production_unit_id, mi.sale_group_id, mi.active,
           pu.name AS production_unit_name,
@@ -1082,6 +1007,28 @@ export class OrderService {
          ORDER BY mi.active DESC, sg.name, mi.name`
       )
       .all();
+    const variants = this.listVariantsForMenuItems((rows as Array<{ id: string }>).map((row) => row.id), includeInactive);
+    return (rows as Array<Record<string, unknown>>).map((row) => ({ ...row, variants: variants.get(String(row.id)) ?? [] }));
+  }
+
+  private listVariantsForMenuItems(menuItemIds: string[], includeInactive = false): Map<string, MenuItemVariantRow[]> {
+    const uniqueIds = [...new Set(menuItemIds)];
+    if (uniqueIds.length === 0) return new Map();
+    const placeholders = uniqueIds.map(() => "?").join(",");
+    const activeClause = includeInactive ? "" : "AND active = 1";
+    const rows = this.db
+      .prepare(
+        `SELECT id, menu_item_id, label, kind, price_paise, volume_ml, inventory_action, sort_order, active
+         FROM menu_item_variants
+         WHERE menu_item_id IN (${placeholders}) ${activeClause}
+         ORDER BY menu_item_id, sort_order, id`
+      )
+      .all(...uniqueIds) as MenuItemVariantRow[];
+    const variants = new Map<string, MenuItemVariantRow[]>();
+    for (const row of rows) {
+      variants.set(row.menu_item_id, [...(variants.get(row.menu_item_id) ?? []), row]);
+    }
+    return variants;
   }
 
   createMenuItem(input: CreateMenuItemInput): { id: string } {
@@ -1101,6 +1048,7 @@ export class OrderService {
         active: input.active ?? true
       })
       .run();
+    this.ensureDefaultVariant(id, input.pricePaise, input.active ?? true);
     this.appendEvent("menu_item.created", "menu_item", id, { ...input, id });
     return { id };
   }
@@ -1132,6 +1080,16 @@ export class OrderService {
       })
       .where(eq(menuItems.id, id))
       .run();
+    if (input.pricePaise !== undefined || input.active !== undefined) {
+      this.orm
+        .update(menuItemVariants)
+        .set({
+          ...(input.pricePaise !== undefined ? { pricePaise: input.pricePaise } : {}),
+          ...(input.active !== undefined ? { active: input.active } : {})
+        })
+        .where(and(eq(menuItemVariants.menuItemId, id), eq(menuItemVariants.kind, "default")))
+        .run();
+    }
 
     this.appendEvent("menu_item.updated", "menu_item", id, { id, ...input });
     return { id };
@@ -1140,20 +1098,228 @@ export class OrderService {
   setMenuItemActive(id: string, active: boolean): { id: string; active: boolean } {
     const result = this.orm.update(menuItems).set({ active }).where(eq(menuItems.id, id)).run();
     if (result.changes === 0) throw new DomainError("Menu item not found", 404);
+    this.orm.update(menuItemVariants).set({ active }).where(and(eq(menuItemVariants.menuItemId, id), eq(menuItemVariants.kind, "default"))).run();
     this.appendEvent("menu_item.active_changed", "menu_item", id, { id, active });
     return { id, active };
   }
 
   removeMenuItem(id: string): { id: string; deleted: boolean; active: boolean } {
     const usage = this.orm.select({ count: count() }).from(orderItems).where(eq(orderItems.menuItemId, id)).get()?.count ?? 0;
-    if (usage > 0) {
+    const stockMovementUsage = this.orm.select({ count: count() }).from(alcoholStockMovements).where(eq(alcoholStockMovements.menuItemId, id)).get()?.count ?? 0;
+    const recipeUsage = this.orm.select({ count: count() }).from(alcoholRecipeIngredients).where(eq(alcoholRecipeIngredients.liquorMenuItemId, id)).get()?.count ?? 0;
+    const recipeSnapshotUsage = this.countAlcoholRecipeSnapshotUsage(id);
+    if (usage > 0 || stockMovementUsage > 0 || recipeUsage > 0 || recipeSnapshotUsage > 0) {
       this.setMenuItemActive(id, false);
       return { id, deleted: false, active: false };
     }
+    this.orm.delete(alcoholRecipeIngredients).where(eq(alcoholRecipeIngredients.productMenuItemId, id)).run();
+    this.orm.delete(alcoholRecipeIngredients).where(eq(alcoholRecipeIngredients.liquorMenuItemId, id)).run();
+    this.orm.delete(alcoholStockLevels).where(eq(alcoholStockLevels.menuItemId, id)).run();
+    this.orm.delete(alcoholProfiles).where(eq(alcoholProfiles.menuItemId, id)).run();
+    this.orm.delete(menuItemVariants).where(eq(menuItemVariants.menuItemId, id)).run();
     const result = this.orm.delete(menuItems).where(eq(menuItems.id, id)).run();
     if (result.changes === 0) throw new DomainError("Dish not found", 404);
     this.appendEvent("menu_item.deleted", "menu_item", id, { id });
     return { id, deleted: true, active: false };
+  }
+
+  listAlcoholCatalog(): unknown {
+    const items = this.db
+      .prepare(
+        `SELECT mi.id, mi.name, mi.price_paise, mi.production_unit_id, pu.name AS production_unit_name,
+          mi.active, ap.type, ap.large_bottle_ml, ap.small_bottle_ml,
+          COALESCE(asl.sealed_large_count, 0) AS sealed_large_count,
+          COALESCE(asl.open_large_ml, 0) AS open_large_ml,
+          COALESCE(asl.sealed_small_count, 0) AS sealed_small_count
+         FROM alcohol_profiles ap
+         JOIN menu_items mi ON mi.id = ap.menu_item_id
+         LEFT JOIN production_units pu ON pu.id = mi.production_unit_id
+         LEFT JOIN alcohol_stock_levels asl ON asl.menu_item_id = mi.id
+         ORDER BY mi.active DESC, mi.name`
+      )
+      .all() as Array<Record<string, unknown> & { id: string }>;
+    const variants = this.listVariantsForMenuItems(items.map((item) => item.id), true);
+    const recipes = this.listAlcoholRecipes();
+    return {
+      items: items.map((item) => ({
+        ...item,
+        variants: variants.get(item.id) ?? [],
+        recipeIngredients: recipes.get(item.id) ?? []
+      })),
+      storage: this.listAlcoholStorage()
+    };
+  }
+
+  listAlcoholStorage(): unknown[] {
+    const items = this.db
+      .prepare(
+        `SELECT mi.id, mi.name, mi.active, ap.type, ap.large_bottle_ml, ap.small_bottle_ml,
+          COALESCE(asl.sealed_large_count, 0) AS sealed_large_count,
+          COALESCE(asl.open_large_ml, 0) AS open_large_ml,
+          COALESCE(asl.sealed_small_count, 0) AS sealed_small_count
+         FROM alcohol_profiles ap
+         JOIN menu_items mi ON mi.id = ap.menu_item_id
+         LEFT JOIN alcohol_stock_levels asl ON asl.menu_item_id = mi.id
+         WHERE ap.type = 'plain_liquor'
+         ORDER BY mi.active DESC, mi.name`
+      )
+      .all() as Array<Record<string, unknown> & {
+        id: string;
+        sealed_large_count: number;
+        open_large_ml: number;
+        sealed_small_count: number;
+        large_bottle_ml: number;
+        small_bottle_ml: number;
+      }>;
+    const pending = this.calculatePendingAlcoholUsage();
+    return items.map((item) => {
+      const pendingUsage = pending.get(item.id) ?? { largeMl: 0, largeBottles: 0, smallBottles: 0 };
+      const onHandMl = item.sealed_large_count * item.large_bottle_ml + item.open_large_ml + item.sealed_small_count * item.small_bottle_ml;
+      const pendingMl = pendingUsage.largeMl + pendingUsage.largeBottles * item.large_bottle_ml + pendingUsage.smallBottles * item.small_bottle_ml;
+      return {
+        ...item,
+        total_available_ml: onHandMl,
+        pending_large_ml: pendingUsage.largeMl,
+        pending_large_bottles: pendingUsage.largeBottles,
+        pending_small_bottles: pendingUsage.smallBottles,
+        pending_total_ml: pendingMl,
+        expected_after_settlement_ml: onHandMl - pendingMl
+      };
+    });
+  }
+
+  createAlcoholItem(input: CreateAlcoholItemInput): { id: string } {
+    const run = this.db.transaction(() => {
+      const unitId = input.productionUnitId !== undefined ? input.productionUnitId : this.defaultAlcoholProductionUnitId();
+      if (unitId) this.requireProductionUnit(unitId);
+      this.assertAlcoholRecipeMatchesType(input.type, input.recipeIngredients ?? []);
+      this.assertAlcoholVariantsMatchType(input.type, input.variants);
+      this.assertAlcoholHasSellableVariant(input.active ?? true, input.variants);
+      const firstVariant = input.variants.find((variant) => variant.active !== false) ?? input.variants[0];
+      if (!firstVariant) throw new DomainError("At least one alcohol variation is required");
+      const item = this.createMenuItem({
+        name: input.name,
+        pricePaise: firstVariant.pricePaise,
+        productionUnitId: unitId ?? null,
+        saleGroupId: "sg-alcohol",
+        active: input.active ?? true
+      });
+      this.orm.delete(menuItemVariants).where(eq(menuItemVariants.menuItemId, item.id)).run();
+      this.orm
+        .insert(alcoholProfiles)
+        .values({
+          menuItemId: item.id,
+          type: input.type,
+          largeBottleMl: input.largeBottleMl ?? 750,
+          smallBottleMl: input.smallBottleMl ?? 180
+        })
+        .run();
+      this.orm
+        .insert(alcoholStockLevels)
+        .values({
+          menuItemId: item.id,
+          sealedLargeCount: input.sealedLargeCount ?? 0,
+          openLargeMl: input.openLargeMl ?? 0,
+          sealedSmallCount: input.sealedSmallCount ?? 0,
+          updatedAt: new Date().toISOString()
+        })
+        .run();
+      this.replaceAlcoholVariants(item.id, input.variants);
+      this.replaceAlcoholRecipe(item.id, input.recipeIngredients ?? []);
+      this.appendEvent("alcohol_item.created", "menu_item", item.id, { ...input, id: item.id });
+      return item;
+    });
+    return run();
+  }
+
+  updateAlcoholItem(id: string, input: UpdateAlcoholItemInput): { id: string } {
+    const run = this.db.transaction(() => {
+      const existing = this.orm
+        .select({ id: alcoholProfiles.menuItemId, type: alcoholProfiles.type, active: menuItems.active })
+        .from(alcoholProfiles)
+        .innerJoin(menuItems, eq(menuItems.id, alcoholProfiles.menuItemId))
+        .where(eq(alcoholProfiles.menuItemId, id))
+        .get();
+      if (!existing) throw new DomainError("Alcohol item not found", 404);
+      if (input.productionUnitId) this.requireProductionUnit(input.productionUnitId);
+      if (input.type !== undefined && input.variants === undefined) throw new DomainError("Changing alcohol type requires variation setup");
+      const nextType = input.type ?? (existing.type as "plain_liquor" | "prepared_product");
+      const nextActive = input.active ?? Boolean(existing.active);
+      this.assertAlcoholRecipeMatchesType(nextType, input.recipeIngredients ?? []);
+      if (input.variants) this.assertAlcoholVariantsMatchType(nextType, input.variants);
+      this.assertAlcoholHasSellableVariant(nextActive, input.variants, id);
+      const firstVariant = input.variants?.find((variant) => variant.active !== false) ?? input.variants?.[0];
+      this.updateMenuItem(id, {
+        ...(input.name !== undefined ? { name: input.name } : {}),
+        ...(firstVariant ? { pricePaise: firstVariant.pricePaise } : {}),
+        ...(input.productionUnitId !== undefined ? { productionUnitId: input.productionUnitId } : {}),
+        ...(input.active !== undefined ? { active: input.active } : {})
+      });
+      const profilePatch = {
+        ...(input.type !== undefined ? { type: input.type } : {}),
+        ...(input.largeBottleMl !== undefined ? { largeBottleMl: input.largeBottleMl } : {}),
+        ...(input.smallBottleMl !== undefined ? { smallBottleMl: input.smallBottleMl } : {})
+      };
+      if (Object.keys(profilePatch).length > 0) {
+        this.orm
+          .update(alcoholProfiles)
+          .set(profilePatch)
+          .where(eq(alcoholProfiles.menuItemId, id))
+          .run();
+      }
+      if (input.variants) this.replaceAlcoholVariants(id, input.variants);
+      if (nextType === "plain_liquor") {
+        this.replaceAlcoholRecipe(id, []);
+      } else if (input.recipeIngredients) {
+        this.replaceAlcoholRecipe(id, input.recipeIngredients);
+      }
+      this.appendEvent("alcohol_item.updated", "menu_item", id, { id, ...input });
+      return { id };
+    });
+    return run();
+  }
+
+  adjustAlcoholStock(menuItemId: string, input: AdjustAlcoholStockInput): { id: string } {
+    const run = this.db.transaction(() => {
+      this.verifyManagerApproval(input.managerApproval, "alcohol_stock.adjust", "menu_item", menuItemId, input.managerApproval.approvedBy);
+      const stock = this.requireAlcoholStock(menuItemId);
+      const next = {
+        sealedLarge: input.mode === "set" ? (input.sealedLargeCount ?? stock.sealed_large_count) : stock.sealed_large_count + (input.sealedLargeCount ?? 0),
+        openLargeMl: input.mode === "set" ? (input.openLargeMl ?? stock.open_large_ml) : stock.open_large_ml + (input.openLargeMl ?? 0),
+        sealedSmall: input.mode === "set" ? (input.sealedSmallCount ?? stock.sealed_small_count) : stock.sealed_small_count + (input.sealedSmallCount ?? 0)
+      };
+      this.writeAlcoholStock(menuItemId, next.sealedLarge, next.openLargeMl, next.sealedSmall);
+      this.recordAlcoholMovement({
+        menuItemId,
+        sourceType: "manual_adjustment",
+        sourceId: makeId("stockadj"),
+        deltaSealedLarge: next.sealedLarge - stock.sealed_large_count,
+        deltaOpenLargeMl: next.openLargeMl - stock.open_large_ml,
+        deltaSealedSmall: next.sealedSmall - stock.sealed_small_count,
+        balanceSealedLarge: next.sealedLarge,
+        balanceOpenLargeMl: next.openLargeMl,
+        balanceSealedSmall: next.sealedSmall,
+        approvedBy: input.managerApproval.approvedBy
+      });
+      this.appendEvent("alcohol_stock.adjusted", "menu_item", menuItemId, { menuItemId, mode: input.mode, approvedBy: input.managerApproval.approvedBy });
+      return { id: menuItemId };
+    });
+    return run();
+  }
+
+  listAlcoholStockMovements(limit = 100): unknown[] {
+    return this.db
+      .prepare(
+        `SELECT asm.id, asm.menu_item_id, mi.name AS item_name, asm.source_type, asm.source_id,
+          asm.delta_sealed_large, asm.delta_open_large_ml, asm.delta_sealed_small,
+          asm.balance_sealed_large, asm.balance_open_large_ml, asm.balance_sealed_small,
+          asm.approved_by, asm.created_at
+         FROM alcohol_stock_movements asm
+         JOIN menu_items mi ON mi.id = asm.menu_item_id
+         ORDER BY asm.created_at DESC
+         LIMIT ?`
+      )
+      .all(Math.max(1, Math.min(limit, 500)));
   }
 
   updateKotStatus(kotId: string, input: UpdateKotStatusInput): { id: string; status: string } {
@@ -1333,38 +1499,17 @@ export class OrderService {
     };
   }
 
-  getCloseSummary(): unknown {
-    const openDay = this.getOpenPosDay();
-    if (!openDay) {
-      return {
-        openDay: null,
-        openOrders: 0,
-        billedOrders: 0,
-        paidBills: 0,
-        unpaidBills: 0,
-        openingCashPaise: 0,
-        grossSalesPaise: 0,
-        discountPaise: 0,
-        tipPaise: 0,
-        finalSalesPaise: 0,
-        cashPaymentsPaise: 0,
-        upiPaymentsPaise: 0,
-        cardPaymentsPaise: 0,
-        onlinePaymentsPaise: 0,
-        totalPaymentsPaise: 0,
-        nonCashPaymentsPaise: 0,
-        expectedClosingCashPaise: 0
-      };
-    }
-
-    return this.buildDaySummary(openDay.id);
+  getCurrentBusinessDaySummary(): unknown {
+    this.finalizeCompletedBusinessDays();
+    return this.buildDaySummary(this.ensureCurrentBusinessDay().id);
   }
 
   listDailyReports(limit = 30): unknown[] {
+    this.finalizeCompletedBusinessDays();
     return this.db
       .prepare(
         `SELECT pos_day_id, business_date, status, bill_count, gross_sales_paise, final_sales_paise,
-          total_payments_paise, cash_variance_paise, finalized_at
+          total_payments_paise, finalized_at
          FROM daily_report_snapshots
          ORDER BY business_date DESC, finalized_at DESC
          LIMIT ?`
@@ -1396,8 +1541,10 @@ export class OrderService {
       if (!["billed", "open"].includes(order.status)) throw new DomainError("Order cannot be revised");
       const table = this.requireTable(order.table_id);
       const now = new Date().toISOString();
-      const normalizedItems = this.prepareSubmittedItems(input.items, now);
       const previousItems = this.getOrderItems(order.id);
+      const previousVariantIds = new Set(previousItems.map((item) => item.menu_item_variant_id).filter((id): id is string => Boolean(id)));
+      const previousItemsById = new Map(previousItems.map((item) => [item.id, item]));
+      const normalizedItems = this.prepareSubmittedItems(input.items, now, previousVariantIds, previousItemsById);
       const menuById = this.getMenuItems([
         ...normalizedItems.map((item) => item.menuItemId).filter((id): id is string => Boolean(id)),
         ...previousItems.map((item) => item.menu_item_id).filter((id): id is string => Boolean(id))
@@ -1480,7 +1627,9 @@ export class OrderService {
       this.appendEvent("bill.nc_marked", "bill", billId, { billId, reason: input.managerApproval.reason, printJobId });
       return { billId, printJobId };
     });
-    return run();
+    const result = run();
+    this.finalizeCompletedBusinessDays();
+    return result;
   }
 
   printBill(billId: string, requestedBy: string): { printJobId: string } {
@@ -1574,10 +1723,9 @@ export class OrderService {
       const fromOrder = this.requireEditableOrder(fromTable.current_order_id);
       this.assertCanMoveOrder(fromOrder, actor, "items");
       const now = new Date().toISOString();
-      const posDay = this.requireOpenPosDay();
       const toOrder = toTable.current_order_id
         ? this.requireEditableOrder(toTable.current_order_id)
-        : this.createOrder({ tableId: toTable.id, captainId: actor.name, pax: 1, orderType: "dine_in" }, posDay.id, now, actor);
+        : this.createOrder({ tableId: toTable.id, captainId: actor.name, pax: 1, orderType: "dine_in" }, fromOrder.pos_day_id, now, actor);
       if (toTable.current_order_id) this.assertCanMoveOrder(toOrder, actor, "items");
       const movementPayload: Array<{ orderItemId: string; quantity: number; name: string }> = [];
       const sourceChanges: KotItemChange[] = [];
@@ -1588,7 +1736,7 @@ export class OrderService {
         if (!source || source.order_id !== fromOrder.id || source.quantity < moveItem.quantity) {
           throw new DomainError("Cannot shift more items than the source table has");
         }
-        const target = source.menu_item_id ? this.getOrderItemByKey(toOrder.id, source.menu_item_id) : undefined;
+        const target = source.menu_item_id ? this.getMatchingOrderItemSnapshot(toOrder.id, source) : undefined;
         let targetOrderItemId = target?.id;
         if (target) {
           this.orm
@@ -1604,7 +1752,12 @@ export class OrderService {
               id: targetOrderItemId,
               orderId: toOrder.id,
               menuItemId: source.menu_item_id,
+              menuItemVariantId: source.menu_item_variant_id,
               nameSnapshot: source.name_snapshot,
+              variantNameSnapshot: source.variant_name_snapshot,
+              variantVolumeMl: source.variant_volume_ml,
+              inventoryActionSnapshot: source.inventory_action_snapshot,
+              alcoholRecipeSnapshotJson: source.alcohol_recipe_snapshot_json,
               unitPricePaise: source.unit_price_paise,
               quantity: moveItem.quantity,
               productionUnitId: source.production_unit_id,
@@ -1691,11 +1844,11 @@ export class OrderService {
     return run();
   }
 
-  private buildDaySummary(posDayId: string, closingCashPaise?: number): DaySummary {
-    const openDay = this.db
-      .prepare("SELECT id, business_date, opening_cash_paise FROM pos_days WHERE id = ?")
-      .get(posDayId) as { id: string; business_date: string; opening_cash_paise: number } | undefined;
-    if (!openDay) throw new DomainError("POS day not found", 404);
+  private buildDaySummary(posDayId: string): DaySummary {
+    const businessDay = this.db
+      .prepare("SELECT id, business_date, period_start_at, period_end_at, status FROM pos_days WHERE id = ?")
+      .get(posDayId) as BusinessDayRow | undefined;
+    if (!businessDay) throw new DomainError("Business day not found", 404);
 
     const orders = this.db
       .prepare(
@@ -1887,7 +2040,6 @@ export class OrderService {
     const cardPaymentsPaise = paymentTotals.card ?? 0;
     const onlinePaymentsPaise = paymentTotals.online ?? 0;
     const totalPaymentsPaise = cashPaymentsPaise + upiPaymentsPaise + cardPaymentsPaise + onlinePaymentsPaise;
-    const expectedClosingCashPaise = openDay.opening_cash_paise + cashPaymentsPaise;
     const paymentsByBill = new Map<string, Array<{ method: string; amountPaise: number; reference: string | null }>>();
     for (const payment of paymentRows) {
       const list = paymentsByBill.get(payment.bill_id) ?? [];
@@ -1896,15 +2048,12 @@ export class OrderService {
     }
 
     return {
-      openDay,
+      businessDay,
       openOrders: orderCounts.open ?? 0,
       billedOrders: orderCounts.billed ?? 0,
       paidBills: billCounts.paid ?? 0,
       unpaidBills: billCounts.pending ?? 0,
       cancelledOrders: orderCounts.cancelled ?? 0,
-      openingCashPaise: openDay.opening_cash_paise,
-      closingCashPaise: closingCashPaise ?? null,
-      cashVariancePaise: closingCashPaise === undefined ? null : closingCashPaise - expectedClosingCashPaise,
       billCount: billTotals.bill_count,
       grossSalesPaise: billTotals.gross_sales_paise,
       discountPaise: billTotals.discount_paise,
@@ -1916,7 +2065,6 @@ export class OrderService {
       onlinePaymentsPaise,
       totalPaymentsPaise,
       nonCashPaymentsPaise: upiPaymentsPaise + cardPaymentsPaise + onlinePaymentsPaise,
-      expectedClosingCashPaise,
       billSummaries: billRows.map((bill) => ({
         billId: bill.bill_id,
         orderId: bill.order_id,
@@ -1948,29 +2096,48 @@ export class OrderService {
     };
   }
 
-  private prepareSubmittedItems(items: SubmitOrderInput["items"], now: string): RequestedOrderItem[] {
+  private prepareSubmittedItems(
+    items: SubmitOrderInput["items"],
+    now: string,
+    allowedInactiveVariantIds = new Set<string>(),
+    previousItemsById = new Map<string, OrderItemRow>()
+  ): RequestedOrderItem[] {
     return items
       .filter((item) => item.quantity > 0)
       .map((item) => {
         if (item.menuItemId) {
           const menuItem = this.getMenuItems([item.menuItemId]).get(item.menuItemId);
           if (!menuItem) throw new DomainError(`Menu item ${item.menuItemId} is not available`);
-          if (item.unitPricePaise !== undefined && item.unitPricePaise !== menuItem.price_paise) {
+          const variant = this.resolveMenuItemVariant(menuItem.id, item.menuItemVariantId, item.menuItemVariantId ? allowedInactiveVariantIds.has(item.menuItemVariantId) : false);
+          if (item.unitPricePaise !== undefined && item.unitPricePaise !== variant.price_paise) {
             this.verifyManagerApproval(item.managerApproval, "order_item.price_edit", "menu_item", menuItem.id, item.managerApproval?.approvedBy ?? "cashier");
           }
+          const previous = item.orderItemId ? previousItemsById.get(item.orderItemId) : undefined;
+          const preservePreviousSnapshot =
+            previous &&
+            previous.menu_item_id === menuItem.id &&
+            previous.menu_item_variant_id === variant.id &&
+            item.unitPricePaise === undefined &&
+            item.productionUnitId === undefined;
+          const displayName = variant.kind === "default" ? menuItem.name : `${menuItem.name} ${variant.label}`;
           return {
-            itemKey: this.itemKey(menuItem.id),
+            itemKey: this.itemKey(menuItem.id, undefined, variant.id),
             menuItemId: menuItem.id,
+            menuItemVariantId: variant.id,
             quantity: item.quantity,
-            name: menuItem.name,
-            unitPricePaise: item.unitPricePaise ?? menuItem.price_paise,
-            productionUnitId: item.productionUnitId !== undefined ? item.productionUnitId : menuItem.production_unit_id,
-            saleGroupId: menuItem.sale_group_id,
-            saleGroupName: menuItem.sale_group_name,
-            saleGroupKind: menuItem.sale_group_kind,
-            ticketLabel: menuItem.ticket_label,
-            taxComponentsJson: menuItem.tax_components_json,
-            isOpenItem: false
+            name: preservePreviousSnapshot ? previous.name_snapshot : displayName,
+            variantName: preservePreviousSnapshot ? previous.variant_name_snapshot : variant.label,
+            variantVolumeMl: preservePreviousSnapshot ? previous.variant_volume_ml : variant.volume_ml,
+            inventoryAction: preservePreviousSnapshot ? previous.inventory_action_snapshot : variant.inventory_action,
+            alcoholRecipeSnapshotJson: preservePreviousSnapshot ? previous.alcohol_recipe_snapshot_json : this.snapshotAlcoholRecipe(menuItem.id),
+            unitPricePaise: item.unitPricePaise ?? (preservePreviousSnapshot ? previous.unit_price_paise : variant.price_paise),
+            productionUnitId: preservePreviousSnapshot ? previous.production_unit_id : item.productionUnitId !== undefined ? item.productionUnitId : menuItem.production_unit_id,
+            saleGroupId: preservePreviousSnapshot ? previous.sale_group_id : menuItem.sale_group_id,
+            saleGroupName: preservePreviousSnapshot ? previous.sale_group_name_snapshot : menuItem.sale_group_name,
+            saleGroupKind: preservePreviousSnapshot ? previous.sale_group_kind_snapshot : menuItem.sale_group_kind,
+            ticketLabel: preservePreviousSnapshot ? previous.ticket_label_snapshot : menuItem.ticket_label,
+            taxComponentsJson: preservePreviousSnapshot ? previous.tax_components_json : menuItem.tax_components_json,
+            isOpenItem: preservePreviousSnapshot ? Boolean(previous.is_open_item) : false
           };
         }
 
@@ -1982,8 +2149,13 @@ export class OrderService {
         return {
           itemKey: existingOpenItemId ? `open:${existingOpenItemId}` : `open:${makeId("line")}`,
           menuItemId: null,
+          menuItemVariantId: null,
           quantity: item.quantity,
           name: item.openName ?? "Open item",
+          variantName: "",
+          variantVolumeMl: null,
+          inventoryAction: "none",
+          alcoholRecipeSnapshotJson: "[]",
           unitPricePaise: item.openPricePaise,
           productionUnitId,
           saleGroupId: saleGroup.id,
@@ -2018,6 +2190,145 @@ export class OrderService {
       totalPaise: subtotalPaise + taxPaise,
       taxBreakdown: [...taxByName.entries()].map(([name, amountPaise]) => ({ name, rateBps: 0, amountPaise }))
     };
+  }
+
+  private deductAlcoholStockForPaidBill(billId: string, orderId: string): void {
+    const existing = this.orm
+      .select({ id: alcoholStockMovements.id })
+      .from(alcoholStockMovements)
+      .where(and(eq(alcoholStockMovements.sourceType, "bill_settlement"), eq(alcoholStockMovements.sourceId, billId)))
+      .get();
+    if (existing) return;
+
+    const usage = this.calculateAlcoholUsageForItems(this.getOrderItems(orderId).filter((item) => item.quantity > 0 && item.status !== "cancelled"));
+    for (const [menuItemId, amount] of usage.entries()) {
+      if (amount.largeBottles) this.applyAlcoholStockDelta(menuItemId, billId, { sealedLarge: -amount.largeBottles, openLargeMl: 0, sealedSmall: 0 });
+      if (amount.smallBottles) this.applyAlcoholStockDelta(menuItemId, billId, { sealedLarge: 0, openLargeMl: 0, sealedSmall: -amount.smallBottles });
+      if (amount.largeMl) this.consumeAlcoholLargeMl(menuItemId, billId, amount.largeMl);
+    }
+  }
+
+  private calculatePendingAlcoholUsage(): Map<string, { largeMl: number; largeBottles: number; smallBottles: number }> {
+    const rows = this.db
+      .prepare(
+        `SELECT oi.*
+         FROM order_items oi
+         JOIN orders o ON o.id = oi.order_id
+         LEFT JOIN bills b ON b.order_id = o.id
+         WHERE oi.status != 'cancelled'
+           AND oi.quantity > 0
+           AND o.status IN ('open', 'billed')
+           AND COALESCE(b.status, 'pending') != 'paid'`
+      )
+      .all() as OrderItemRow[];
+    return this.calculateAlcoholUsageForItems(rows);
+  }
+
+  private calculateAlcoholUsageForItems(items: OrderItemRow[]): Map<string, { largeMl: number; largeBottles: number; smallBottles: number }> {
+    const usage = new Map<string, { largeMl: number; largeBottles: number; smallBottles: number }>();
+    const add = (menuItemId: string, delta: Partial<{ largeMl: number; largeBottles: number; smallBottles: number }>) => {
+      const current = usage.get(menuItemId) ?? { largeMl: 0, largeBottles: 0, smallBottles: 0 };
+      usage.set(menuItemId, {
+        largeMl: current.largeMl + (delta.largeMl ?? 0),
+        largeBottles: current.largeBottles + (delta.largeBottles ?? 0),
+        smallBottles: current.smallBottles + (delta.smallBottles ?? 0)
+      });
+    };
+
+    for (const item of items) {
+      if (!item.menu_item_id) continue;
+      if (item.inventory_action_snapshot === "large_ml") {
+        add(item.menu_item_id, { largeMl: (item.variant_volume_ml ?? 0) * item.quantity });
+      } else if (item.inventory_action_snapshot === "small_bottle") {
+        add(item.menu_item_id, { smallBottles: item.quantity });
+      } else if (item.inventory_action_snapshot === "large_bottle") {
+        add(item.menu_item_id, { largeBottles: item.quantity });
+      }
+
+      for (const recipe of this.parseAlcoholRecipeSnapshot(item.alcohol_recipe_snapshot_json)) {
+        add(recipe.liquorMenuItemId, { largeMl: recipe.mlPerUnit * item.quantity });
+      }
+    }
+
+    return usage;
+  }
+
+  private snapshotAlcoholRecipe(menuItemId: string): string {
+    const recipeRows = this.db
+      .prepare("SELECT liquor_menu_item_id, ml_per_unit FROM alcohol_recipe_ingredients WHERE product_menu_item_id = ? ORDER BY id")
+      .all(menuItemId) as Array<{ liquor_menu_item_id: string; ml_per_unit: number }>;
+    return JSON.stringify(recipeRows.map((row) => ({ liquorMenuItemId: row.liquor_menu_item_id, mlPerUnit: row.ml_per_unit })));
+  }
+
+  private parseAlcoholRecipeSnapshot(snapshotJson: string): AlcoholRecipeSnapshotIngredient[] {
+    try {
+      const parsed = JSON.parse(snapshotJson || "[]") as AlcoholRecipeSnapshotIngredient[];
+      if (!Array.isArray(parsed)) return [];
+      return parsed.filter((entry) => typeof entry.liquorMenuItemId === "string" && Number.isFinite(entry.mlPerUnit) && entry.mlPerUnit > 0);
+    } catch {
+      return [];
+    }
+  }
+
+  private countAlcoholRecipeSnapshotUsage(menuItemId: string): number {
+    const rows = this.db
+      .prepare("SELECT alcohol_recipe_snapshot_json FROM order_items WHERE alcohol_recipe_snapshot_json LIKE ?")
+      .all(`%${menuItemId}%`) as Array<{ alcohol_recipe_snapshot_json: string }>;
+    return rows.filter((row) => this.parseAlcoholRecipeSnapshot(row.alcohol_recipe_snapshot_json).some((entry) => entry.liquorMenuItemId === menuItemId)).length;
+  }
+
+  private applyAlcoholStockDelta(menuItemId: string, billId: string, delta: { sealedLarge: number; openLargeMl: number; sealedSmall: number }): void {
+    const stock = this.requireAlcoholStock(menuItemId);
+    const next = {
+      sealedLarge: stock.sealed_large_count + delta.sealedLarge,
+      openLargeMl: stock.open_large_ml + delta.openLargeMl,
+      sealedSmall: stock.sealed_small_count + delta.sealedSmall
+    };
+    this.writeAlcoholStock(menuItemId, next.sealedLarge, next.openLargeMl, next.sealedSmall);
+    this.recordAlcoholMovement({
+      menuItemId,
+      sourceType: "bill_settlement",
+      sourceId: billId,
+      deltaSealedLarge: delta.sealedLarge,
+      deltaOpenLargeMl: delta.openLargeMl,
+      deltaSealedSmall: delta.sealedSmall,
+      balanceSealedLarge: next.sealedLarge,
+      balanceOpenLargeMl: next.openLargeMl,
+      balanceSealedSmall: next.sealedSmall
+    });
+  }
+
+  private consumeAlcoholLargeMl(menuItemId: string, billId: string, ml: number): void {
+    const stock = this.requireAlcoholStock(menuItemId);
+    let sealedLarge = stock.sealed_large_count;
+    let openLargeMl = stock.open_large_ml;
+    let remaining = ml;
+    while (remaining > 0) {
+      if (openLargeMl <= 0 && sealedLarge > 0) {
+        sealedLarge -= 1;
+        openLargeMl += stock.large_bottle_ml;
+      }
+      if (openLargeMl > 0) {
+        const used = Math.min(openLargeMl, remaining);
+        openLargeMl -= used;
+        remaining -= used;
+      } else {
+        openLargeMl -= remaining;
+        remaining = 0;
+      }
+    }
+    this.writeAlcoholStock(menuItemId, sealedLarge, openLargeMl, stock.sealed_small_count);
+    this.recordAlcoholMovement({
+      menuItemId,
+      sourceType: "bill_settlement",
+      sourceId: billId,
+      deltaSealedLarge: sealedLarge - stock.sealed_large_count,
+      deltaOpenLargeMl: openLargeMl - stock.open_large_ml,
+      deltaSealedSmall: 0,
+      balanceSealedLarge: sealedLarge,
+      balanceOpenLargeMl: openLargeMl,
+      balanceSealedSmall: stock.sealed_small_count
+    });
   }
 
   private parseTaxComponents(value: string | null | undefined): Array<{ name: string; rateBps: number }> {
@@ -2138,6 +2449,190 @@ export class OrderService {
     return group;
   }
 
+  private defaultAlcoholProductionUnitId(): string | null {
+    const group = this.requireSaleGroup("sg-alcohol");
+    if (group.default_production_unit_id) return group.default_production_unit_id;
+    const bar = this.db
+      .prepare("SELECT id FROM production_units WHERE active = 1 AND lower(name) LIKE '%bar%' ORDER BY name LIMIT 1")
+      .get() as { id: string } | undefined;
+    return bar?.id ?? null;
+  }
+
+  private assertAlcoholRecipeMatchesType(type: "plain_liquor" | "prepared_product", ingredients: CreateAlcoholItemInput["recipeIngredients"]): void {
+    if (type === "plain_liquor" && (ingredients?.length ?? 0) > 0) {
+      throw new DomainError("Plain liquor cannot have a cocktail recipe");
+    }
+  }
+
+  private assertAlcoholVariantsMatchType(type: "plain_liquor" | "prepared_product", variants: CreateAlcoholItemInput["variants"]): void {
+    if (type !== "prepared_product") return;
+    const variant = variants[0];
+    if (
+      variants.length !== 1 ||
+      !variant ||
+      variant.kind !== "default" ||
+      variant.inventoryAction !== "none" ||
+      (variant.volumeMl ?? null) !== null
+    ) {
+      throw new DomainError("Prepared alcohol products use one regular non-stock variation");
+    }
+  }
+
+  private assertAlcoholHasSellableVariant(active: boolean, variants?: CreateAlcoholItemInput["variants"], menuItemId?: string): void {
+    if (!active) return;
+    if (variants) {
+      if (!variants.some((variant) => variant.active !== false)) throw new DomainError("Active alcohol items need at least one active variation");
+      return;
+    }
+    if (!menuItemId) throw new DomainError("At least one alcohol variation is required");
+    const activeVariantCount =
+      this.orm
+        .select({ count: count() })
+        .from(menuItemVariants)
+        .where(and(eq(menuItemVariants.menuItemId, menuItemId), eq(menuItemVariants.active, true)))
+        .get()?.count ?? 0;
+    if (activeVariantCount === 0) throw new DomainError("Active alcohol items need at least one active variation");
+  }
+
+  private replaceAlcoholVariants(menuItemId: string, variants: CreateAlcoholItemInput["variants"]): void {
+    const existing = this.orm.select({ id: menuItemVariants.id }).from(menuItemVariants).where(eq(menuItemVariants.menuItemId, menuItemId)).all();
+    const keptIds = new Set<string>();
+    variants.forEach((variant, index) => {
+      const id = variant.id ?? `${menuItemId}-${variant.kind ?? "variant"}-${index}`;
+      const existingVariant = variant.id
+        ? this.orm.select({ menuItemId: menuItemVariants.menuItemId }).from(menuItemVariants).where(eq(menuItemVariants.id, variant.id)).get()
+        : undefined;
+      if (existingVariant && existingVariant.menuItemId !== menuItemId) throw new DomainError("Alcohol variation belongs to another item");
+      keptIds.add(id);
+      const row = {
+          menuItemId,
+          label: variant.label,
+          kind: variant.kind ?? "default",
+          pricePaise: variant.pricePaise,
+          volumeMl: variant.volumeMl ?? null,
+          inventoryAction: variant.inventoryAction ?? "none",
+          sortOrder: variant.sortOrder ?? index,
+          active: variant.active ?? true
+      };
+      const updated = this.orm.update(menuItemVariants).set(row).where(and(eq(menuItemVariants.id, id), eq(menuItemVariants.menuItemId, menuItemId))).run();
+      if (updated.changes === 0) {
+        this.orm
+          .insert(menuItemVariants)
+          .values({
+            id,
+            ...row
+          })
+          .run();
+      }
+    });
+    for (const variant of existing) {
+      if (keptIds.has(variant.id)) continue;
+      const usage = this.orm.select({ count: count() }).from(orderItems).where(eq(orderItems.menuItemVariantId, variant.id)).get()?.count ?? 0;
+      if (usage > 0) {
+        this.orm.update(menuItemVariants).set({ active: false }).where(eq(menuItemVariants.id, variant.id)).run();
+      } else {
+        this.orm.delete(menuItemVariants).where(eq(menuItemVariants.id, variant.id)).run();
+      }
+    }
+  }
+
+  private replaceAlcoholRecipe(menuItemId: string, ingredients: CreateAlcoholItemInput["recipeIngredients"]): void {
+    this.orm.delete(alcoholRecipeIngredients).where(eq(alcoholRecipeIngredients.productMenuItemId, menuItemId)).run();
+    for (const ingredient of ingredients ?? []) {
+      const liquor = this.orm
+        .select({ type: alcoholProfiles.type })
+        .from(alcoholProfiles)
+        .where(eq(alcoholProfiles.menuItemId, ingredient.liquorMenuItemId))
+        .get();
+      if (!liquor || liquor.type !== "plain_liquor") throw new DomainError("Cocktail recipes can only use plain liquor items");
+      this.orm
+        .insert(alcoholRecipeIngredients)
+        .values({
+          id: makeId("recipe"),
+          productMenuItemId: menuItemId,
+          liquorMenuItemId: ingredient.liquorMenuItemId,
+          mlPerUnit: ingredient.mlPerUnit
+        })
+        .run();
+    }
+  }
+
+  private listAlcoholRecipes(): Map<string, Array<{ id: string; liquor_menu_item_id: string; liquor_name: string; ml_per_unit: number }>> {
+    const rows = this.db
+      .prepare(
+        `SELECT ari.id, ari.product_menu_item_id, ari.liquor_menu_item_id, mi.name AS liquor_name, ari.ml_per_unit
+         FROM alcohol_recipe_ingredients ari
+         JOIN menu_items mi ON mi.id = ari.liquor_menu_item_id
+         ORDER BY mi.name`
+      )
+      .all() as Array<{ id: string; product_menu_item_id: string; liquor_menu_item_id: string; liquor_name: string; ml_per_unit: number }>;
+    const recipes = new Map<string, Array<{ id: string; liquor_menu_item_id: string; liquor_name: string; ml_per_unit: number }>>();
+    for (const row of rows) {
+      const list = recipes.get(row.product_menu_item_id) ?? [];
+      list.push({ id: row.id, liquor_menu_item_id: row.liquor_menu_item_id, liquor_name: row.liquor_name, ml_per_unit: row.ml_per_unit });
+      recipes.set(row.product_menu_item_id, list);
+    }
+    return recipes;
+  }
+
+  private requireAlcoholStock(menuItemId: string): AlcoholStockRow {
+    const row = this.db
+      .prepare(
+        `SELECT asl.menu_item_id, asl.sealed_large_count, asl.open_large_ml, asl.sealed_small_count,
+          ap.large_bottle_ml, ap.small_bottle_ml
+         FROM alcohol_stock_levels asl
+         JOIN alcohol_profiles ap ON ap.menu_item_id = asl.menu_item_id
+         WHERE asl.menu_item_id = ?`
+      )
+      .get(menuItemId) as AlcoholStockRow | undefined;
+    if (!row) throw new DomainError("Alcohol stock item not found", 404);
+    return row;
+  }
+
+  private writeAlcoholStock(menuItemId: string, sealedLarge: number, openLargeMl: number, sealedSmall: number): void {
+    this.orm
+      .update(alcoholStockLevels)
+      .set({
+        sealedLargeCount: sealedLarge,
+        openLargeMl,
+        sealedSmallCount: sealedSmall,
+        updatedAt: new Date().toISOString()
+      })
+      .where(eq(alcoholStockLevels.menuItemId, menuItemId))
+      .run();
+  }
+
+  private recordAlcoholMovement(input: {
+    menuItemId: string;
+    sourceType: string;
+    sourceId: string;
+    deltaSealedLarge: number;
+    deltaOpenLargeMl: number;
+    deltaSealedSmall: number;
+    balanceSealedLarge: number;
+    balanceOpenLargeMl: number;
+    balanceSealedSmall: number;
+    approvedBy?: string | null;
+  }): void {
+    this.orm
+      .insert(alcoholStockMovements)
+      .values({
+        id: makeId("stockmove"),
+        menuItemId: input.menuItemId,
+        sourceType: input.sourceType,
+        sourceId: input.sourceId,
+        deltaSealedLarge: input.deltaSealedLarge,
+        deltaOpenLargeMl: input.deltaOpenLargeMl,
+        deltaSealedSmall: input.deltaSealedSmall,
+        balanceSealedLarge: input.balanceSealedLarge,
+        balanceOpenLargeMl: input.balanceOpenLargeMl,
+        balanceSealedSmall: input.balanceSealedSmall,
+        approvedBy: input.approvedBy ?? null,
+        createdAt: new Date().toISOString()
+      })
+      .run();
+  }
+
   private orderInputForActor(input: SubmitOrderInput, actor?: DeviceActor): Pick<SubmitOrderInput, "tableId" | "pax" | "orderType"> & { captainId: string } {
     return {
       tableId: input.tableId,
@@ -2195,20 +2690,27 @@ export class OrderService {
     now: string,
     cancelMissing = false
   ): KotItemChange[] {
-    const previousByKey = new Map(previousItems.map((item) => [this.itemKey(item.menu_item_id, item.id), item]));
+    const previousByKey = new Map(previousItems.map((item) => [this.itemKey(item.menu_item_id, item.id, item.menu_item_variant_id), item]));
     const requestedByKey = new Map<string, RequestedOrderItem>();
 
     for (const item of requestedItems) {
       const menuItem = item.menuItemId ? menuById.get(item.menuItemId) : undefined;
       if (item.menuItemId && !menuItem) throw new DomainError(`Menu item ${item.menuItemId} is not available`);
-      const key = item.itemKey;
+      const baseKey = item.itemKey;
+      const basePrevious = previousByKey.get(baseKey);
+      const key = this.orderItemDiffKey(item, basePrevious);
       const current = requestedByKey.get(key);
-      const previous = previousByKey.get(key);
+      const previous = key === baseKey ? basePrevious : undefined;
       requestedByKey.set(key, {
         itemKey: key,
         menuItemId: item.menuItemId,
-        quantity: (current?.quantity ?? previous?.quantity ?? 0) + item.quantity,
+        menuItemVariantId: item.menuItemVariantId,
+        quantity: (current?.quantity ?? (cancelMissing ? 0 : previous?.quantity) ?? 0) + item.quantity,
         name: item.name,
+        variantName: item.variantName,
+        variantVolumeMl: item.variantVolumeMl,
+        inventoryAction: item.inventoryAction,
+        alcoholRecipeSnapshotJson: item.alcoholRecipeSnapshotJson,
         unitPricePaise: item.unitPricePaise,
         productionUnitId: item.productionUnitId,
         saleGroupId: item.saleGroupId,
@@ -2227,6 +2729,7 @@ export class OrderService {
       const previous = previousByKey.get(key);
       const requested = requestedByKey.get(key);
       const menuItemId = requested?.menuItemId ?? previous?.menu_item_id;
+      const menuItemVariantId = requested?.menuItemVariantId ?? previous?.menu_item_variant_id ?? null;
       let changedOrderItemId = previous?.id ?? null;
 
       const menuItem = menuItemId ? menuById.get(menuItemId) : undefined;
@@ -2236,6 +2739,10 @@ export class OrderService {
       const newQuantity = requested?.quantity ?? 0;
       const delta = newQuantity - oldQuantity;
       const unitPricePaise = requested?.unitPricePaise ?? previous?.unit_price_paise ?? menuItem?.price_paise ?? 0;
+      const variantName = requested?.variantName ?? previous?.variant_name_snapshot ?? "";
+      const variantVolumeMl = requested?.variantVolumeMl ?? previous?.variant_volume_ml ?? null;
+      const inventoryAction = requested?.inventoryAction ?? previous?.inventory_action_snapshot ?? "none";
+      const alcoholRecipeSnapshotJson = previous?.alcohol_recipe_snapshot_json ?? requested?.alcoholRecipeSnapshotJson ?? "[]";
       const productionUnitId = requested?.productionUnitId ?? previous?.production_unit_id ?? menuItem?.production_unit_id ?? null;
       const saleGroupId = requested?.saleGroupId ?? previous?.sale_group_id ?? menuItem?.sale_group_id ?? "sg-food";
       const saleGroupName = requested?.saleGroupName ?? previous?.sale_group_name_snapshot ?? menuItem?.sale_group_name ?? "Food";
@@ -2251,6 +2758,11 @@ export class OrderService {
             quantity: newQuantity,
             status: "active",
             updatedAt: now,
+            menuItemVariantId,
+            nameSnapshot: requested?.name ?? previous.name_snapshot,
+            variantNameSnapshot: variantName,
+            variantVolumeMl,
+            inventoryActionSnapshot: inventoryAction,
             unitPricePaise,
             productionUnitId,
             saleGroupId,
@@ -2271,7 +2783,12 @@ export class OrderService {
             id: orderItemId,
             orderId,
             menuItemId: menuItem?.id ?? null,
+            menuItemVariantId,
             nameSnapshot: requested?.name ?? menuItem?.name ?? "Open item",
+            variantNameSnapshot: variantName,
+            variantVolumeMl,
+            inventoryActionSnapshot: inventoryAction,
+            alcoholRecipeSnapshotJson,
             unitPricePaise,
             quantity: newQuantity,
             productionUnitId,
@@ -2312,6 +2829,52 @@ export class OrderService {
     }
 
     return changes;
+  }
+
+  private orderItemDiffKey(item: RequestedOrderItem, previous?: OrderItemRow): string {
+    if (!previous || !item.menuItemId || this.canMergeRequestedOrderItemWithPrevious(item, previous)) return item.itemKey;
+    return `${item.itemKey}:snapshot:${this.requestedOrderItemSnapshotHash(item)}`;
+  }
+
+  private canMergeRequestedOrderItemWithPrevious(requested: RequestedOrderItem, previous: OrderItemRow): boolean {
+    return (
+      requested.name === previous.name_snapshot &&
+      requested.variantName === previous.variant_name_snapshot &&
+      requested.variantVolumeMl === previous.variant_volume_ml &&
+      requested.inventoryAction === previous.inventory_action_snapshot &&
+      requested.alcoholRecipeSnapshotJson === previous.alcohol_recipe_snapshot_json &&
+      requested.unitPricePaise === previous.unit_price_paise &&
+      requested.productionUnitId === previous.production_unit_id &&
+      requested.saleGroupId === previous.sale_group_id &&
+      requested.saleGroupName === previous.sale_group_name_snapshot &&
+      requested.saleGroupKind === previous.sale_group_kind_snapshot &&
+      requested.ticketLabel === previous.ticket_label_snapshot &&
+      requested.taxComponentsJson === previous.tax_components_json &&
+      requested.isOpenItem === Boolean(previous.is_open_item)
+    );
+  }
+
+  private requestedOrderItemSnapshotHash(item: RequestedOrderItem): string {
+    return createHash("sha256")
+      .update(
+        JSON.stringify({
+          name: item.name,
+          variantName: item.variantName,
+          variantVolumeMl: item.variantVolumeMl,
+          inventoryAction: item.inventoryAction,
+          alcoholRecipeSnapshotJson: item.alcoholRecipeSnapshotJson,
+          unitPricePaise: item.unitPricePaise,
+          productionUnitId: item.productionUnitId,
+          saleGroupId: item.saleGroupId,
+          saleGroupName: item.saleGroupName,
+          saleGroupKind: item.saleGroupKind,
+          ticketLabel: item.ticketLabel,
+          taxComponentsJson: item.taxComponentsJson,
+          isOpenItem: item.isOpenItem
+        })
+      )
+      .digest("hex")
+      .slice(0, 16);
   }
 
   private createKotsForChanges(
@@ -2496,20 +3059,121 @@ export class OrderService {
     throw new DomainError("Could not create a unique ID. Please try again.", 500);
   }
 
-  private getOpenPosDay(): ActivePosDayRow | undefined {
+  private ensureCurrentBusinessDay(now = new Date()): BusinessDayRow {
+    const window = currentBusinessDayWindow(now);
+    const existing = this.getBusinessDayById(window.id);
+    if (existing) return existing;
+
+    const insertResult = this.orm
+      .insert(posDays)
+      .values({
+        id: window.id,
+        outletId: "outlet-main",
+        businessDate: window.businessDate,
+        status: "active",
+        periodStartAt: window.periodStartAt,
+        periodEndAt: window.periodEndAt,
+        createdAt: now.toISOString()
+      })
+      .onConflictDoNothing()
+      .run();
+    if (insertResult.changes > 0) this.appendEvent("business_day.started", "business_day", window.id, window);
+    return this.getBusinessDayById(window.id) as BusinessDayRow;
+  }
+
+  private getBusinessDayById(id: string): BusinessDayRow | undefined {
     return this.orm
-      .select({ id: posDays.id, business_date: posDays.businessDate, opening_cash_paise: posDays.openingCashPaise })
+      .select({
+        id: posDays.id,
+        business_date: posDays.businessDate,
+        period_start_at: posDays.periodStartAt,
+        period_end_at: posDays.periodEndAt,
+        status: posDays.status
+      })
       .from(posDays)
-      .where(eq(posDays.status, "open"))
-      .orderBy(desc(posDays.openedAt))
-      .limit(1)
+      .where(eq(posDays.id, id))
       .get();
   }
 
-  private requireOpenPosDay(): ActivePosDayRow {
-    const openDay = this.getOpenPosDay();
-    if (!openDay) throw new DomainError("Open a POS day before taking orders");
-    return openDay;
+  private finalizeCompletedBusinessDays(now = new Date()): void {
+    const currentBusinessDate = currentBusinessDayWindow(now).businessDate;
+    const candidates = this.db
+      .prepare(
+        `SELECT id, business_date
+         FROM pos_days
+         WHERE business_date < ?
+           AND id NOT IN (SELECT pos_day_id FROM daily_report_snapshots)`
+      )
+      .all(currentBusinessDate) as Array<{ id: string; business_date: string }>;
+
+    for (const candidate of candidates) {
+      const blocker = this.orm
+        .select({ count: count() })
+        .from(orders)
+        .where(and(eq(orders.posDayId, candidate.id), inArray(orders.status, ["open", "billed"])))
+        .get();
+      if ((blocker?.count ?? 0) > 0) continue;
+      this.finalizeBusinessDay(candidate.id, now);
+    }
+  }
+
+  private finalizeBusinessDay(posDayId: string, now = new Date()): DaySummary {
+    const report = this.buildDaySummary(posDayId);
+    const finalizedAt = now.toISOString();
+    const run = this.db.transaction(() => {
+      const snapshotExists = this.orm
+        .select({ posDayId: dailyReportSnapshots.posDayId })
+        .from(dailyReportSnapshots)
+        .where(eq(dailyReportSnapshots.posDayId, posDayId))
+        .get();
+      if (snapshotExists) return false;
+
+      this.orm
+        .update(posDays)
+        .set({ status: "finalized", finalizedAt })
+        .where(eq(posDays.id, posDayId))
+        .run();
+
+      this.orm
+        .insert(dailyReportSnapshots)
+        .values({
+          posDayId,
+          businessDate: report.businessDay.business_date,
+          status: "finalized",
+          billCount: report.billCount,
+          openOrders: report.openOrders,
+          billedOrders: report.billedOrders,
+          paidBills: report.paidBills,
+          unpaidBills: report.unpaidBills,
+          cancelledOrders: report.cancelledOrders,
+          grossSalesPaise: report.grossSalesPaise,
+          discountPaise: report.discountPaise,
+          tipPaise: report.tipPaise,
+          finalSalesPaise: report.finalSalesPaise,
+          cashPaymentsPaise: report.cashPaymentsPaise,
+          upiPaymentsPaise: report.upiPaymentsPaise,
+          cardPaymentsPaise: report.cardPaymentsPaise,
+          onlinePaymentsPaise: report.onlinePaymentsPaise,
+          totalPaymentsPaise: report.totalPaymentsPaise,
+          nonCashPaymentsPaise: report.nonCashPaymentsPaise,
+          billSummariesJson: JSON.stringify(report.billSummaries),
+          itemSummariesJson: JSON.stringify(report.itemSummaries),
+          groupSummariesJson: JSON.stringify(report.groupSummaries),
+          finalizedAt,
+          updatedAt: finalizedAt
+        })
+        .run();
+
+      this.appendEvent("daily_report.finalized", "daily_report", posDayId, {
+        posDayId,
+        businessDate: report.businessDay.business_date,
+        finalizedAt,
+        ...report
+      });
+      return true;
+    });
+    run();
+    return report;
   }
 
   private requireTable(tableId: string): TableRow {
@@ -2576,6 +3240,53 @@ export class OrderService {
     return new Map(rows.map((row) => [row.id, row]));
   }
 
+  private resolveMenuItemVariant(menuItemId: string, variantId?: string, allowInactive = false): MenuItemVariantRow {
+    const params = variantId ? [variantId, menuItemId] : [menuItemId];
+    const where = variantId ? "id = ? AND menu_item_id = ?" : "menu_item_id = ? AND active = 1 ORDER BY sort_order ASC, id ASC LIMIT 1";
+    let variant = this.db
+      .prepare(
+        `SELECT id, menu_item_id, label, kind, price_paise, volume_ml, inventory_action, sort_order, active
+         FROM menu_item_variants
+         WHERE ${where}`
+      )
+      .get(...params) as MenuItemVariantRow | undefined;
+
+    if (!variant) {
+      const item = this.orm.select({ id: menuItems.id, pricePaise: menuItems.pricePaise, active: menuItems.active }).from(menuItems).where(eq(menuItems.id, menuItemId)).get();
+      if (!item) throw new DomainError("Menu item not found", 404);
+      this.ensureDefaultVariant(menuItemId, item.pricePaise, Boolean(item.active));
+      variant = this.db
+        .prepare(
+          `SELECT id, menu_item_id, label, kind, price_paise, volume_ml, inventory_action, sort_order, active
+           FROM menu_item_variants
+           WHERE menu_item_id = ? AND active = 1
+           ORDER BY sort_order ASC, id ASC LIMIT 1`
+        )
+        .get(menuItemId) as MenuItemVariantRow | undefined;
+    }
+
+    if (!variant || (!variant.active && !allowInactive)) throw new DomainError("Menu item variation is not available", 404);
+    return variant;
+  }
+
+  private ensureDefaultVariant(menuItemId: string, pricePaise: number, active = true): void {
+    this.orm
+      .insert(menuItemVariants)
+      .values({
+        id: `${menuItemId}-default`,
+        menuItemId,
+        label: "Regular",
+        kind: "default",
+        pricePaise,
+        volumeMl: null,
+        inventoryAction: "none",
+        sortOrder: 0,
+        active
+      })
+      .onConflictDoNothing()
+      .run();
+  }
+
   private getUnits(ids: string[]): Map<string, UnitRow> {
     if (ids.length === 0) return new Map();
     const rows = this.orm
@@ -2615,7 +3326,12 @@ export class OrderService {
         id: orderItems.id,
         order_id: orderItems.orderId,
         menu_item_id: orderItems.menuItemId,
+        menu_item_variant_id: orderItems.menuItemVariantId,
         name_snapshot: orderItems.nameSnapshot,
+        variant_name_snapshot: orderItems.variantNameSnapshot,
+        variant_volume_ml: orderItems.variantVolumeMl,
+        inventory_action_snapshot: orderItems.inventoryActionSnapshot,
+        alcohol_recipe_snapshot_json: orderItems.alcoholRecipeSnapshotJson,
         unit_price_paise: orderItems.unitPricePaise,
         quantity: orderItems.quantity,
         production_unit_id: orderItems.productionUnitId,
@@ -2625,20 +3341,26 @@ export class OrderService {
         ticket_label_snapshot: orderItems.ticketLabelSnapshot,
         tax_components_json: orderItems.taxComponentsJson,
         tax_paise: orderItems.taxPaise,
-        is_open_item: orderItems.isOpenItem
+        is_open_item: orderItems.isOpenItem,
+        status: orderItems.status
       })
       .from(orderItems)
       .where(eq(orderItems.orderId, orderId))
       .all();
   }
 
-  private getOrderItemByKey(orderId: string, menuItemId: string): OrderItemRow | undefined {
+  private getOrderItemByKey(orderId: string, menuItemId: string, variantId?: string | null): OrderItemRow | undefined {
     return this.orm
       .select({
         id: orderItems.id,
         order_id: orderItems.orderId,
         menu_item_id: orderItems.menuItemId,
+        menu_item_variant_id: orderItems.menuItemVariantId,
         name_snapshot: orderItems.nameSnapshot,
+        variant_name_snapshot: orderItems.variantNameSnapshot,
+        variant_volume_ml: orderItems.variantVolumeMl,
+        inventory_action_snapshot: orderItems.inventoryActionSnapshot,
+        alcohol_recipe_snapshot_json: orderItems.alcoholRecipeSnapshotJson,
         unit_price_paise: orderItems.unitPricePaise,
         quantity: orderItems.quantity,
         production_unit_id: orderItems.productionUnitId,
@@ -2648,16 +3370,42 @@ export class OrderService {
         ticket_label_snapshot: orderItems.ticketLabelSnapshot,
         tax_components_json: orderItems.taxComponentsJson,
         tax_paise: orderItems.taxPaise,
-        is_open_item: orderItems.isOpenItem
+        is_open_item: orderItems.isOpenItem,
+        status: orderItems.status
       })
       .from(orderItems)
       .where(
         and(
           eq(orderItems.orderId, orderId),
-          eq(orderItems.menuItemId, menuItemId)
+          eq(orderItems.menuItemId, menuItemId),
+          variantId ? eq(orderItems.menuItemVariantId, variantId) : sql`${orderItems.menuItemVariantId} IS NULL`
         )
       )
       .get();
+  }
+
+  private getMatchingOrderItemSnapshot(orderId: string, source: OrderItemRow): OrderItemRow | undefined {
+    return this.getOrderItems(orderId).find(
+      (item) => item.menu_item_id === source.menu_item_id && item.menu_item_variant_id === source.menu_item_variant_id && this.orderItemSnapshotsMatch(item, source)
+    );
+  }
+
+  private orderItemSnapshotsMatch(left: OrderItemRow, right: OrderItemRow): boolean {
+    return (
+      left.name_snapshot === right.name_snapshot &&
+      left.variant_name_snapshot === right.variant_name_snapshot &&
+      left.variant_volume_ml === right.variant_volume_ml &&
+      left.inventory_action_snapshot === right.inventory_action_snapshot &&
+      left.alcohol_recipe_snapshot_json === right.alcohol_recipe_snapshot_json &&
+      left.unit_price_paise === right.unit_price_paise &&
+      left.production_unit_id === right.production_unit_id &&
+      left.sale_group_id === right.sale_group_id &&
+      left.sale_group_name_snapshot === right.sale_group_name_snapshot &&
+      left.sale_group_kind_snapshot === right.sale_group_kind_snapshot &&
+      left.ticket_label_snapshot === right.ticket_label_snapshot &&
+      left.tax_components_json === right.tax_components_json &&
+      Boolean(left.is_open_item) === Boolean(right.is_open_item)
+    );
   }
 
   private getOrderItemByKeyOrName(orderId: string, menuItemId: string | null, name: string): OrderItemRow | undefined {
@@ -2667,7 +3415,12 @@ export class OrderService {
         id: orderItems.id,
         order_id: orderItems.orderId,
         menu_item_id: orderItems.menuItemId,
+        menu_item_variant_id: orderItems.menuItemVariantId,
         name_snapshot: orderItems.nameSnapshot,
+        variant_name_snapshot: orderItems.variantNameSnapshot,
+        variant_volume_ml: orderItems.variantVolumeMl,
+        inventory_action_snapshot: orderItems.inventoryActionSnapshot,
+        alcohol_recipe_snapshot_json: orderItems.alcoholRecipeSnapshotJson,
         unit_price_paise: orderItems.unitPricePaise,
         quantity: orderItems.quantity,
         production_unit_id: orderItems.productionUnitId,
@@ -2677,7 +3430,8 @@ export class OrderService {
         ticket_label_snapshot: orderItems.ticketLabelSnapshot,
         tax_components_json: orderItems.taxComponentsJson,
         tax_paise: orderItems.taxPaise,
-        is_open_item: orderItems.isOpenItem
+        is_open_item: orderItems.isOpenItem,
+        status: orderItems.status
       })
       .from(orderItems)
       .where(
@@ -2758,7 +3512,12 @@ export class OrderService {
         id: orderItems.id,
         order_id: orderItems.orderId,
         menu_item_id: orderItems.menuItemId,
+        menu_item_variant_id: orderItems.menuItemVariantId,
         name_snapshot: orderItems.nameSnapshot,
+        variant_name_snapshot: orderItems.variantNameSnapshot,
+        variant_volume_ml: orderItems.variantVolumeMl,
+        inventory_action_snapshot: orderItems.inventoryActionSnapshot,
+        alcohol_recipe_snapshot_json: orderItems.alcoholRecipeSnapshotJson,
         unit_price_paise: orderItems.unitPricePaise,
         quantity: orderItems.quantity,
         production_unit_id: orderItems.productionUnitId,
@@ -2768,15 +3527,16 @@ export class OrderService {
         ticket_label_snapshot: orderItems.ticketLabelSnapshot,
         tax_components_json: orderItems.taxComponentsJson,
         tax_paise: orderItems.taxPaise,
-        is_open_item: orderItems.isOpenItem
+        is_open_item: orderItems.isOpenItem,
+        status: orderItems.status
       })
       .from(orderItems)
       .where(eq(orderItems.id, orderItemId))
       .get();
   }
 
-  private itemKey(menuItemId: string | null, orderItemId?: string): string {
-    return menuItemId ? `menu:${menuItemId}` : `open:${orderItemId ?? makeId("line")}`;
+  private itemKey(menuItemId: string | null, orderItemId?: string, variantId?: string | null): string {
+    return menuItemId ? `menu:${menuItemId}:${variantId ?? "default"}` : `open:${orderItemId ?? makeId("line")}`;
   }
 
   private nextKotSequence(): number {

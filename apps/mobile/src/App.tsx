@@ -71,13 +71,13 @@ export default function App() {
 
   const client = useMemo(() => new HubClient(hubUrl, deviceToken), [deviceToken, hubUrl]);
   const selectedTable = bootstrap?.tables.find((table) => table.id === selectedTableId) ?? null;
-  const openDay = Boolean(bootstrap?.openDay);
   const activeTables = (bootstrap?.tables ?? []).filter((table) => getTableDisplayState(table) !== "disabled");
   const sentItems = (currentOrder?.items ?? []).filter((item) => item.status !== "cancelled" && item.quantity > 0);
   const sentTotal = sentItems.reduce((total, item) => total + item.unit_price_paise * item.quantity, 0);
   const draftTotal = items.reduce((total, item) => {
     const menuItem = bootstrap?.menuItems.find((entry) => entry.id === item.menuItemId);
-    return total + (menuItem?.price_paise ?? 0) * item.quantity;
+    const variant = findMenuVariant(menuItem, item.menuItemVariantId);
+    return total + (variant?.price_paise ?? menuItem?.price_paise ?? 0) * item.quantity;
   }, 0);
   const tableTotal = sentTotal + draftTotal;
   const hasNewItems = items.length > 0;
@@ -130,7 +130,7 @@ export default function App() {
       setDeviceNameState(session.name);
       setDeviceRoleState(session.role);
       await checkReadyNotifications();
-      setMessage(nextBootstrap.openDay ? "Connected. Ready for orders." : "Hub connected. Ask cashier to open today's POS day.");
+      setMessage(`Connected. Business day ${nextBootstrap.currentBusinessDay.business_date} is active.`);
       if (selectedTableId) await loadTableOrder(selectedTableId);
     } catch (error) {
       setConnection("offline");
@@ -187,16 +187,16 @@ export default function App() {
     setSavingDraft(false);
   }
 
-  function addItem(menuItemId: string) {
+  function addItem(menuItemId: string, menuItemVariantId?: string) {
     if (!selectedTableId) {
       setMessage("Choose a table before adding dishes.");
       setMode("tables");
       return;
     }
-    const current = items.find((item) => item.menuItemId === menuItemId);
+    const current = items.find((item) => item.menuItemId === menuItemId && item.menuItemVariantId === menuItemVariantId);
     const next = current
-      ? items.map((item) => (item.menuItemId === menuItemId ? { ...item, quantity: item.quantity + 1 } : item))
-      : [...items, { menuItemId, quantity: 1 }];
+      ? items.map((item) => (item.menuItemId === menuItemId && item.menuItemVariantId === menuItemVariantId ? { ...item, quantity: item.quantity + 1 } : item))
+      : [...items, { menuItemId, menuItemVariantId, quantity: 1 }];
     setItems(next);
     void persistDraft(next);
   }
@@ -213,7 +213,8 @@ export default function App() {
     return items
       .map((item) => {
         const menuItem = bootstrap?.menuItems.find((entry) => entry.id === item.menuItemId);
-        return `${item.quantity} x ${menuItem?.name ?? item.menuItemId}`;
+        const variant = findMenuVariant(menuItem, item.menuItemVariantId);
+        return `${item.quantity} x ${menuItem?.name ?? item.menuItemId}${variant && variant.kind !== "default" ? ` ${variant.label}` : ""}`;
       })
       .join("\n");
   }
@@ -242,10 +243,6 @@ export default function App() {
     if (connection !== "online") {
       await persistDraft();
       Alert.alert("Draft saved", "Reconnect to the hub to send these items.");
-      return;
-    }
-    if (!openDay) {
-      Alert.alert("POS day is closed", "Ask the cashier to open today's POS day on the hub.");
       return;
     }
     if (!(await confirmSendKot())) return;
@@ -475,14 +472,13 @@ export default function App() {
         ) : (
           <>
             <ScrollView style={styles.screen} contentContainerStyle={styles.screenContent} keyboardShouldPersistTaps="always">
-              <ConnectionBanner message={message} savingDraft={savingDraft} openDay={openDay} />
+              <ConnectionBanner message={message} savingDraft={savingDraft} />
               <ModeTabs mode={mode} onModeChange={setMode} />
               <View style={[styles.workArea, isWide && styles.workAreaWide]}>
                 {(mode === "tables" || isWide) && (
                   <TablePicker
                     activeTables={activeTables}
                     selectedTableId={selectedTableId}
-                    openDay={openDay}
                     loading={loading}
                     tileWidth={tableTileWidth}
                     onSelectTable={(tableId) => void selectTable(tableId)}
@@ -737,9 +733,9 @@ function StepNumber({ value, label }: { value: string; label: string }) {
   );
 }
 
-function ConnectionBanner({ message, savingDraft, openDay }: { message: string; savingDraft: boolean; openDay: boolean }) {
+function ConnectionBanner({ message, savingDraft }: { message: string; savingDraft: boolean }) {
   return (
-    <View style={[styles.banner, !openDay && styles.bannerWarning]}>
+    <View style={styles.banner}>
       <Text style={styles.bannerText}>{message}</Text>
       {savingDraft ? <Text style={styles.bannerMeta}>Saving draft...</Text> : null}
     </View>
@@ -763,14 +759,12 @@ function ModeTabs({ mode, onModeChange }: { mode: ViewMode; onModeChange: (mode:
 function TablePicker({
   activeTables,
   selectedTableId,
-  openDay,
   loading,
   tileWidth,
   onSelectTable
 }: {
   activeTables: HubBootstrap["tables"];
   selectedTableId: string | null;
-  openDay: boolean;
   loading: boolean;
   tileWidth: number;
   onSelectTable: (tableId: string) => void;
@@ -780,7 +774,7 @@ function TablePicker({
       <View style={styles.cardHeader}>
         <View style={styles.flexText}>
           <Text style={styles.sectionTitle}>Tables</Text>
-          <Text style={styles.muted}>{openDay ? `${activeTables.length} tables available` : "Open POS day on the hub first"}</Text>
+          <Text style={styles.muted}>{activeTables.length} tables available</Text>
         </View>
         {loading ? <ActivityIndicator /> : null}
       </View>
@@ -841,7 +835,7 @@ function MenuScreen({
   draftTotal: number;
   searchKey: string;
   onSearchChange: (value: string) => void;
-  onAddItem: (menuItemId: string) => void;
+  onAddItem: (menuItemId: string, variantId?: string) => void;
 }) {
   return (
     <View style={[styles.panel, styles.menuPanel]}>
@@ -867,18 +861,30 @@ function MenuScreen({
         <EmptyState title="No dishes found" text="Try another search or add dishes on the hub." />
       ) : (
         <View style={styles.menuList}>
-          {visibleMenu.map((menuItem) => (
-            <Pressable key={menuItem.id} style={styles.menuItem} onPress={() => onAddItem(menuItem.id)}>
-              <View style={styles.menuText}>
-                <Text style={styles.menuName} numberOfLines={2}>{menuItem.name}</Text>
-                <Text style={styles.muted} numberOfLines={1}>{menuItem.production_unit_name ?? "No kitchen assigned"}</Text>
+          {visibleMenu.map((menuItem) => {
+            const variants = menuItem.variants?.filter((variant) => Boolean(variant.active)) ?? [];
+            const activeVariants = variants.length || menuItem.sale_group_kind === "alcohol" ? variants : [{ id: "", label: "Regular", kind: "default", price_paise: menuItem.price_paise }];
+            return (
+              <View key={menuItem.id} style={styles.menuItem}>
+                <View style={styles.menuText}>
+                  <Text style={styles.menuName} numberOfLines={2}>{menuItem.name}</Text>
+                  <Text style={styles.muted} numberOfLines={1}>{menuItem.production_unit_name ?? "No kitchen assigned"}</Text>
+                </View>
+                <View style={activeVariants.length > 1 ? styles.variantStack : styles.menuPriceBlock}>
+                  {activeVariants.length === 0 ? (
+                    <Text style={styles.muted}>Unavailable</Text>
+                  ) : (
+                    activeVariants.map((variant) => (
+                      <Pressable key={variant.id || menuItem.id} style={activeVariants.length > 1 ? styles.variantChip : undefined} onPress={() => onAddItem(menuItem.id, variant.id || undefined)}>
+                        <Text style={styles.price}>{variant.kind === "default" ? "" : `${variant.label} `}Rs {formatRupees(variant.price_paise)}</Text>
+                        <Text style={styles.addText}>Add</Text>
+                      </Pressable>
+                    ))
+                  )}
+                </View>
               </View>
-              <View style={styles.menuPriceBlock}>
-                <Text style={styles.price}>Rs {formatRupees(menuItem.price_paise)}</Text>
-                <Text style={styles.addText}>Add</Text>
-              </View>
-            </Pressable>
-          ))}
+            );
+          })}
         </View>
       )}
     </View>
@@ -957,11 +963,14 @@ function TicketScreen({
         <View style={styles.ticketList}>
           {items.map((item, index) => {
             const menuItem = menuItems.find((entry) => entry.id === item.menuItemId);
+            const variant = findMenuVariant(menuItem, item.menuItemVariantId);
+            const lineName = `${menuItem?.name ?? item.menuItemId}${variant && variant.kind !== "default" ? ` ${variant.label}` : ""}`;
+            const unitPrice = variant?.price_paise ?? menuItem?.price_paise ?? 0;
             return (
-              <View key={`${item.menuItemId}-${index}`} style={styles.ticketLine}>
+              <View key={`${item.menuItemId}-${item.menuItemVariantId ?? "default"}-${index}`} style={styles.ticketLine}>
                 <View style={styles.ticketText}>
-                  <Text style={styles.ticketName} numberOfLines={2}>{menuItem?.name ?? item.menuItemId}</Text>
-                  <Text style={styles.muted}>Rs {formatRupees((menuItem?.price_paise ?? 0) * item.quantity)}</Text>
+                  <Text style={styles.ticketName} numberOfLines={2}>{lineName}</Text>
+                  <Text style={styles.muted}>Rs {formatRupees(unitPrice * item.quantity)}</Text>
                 </View>
                 <View style={styles.qtyControls}>
                   <Pressable style={styles.qtyButton} onPress={() => onChangeQty(index, -1)}>
@@ -1158,6 +1167,11 @@ function normaliseHubUrl(value: string) {
 function normalisePax(value: string) {
   const parsed = Number(value || 1);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
+}
+
+function findMenuVariant(menuItem: HubBootstrap["menuItems"][number] | undefined, variantId: string | undefined) {
+  const variants = menuItem?.variants?.filter((variant) => Boolean(variant.active)) ?? [];
+  return variants.find((variant) => variant.id === variantId) ?? variants[0];
 }
 
 function formatRupees(paise: number) {
@@ -1416,6 +1430,16 @@ const styles = StyleSheet.create({
   menuText: { flex: 1, minWidth: 0 },
   menuName: { fontSize: 16, fontWeight: "900", color: palette.ink, lineHeight: 20 },
   menuPriceBlock: { alignItems: "flex-end", gap: 4 },
+  variantStack: { minWidth: 124, gap: 6, alignItems: "stretch" },
+  variantChip: {
+    borderWidth: 1,
+    borderColor: "#d8cdbb",
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    alignItems: "flex-end",
+    backgroundColor: "#fffaf0"
+  },
   price: { color: palette.green, fontWeight: "900" },
   addText: { color: palette.ink, fontSize: 12, fontWeight: "900" },
   formStack: { gap: 9 },

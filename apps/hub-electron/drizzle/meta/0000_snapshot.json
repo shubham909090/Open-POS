@@ -1061,43 +1061,29 @@
           "notNull": true,
           "autoincrement": false
         },
-        "opening_cash_paise": {
-          "name": "opening_cash_paise",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "closing_cash_paise": {
-          "name": "closing_cash_paise",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "opened_by": {
-          "name": "opened_by",
+        "period_start_at": {
+          "name": "period_start_at",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false
         },
-        "closed_by": {
-          "name": "closed_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "opened_at": {
-          "name": "opened_at",
+        "period_end_at": {
+          "name": "period_end_at",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false
         },
-        "closed_at": {
-          "name": "closed_at",
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "finalized_at": {
+          "name": "finalized_at",
           "type": "text",
           "primaryKey": false,
           "notNull": false,

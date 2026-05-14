@@ -23,6 +23,7 @@ export const managerApprovalSchema = z.object({
 export const orderItemInputSchema = z.object({
   orderItemId: z.string().min(1).optional(),
   menuItemId: z.string().min(1).optional(),
+  menuItemVariantId: z.string().min(1).optional(),
   quantity: z.number().int().min(0),
   openName: z.string().trim().min(1).max(160).optional(),
   openPricePaise: z.number().int().min(1).optional(),
@@ -38,18 +39,6 @@ export const submitOrderSchema = z.object({
   pax: z.number().int().min(1).max(99).default(1),
   orderType: z.enum(["dine_in", "takeaway"]).default("dine_in"),
   items: z.array(orderItemInputSchema).min(1)
-});
-
-export const openPosDaySchema = z.object({
-  outletId: z.string().min(1),
-  businessDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  openingCashPaise: z.number().int().min(0),
-  openedBy: z.string().min(1)
-});
-
-export const closePosDaySchema = z.object({
-  closingCashPaise: z.number().int().min(0),
-  closedBy: z.string().min(1)
 });
 
 export const paymentInputSchema = z.object({
@@ -170,6 +159,49 @@ export const updateMenuItemSchema = z.object({
   active: z.boolean().optional()
 });
 
+export const menuItemVariantSchema = z.object({
+  id: z.string().min(1).optional(),
+  label: z.string().trim().min(1).max(80),
+  kind: z.enum(["default", "shot", "small_bottle", "large_bottle"]).default("default"),
+  pricePaise: z.number().int().min(1),
+  volumeMl: z.number().int().min(1).nullable().optional(),
+  inventoryAction: z.enum(["none", "large_ml", "small_bottle", "large_bottle"]).default("none"),
+  active: z.boolean().default(true),
+  sortOrder: z.number().int().min(0).default(0)
+});
+
+export const alcoholRecipeIngredientSchema = z.object({
+  liquorMenuItemId: z.string().min(1),
+  mlPerUnit: z.number().int().min(1).max(10_000)
+});
+
+export const createAlcoholItemSchema = z.object({
+  type: z.enum(["plain_liquor", "prepared_product"]),
+  name: z.string().trim().min(1).max(160),
+  productionUnitId: z.string().min(1).nullable().optional(),
+  largeBottleMl: z.number().int().min(1).max(10_000).default(750),
+  smallBottleMl: z.number().int().min(1).max(10_000).default(180),
+  sealedLargeCount: z.number().int().min(-100_000).default(0),
+  openLargeMl: z.number().int().min(-1_000_000).default(0),
+  sealedSmallCount: z.number().int().min(-100_000).default(0),
+  variants: z.array(menuItemVariantSchema).min(1).max(8),
+  recipeIngredients: z.array(alcoholRecipeIngredientSchema).max(20).default([]),
+  active: z.boolean().default(true)
+});
+
+export const updateAlcoholItemSchema = createAlcoholItemSchema.partial().extend({
+  variants: z.array(menuItemVariantSchema).min(1).max(8).optional(),
+  recipeIngredients: z.array(alcoholRecipeIngredientSchema).max(20).optional()
+});
+
+export const adjustAlcoholStockSchema = z.object({
+  managerApproval: managerApprovalSchema,
+  mode: z.enum(["delta", "set"]),
+  sealedLargeCount: z.number().int().min(-100_000).optional(),
+  openLargeMl: z.number().int().min(-1_000_000).optional(),
+  sealedSmallCount: z.number().int().min(-100_000).optional()
+});
+
 export const updateKotStatusSchema = z.object({
   status: z.enum(["queued", "preparing", "ready", "served", "cancelled"])
 });
@@ -249,8 +281,6 @@ export const scheduleRestoreSchema = z.object({
 });
 
 export type SubmitOrderInput = z.infer<typeof submitOrderSchema>;
-export type OpenPosDayInput = z.infer<typeof openPosDaySchema>;
-export type ClosePosDayInput = z.infer<typeof closePosDaySchema>;
 export type SettleBillInput = z.input<typeof settleBillSchema>;
 export type ReprintKotInput = z.infer<typeof reprintKotSchema>;
 export type CancelOrderInput = z.infer<typeof cancelOrderSchema>;
@@ -266,6 +296,9 @@ export type CreateProductionUnitInput = z.input<typeof createProductionUnitSchem
 export type UpdateProductionUnitInput = z.infer<typeof updateProductionUnitSchema>;
 export type CreateMenuItemInput = z.input<typeof createMenuItemSchema>;
 export type UpdateMenuItemInput = z.infer<typeof updateMenuItemSchema>;
+export type CreateAlcoholItemInput = z.input<typeof createAlcoholItemSchema>;
+export type UpdateAlcoholItemInput = z.infer<typeof updateAlcoholItemSchema>;
+export type AdjustAlcoholStockInput = z.infer<typeof adjustAlcoholStockSchema>;
 export type UpdateKotStatusInput = z.infer<typeof updateKotStatusSchema>;
 export type RetryPrintJobInput = z.infer<typeof retryPrintJobSchema>;
 export type UpdateReceiptPrinterInput = z.infer<typeof updateReceiptPrinterSchema>;

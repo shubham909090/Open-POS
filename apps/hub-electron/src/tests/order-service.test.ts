@@ -96,6 +96,36 @@ describe("OrderService KOT lifecycle", () => {
     database.close();
   });
 
+  it("keeps separate order rows when a menu item price changes before adding it again", () => {
+    const { database, orderService } = createTestHub();
+    const dish = orderService.createMenuItem({ name: "Price Snapshot Dish", pricePaise: 10_000, active: true });
+
+    orderService.submitOrder({
+      tableId: "table-t1",
+      captainId: "waiter-1",
+      pax: 1,
+      orderType: "dine_in",
+      items: [{ menuItemId: dish.id, quantity: 1 }]
+    });
+    orderService.updateMenuItem(dish.id, { pricePaise: 15_000 });
+    orderService.submitOrder({
+      tableId: "table-t1",
+      captainId: "waiter-1",
+      pax: 1,
+      orderType: "dine_in",
+      items: [{ menuItemId: dish.id, quantity: 1 }]
+    });
+
+    expect(
+      database.db.prepare("SELECT quantity, unit_price_paise FROM order_items WHERE menu_item_id = ? ORDER BY unit_price_paise").all(dish.id)
+    ).toEqual([
+      { quantity: 1, unit_price_paise: 10_000 },
+      { quantity: 1, unit_price_paise: 15_000 }
+    ]);
+
+    database.close();
+  });
+
   it("creates cancelled KOTs and frees the table when an order is cancelled", () => {
     const { database, orderService } = createTestHub();
 
@@ -197,7 +227,7 @@ describe("OrderService KOT lifecycle", () => {
     database.close();
   });
 
-  it("blocks day close while a generated bill is still unpaid", () => {
+  it("keeps billed tables in the current business-day summary until paid", () => {
     const { database, orderService } = createTestHub();
     const order = orderService.submitOrder({
       tableId: "table-t1",
@@ -208,19 +238,21 @@ describe("OrderService KOT lifecycle", () => {
     });
     orderService.generateBill(order.orderId);
 
-    expect(() => orderService.closePosDay({ closingCashPaise: 0, closedBy: "cashier-1" })).toThrow(
-      "Cannot close POS day while orders are open or billed"
-    );
+    expect(orderService.getCurrentBusinessDaySummary()).toMatchObject({
+      openOrders: 0,
+      unpaidBills: 1,
+      billedOrders: 1
+    });
 
     database.close();
   });
 
-  it("only blocks day close for open orders in the current POS day", () => {
+  it("does not let an old unsettled day produce a finalized report", () => {
     const { database, orderService } = createTestHub();
     database.db
       .prepare(
-        `INSERT INTO pos_days (id, outlet_id, business_date, status, opening_cash_paise, opened_by, opened_at)
-         VALUES ('day-old', 'outlet-test', '2026-05-08', 'closed', 0, 'admin', '2026-05-08T00:00:00.000Z')`
+        `INSERT INTO pos_days (id, outlet_id, business_date, status, period_start_at, period_end_at, created_at)
+         VALUES ('day-old', 'outlet-test', '2026-05-08', 'active', '2026-05-07T00:30:00.000Z', '2026-05-08T00:30:00.000Z', '2026-05-07T00:30:00.000Z')`
       )
       .run();
     database.db
@@ -230,10 +262,8 @@ describe("OrderService KOT lifecycle", () => {
       )
       .run();
 
-    expect(orderService.closePosDay({ closingCashPaise: 100_000, closedBy: "cashier-1" }).report).toMatchObject({
-      openOrders: 0,
-      billCount: 0
-    });
+    expect(orderService.listDailyReports()).toHaveLength(0);
+    expect(database.db.prepare("SELECT COUNT(*) AS count FROM daily_report_snapshots WHERE pos_day_id = 'day-old'").get()).toEqual({ count: 0 });
 
     database.close();
   });
@@ -271,7 +301,7 @@ describe("OrderService KOT lifecycle", () => {
     expect(database.db.prepare("SELECT name FROM floors WHERE id = ?").get(floor.id)).toEqual({ name: "Terrace" });
     expect(database.db.prepare("SELECT name FROM restaurant_tables WHERE id = ?").get(table.id)).toEqual({ name: "R2" });
     expect(database.db.prepare("SELECT name FROM production_units WHERE id = ?").get(unit.id)).toEqual({ name: "Main Tandoor" });
-    expect(database.db.prepare("SELECT COUNT(*) AS count FROM sync_outbox").get()).toEqual({ count: 9 });
+    expect(database.db.prepare("SELECT COUNT(*) AS count FROM sync_outbox").get()).toEqual({ count: 8 });
 
     database.close();
   });
@@ -381,7 +411,7 @@ describe("OrderService KOT lifecycle", () => {
     database.close();
   });
 
-  it("returns cash reconciliation details for day close", () => {
+  it("returns current business-day sales and payment summary", () => {
     const { database, orderService } = createTestHub();
     const order = orderService.submitOrder({
       tableId: "table-t1",
@@ -405,37 +435,84 @@ describe("OrderService KOT lifecycle", () => {
       ]
     });
 
-    expect(orderService.getCloseSummary()).toMatchObject({
+    expect(orderService.getCurrentBusinessDaySummary()).toMatchObject({
       openOrders: 0,
       unpaidBills: 0,
       paidBills: 1,
-      openingCashPaise: 100_000,
       grossSalesPaise: bill.totalPaise,
       discountPaise,
       tipPaise,
       finalSalesPaise: finalTotalPaise,
       cashPaymentsPaise: 10_000,
       upiPaymentsPaise: finalTotalPaise - 10_000,
-      totalPaymentsPaise: finalTotalPaise,
-      expectedClosingCashPaise: 110_000
+      totalPaymentsPaise: finalTotalPaise
     });
-    expect((orderService.getCloseSummary() as { groupSummaries: Array<{ kind: string; finalSalesPaise: number }> }).groupSummaries).toContainEqual(
+    expect((orderService.getCurrentBusinessDaySummary() as { groupSummaries: Array<{ kind: string; finalSalesPaise: number }> }).groupSummaries).toContainEqual(
       expect.objectContaining({ kind: "food", finalSalesPaise: finalTotalPaise })
     );
 
-    const closeResult = orderService.closePosDay({ closingCashPaise: 110_000, closedBy: "cashier-1" });
-    expect(closeResult.report).toMatchObject({
-      finalSalesPaise: finalTotalPaise,
-      cashVariancePaise: 0,
-      billCount: 1
+    database.close();
+  });
+
+  it("automatically finalizes old settled business days for cloud reports", () => {
+    const { database, orderService } = createTestHub();
+    const order = orderService.submitOrder({
+      tableId: "table-t1",
+      captainId: "waiter-1",
+      pax: 1,
+      orderType: "dine_in",
+      items: [{ menuItemId: "item-dal-fry", quantity: 1 }]
     });
-    expect(database.db.prepare("SELECT final_sales_paise, cash_variance_paise FROM daily_report_snapshots WHERE pos_day_id = ?").get(closeResult.id)).toEqual({
-      final_sales_paise: finalTotalPaise,
-      cash_variance_paise: 0
+    const bill = orderService.generateBill(order.orderId);
+    orderService.settleBill(bill.billId, { method: "cash", amountPaise: bill.totalPaise, receivedBy: "cashier-1" });
+    const dayId = database.db.prepare("SELECT pos_day_id FROM orders WHERE id = ?").get(order.orderId) as { pos_day_id: string };
+    database.db
+      .prepare(
+        `UPDATE pos_days
+         SET business_date = '2026-05-08',
+             period_start_at = '2026-05-07T00:30:00.000Z',
+             period_end_at = '2026-05-08T00:30:00.000Z'
+         WHERE id = ?`
+      )
+      .run(dayId.pos_day_id);
+
+    const reports = orderService.listDailyReports();
+
+    expect(reports).toHaveLength(1);
+    expect(reports[0]).toMatchObject({ business_date: "2026-05-08", final_sales_paise: bill.totalPaise });
+    expect(database.db.prepare("SELECT COUNT(*) AS count FROM event_log WHERE type = 'daily_report.finalized'").get()).toEqual({ count: 1 });
+
+    database.close();
+  });
+
+  it("finalizes an old business day when the last blocker is marked NC", () => {
+    const { database, orderService } = createTestHub();
+    orderService.setManagerPin({ newPin: "1234", updatedBy: "admin" });
+    const order = orderService.submitOrder({
+      tableId: "table-t1",
+      captainId: "waiter-1",
+      pax: 1,
+      orderType: "dine_in",
+      items: [{ menuItemId: "item-dal-fry", quantity: 1 }]
     });
-    expect(database.db.prepare("SELECT COUNT(*) AS count FROM event_log WHERE type = 'daily_report.finalized'").get()).toEqual({
-      count: 1
+    const bill = orderService.generateBill(order.orderId);
+    const dayId = database.db.prepare("SELECT pos_day_id FROM orders WHERE id = ?").get(order.orderId) as { pos_day_id: string };
+    database.db
+      .prepare(
+        `UPDATE pos_days
+         SET business_date = '2026-05-08',
+             period_start_at = '2026-05-07T00:30:00.000Z',
+             period_end_at = '2026-05-08T00:30:00.000Z'
+         WHERE id = ?`
+      )
+      .run(dayId.pos_day_id);
+
+    orderService.markBillNc(bill.billId, {
+      managerApproval: { pin: "1234", reason: "Staff meal", approvedBy: "manager" }
     });
+
+    expect(database.db.prepare("SELECT COUNT(*) AS count FROM daily_report_snapshots WHERE pos_day_id = ?").get(dayId.pos_day_id)).toEqual({ count: 1 });
+    expect(database.db.prepare("SELECT COUNT(*) AS count FROM event_log WHERE type = 'daily_report.finalized'").get()).toEqual({ count: 1 });
 
     database.close();
   });
@@ -463,7 +540,7 @@ describe("OrderService KOT lifecycle", () => {
       managerApproval: { pin: "1234", reason: "Owner tasting", approvedBy: "manager" }
     });
 
-    const summary = orderService.getCloseSummary() as {
+    const summary = orderService.getCurrentBusinessDaySummary() as {
       finalSalesPaise: number;
       groupSummaries: Array<{ kind: string; ncQuantity: number; ncGrossSalesPaise: number; finalSalesPaise: number }>;
     };
@@ -499,7 +576,7 @@ describe("OrderService KOT lifecycle", () => {
       payments: [{ method: "cash", amountPaise: finalTotalPaise }]
     });
 
-    const summary = orderService.getCloseSummary() as {
+    const summary = orderService.getCurrentBusinessDaySummary() as {
       finalSalesPaise: number;
       groupSummaries: Array<{ kind: string; finalSalesPaise: number }>;
     };
@@ -562,6 +639,601 @@ describe("OrderService KOT lifecycle", () => {
         managerApproval: { pin: "1234", reason: "After payment", approvedBy: "manager" }
       })
     ).toThrow("Remove or reverse recorded payments before revising this bill");
+
+    database.close();
+  });
+
+  it("preserves printed bill line prices when revising after a catalog price change", () => {
+    const { database, orderService } = createTestHub();
+    orderService.setManagerPin({ newPin: "1234", updatedBy: "admin" });
+    const dish = orderService.createMenuItem({ name: "Revision Price Dish", pricePaise: 10_000, active: true });
+    const order = orderService.submitOrder({
+      tableId: "table-t1",
+      captainId: "waiter-1",
+      pax: 1,
+      orderType: "dine_in",
+      items: [{ menuItemId: dish.id, quantity: 1 }]
+    });
+    const bill = orderService.generateBill(order.orderId);
+    const orderItem = database.db.prepare("SELECT id FROM order_items WHERE order_id = ?").get(order.orderId) as { id: string };
+
+    orderService.updateMenuItem(dish.id, { pricePaise: 15_000 });
+    const revised = orderService.reviseBill(bill.billId, {
+      items: [{ orderItemId: orderItem.id, menuItemId: dish.id, quantity: 1 }],
+      managerApproval: { pin: "1234", reason: "Quantity checked", approvedBy: "manager" }
+    });
+
+    expect(revised.totalPaise).toBe(10_500);
+    expect(database.db.prepare("SELECT quantity, unit_price_paise, status FROM order_items WHERE id = ?").get(orderItem.id)).toEqual({
+      quantity: 1,
+      unit_price_paise: 10_000,
+      status: "active"
+    });
+    expect(database.db.prepare("SELECT COUNT(*) AS count FROM order_items WHERE order_id = ?").get(order.orderId)).toEqual({ count: 1 });
+
+    database.close();
+  });
+
+  it("tracks plain-liquor variants as pending until payment and deducts stock on settlement", () => {
+    const { database, orderService } = createTestHub();
+    const liquor = orderService.createAlcoholItem({
+      type: "plain_liquor",
+      name: "Test Whisky",
+      productionUnitId: "unit-bar",
+      largeBottleMl: 750,
+      smallBottleMl: 180,
+      sealedLargeCount: 2,
+      openLargeMl: 0,
+      sealedSmallCount: 1,
+      variants: [
+        { label: "30 ml", kind: "shot", pricePaise: 10_000, volumeMl: 30, inventoryAction: "large_ml", sortOrder: 0, active: true },
+        { label: "180 ml", kind: "small_bottle", pricePaise: 50_000, volumeMl: 180, inventoryAction: "small_bottle", sortOrder: 1, active: true },
+        { label: "750 ml", kind: "large_bottle", pricePaise: 180_000, volumeMl: 750, inventoryAction: "large_bottle", sortOrder: 2, active: true }
+      ],
+      recipeIngredients: []
+    });
+    const variants = database.db.prepare("SELECT id, kind FROM menu_item_variants WHERE menu_item_id = ?").all(liquor.id) as Array<{ id: string; kind: string }>;
+    const variantId = (kind: string) => variants.find((variant) => variant.kind === kind)?.id as string;
+
+    const order = orderService.submitOrder({
+      tableId: "table-t1",
+      captainId: "waiter-1",
+      pax: 1,
+      orderType: "dine_in",
+      items: [
+        { menuItemId: liquor.id, menuItemVariantId: variantId("shot"), quantity: 2 },
+        { menuItemId: liquor.id, menuItemVariantId: variantId("small_bottle"), quantity: 1 },
+        { menuItemId: liquor.id, menuItemVariantId: variantId("large_bottle"), quantity: 1 }
+      ]
+    });
+    const pending = orderService.listAlcoholStorage() as Array<{ id: string; pending_total_ml: number; total_available_ml: number }>;
+    expect(pending.find((row) => row.id === liquor.id)).toMatchObject({ pending_total_ml: 990, total_available_ml: 1680 });
+
+    const bill = orderService.generateBill(order.orderId);
+    orderService.settleBill(bill.billId, { method: "cash", amountPaise: bill.totalPaise, receivedBy: "cashier-1" });
+
+    expect(database.db.prepare("SELECT sealed_large_count, open_large_ml, sealed_small_count FROM alcohol_stock_levels WHERE menu_item_id = ?").get(liquor.id)).toEqual({
+      sealed_large_count: 0,
+      open_large_ml: 690,
+      sealed_small_count: 0
+    });
+    expect(database.db.prepare("SELECT COUNT(*) AS count FROM alcohol_stock_movements WHERE source_id = ?").get(bill.billId)).toEqual({ count: 3 });
+
+    database.close();
+  });
+
+  it("allows negative alcohol stock and deducts cocktail recipes from large bottles", () => {
+    const { database, orderService } = createTestHub();
+    const vodka = orderService.createAlcoholItem({
+      type: "plain_liquor",
+      name: "Test Vodka",
+      productionUnitId: "unit-bar",
+      largeBottleMl: 750,
+      smallBottleMl: 180,
+      sealedLargeCount: 1,
+      openLargeMl: 0,
+      sealedSmallCount: 0,
+      variants: [{ label: "30 ml", kind: "shot", pricePaise: 10_000, volumeMl: 30, inventoryAction: "large_ml", sortOrder: 0, active: true }],
+      recipeIngredients: []
+    });
+    const rum = orderService.createAlcoholItem({
+      type: "plain_liquor",
+      name: "Test Rum",
+      productionUnitId: "unit-bar",
+      largeBottleMl: 750,
+      smallBottleMl: 180,
+      sealedLargeCount: 0,
+      openLargeMl: 0,
+      sealedSmallCount: 0,
+      variants: [{ label: "750 ml", kind: "large_bottle", pricePaise: 150_000, volumeMl: 750, inventoryAction: "large_bottle", sortOrder: 0, active: true }],
+      recipeIngredients: []
+    });
+    const cocktail = orderService.createAlcoholItem({
+      type: "prepared_product",
+      name: "Test Cocktail",
+      productionUnitId: "unit-bar",
+      largeBottleMl: 750,
+      smallBottleMl: 180,
+      sealedLargeCount: 0,
+      openLargeMl: 0,
+      sealedSmallCount: 0,
+      variants: [{ label: "Regular", kind: "default", pricePaise: 40_000, inventoryAction: "none", sortOrder: 0, active: true }],
+      recipeIngredients: [{ liquorMenuItemId: vodka.id, mlPerUnit: 30 }]
+    });
+    const rumLarge = database.db.prepare("SELECT id FROM menu_item_variants WHERE menu_item_id = ? AND kind = 'large_bottle'").get(rum.id) as { id: string };
+
+    const order = orderService.submitOrder({
+      tableId: "table-t1",
+      captainId: "waiter-1",
+      pax: 1,
+      orderType: "dine_in",
+      items: [
+        { menuItemId: cocktail.id, quantity: 2 },
+        { menuItemId: rum.id, menuItemVariantId: rumLarge.id, quantity: 1 }
+      ]
+    });
+    const bill = orderService.generateBill(order.orderId);
+    orderService.settleBill(bill.billId, { method: "cash", amountPaise: bill.totalPaise, receivedBy: "cashier-1" });
+
+    expect(database.db.prepare("SELECT sealed_large_count, open_large_ml FROM alcohol_stock_levels WHERE menu_item_id = ?").get(vodka.id)).toEqual({
+      sealed_large_count: 0,
+      open_large_ml: 690
+    });
+    expect(database.db.prepare("SELECT sealed_large_count FROM alcohol_stock_levels WHERE menu_item_id = ?").get(rum.id)).toEqual({
+      sealed_large_count: -1
+    });
+
+    database.close();
+  });
+
+  it("settles cocktails using the recipe snapshot from order time", () => {
+    const { database, orderService } = createTestHub();
+    const vodka = orderService.createAlcoholItem({
+      type: "plain_liquor",
+      name: "Snapshot Vodka",
+      productionUnitId: "unit-bar",
+      largeBottleMl: 750,
+      smallBottleMl: 180,
+      sealedLargeCount: 1,
+      openLargeMl: 0,
+      sealedSmallCount: 0,
+      variants: [{ label: "30 ml", kind: "shot", pricePaise: 10_000, volumeMl: 30, inventoryAction: "large_ml", sortOrder: 0, active: true }],
+      recipeIngredients: []
+    });
+    const cocktail = orderService.createAlcoholItem({
+      type: "prepared_product",
+      name: "Snapshot Cocktail",
+      productionUnitId: "unit-bar",
+      largeBottleMl: 750,
+      smallBottleMl: 180,
+      sealedLargeCount: 0,
+      openLargeMl: 0,
+      sealedSmallCount: 0,
+      variants: [{ label: "Regular", kind: "default", pricePaise: 40_000, inventoryAction: "none", sortOrder: 0, active: true }],
+      recipeIngredients: [{ liquorMenuItemId: vodka.id, mlPerUnit: 30 }]
+    });
+
+    const order = orderService.submitOrder({
+      tableId: "table-t1",
+      captainId: "waiter-1",
+      pax: 1,
+      orderType: "dine_in",
+      items: [{ menuItemId: cocktail.id, quantity: 1 }]
+    });
+    orderService.updateAlcoholItem(cocktail.id, {
+      recipeIngredients: [{ liquorMenuItemId: vodka.id, mlPerUnit: 90 }]
+    });
+
+    const pending = orderService.listAlcoholStorage() as Array<{ id: string; pending_large_ml: number }>;
+    expect(pending.find((row) => row.id === vodka.id)).toMatchObject({ pending_large_ml: 30 });
+
+    const bill = orderService.generateBill(order.orderId);
+    orderService.settleBill(bill.billId, { method: "cash", amountPaise: bill.totalPaise, receivedBy: "cashier-1" });
+
+    expect(database.db.prepare("SELECT sealed_large_count, open_large_ml FROM alcohol_stock_levels WHERE menu_item_id = ?").get(vodka.id)).toEqual({
+      sealed_large_count: 0,
+      open_large_ml: 720
+    });
+
+    database.close();
+  });
+
+  it("keeps separate cocktail rows when a recipe changes before adding it again", () => {
+    const { database, orderService } = createTestHub();
+    const vodka = orderService.createAlcoholItem({
+      type: "plain_liquor",
+      name: "Changed Recipe Vodka",
+      productionUnitId: "unit-bar",
+      largeBottleMl: 750,
+      smallBottleMl: 180,
+      sealedLargeCount: 1,
+      openLargeMl: 0,
+      sealedSmallCount: 0,
+      variants: [{ label: "30 ml", kind: "shot", pricePaise: 10_000, volumeMl: 30, inventoryAction: "large_ml", sortOrder: 0, active: true }],
+      recipeIngredients: []
+    });
+    const cocktail = orderService.createAlcoholItem({
+      type: "prepared_product",
+      name: "Changed Recipe Cocktail",
+      productionUnitId: "unit-bar",
+      largeBottleMl: 750,
+      smallBottleMl: 180,
+      sealedLargeCount: 0,
+      openLargeMl: 0,
+      sealedSmallCount: 0,
+      variants: [{ label: "Regular", kind: "default", pricePaise: 40_000, inventoryAction: "none", sortOrder: 0, active: true }],
+      recipeIngredients: [{ liquorMenuItemId: vodka.id, mlPerUnit: 30 }]
+    });
+
+    const order = orderService.submitOrder({
+      tableId: "table-t1",
+      captainId: "waiter-1",
+      pax: 1,
+      orderType: "dine_in",
+      items: [{ menuItemId: cocktail.id, quantity: 1 }]
+    });
+    orderService.updateAlcoholItem(cocktail.id, {
+      recipeIngredients: [{ liquorMenuItemId: vodka.id, mlPerUnit: 90 }]
+    });
+    orderService.submitOrder({
+      tableId: "table-t1",
+      captainId: "waiter-1",
+      pax: 1,
+      orderType: "dine_in",
+      items: [{ menuItemId: cocktail.id, quantity: 1 }]
+    });
+
+    const pending = orderService.listAlcoholStorage() as Array<{ id: string; pending_large_ml: number }>;
+    expect(pending.find((row) => row.id === vodka.id)).toMatchObject({ pending_large_ml: 120 });
+
+    const cocktailRows = database.db
+      .prepare("SELECT quantity, alcohol_recipe_snapshot_json FROM order_items WHERE menu_item_id = ?")
+      .all(cocktail.id) as Array<{ quantity: number; alcohol_recipe_snapshot_json: string }>;
+    expect(cocktailRows.map((row) => row.quantity).sort()).toEqual([1, 1]);
+    const recipeMl = cocktailRows
+      .map((row) => {
+        const recipe = JSON.parse(row.alcohol_recipe_snapshot_json) as Array<{ mlPerUnit: number }>;
+        return recipe[0]?.mlPerUnit ?? 0;
+      })
+      .sort((a, b) => a - b);
+    expect(recipeMl).toEqual([30, 90]);
+
+    const bill = orderService.generateBill(order.orderId);
+    orderService.settleBill(bill.billId, { method: "cash", amountPaise: bill.totalPaise, receivedBy: "cashier-1" });
+
+    expect(database.db.prepare("SELECT sealed_large_count, open_large_ml FROM alcohol_stock_levels WHERE menu_item_id = ?").get(vodka.id)).toEqual({
+      sealed_large_count: 0,
+      open_large_ml: 630
+    });
+
+    database.close();
+  });
+
+  it("keeps liquor rows when unpaid cocktail snapshots still reference them", () => {
+    const { database, orderService } = createTestHub();
+    const vodka = orderService.createAlcoholItem({
+      type: "plain_liquor",
+      name: "Snapshot Delete Vodka",
+      productionUnitId: "unit-bar",
+      largeBottleMl: 750,
+      smallBottleMl: 180,
+      sealedLargeCount: 1,
+      openLargeMl: 0,
+      sealedSmallCount: 0,
+      variants: [{ label: "30 ml", kind: "shot", pricePaise: 10_000, volumeMl: 30, inventoryAction: "large_ml", sortOrder: 0, active: true }],
+      recipeIngredients: []
+    });
+    const cocktail = orderService.createAlcoholItem({
+      type: "prepared_product",
+      name: "Snapshot Delete Cocktail",
+      productionUnitId: "unit-bar",
+      largeBottleMl: 750,
+      smallBottleMl: 180,
+      sealedLargeCount: 0,
+      openLargeMl: 0,
+      sealedSmallCount: 0,
+      variants: [{ label: "Regular", kind: "default", pricePaise: 40_000, inventoryAction: "none", sortOrder: 0, active: true }],
+      recipeIngredients: [{ liquorMenuItemId: vodka.id, mlPerUnit: 30 }]
+    });
+
+    const order = orderService.submitOrder({
+      tableId: "table-t1",
+      captainId: "waiter-1",
+      pax: 1,
+      orderType: "dine_in",
+      items: [{ menuItemId: cocktail.id, quantity: 1 }]
+    });
+    orderService.updateAlcoholItem(cocktail.id, { recipeIngredients: [] });
+
+    expect(orderService.removeMenuItem(vodka.id)).toEqual({ id: vodka.id, deleted: false, active: false });
+    const bill = orderService.generateBill(order.orderId);
+    orderService.settleBill(bill.billId, { method: "cash", amountPaise: bill.totalPaise, receivedBy: "cashier-1" });
+
+    expect(database.db.prepare("SELECT sealed_large_count, open_large_ml FROM alcohol_stock_levels WHERE menu_item_id = ?").get(vodka.id)).toEqual({
+      sealed_large_count: 0,
+      open_large_ml: 720
+    });
+
+    database.close();
+  });
+
+  it("clears stale recipes when an alcohol product becomes plain liquor", () => {
+    const { database, orderService } = createTestHub();
+    const vodka = orderService.createAlcoholItem({
+      type: "plain_liquor",
+      name: "Clear Recipe Vodka",
+      productionUnitId: "unit-bar",
+      largeBottleMl: 750,
+      smallBottleMl: 180,
+      sealedLargeCount: 1,
+      openLargeMl: 0,
+      sealedSmallCount: 0,
+      variants: [{ label: "30 ml", kind: "shot", pricePaise: 10_000, volumeMl: 30, inventoryAction: "large_ml", sortOrder: 0, active: true }],
+      recipeIngredients: []
+    });
+    const product = orderService.createAlcoholItem({
+      type: "prepared_product",
+      name: "Recipe Product",
+      productionUnitId: "unit-bar",
+      largeBottleMl: 750,
+      smallBottleMl: 180,
+      sealedLargeCount: 0,
+      openLargeMl: 0,
+      sealedSmallCount: 0,
+      variants: [{ label: "Regular", kind: "default", pricePaise: 40_000, inventoryAction: "none", sortOrder: 0, active: true }],
+      recipeIngredients: [{ liquorMenuItemId: vodka.id, mlPerUnit: 30 }]
+    });
+    const defaultVariant = database.db.prepare("SELECT id FROM menu_item_variants WHERE menu_item_id = ? AND kind = 'default'").get(product.id) as { id: string };
+
+    orderService.updateAlcoholItem(product.id, {
+      type: "plain_liquor",
+      variants: [{ id: defaultVariant.id, label: "30 ml", kind: "shot", pricePaise: 10_000, volumeMl: 30, inventoryAction: "large_ml", sortOrder: 0, active: true }]
+    });
+
+    expect(database.db.prepare("SELECT COUNT(*) AS count FROM alcohol_recipe_ingredients WHERE product_menu_item_id = ?").get(product.id)).toEqual({ count: 0 });
+
+    database.close();
+  });
+
+  it("rejects active alcohol items without active variants and foreign variant ids", () => {
+    const { database, orderService } = createTestHub();
+    const whisky = orderService.createAlcoholItem({
+      type: "plain_liquor",
+      name: "Guard Whisky",
+      productionUnitId: "unit-bar",
+      largeBottleMl: 750,
+      smallBottleMl: 180,
+      sealedLargeCount: 0,
+      openLargeMl: 0,
+      sealedSmallCount: 0,
+      variants: [{ label: "30 ml", kind: "shot", pricePaise: 10_000, volumeMl: 30, inventoryAction: "large_ml", sortOrder: 0, active: true }],
+      recipeIngredients: []
+    });
+    const rum = orderService.createAlcoholItem({
+      type: "plain_liquor",
+      name: "Guard Rum",
+      productionUnitId: "unit-bar",
+      largeBottleMl: 750,
+      smallBottleMl: 180,
+      sealedLargeCount: 0,
+      openLargeMl: 0,
+      sealedSmallCount: 0,
+      variants: [{ label: "30 ml", kind: "shot", pricePaise: 10_000, volumeMl: 30, inventoryAction: "large_ml", sortOrder: 0, active: true }],
+      recipeIngredients: []
+    });
+    const whiskyShot = database.db.prepare("SELECT id FROM menu_item_variants WHERE menu_item_id = ?").get(whisky.id) as { id: string };
+    const rumShot = database.db.prepare("SELECT id FROM menu_item_variants WHERE menu_item_id = ?").get(rum.id) as { id: string };
+
+    expect(() =>
+      orderService.updateAlcoholItem(whisky.id, {
+        active: true,
+        variants: [{ id: whiskyShot.id, label: "30 ml", kind: "shot", pricePaise: 10_000, volumeMl: 30, inventoryAction: "large_ml", sortOrder: 0, active: false }]
+      })
+    ).toThrow("Active alcohol items need at least one active variation");
+
+    expect(() =>
+      orderService.updateAlcoholItem(whisky.id, {
+        variants: [{ id: rumShot.id, label: "30 ml", kind: "shot", pricePaise: 10_000, volumeMl: 30, inventoryAction: "large_ml", sortOrder: 0, active: true }]
+      })
+    ).toThrow("Alcohol variation belongs to another item");
+
+    database.close();
+  });
+
+  it("rejects prepared alcohol products with stock-affecting variants", () => {
+    const { database, orderService } = createTestHub();
+
+    expect(() =>
+      orderService.createAlcoholItem({
+        type: "prepared_product",
+        name: "Bad Cocktail",
+        productionUnitId: "unit-bar",
+        largeBottleMl: 750,
+        smallBottleMl: 180,
+        sealedLargeCount: 0,
+        openLargeMl: 0,
+        sealedSmallCount: 0,
+        variants: [{ label: "30 ml", kind: "shot", pricePaise: 40_000, volumeMl: 30, inventoryAction: "large_ml", sortOrder: 0, active: true }],
+        recipeIngredients: []
+      })
+    ).toThrow("Prepared alcohol products use one regular non-stock variation");
+
+    const product = orderService.createAlcoholItem({
+      type: "prepared_product",
+      name: "Good Cocktail",
+      productionUnitId: "unit-bar",
+      largeBottleMl: 750,
+      smallBottleMl: 180,
+      sealedLargeCount: 0,
+      openLargeMl: 0,
+      sealedSmallCount: 0,
+      variants: [{ label: "Regular", kind: "default", pricePaise: 40_000, inventoryAction: "none", sortOrder: 0, active: true }],
+      recipeIngredients: []
+    });
+    const defaultVariant = database.db.prepare("SELECT id FROM menu_item_variants WHERE menu_item_id = ?").get(product.id) as { id: string };
+
+    expect(() =>
+      orderService.updateAlcoholItem(product.id, {
+        variants: [{ id: defaultVariant.id, label: "Bottle", kind: "large_bottle", pricePaise: 100_000, volumeMl: 750, inventoryAction: "large_bottle", sortOrder: 0, active: true }]
+      })
+    ).toThrow("Prepared alcohol products use one regular non-stock variation");
+
+    database.close();
+  });
+
+  it("requires manager PIN for manual alcohol stock edits", () => {
+    const { database, orderService } = createTestHub();
+    const liquor = orderService.createAlcoholItem({
+      type: "plain_liquor",
+      name: "Test Brandy",
+      productionUnitId: "unit-bar",
+      largeBottleMl: 750,
+      smallBottleMl: 180,
+      sealedLargeCount: 0,
+      openLargeMl: 0,
+      sealedSmallCount: 0,
+      variants: [{ label: "30 ml", kind: "shot", pricePaise: 10_000, volumeMl: 30, inventoryAction: "large_ml", sortOrder: 0, active: true }],
+      recipeIngredients: []
+    });
+
+    expect(() =>
+      orderService.adjustAlcoholStock(liquor.id, {
+        mode: "delta",
+        sealedLargeCount: 1,
+        managerApproval: { pin: "1234", reason: "Alcohol stock edit", approvedBy: "manager" }
+      })
+    ).toThrow("Set a manager PIN before using manager-only actions");
+
+    orderService.setManagerPin({ newPin: "1234", updatedBy: "admin" });
+    orderService.adjustAlcoholStock(liquor.id, {
+      mode: "delta",
+      sealedLargeCount: 2,
+      openLargeMl: 120,
+      managerApproval: { pin: "1234", reason: "Alcohol stock edit", approvedBy: "manager" }
+    });
+
+    expect(database.db.prepare("SELECT sealed_large_count, open_large_ml FROM alcohol_stock_levels WHERE menu_item_id = ?").get(liquor.id)).toEqual({
+      sealed_large_count: 2,
+      open_large_ml: 120
+    });
+
+    database.close();
+  });
+
+  it("exposes alcohol stock movement history and disables items that have movement history", () => {
+    const { database, orderService } = createTestHub();
+    const liquor = orderService.createAlcoholItem({
+      type: "plain_liquor",
+      name: "History Whisky",
+      productionUnitId: "unit-bar",
+      largeBottleMl: 750,
+      smallBottleMl: 180,
+      sealedLargeCount: 0,
+      openLargeMl: 0,
+      sealedSmallCount: 0,
+      variants: [{ label: "30 ml", kind: "shot", pricePaise: 10_000, volumeMl: 30, inventoryAction: "large_ml", sortOrder: 0, active: true }],
+      recipeIngredients: []
+    });
+
+    orderService.setManagerPin({ newPin: "1234", updatedBy: "admin" });
+    orderService.adjustAlcoholStock(liquor.id, {
+      mode: "delta",
+      sealedLargeCount: 1,
+      managerApproval: { pin: "1234", reason: "Alcohol stock edit", approvedBy: "manager" }
+    });
+
+    const movements = orderService.listAlcoholStockMovements() as Array<{ menu_item_id: string; item_name: string; source_type: string }>;
+    expect(movements[0]).toMatchObject({ menu_item_id: liquor.id, item_name: "History Whisky", source_type: "manual_adjustment" });
+    expect(orderService.removeMenuItem(liquor.id)).toEqual({ id: liquor.id, deleted: false, active: false });
+    expect(database.db.prepare("SELECT active FROM menu_items WHERE id = ?").get(liquor.id)).toEqual({ active: 0 });
+    expect(database.db.prepare("SELECT COUNT(*) AS count FROM alcohol_stock_movements WHERE menu_item_id = ?").get(liquor.id)).toEqual({ count: 1 });
+
+    database.close();
+  });
+
+  it("disables liquor instead of deleting it when cocktail recipes still use it", () => {
+    const { database, orderService } = createTestHub();
+    const liquor = orderService.createAlcoholItem({
+      type: "plain_liquor",
+      name: "Recipe Gin",
+      productionUnitId: "unit-bar",
+      largeBottleMl: 750,
+      smallBottleMl: 180,
+      sealedLargeCount: 0,
+      openLargeMl: 0,
+      sealedSmallCount: 0,
+      variants: [{ label: "30 ml", kind: "shot", pricePaise: 10_000, volumeMl: 30, inventoryAction: "large_ml", sortOrder: 0, active: true }],
+      recipeIngredients: []
+    });
+    orderService.createAlcoholItem({
+      type: "prepared_product",
+      name: "Gin Sour",
+      productionUnitId: "unit-bar",
+      largeBottleMl: 750,
+      smallBottleMl: 180,
+      sealedLargeCount: 0,
+      openLargeMl: 0,
+      sealedSmallCount: 0,
+      variants: [{ label: "Regular", kind: "default", pricePaise: 40_000, inventoryAction: "none", sortOrder: 0, active: true }],
+      recipeIngredients: [{ liquorMenuItemId: liquor.id, mlPerUnit: 30 }]
+    });
+
+    expect(orderService.removeMenuItem(liquor.id)).toEqual({ id: liquor.id, deleted: false, active: false });
+    expect(database.db.prepare("SELECT active FROM menu_items WHERE id = ?").get(liquor.id)).toEqual({ active: 0 });
+    expect(database.db.prepare("SELECT COUNT(*) AS count FROM alcohol_recipe_ingredients WHERE liquor_menu_item_id = ?").get(liquor.id)).toEqual({ count: 1 });
+
+    database.close();
+  });
+
+  it("preserves an alcohol variant when revising a printed bill", () => {
+    const { database, orderService } = createTestHub();
+    orderService.setManagerPin({ newPin: "1234", updatedBy: "admin" });
+    const liquor = orderService.createAlcoholItem({
+      type: "plain_liquor",
+      name: "Revision Whisky",
+      productionUnitId: "unit-bar",
+      largeBottleMl: 750,
+      smallBottleMl: 180,
+      sealedLargeCount: 2,
+      openLargeMl: 0,
+      sealedSmallCount: 0,
+      variants: [
+        { label: "30 ml", kind: "shot", pricePaise: 10_000, volumeMl: 30, inventoryAction: "large_ml", sortOrder: 0, active: true },
+        { label: "750 ml", kind: "large_bottle", pricePaise: 180_000, volumeMl: 750, inventoryAction: "large_bottle", sortOrder: 1, active: true }
+      ],
+      recipeIngredients: []
+    });
+    const variants = database.db.prepare("SELECT id, kind FROM menu_item_variants WHERE menu_item_id = ?").all(liquor.id) as Array<{ id: string; kind: string }>;
+    const shot = variants.find((variant) => variant.kind === "shot") as { id: string };
+    const large = variants.find((variant) => variant.kind === "large_bottle") as { id: string };
+    const order = orderService.submitOrder({
+      tableId: "table-t1",
+      captainId: "waiter-1",
+      pax: 1,
+      orderType: "dine_in",
+      items: [{ menuItemId: liquor.id, menuItemVariantId: large.id, quantity: 1 }]
+    });
+    const bill = orderService.generateBill(order.orderId);
+    const orderItem = database.db.prepare("SELECT id FROM order_items WHERE order_id = ?").get(order.orderId) as { id: string };
+
+    orderService.updateAlcoholItem(liquor.id, {
+      variants: [
+        { id: shot.id, label: "30 ml", kind: "shot", pricePaise: 10_000, volumeMl: 30, inventoryAction: "large_ml", sortOrder: 0, active: true },
+        { id: large.id, label: "750 ml", kind: "large_bottle", pricePaise: 180_000, volumeMl: 750, inventoryAction: "large_bottle", sortOrder: 1, active: false }
+      ]
+    });
+    const revised = orderService.reviseBill(bill.billId, {
+      items: [{ orderItemId: orderItem.id, menuItemId: liquor.id, menuItemVariantId: large.id, quantity: 1 }],
+      managerApproval: { pin: "1234", reason: "Corrected quantity", approvedBy: "manager" }
+    });
+
+    expect(database.db.prepare("SELECT menu_item_variant_id, unit_price_paise, inventory_action_snapshot FROM order_items WHERE id = ?").get(orderItem.id)).toEqual({
+      menu_item_variant_id: large.id,
+      unit_price_paise: 180_000,
+      inventory_action_snapshot: "large_bottle"
+    });
+    orderService.settleBill(bill.billId, { method: "cash", amountPaise: revised.totalPaise, receivedBy: "cashier-1" });
+    expect(database.db.prepare("SELECT sealed_large_count FROM alcohol_stock_levels WHERE menu_item_id = ?").get(liquor.id)).toEqual({ sealed_large_count: 1 });
 
     database.close();
   });
@@ -688,6 +1360,41 @@ describe("OrderService KOT lifecycle", () => {
         .prepare("SELECT quantity, status FROM order_items WHERE order_id = ? AND menu_item_id = ?")
         .get(target.orderId, "item-dal-fry")
     ).toEqual({ quantity: 1, status: "active" });
+
+    database.close();
+  });
+
+  it("keeps shifted item prices separate when the target table has an older catalog snapshot", () => {
+    const { database, orderService } = createTestHub();
+    const dish = orderService.createMenuItem({ name: "Shift Price Dish", pricePaise: 10_000, active: true });
+    const target = orderService.submitOrder({
+      tableId: "table-t2",
+      captainId: "waiter-2",
+      pax: 1,
+      orderType: "dine_in",
+      items: [{ menuItemId: dish.id, quantity: 1 }]
+    });
+    orderService.updateMenuItem(dish.id, { pricePaise: 15_000 });
+    const source = orderService.submitOrder({
+      tableId: "table-t1",
+      captainId: "waiter-1",
+      pax: 1,
+      orderType: "dine_in",
+      items: [{ menuItemId: dish.id, quantity: 1 }]
+    });
+    const sourceItem = database.db.prepare("SELECT id FROM order_items WHERE order_id = ?").get(source.orderId) as { id: string };
+
+    orderService.moveOrderItems(
+      { fromTableId: "table-t1", toTableId: "table-t2", reason: "Join tables", items: [{ orderItemId: sourceItem.id, quantity: 1 }] },
+      { id: "device-local-admin", name: "Cashier", role: "cashier" }
+    );
+
+    expect(
+      database.db.prepare("SELECT quantity, unit_price_paise FROM order_items WHERE order_id = ? AND menu_item_id = ? ORDER BY unit_price_paise").all(target.orderId, dish.id)
+    ).toEqual([
+      { quantity: 1, unit_price_paise: 10_000 },
+      { quantity: 1, unit_price_paise: 15_000 }
+    ]);
 
     database.close();
   });

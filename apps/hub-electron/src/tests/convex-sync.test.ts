@@ -15,7 +15,7 @@ describe("ConvexSyncBridge", () => {
 
     await expect(sync.pushPending()).resolves.toEqual({ pushed: 0, skipped: true });
     expect(database.db.prepare("SELECT COUNT(*) AS count FROM sync_outbox WHERE status = 'pending'").get()).toEqual({
-      count: 2
+      count: 1
     });
 
     database.close();
@@ -24,13 +24,13 @@ describe("ConvexSyncBridge", () => {
   it("marks events synced after a successful HTTP push", async () => {
     const { database, orderService } = createTestHub();
     orderService.createFloor({ name: "Garden" });
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ inserted: 2 }), { status: 200 }));
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ inserted: 1 }), { status: 200 }));
 
     const sync = new ConvexSyncBridge(database.orm, "https://example.convex.site", "secret", "install-main");
 
-    await expect(sync.pushPending()).resolves.toEqual({ pushed: 2, skipped: false });
+    await expect(sync.pushPending()).resolves.toEqual({ pushed: 1, skipped: false });
     expect(database.db.prepare("SELECT COUNT(*) AS count FROM sync_outbox WHERE status = 'synced'").get()).toEqual({
-      count: 2
+      count: 1
     });
 
     database.close();
@@ -45,7 +45,7 @@ describe("ConvexSyncBridge", () => {
 
     await expect(sync.pushPending()).rejects.toThrow("Convex sync failed with 500");
     expect(database.db.prepare("SELECT COUNT(*) AS count FROM sync_outbox WHERE status = 'failed'").get()).toEqual({
-      count: 2
+      count: 1
     });
 
     database.close();

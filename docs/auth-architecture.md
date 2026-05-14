@@ -25,7 +25,7 @@ The Windows hub must continue operating offline, so it needs local service sessi
 
 ## Roles
 
-- `admin`: settings, devices, menu, printers, POS day close, reports.
+- `admin`: settings, devices, menu, printers, business-day reports.
 - `cashier`: bills, payments, reprints, table supervision.
 - `waiter`: table order draft/submit.
 - `kitchen`: KDS status updates.

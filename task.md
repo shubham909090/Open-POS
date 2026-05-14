@@ -55,6 +55,9 @@ Goal: implement manager PIN approvals, configurable sale/tax groups, open items,
 - [x] Architecture simplification pass: hub/mobile no longer send fake actor names for order, movement, billing, bill print/reprint, KOT reprint, or cancellation paths.
 - [x] Architecture simplification pass: table display state is centralized in `packages/shared`, so hub and APK use the same free/running/bill-printed/disabled wording and colours.
 - [x] Architecture simplification pass: mobile role/name display comes from the paired device session, not locally stored editable state.
+- [x] Alcohol management pass implemented: dedicated Hub Alcohol section, plain-liquor variants, prepared-product recipes, local stock storage, Manager PIN stock edits, pending/settled stock deductions, and BOT routing.
+- [x] Alcohol recipe snapshot pass fixed: unpaid and settled cocktail stock usage reads `order_items.alcohol_recipe_snapshot_json`, not the current recipe table.
+- [x] Price-flow hardening fixed: submit, bill revision, and selected-item movement preserve order-line price/variant/recipe/tax/routing snapshots and split rows when snapshots differ.
 
 ## Implementation Notes From This Pass
 
@@ -62,6 +65,10 @@ Goal: implement manager PIN approvals, configurable sale/tax groups, open items,
 - `captain` is the tablet role for trusted floor captains; `waiter` remains basic order-taking without table/item shift power.
 - Order ownership is device-based for captain controls, using the paired device token session rather than free-text names.
 - Open items are order-item snapshots with nullable `menu_item_id`; they remain billable, printable, and reportable without polluting dish setup.
+- Menu items now have internal sellable variants. Normal dishes keep a default variant; plain liquor uses shot/small-bottle/large-bottle variants; prepared alcohol products use a single non-stock default variant.
+- Alcohol stock is Hub-local v1. Sales deduct stock only on paid settlement; unpaid orders appear as pending expected usage. Shots/cocktails consume large/open ml, small bottles reduce sealed small count, and large bottles reduce sealed large count.
+- Order lines are historical snapshots. Catalog edits, alcohol recipe edits, and price changes must not mutate existing open/printed order line values.
+- Bill revision preserves an existing line's original snapshot when `orderItemId` is supplied. Selected-item movement merges into the target only when the full source/target snapshot matches.
 - Ready notifications are hub-polled v1 alerts, not OS push notifications.
 - Hub backend now supports manager PIN, manager approval audits, open items, sale/tax groups, KOT/BOT labels, bill templates, bill revision records, NC bills, table shift, selected-item shift, and grouped close-day reports.
 - Bill revision is manager-approved only while no payment has been recorded; partial payment blocks revision until a future explicit reversal flow exists.
@@ -225,7 +232,7 @@ Implement the full restaurant workflow pass from your brother’s notes in one d
   - selected item shift creates correct source/destination orders and tickets
   - movement works from hub and APK
 - Reports:
-  - day close splits food/alcohol/beverage/other
+  - automatic business-day reports split food/alcohol/beverage/other
   - NC quantities appear separately
   - cloud report receives grouped totals without duplicate counting
 - UI:

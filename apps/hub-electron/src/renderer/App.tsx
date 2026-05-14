@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient
 import { formatInr, getTableDisplayState, tableDisplayClass, tableDisplayLabel } from "@gaurav-pos/shared";
 import {
   BadgeIndianRupee,
+  Beer,
   CalendarCheck,
   ChefHat,
   ClipboardList,
@@ -16,10 +17,11 @@ import {
   Settings,
   Trash2,
   Users,
+  Wine,
   X
 } from "lucide-react";
 import { FormEvent, type ReactNode, useEffect, useState } from "react";
-import { hubApi, setAuthToken, getAuthToken, type Bootstrap, type Floor, type MenuItem, type ProductionUnit, type Table, type TableOrder } from "./hub-api.js";
+import { hubApi, setAuthToken, getAuthToken, type AlcoholCatalog, type AlcoholStockMovement, type AlcoholStorageRow, type Bootstrap, type Floor, type MenuItem, type MenuItemVariant, type ProductionUnit, type Table, type TableOrder } from "./hub-api.js";
 import { useHubStore, type HubView } from "./store.js";
 import "./styles.css";
 
@@ -65,6 +67,7 @@ function HubShell() {
         <nav className="nav-stack" aria-label="Hub sections">
           <NavButton icon={<LayoutDashboard size={18} />} label="Setup" view="setup" active={view === "setup"} onClick={setView} />
           <NavButton icon={<ReceiptText size={18} />} label="Take Orders" view="orders" active={view === "orders"} onClick={setView} />
+          <NavButton icon={<Wine size={18} />} label="Alcohol" view="alcohol" active={view === "alcohol"} onClick={setView} />
           <NavButton icon={<ChefHat size={18} />} label="Kitchen" view="kitchen" active={view === "kitchen"} onClick={setView} />
           <NavButton icon={<BadgeIndianRupee size={18} />} label="Reports" view="reports" active={view === "reports"} onClick={setView} />
           <NavButton icon={<Settings size={18} />} label="Advanced" view="advanced" active={view === "advanced"} onClick={setView} />
@@ -84,7 +87,7 @@ function HubShell() {
       <section className="hub-main">
         <header className="topbar">
           <div>
-            <p>{bootstrap.data?.openDay ? `POS day open: ${bootstrap.data.openDay.business_date}` : "No POS day open"}</p>
+            <p>{bootstrap.data ? `Business day: ${bootstrap.data.currentBusinessDay.business_date} (6 AM IST boundary)` : "Loading business day"}</p>
             <h1>{titleForView(view)}</h1>
           </div>
           <div className="topbar-actions">
@@ -104,8 +107,9 @@ function HubShell() {
           <>
             {view === "setup" ? <SetupView bootstrap={bootstrap.data} setNotice={setNotice} /> : null}
             {view === "orders" ? <OrdersView bootstrap={bootstrap.data} setNotice={setNotice} /> : null}
+            {view === "alcohol" ? <AlcoholView bootstrap={bootstrap.data} setNotice={setNotice} /> : null}
             {view === "kitchen" ? <KitchenView bootstrap={bootstrap.data} setNotice={setNotice} /> : null}
-            {view === "reports" ? <ReportsView setNotice={setNotice} /> : null}
+            {view === "reports" ? <ReportsView /> : null}
             {view === "advanced" ? <AdvancedView bootstrap={bootstrap.data} setNotice={setNotice} /> : null}
           </>
         ) : null}
@@ -137,7 +141,6 @@ function NavButton({
 
 function SetupView({ bootstrap, setNotice }: { bootstrap: Bootstrap; setNotice: NoticeSetter }) {
   const queryClient = useQueryClient();
-  const [openingCash, setOpeningCash] = useState("0");
   const [floorName, setFloorName] = useState("");
   const [tableName, setTableName] = useState("");
   const [unitName, setUnitName] = useState("");
@@ -148,6 +151,8 @@ function SetupView({ bootstrap, setNotice }: { bootstrap: Bootstrap; setNotice: 
   const [tableFloorId, setTableFloorId] = useState("");
   const firstFloorId = bootstrap.floors.find((floor) => floor.active)?.id ?? bootstrap.floors[0]?.id ?? "";
   const activeFloors = bootstrap.floors.filter((floor) => floor.active);
+  const dishSaleGroups = bootstrap.saleGroups.filter((group) => group.active && group.kind !== "alcohol");
+  const setupDishItems = bootstrap.menuItems.filter((item) => item.sale_group_kind !== "alcohol");
   const dishPricePaise = Math.round(Number(dishPrice || 0) * 100);
 
   useEffect(() => {
@@ -156,15 +161,13 @@ function SetupView({ bootstrap, setNotice }: { bootstrap: Bootstrap; setNotice: 
     }
   }, [bootstrap.floors, firstFloorId, tableFloorId]);
 
+  useEffect(() => {
+    if (!dishSaleGroups.some((group) => group.id === dishGroup)) {
+      setDishGroup(dishSaleGroups[0]?.id ?? "sg-food");
+    }
+  }, [dishGroup, dishSaleGroups]);
+
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ["bootstrap"] });
-  const openDay = useMutation({
-    mutationFn: () => hubApi.openDay(Math.round(Number(openingCash || 0) * 100)),
-    onSuccess: async () => {
-      await invalidate();
-      setNotice({ tone: "good", text: "POS day opened. You can take orders now." });
-    },
-    onError: (error) => setNotice({ tone: "bad", text: messageOf(error) })
-  });
   const createFloor = useMutation({
     mutationFn: () => hubApi.createFloor(floorName),
     onSuccess: async () => {
@@ -202,7 +205,7 @@ function SetupView({ bootstrap, setNotice }: { bootstrap: Bootstrap; setNotice: 
       setDishName("");
       setDishPrice("");
       setDishUnit("");
-      setDishGroup("sg-food");
+      setDishGroup(dishSaleGroups[0]?.id ?? "sg-food");
       await invalidate();
     },
     onError: (error) => setNotice({ tone: "bad", text: messageOf(error) })
@@ -210,18 +213,10 @@ function SetupView({ bootstrap, setNotice }: { bootstrap: Bootstrap; setNotice: 
 
   return (
     <div className="setup-board">
-      <SetupCard title="Open Today's POS Day" done={Boolean(bootstrap.openDay)} icon={<CalendarCheck size={20} />}>
-        {bootstrap.openDay ? (
-          <p className="plain-state">Open since {bootstrap.openDay.business_date}. You do not repeat setup every day, only open and close the day.</p>
-        ) : (
-          <form className="inline-form" onSubmit={(event) => { event.preventDefault(); openDay.mutate(); }}>
-            <label>
-              Opening cash
-              <input value={openingCash} onChange={(event) => setOpeningCash(event.target.value)} inputMode="decimal" />
-            </label>
-            <button disabled={openDay.isPending} type="submit">Open day</button>
-          </form>
-        )}
+      <SetupCard title="Business Day" done icon={<CalendarCheck size={20} />}>
+        <p className="plain-state">
+          Current day is {bootstrap.currentBusinessDay.business_date}. The hub starts a new business day automatically every day at 6:00 AM IST.
+        </p>
       </SetupCard>
 
       <SetupCard title="Floors And Tables" done={bootstrap.tables.some((table) => table.active)} icon={<Users size={20} />}>
@@ -301,7 +296,7 @@ function SetupView({ bootstrap, setNotice }: { bootstrap: Bootstrap; setNotice: 
         />
       </SetupCard>
 
-      <SetupCard title="Dishes" done={bootstrap.menuItems.some((item) => item.active)} icon={<ClipboardList size={20} />}>
+      <SetupCard title="Dishes" done={setupDishItems.some((item) => item.active)} icon={<ClipboardList size={20} />}>
         <form className="dish-form" onSubmit={(event) => { event.preventDefault(); createDish.mutate(); }}>
           <label>
             Dish name
@@ -323,7 +318,7 @@ function SetupView({ bootstrap, setNotice }: { bootstrap: Bootstrap; setNotice: 
           <label>
             Group
             <select value={dishGroup} onChange={(event) => setDishGroup(event.target.value)}>
-              {bootstrap.saleGroups.filter((group) => group.active).map((group) => (
+              {dishSaleGroups.map((group) => (
                 <option key={group.id} value={group.id}>{group.name}</option>
               ))}
             </select>
@@ -332,7 +327,7 @@ function SetupView({ bootstrap, setNotice }: { bootstrap: Bootstrap; setNotice: 
         </form>
         <EditableRecordList
           setNotice={setNotice}
-          rows={bootstrap.menuItems.map((item) => ({
+          rows={setupDishItems.map((item) => ({
             id: item.id,
             title: item.name,
             meta: `${formatInr(item.price_paise)} · ${item.sale_group_name} · ${item.production_unit_name ?? "No kitchen assigned"} · ${item.active ? "active" : "disabled"}`,
@@ -346,6 +341,456 @@ function SetupView({ bootstrap, setNotice }: { bootstrap: Bootstrap; setNotice: 
         />
       </SetupCard>
     </div>
+  );
+}
+
+function AlcoholView({ bootstrap, setNotice }: { bootstrap: Bootstrap; setNotice: NoticeSetter }) {
+  const queryClient = useQueryClient();
+  const alcohol = useQuery({ queryKey: ["alcohol"], queryFn: hubApi.alcohol });
+  const [tab, setTab] = useState<"items" | "storage">("items");
+  const invalidate = async () => {
+    await queryClient.invalidateQueries({ queryKey: ["alcohol"] });
+    await queryClient.invalidateQueries({ queryKey: ["bootstrap"] });
+  };
+
+  return (
+    <div className="alcohol-board">
+      <div className="segment-row">
+        <button type="button" className={tab === "items" ? "active" : ""} onClick={() => setTab("items")}>
+          <Wine size={16} />
+          Items
+        </button>
+        <button type="button" className={tab === "storage" ? "active" : ""} onClick={() => setTab("storage")}>
+          <Beer size={16} />
+          Storage
+        </button>
+      </div>
+      {alcohol.isLoading ? <div className="loading-panel">Loading alcohol stock...</div> : null}
+      {alcohol.error ? <div className="notice bad">{messageOf(alcohol.error)}</div> : null}
+      {alcohol.data && tab === "items" ? <AlcoholItemsPanel bootstrap={bootstrap} catalog={alcohol.data} invalidate={invalidate} setNotice={setNotice} /> : null}
+      {alcohol.data && tab === "storage" ? <AlcoholStoragePanel rows={alcohol.data.storage} invalidate={invalidate} setNotice={setNotice} /> : null}
+    </div>
+  );
+}
+
+function AlcoholItemsPanel({
+  bootstrap,
+  catalog,
+  invalidate,
+  setNotice
+}: {
+  bootstrap: Bootstrap;
+  catalog: AlcoholCatalog;
+  invalidate: () => Promise<void>;
+  setNotice: NoticeSetter;
+}) {
+  const [type, setType] = useState<"plain_liquor" | "prepared_product">("plain_liquor");
+  const [name, setName] = useState("");
+  const [unitId, setUnitId] = useState(bootstrap.productionUnits.find((unit) => unit.name.toLowerCase().includes("bar"))?.id ?? "");
+  const [largeMl, setLargeMl] = useState("750");
+  const [smallMl, setSmallMl] = useState("180");
+  const [sealedLarge, setSealedLarge] = useState("0");
+  const [openMl, setOpenMl] = useState("0");
+  const [sealedSmall, setSealedSmall] = useState("0");
+  const [shotPrice, setShotPrice] = useState("");
+  const [smallPrice, setSmallPrice] = useState("");
+  const [largePrice, setLargePrice] = useState("");
+  const [productPrice, setProductPrice] = useState("");
+  const [recipe, setRecipe] = useState<Array<{ liquorMenuItemId: string; mlPerUnit: string }>>([]);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const plainLiquors = catalog.items.filter((item) => item.type === "plain_liquor" && Boolean(item.active));
+  const create = useMutation({
+    mutationFn: () => {
+      const largeBottleMl = Number(largeMl || 750);
+      const smallBottleMl = Number(smallMl || 180);
+      const variants =
+        type === "plain_liquor"
+          ? [
+              { label: "30 ml", kind: "shot", pricePaise: rupeesToPaise(shotPrice), volumeMl: 30, inventoryAction: "large_ml", sortOrder: 0, active: rupeesToPaise(shotPrice) > 0 },
+              { label: `${smallBottleMl} ml`, kind: "small_bottle", pricePaise: rupeesToPaise(smallPrice), volumeMl: smallBottleMl, inventoryAction: "small_bottle", sortOrder: 1, active: rupeesToPaise(smallPrice) > 0 },
+              { label: `${largeBottleMl} ml`, kind: "large_bottle", pricePaise: rupeesToPaise(largePrice), volumeMl: largeBottleMl, inventoryAction: "large_bottle", sortOrder: 2, active: rupeesToPaise(largePrice) > 0 }
+            ].filter((variant) => variant.active)
+          : [{ label: "Regular", kind: "default", pricePaise: rupeesToPaise(productPrice), volumeMl: null, inventoryAction: "none", sortOrder: 0, active: true }];
+      return hubApi.createAlcoholItem({
+        type,
+        name,
+        productionUnitId: unitId || null,
+        largeBottleMl,
+        smallBottleMl,
+        sealedLargeCount: Number(sealedLarge || 0),
+        openLargeMl: Number(openMl || 0),
+        sealedSmallCount: Number(sealedSmall || 0),
+        variants,
+        recipeIngredients: type === "prepared_product" ? recipe.filter((row) => row.liquorMenuItemId && Number(row.mlPerUnit) > 0).map((row) => ({ liquorMenuItemId: row.liquorMenuItemId, mlPerUnit: Number(row.mlPerUnit) })) : []
+      });
+    },
+    onSuccess: async () => {
+      setName("");
+      setShotPrice("");
+      setSmallPrice("");
+      setLargePrice("");
+      setProductPrice("");
+      setRecipe([]);
+      await invalidate();
+      setNotice({ tone: "good", text: "Alcohol item added." });
+    },
+    onError: (error) => setNotice({ tone: "bad", text: messageOf(error) })
+  });
+  const canSubmit = name.trim() && (type === "plain_liquor" ? [shotPrice, smallPrice, largePrice].some((value) => rupeesToPaise(value) > 0) : rupeesToPaise(productPrice) > 0);
+
+  return (
+    <div className="alcohol-layout">
+      <section className="panel alcohol-form-panel">
+        <div className="panel-title">
+          <h2>Add Alcohol Item</h2>
+          <span>{type === "plain_liquor" ? "Liquor stock" : "Cocktail recipe"}</span>
+        </div>
+        <form className="alcohol-form" onSubmit={(event) => { event.preventDefault(); create.mutate(); }}>
+          <label>
+            Type
+            <select value={type} onChange={(event) => setType(event.target.value as "plain_liquor" | "prepared_product")}>
+              <option value="plain_liquor">Plain liquor</option>
+              <option value="prepared_product">Prepared alcohol product</option>
+            </select>
+          </label>
+          <label>
+            Name
+            <input value={name} onChange={(event) => setName(event.target.value)} placeholder={type === "plain_liquor" ? "Royal Stag" : "Whisky Sour"} />
+          </label>
+          <label>
+            Bar counter
+            <select value={unitId} onChange={(event) => setUnitId(event.target.value)}>
+              <option value="">Alcohol group default</option>
+              {bootstrap.productionUnits.filter((unit) => unit.active).map((unit) => (
+                <option key={unit.id} value={unit.id}>{unit.name}</option>
+              ))}
+            </select>
+          </label>
+          {type === "plain_liquor" ? (
+            <>
+              <div className="three-col">
+                <label>Large ml<input value={largeMl} onChange={(event) => setLargeMl(event.target.value)} inputMode="numeric" /></label>
+                <label>Small ml<input value={smallMl} onChange={(event) => setSmallMl(event.target.value)} inputMode="numeric" /></label>
+                <label>Open large ml<input value={openMl} onChange={(event) => setOpenMl(event.target.value)} inputMode="numeric" /></label>
+              </div>
+              <div className="three-col">
+                <label>Large bottles<input value={sealedLarge} onChange={(event) => setSealedLarge(event.target.value)} inputMode="numeric" /></label>
+                <label>Small bottles<input value={sealedSmall} onChange={(event) => setSealedSmall(event.target.value)} inputMode="numeric" /></label>
+                <span />
+              </div>
+              <div className="three-col">
+                <label>30 ml price<input value={shotPrice} onChange={(event) => setShotPrice(event.target.value)} inputMode="decimal" placeholder="120" /></label>
+                <label>Small bottle price<input value={smallPrice} onChange={(event) => setSmallPrice(event.target.value)} inputMode="decimal" placeholder="480" /></label>
+                <label>Large bottle price<input value={largePrice} onChange={(event) => setLargePrice(event.target.value)} inputMode="decimal" placeholder="1800" /></label>
+              </div>
+            </>
+          ) : (
+            <>
+              <label>Price<input value={productPrice} onChange={(event) => setProductPrice(event.target.value)} inputMode="decimal" placeholder="350" /></label>
+              <div className="recipe-list">
+                {recipe.map((row, index) => (
+                  <div className="recipe-row" key={index}>
+                    <select value={row.liquorMenuItemId} onChange={(event) => setRecipe((current) => current.map((entry, entryIndex) => entryIndex === index ? { ...entry, liquorMenuItemId: event.target.value } : entry))}>
+                      <option value="">Choose liquor</option>
+                      {plainLiquors.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+                    </select>
+                    <input value={row.mlPerUnit} onChange={(event) => setRecipe((current) => current.map((entry, entryIndex) => entryIndex === index ? { ...entry, mlPerUnit: event.target.value } : entry))} inputMode="numeric" placeholder="ml" />
+                    <button type="button" onClick={() => setRecipe((current) => current.filter((_, entryIndex) => entryIndex !== index))}><X size={14} /></button>
+                  </div>
+                ))}
+                <button type="button" className="secondary-inline" onClick={() => setRecipe((current) => [...current, { liquorMenuItemId: plainLiquors[0]?.id ?? "", mlPerUnit: "30" }])}>
+                  <Plus size={14} />
+                  Add liquor
+                </button>
+              </div>
+            </>
+          )}
+          <button type="submit" disabled={!canSubmit || create.isPending}>Add alcohol item</button>
+        </form>
+      </section>
+      <section className="panel">
+        <div className="panel-title">
+          <h2>Alcohol Catalog</h2>
+          <span>{catalog.items.length} items</span>
+        </div>
+        <div className="alcohol-item-list">
+          {catalog.items.map((item) => (
+            <article key={item.id} className="stock-row alcohol-catalog-row">
+              <div>
+                <strong>{item.name}</strong>
+                <span>{item.type === "plain_liquor" ? `${item.large_bottle_ml} ml / ${item.small_bottle_ml} ml` : item.recipeIngredients.map((entry) => `${entry.ml_per_unit} ml ${entry.liquor_name}`).join(", ") || "No liquor recipe"}</span>
+              </div>
+              <div className="catalog-row-actions">
+                <div className="variant-price-list">
+                  {(item.variants ?? []).filter((variant) => Boolean(variant.active)).map((variant) => (
+                    <span key={variant.id}>{variant.label} {formatInr(variant.price_paise)}</span>
+                  ))}
+                </div>
+                <button type="button" className="secondary-inline" onClick={() => setEditingId((current) => current === item.id ? null : item.id)}>
+                  <Pencil size={14} />
+                  Edit
+                </button>
+              </div>
+              {editingId === item.id ? (
+                <AlcoholEditForm
+                  item={item}
+                  plainLiquors={plainLiquors}
+                  units={bootstrap.productionUnits.filter((unit) => unit.active)}
+                  onCancel={() => setEditingId(null)}
+                  onSaved={async () => {
+                    setEditingId(null);
+                    await invalidate();
+                  }}
+                  setNotice={setNotice}
+                />
+              ) : null}
+            </article>
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+type AlcoholItem = AlcoholCatalog["items"][number];
+type AlcoholVariantKind = "default" | "shot" | "small_bottle" | "large_bottle";
+type AlcoholInventoryAction = "none" | "large_ml" | "small_bottle" | "large_bottle";
+type EditableAlcoholVariant = {
+  id?: string;
+  label: string;
+  kind: AlcoholVariantKind;
+  price: string;
+  volumeMl: string;
+  inventoryAction: AlcoholInventoryAction;
+  sortOrder: number;
+  active: boolean;
+};
+
+type MenuItemVariantOption = {
+  id?: string;
+  label: string;
+  kind: string;
+  price_paise: number;
+};
+
+function AlcoholEditForm({
+  item,
+  plainLiquors,
+  units,
+  onCancel,
+  onSaved,
+  setNotice
+}: {
+  item: AlcoholItem;
+  plainLiquors: AlcoholItem[];
+  units: ProductionUnit[];
+  onCancel: () => void;
+  onSaved: () => Promise<void>;
+  setNotice: NoticeSetter;
+}) {
+  const [type, setType] = useState<"plain_liquor" | "prepared_product">(item.type);
+  const [name, setName] = useState(item.name);
+  const [unitId, setUnitId] = useState(item.production_unit_id ?? "");
+  const [active, setActive] = useState(Boolean(item.active));
+  const [largeMl, setLargeMl] = useState(String(item.large_bottle_ml || 750));
+  const [smallMl, setSmallMl] = useState(String(item.small_bottle_ml || 180));
+  const [variants, setVariants] = useState<EditableAlcoholVariant[]>(() => buildEditableAlcoholVariants(item));
+  const [recipe, setRecipe] = useState(() => item.recipeIngredients.map((entry) => ({ liquorMenuItemId: entry.liquor_menu_item_id, mlPerUnit: String(entry.ml_per_unit) })));
+  const availableLiquors = plainLiquors.filter((liquor) => liquor.id !== item.id);
+  const save = useMutation({
+    mutationFn: () => {
+      const normalizedVariants =
+        type === "plain_liquor"
+          ? variants
+              .filter((variant) => rupeesToPaise(variant.price) > 0)
+              .map((variant) => ({
+                id: variant.id,
+                label: variant.label || variantLabelForKind(variant.kind, Number(smallMl || 180), Number(largeMl || 750)),
+                kind: variant.kind,
+                pricePaise: rupeesToPaise(variant.price),
+                volumeMl: Number(variant.volumeMl || 0) || null,
+                inventoryAction: variant.inventoryAction,
+                sortOrder: variant.sortOrder,
+                active: variant.active
+              }))
+          : [
+              {
+                id: item.variants?.find((variant) => variant.kind === "default")?.id,
+                label: "Regular",
+                kind: "default" as const,
+                pricePaise: rupeesToPaise(variants[0]?.price ?? ""),
+                volumeMl: null,
+                inventoryAction: "none" as const,
+                sortOrder: 0,
+                active: true
+              }
+            ];
+      return hubApi.updateAlcoholItem(item.id, {
+        type,
+        name,
+        productionUnitId: unitId || null,
+        active,
+        largeBottleMl: Number(largeMl || 750),
+        smallBottleMl: Number(smallMl || 180),
+        variants: normalizedVariants,
+        recipeIngredients: type === "prepared_product" ? recipe.filter((row) => row.liquorMenuItemId && Number(row.mlPerUnit) > 0).map((row) => ({ liquorMenuItemId: row.liquorMenuItemId, mlPerUnit: Number(row.mlPerUnit) })) : []
+      });
+    },
+    onSuccess: async () => {
+      await onSaved();
+      setNotice({ tone: "good", text: "Alcohol item updated." });
+    },
+    onError: (error) => setNotice({ tone: "bad", text: messageOf(error) })
+  });
+  const hasActivePricedVariant =
+    type === "plain_liquor"
+      ? variants.some((variant) => variant.active && rupeesToPaise(variant.price) > 0)
+      : rupeesToPaise(variants[0]?.price ?? "") > 0;
+  const canSave = name.trim() && (!active || hasActivePricedVariant);
+
+  return (
+    <form className="alcohol-edit-form" onSubmit={(event) => { event.preventDefault(); save.mutate(); }}>
+      <div className="three-col">
+        <label>
+          Type
+          <select
+            value={type}
+            onChange={(event) => {
+              const nextType = event.target.value as "plain_liquor" | "prepared_product";
+              setType(nextType);
+              setVariants(nextType === "plain_liquor" ? editablePlainVariantDefaults(Number(smallMl || 180), Number(largeMl || 750)) : [{ ...defaultPreparedVariant(), price: variants.find((variant) => variant.active)?.price ?? variants[0]?.price ?? "" }]);
+            }}
+          >
+            <option value="plain_liquor">Plain liquor</option>
+            <option value="prepared_product">Prepared alcohol product</option>
+          </select>
+        </label>
+        <label>Name<input value={name} onChange={(event) => setName(event.target.value)} /></label>
+        <label>
+          Bar counter
+          <select value={unitId} onChange={(event) => setUnitId(event.target.value)}>
+            <option value="">Alcohol group default</option>
+            {units.map((unit) => <option key={unit.id} value={unit.id}>{unit.name}</option>)}
+          </select>
+        </label>
+      </div>
+      <label className="checkbox-row">
+        <input type="checkbox" checked={active} onChange={(event) => setActive(event.target.checked)} />
+        Active in menu
+      </label>
+      {type === "plain_liquor" ? (
+        <>
+          <div className="three-col">
+            <label>Large ml<input value={largeMl} onChange={(event) => setLargeMl(event.target.value)} inputMode="numeric" /></label>
+            <label>Small ml<input value={smallMl} onChange={(event) => setSmallMl(event.target.value)} inputMode="numeric" /></label>
+            <span />
+          </div>
+          <div className="variant-edit-list">
+            {variants.map((variant, index) => (
+              <div className="variant-edit-row" key={variant.kind}>
+                <label className="checkbox-row">
+                  <input type="checkbox" checked={variant.active} onChange={(event) => setVariants((current) => current.map((entry, entryIndex) => entryIndex === index ? { ...entry, active: event.target.checked } : entry))} />
+                  Sell
+                </label>
+                <input value={variant.label} onChange={(event) => setVariants((current) => current.map((entry, entryIndex) => entryIndex === index ? { ...entry, label: event.target.value } : entry))} placeholder="Label" />
+                <input value={variant.volumeMl} onChange={(event) => setVariants((current) => current.map((entry, entryIndex) => entryIndex === index ? { ...entry, volumeMl: event.target.value } : entry))} inputMode="numeric" placeholder="ml" />
+                <input value={variant.price} onChange={(event) => setVariants((current) => current.map((entry, entryIndex) => entryIndex === index ? { ...entry, price: event.target.value } : entry))} inputMode="decimal" placeholder="Price" />
+              </div>
+            ))}
+          </div>
+        </>
+      ) : (
+        <>
+          <label>Price<input value={variants[0]?.price ?? ""} onChange={(event) => setVariants((current) => [{ ...(current[0] ?? defaultPreparedVariant()), price: event.target.value }])} inputMode="decimal" /></label>
+          <div className="recipe-list">
+            {recipe.map((row, index) => (
+              <div className="recipe-row" key={index}>
+                <select value={row.liquorMenuItemId} onChange={(event) => setRecipe((current) => current.map((entry, entryIndex) => entryIndex === index ? { ...entry, liquorMenuItemId: event.target.value } : entry))}>
+                  <option value="">Choose liquor</option>
+                  {availableLiquors.map((liquor) => <option key={liquor.id} value={liquor.id}>{liquor.name}</option>)}
+                </select>
+                <input value={row.mlPerUnit} onChange={(event) => setRecipe((current) => current.map((entry, entryIndex) => entryIndex === index ? { ...entry, mlPerUnit: event.target.value } : entry))} inputMode="numeric" placeholder="ml" />
+                <button type="button" onClick={() => setRecipe((current) => current.filter((_, entryIndex) => entryIndex !== index))}><X size={14} /></button>
+              </div>
+            ))}
+            <button type="button" className="secondary-inline" onClick={() => setRecipe((current) => [...current, { liquorMenuItemId: availableLiquors[0]?.id ?? "", mlPerUnit: "30" }])}>
+              <Plus size={14} />
+              Add liquor
+            </button>
+          </div>
+        </>
+      )}
+      <div className="form-actions">
+        <button type="submit" disabled={!canSave || save.isPending}><Save size={14} />Save</button>
+        <button type="button" className="secondary-inline" onClick={onCancel}><X size={14} />Cancel</button>
+      </div>
+    </form>
+  );
+}
+
+function AlcoholStoragePanel({ rows, invalidate, setNotice }: { rows: AlcoholStorageRow[]; invalidate: () => Promise<void>; setNotice: NoticeSetter }) {
+  return (
+    <div className="storage-list">
+      {rows.map((row) => (
+        <AlcoholStorageCard key={row.id} row={row} invalidate={invalidate} setNotice={setNotice} />
+      ))}
+      {rows.length === 0 ? <Empty title="No liquor stock yet" text="Add plain liquor from the Items tab first." /> : null}
+    </div>
+  );
+}
+
+function AlcoholStorageCard({ row, invalidate, setNotice }: { row: AlcoholStorageRow; invalidate: () => Promise<void>; setNotice: NoticeSetter }) {
+  const [mode, setMode] = useState<"delta" | "set">("delta");
+  const [large, setLarge] = useState("");
+  const [open, setOpen] = useState("");
+  const [small, setSmall] = useState("");
+  const [pin, setPin] = useState("");
+  const adjust = useMutation({
+    mutationFn: () => hubApi.adjustAlcoholStock(row.id, {
+      mode,
+      sealedLargeCount: large === "" ? undefined : Number(large),
+      openLargeMl: open === "" ? undefined : Number(open),
+      sealedSmallCount: small === "" ? undefined : Number(small),
+      managerApproval: { pin, reason: "Alcohol stock edit", approvedBy: "manager" }
+    }),
+    onSuccess: async () => {
+      setLarge("");
+      setOpen("");
+      setSmall("");
+      setPin("");
+      await invalidate();
+      setNotice({ tone: "good", text: "Alcohol stock updated." });
+    },
+    onError: (error) => setNotice({ tone: "bad", text: messageOf(error) })
+  });
+  return (
+    <article className="panel storage-card">
+      <div className="panel-title">
+        <div>
+          <h2>{row.name}</h2>
+          <span>{row.large_bottle_ml} ml large · {row.small_bottle_ml} ml small</span>
+        </div>
+        <strong>{row.total_available_ml} ml</strong>
+      </div>
+      <div className="stock-metrics">
+        <span>Large bottles <b>{row.sealed_large_count}</b></span>
+        <span>Open large <b>{row.open_large_ml} ml</b></span>
+        <span>Small bottles <b>{row.sealed_small_count}</b></span>
+        <span>Pending <b>{row.pending_total_ml} ml</b></span>
+        <span>Expected <b>{row.expected_after_settlement_ml} ml</b></span>
+      </div>
+      <form className="stock-adjust-form" onSubmit={(event) => { event.preventDefault(); adjust.mutate(); }}>
+        <select value={mode} onChange={(event) => setMode(event.target.value as "delta" | "set")}>
+          <option value="delta">Plus / minus</option>
+          <option value="set">Set exact</option>
+        </select>
+        <input value={large} onChange={(event) => setLarge(event.target.value)} placeholder="Large bottles" inputMode="numeric" />
+        <input value={open} onChange={(event) => setOpen(event.target.value)} placeholder="Open ml" inputMode="numeric" />
+        <input value={small} onChange={(event) => setSmall(event.target.value)} placeholder="Small bottles" inputMode="numeric" />
+        <input value={pin} onChange={(event) => setPin(event.target.value)} placeholder="Manager PIN" type="password" />
+        <button type="submit" disabled={!pin || adjust.isPending}>Save</button>
+      </form>
+    </article>
   );
 }
 
@@ -411,7 +856,7 @@ function OrdersView({ bootstrap, setNotice }: { bootstrap: Bootstrap; setNotice:
         {selectedTable ? (
           <div className="menu-grid">
             {activeItems.map((item) => (
-              <MenuCard key={item.id} item={item} onAdd={() => addDraftItem(selectedTable.id, item)} />
+              <MenuCard key={item.id} item={item} onAdd={(variantId) => addDraftItem(selectedTable.id, item, variantId)} />
             ))}
           </div>
         ) : (
@@ -424,7 +869,9 @@ function OrdersView({ bootstrap, setNotice }: { bootstrap: Bootstrap; setNotice:
   );
 }
 
-function MenuCard({ item, onAdd }: { item: MenuItem; onAdd: () => void }) {
+function MenuCard({ item, onAdd }: { item: MenuItem; onAdd: (variantId?: string) => void }) {
+  const activeVariants = (item.variants ?? []).filter((variant) => Boolean(variant.active));
+  const variants = activeVariants.length || item.sale_group_kind === "alcohol" ? activeVariants : [{ id: "", label: "Regular", kind: "default", price_paise: item.price_paise, volume_ml: null, inventory_action: "none", sort_order: 0, active: true }];
   return (
     <article className="menu-card">
       <div>
@@ -432,10 +879,30 @@ function MenuCard({ item, onAdd }: { item: MenuItem; onAdd: () => void }) {
         <span>{item.production_unit_name ?? "No kitchen assigned"}</span>
       </div>
       <footer>
-        <b>{formatInr(item.price_paise)}</b>
-        <button type="button" onClick={onAdd} aria-label={`Add ${item.name}`}>
-          <Plus size={18} />
-        </button>
+        {variants.length === 0 ? (
+          <>
+            <b>Unavailable</b>
+            <button type="button" disabled aria-label={`${item.name} unavailable`}>
+              <Plus size={18} />
+            </button>
+          </>
+        ) : variants.length === 1 ? (
+          <>
+            <b>{formatInr(variants[0]?.price_paise ?? item.price_paise)}</b>
+            <button type="button" onClick={() => onAdd(variants[0]?.id || undefined)} aria-label={`Add ${item.name}`}>
+              <Plus size={18} />
+            </button>
+          </>
+        ) : (
+          <div className="variant-buttons">
+            {variants.map((variant) => (
+              <button key={variant.id} type="button" onClick={() => onAdd(variant.id)}>
+                <span>{variant.label}</span>
+                <b>{formatInr(variant.price_paise)}</b>
+              </button>
+            ))}
+          </div>
+        )}
       </footer>
     </article>
   );
@@ -489,7 +956,7 @@ function TableWorkspace({ tableId, tableName, bootstrap, setNotice }: { tableId:
                 productionUnitId: item.productionUnitId ?? null,
                 quantity: item.quantity
               }
-            : { menuItemId: item.menuItemId, quantity: item.quantity }
+            : { menuItemId: item.menuItemId, menuItemVariantId: item.menuItemVariantId, quantity: item.quantity }
         )
       });
     },
@@ -631,13 +1098,13 @@ function TableWorkspace({ tableId, tableName, bootstrap, setNotice }: { tableId:
             emptyTitle="No new dishes selected"
             emptyText="Tap dishes from the menu. This list is only new items not sent yet."
             rows={draft.map((item) => ({
-              id: item.menuItemId,
-              title: item.name,
+              id: item.lineKey,
+              title: item.variantLabel ? `${item.name} ${item.variantLabel}` : item.name,
               meta: `${formatInr(item.pricePaise)} each`,
               quantity: item.quantity,
               amount: item.pricePaise * item.quantity,
-              onMinus: () => changeDraftQty(tableId, item.menuItemId, -1),
-              onPlus: () => changeDraftQty(tableId, item.menuItemId, 1)
+              onMinus: () => changeDraftQty(tableId, item.lineKey, -1),
+              onPlus: () => changeDraftQty(tableId, item.lineKey, 1)
             }))}
           />
         </div>
@@ -705,6 +1172,19 @@ function TableWorkspace({ tableId, tableName, bootstrap, setNotice }: { tableId:
   );
 }
 
+type RevisionItem = {
+  key: string;
+  orderItemId?: string;
+  menuItemId?: string;
+  menuItemVariantId?: string;
+  openName?: string;
+  pricePaise: number;
+  saleGroupId: string;
+  productionUnitId?: string | null;
+  name: string;
+  quantity: number;
+};
+
 function BillingPanel({
   tableOrder,
   menuItems,
@@ -731,9 +1211,12 @@ function BillingPanel({
   const [managerPin, setManagerPin] = useState("");
   const [managerReason, setManagerReason] = useState("");
   const [revisionOpen, setRevisionOpen] = useState(false);
-  const [revisionItems, setRevisionItems] = useState<Array<{ key: string; orderItemId?: string; menuItemId?: string; openName?: string; pricePaise: number; saleGroupId: string; productionUnitId?: string | null; name: string; quantity: number }>>([]);
+  const [revisionItems, setRevisionItems] = useState<RevisionItem[]>([]);
   const [revisionAddMenuItemId, setRevisionAddMenuItemId] = useState("");
+  const [revisionAddVariantId, setRevisionAddVariantId] = useState("");
   const bill = tableOrder?.bill;
+  const revisionAddMenuItem = menuItems.find((menuItem) => menuItem.id === revisionAddMenuItemId);
+  const revisionAddVariants = menuItemVariantOptions(revisionAddMenuItem);
   const existingPaid = bill?.paid_paise ?? (tableOrder?.payments ?? []).reduce((total, payment) => total + payment.amount_paise, 0);
   const discountPaise = bill
     ? discountType === "percent"
@@ -804,7 +1287,7 @@ function BillingPanel({
         .filter((item) => item.quantity > 0)
         .map((item) =>
           item.menuItemId
-            ? { orderItemId: item.orderItemId, menuItemId: item.menuItemId, quantity: item.quantity }
+            ? { orderItemId: item.orderItemId, menuItemId: item.menuItemId, menuItemVariantId: item.menuItemVariantId, quantity: item.quantity }
             : {
                 orderItemId: item.orderItemId,
                 openName: item.openName ?? item.name,
@@ -838,6 +1321,7 @@ function BillingPanel({
         key: item.id,
         orderItemId: item.id,
         menuItemId: item.menu_item_id ?? undefined,
+        menuItemVariantId: item.menu_item_variant_id ?? undefined,
         openName: item.menu_item_id ? undefined : item.name_snapshot,
         pricePaise: item.unit_price_paise,
         saleGroupId: item.sale_group_id,
@@ -854,20 +1338,24 @@ function BillingPanel({
   }
 
   function addRevisionDish() {
-    const item = menuItems.find((menuItem) => menuItem.id === revisionAddMenuItemId);
+    const item = revisionAddMenuItem;
     if (!item) return;
+    const variant = revisionAddVariants.find((entry) => (entry.id ?? "") === revisionAddVariantId) ?? revisionAddVariants[0];
+    const variantId = variant?.id;
+    const lineName = variant && variant.kind !== "default" ? `${item.name} ${variant.label}` : item.name;
     setRevisionItems((current) => {
-      const existing = current.find((row) => row.menuItemId === item.id);
+      const existing = current.find((row) => row.menuItemId === item.id && (row.menuItemVariantId ?? "") === (variantId ?? ""));
       if (existing) return current.map((row) => row.key === existing.key ? { ...row, quantity: row.quantity + 1 } : row);
       return [
         ...current,
         {
-          key: `new-${item.id}`,
+          key: `new-${item.id}-${variantId ?? "default"}`,
           menuItemId: item.id,
-          pricePaise: item.price_paise,
+          menuItemVariantId: variantId,
+          pricePaise: variant?.price_paise ?? item.price_paise,
           saleGroupId: item.sale_group_id,
           productionUnitId: item.production_unit_id,
-          name: item.name,
+          name: lineName,
           quantity: 1
         }
       ];
@@ -961,12 +1449,30 @@ function BillingPanel({
             <button type="button" onClick={() => setRevisionOpen(false)}>Cancel</button>
           </div>
           <div className="revision-add-row">
-            <select value={revisionAddMenuItemId} onChange={(event) => setRevisionAddMenuItemId(event.target.value)}>
+            <select
+              value={revisionAddMenuItemId}
+              onChange={(event) => {
+                const nextItemId = event.target.value;
+                const nextItem = menuItems.find((item) => item.id === nextItemId);
+                const nextVariants = menuItemVariantOptions(nextItem);
+                setRevisionAddMenuItemId(nextItemId);
+                setRevisionAddVariantId(nextVariants[0]?.id ?? "");
+              }}
+            >
               <option value="">Add dish</option>
               {menuItems.filter((item) => item.active).map((item) => (
-                <option key={item.id} value={item.id}>{item.name}</option>
+                <option key={item.id} value={item.id}>{item.name} · {formatInr(item.price_paise)}</option>
               ))}
             </select>
+            {revisionAddVariants.length > 1 ? (
+              <select value={revisionAddVariantId} onChange={(event) => setRevisionAddVariantId(event.target.value)}>
+                {revisionAddVariants.map((variant) => (
+                  <option key={variant.id ?? "default"} value={variant.id ?? ""}>
+                    {variant.kind === "default" ? "Regular" : variant.label} · {formatInr(variant.price_paise)}
+                  </option>
+                ))}
+              </select>
+            ) : null}
             <button type="button" disabled={!revisionAddMenuItemId} onClick={addRevisionDish}>Add</button>
           </div>
           <LineItems
@@ -1059,50 +1565,32 @@ function KitchenView({ bootstrap, setNotice }: { bootstrap: Bootstrap; setNotice
   );
 }
 
-function ReportsView({ setNotice }: { setNotice: NoticeSetter }) {
-  const queryClient = useQueryClient();
-  const closeSummary = useQuery({ queryKey: ["closeSummary"], queryFn: hubApi.closeSummary });
+function ReportsView() {
+  const currentSummary = useQuery({ queryKey: ["currentBusinessDaySummary"], queryFn: hubApi.currentBusinessDaySummary });
   const dailyReports = useQuery({ queryKey: ["dailyReports"], queryFn: hubApi.dailyReports });
-  const [closingCash, setClosingCash] = useState("");
-  const closeDay = useMutation({
-    mutationFn: () => hubApi.closeDay(Math.round(Number(closingCash || 0) * 100)),
-    onSuccess: async () => {
-      setClosingCash("");
-      await queryClient.invalidateQueries();
-      setNotice({ tone: "good", text: "Day closed. Report saved locally and queued for cloud sync." });
-    },
-    onError: (error) => setNotice({ tone: "bad", text: messageOf(error) })
-  });
-  const summary = closeSummary.data;
+  const alcoholStockMovements = useQuery({ queryKey: ["alcoholStockMovements"], queryFn: hubApi.alcoholStockMovements });
+  const summary = currentSummary.data;
 
   return (
     <div className="reports-layout">
       <section className="panel">
         <div className="panel-title">
-          <h2>Today before close</h2>
-          <span>{summary?.openDay ? "Open day" : "No day open"}</span>
+          <h2>Current business day</h2>
+          <span>{summary?.businessDay.business_date ?? "6 AM IST boundary"}</span>
         </div>
-        {summary?.openDay ? (
+        {summary ? (
           <>
             <div className="report-metrics">
               <Metric label="Sales" value={formatInr(summary.finalSalesPaise)} />
               <Metric label="Cash" value={formatInr(summary.cashPaymentsPaise)} />
               <Metric label="UPI/Card/Online" value={formatInr(summary.nonCashPaymentsPaise)} />
-              <Metric label="Expected cash" value={formatInr(summary.expectedClosingCashPaise)} />
+              <Metric label="Bills" value={String(summary.billCount)} />
             </div>
-            <form className="close-day-form" onSubmit={(event) => { event.preventDefault(); closeDay.mutate(); }}>
-              <label>
-                Actual closing cash
-                <input value={closingCash} onChange={(event) => setClosingCash(event.target.value)} inputMode="decimal" />
-              </label>
-              <button type="submit" disabled={closeDay.isPending || summary.openOrders > 0 || summary.billedOrders > 0}>
-                Close day and save report
-              </button>
-            </form>
-            {summary.openOrders > 0 || summary.billedOrders > 0 ? <p className="warning-text">Settle or cancel open tables before closing the day.</p> : null}
+            <p className="plain-state">This day started at {new Date(summary.businessDay.period_start_at).toLocaleString()} and ends at {new Date(summary.businessDay.period_end_at).toLocaleString()}.</p>
+            {summary.openOrders > 0 || summary.billedOrders > 0 ? <p className="warning-text">There are running or billed tables in this business day.</p> : null}
           </>
         ) : (
-          <Empty title="No open day" text="Open today from Setup before taking orders." />
+          <Empty title="Report loading" text="The hub creates business days automatically at 6:00 AM IST." />
         )}
       </section>
 
@@ -1120,11 +1608,33 @@ function ReportsView({ setNotice }: { setNotice: NoticeSetter }) {
               </div>
               <div>
                 <b>{formatInr(report.total_payments_paise)}</b>
-                <span>cash variance {formatInr(report.cash_variance_paise)}</span>
+                <span>finalized {new Date(report.finalized_at).toLocaleString()}</span>
               </div>
             </article>
           ))}
-          {!dailyReports.data?.length ? <Empty title="No closed reports yet" text="Close a POS day and this hub will save the full daily record." /> : null}
+          {!dailyReports.data?.length ? <Empty title="No finalized reports yet" text="Reports finalize automatically after the 6 AM boundary once that day's tables are settled or cancelled." /> : null}
+        </div>
+      </section>
+
+      <section className="panel reports-wide">
+        <div className="panel-title">
+          <h2>Alcohol stock movements</h2>
+          <span>{alcoholStockMovements.data?.length ?? 0} recent</span>
+        </div>
+        <div className="report-list">
+          {(alcoholStockMovements.data ?? []).map((movement) => (
+            <article key={movement.id} className="report-row stock-movement-row">
+              <div>
+                <strong>{movement.item_name}</strong>
+                <span>{alcoholMovementSourceLabel(movement.source_type)} · {alcoholMovementDeltaText(movement)}</span>
+              </div>
+              <div>
+                <b>{movement.balance_sealed_large} large · {movement.balance_open_large_ml} ml · {movement.balance_sealed_small} small</b>
+                <span>{new Date(movement.created_at).toLocaleString()}</span>
+              </div>
+            </article>
+          ))}
+          {!alcoholStockMovements.data?.length ? <Empty title="No alcohol stock history yet" text="Stock sales, settlements, manual edits, and negative-stock events will appear here." /> : null}
         </div>
       </section>
     </div>
@@ -1632,11 +2142,105 @@ function titleForView(view: HubView) {
   const titles: Record<HubView, string> = {
     setup: "Setup",
     orders: "Take Orders",
+    alcohol: "Alcohol",
     kitchen: "Kitchen",
     reports: "Reports",
     advanced: "Advanced"
   };
   return titles[view];
+}
+
+function rupeesToPaise(value: string) {
+  return Math.round(Number(value || 0) * 100);
+}
+
+function paiseToRupeeInput(value: number) {
+  const rupees = value / 100;
+  return Number.isInteger(rupees) ? String(rupees) : rupees.toFixed(2);
+}
+
+function buildEditableAlcoholVariants(item: AlcoholItem): EditableAlcoholVariant[] {
+  if (item.type === "prepared_product") {
+    const variant = item.variants?.find((entry) => entry.kind === "default") ?? item.variants?.[0];
+    return [{ ...defaultPreparedVariant(), id: variant?.id, price: variant ? paiseToRupeeInput(variant.price_paise) : "" }];
+  }
+  const byKind = new Map((item.variants ?? []).map((variant) => [variant.kind, variant]));
+  const defaults = editablePlainVariantDefaults(item.small_bottle_ml || 180, item.large_bottle_ml || 750);
+  return defaults.map((fallback) => {
+    const existing = byKind.get(fallback.kind);
+    return {
+      ...fallback,
+      id: existing?.id,
+      label: existing?.label ?? fallback.label,
+      price: existing ? paiseToRupeeInput(existing.price_paise) : "",
+      volumeMl: existing?.volume_ml ? String(existing.volume_ml) : fallback.volumeMl,
+      inventoryAction: normalizeInventoryAction(existing?.inventory_action) ?? fallback.inventoryAction,
+      sortOrder: existing?.sort_order ?? fallback.sortOrder,
+      active: existing ? Boolean(existing.active) : false
+    };
+  });
+}
+
+function editablePlainVariantDefaults(smallMl: number, largeMl: number): EditableAlcoholVariant[] {
+  return [
+    { label: "30 ml", kind: "shot", price: "", volumeMl: "30", inventoryAction: "large_ml", sortOrder: 0, active: false },
+    { label: `${smallMl} ml`, kind: "small_bottle", price: "", volumeMl: String(smallMl), inventoryAction: "small_bottle", sortOrder: 1, active: false },
+    { label: `${largeMl} ml`, kind: "large_bottle", price: "", volumeMl: String(largeMl), inventoryAction: "large_bottle", sortOrder: 2, active: false }
+  ];
+}
+
+function defaultPreparedVariant(): EditableAlcoholVariant {
+  return {
+    label: "Regular",
+    kind: "default",
+    price: "",
+    volumeMl: "",
+    inventoryAction: "none",
+    sortOrder: 0,
+    active: true
+  };
+}
+
+function variantLabelForKind(kind: AlcoholVariantKind, smallMl: number, largeMl: number) {
+  if (kind === "shot") return "30 ml";
+  if (kind === "small_bottle") return `${smallMl} ml`;
+  if (kind === "large_bottle") return `${largeMl} ml`;
+  return "Regular";
+}
+
+function normalizeInventoryAction(value?: string): AlcoholInventoryAction | null {
+  return value === "large_ml" || value === "small_bottle" || value === "large_bottle" || value === "none" ? value : null;
+}
+
+function menuItemVariantOptions(item?: MenuItem): MenuItemVariantOption[] {
+  if (!item) return [];
+  const variants = (item.variants ?? []).filter((variant) => Boolean(variant.active));
+  if (variants.length > 0) return variants.map((variant) => ({ id: variant.id, label: variant.label, kind: variant.kind, price_paise: variant.price_paise }));
+  if (item.sale_group_kind === "alcohol") return [];
+  return [{ label: "Regular", kind: "default", price_paise: item.price_paise }];
+}
+
+function alcoholMovementSourceLabel(sourceType: string) {
+  const labels: Record<string, string> = {
+    bill_settlement: "Bill settlement",
+    manual_adjustment: "Manual edit",
+    negative_stock: "Negative stock"
+  };
+  return labels[sourceType] ?? sourceType.replaceAll("_", " ");
+}
+
+function alcoholMovementDeltaText(movement: AlcoholStockMovement) {
+  const parts = [
+    signedStockPart(movement.delta_sealed_large, "large"),
+    signedStockPart(movement.delta_open_large_ml, "ml"),
+    signedStockPart(movement.delta_sealed_small, "small")
+  ].filter(Boolean);
+  return parts.length ? parts.join(" · ") : "No stock change";
+}
+
+function signedStockPart(value: number, unit: string) {
+  if (!value) return "";
+  return `${value > 0 ? "+" : ""}${value} ${unit}`;
 }
 
 function fieldLabel(field: string) {

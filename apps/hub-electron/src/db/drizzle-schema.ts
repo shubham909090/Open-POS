@@ -11,12 +11,10 @@ export const posDays = sqliteTable("pos_days", {
   outletId: text("outlet_id").notNull(),
   businessDate: text("business_date").notNull(),
   status: text("status").notNull(),
-  openingCashPaise: integer("opening_cash_paise").notNull(),
-  closingCashPaise: integer("closing_cash_paise"),
-  openedBy: text("opened_by").notNull(),
-  closedBy: text("closed_by"),
-  openedAt: text("opened_at").notNull(),
-  closedAt: text("closed_at")
+  periodStartAt: text("period_start_at").notNull(),
+  periodEndAt: text("period_end_at").notNull(),
+  createdAt: text("created_at").notNull(),
+  finalizedAt: text("finalized_at")
 });
 
 export const dailyReportSnapshots = sqliteTable(
@@ -25,10 +23,6 @@ export const dailyReportSnapshots = sqliteTable(
     posDayId: text("pos_day_id").primaryKey().references(() => posDays.id),
     businessDate: text("business_date").notNull(),
     status: text("status").notNull(),
-    openingCashPaise: integer("opening_cash_paise").notNull(),
-    closingCashPaise: integer("closing_cash_paise").notNull(),
-    expectedClosingCashPaise: integer("expected_closing_cash_paise").notNull(),
-    cashVariancePaise: integer("cash_variance_paise").notNull(),
     billCount: integer("bill_count").notNull(),
     openOrders: integer("open_orders").notNull(),
     billedOrders: integer("billed_orders").notNull(),
@@ -104,6 +98,76 @@ export const menuItems = sqliteTable("menu_items", {
   active: integer("active", { mode: "boolean" }).notNull().default(true)
 });
 
+export const menuItemVariants = sqliteTable(
+  "menu_item_variants",
+  {
+    id: text("id").primaryKey(),
+    menuItemId: text("menu_item_id").notNull().references(() => menuItems.id),
+    label: text("label").notNull(),
+    kind: text("kind").notNull().default("default"),
+    pricePaise: integer("price_paise").notNull(),
+    volumeMl: integer("volume_ml"),
+    inventoryAction: text("inventory_action").notNull().default("none"),
+    sortOrder: integer("sort_order").notNull().default(0),
+    active: integer("active", { mode: "boolean" }).notNull().default(true)
+  },
+  (table) => [
+    index("idx_menu_item_variants_item").on(table.menuItemId),
+    uniqueIndex("idx_menu_item_variants_item_kind").on(table.menuItemId, table.kind)
+  ]
+);
+
+export const alcoholProfiles = sqliteTable("alcohol_profiles", {
+  menuItemId: text("menu_item_id").primaryKey().references(() => menuItems.id),
+  type: text("type").notNull(),
+  largeBottleMl: integer("large_bottle_ml").notNull().default(750),
+  smallBottleMl: integer("small_bottle_ml").notNull().default(180)
+});
+
+export const alcoholStockLevels = sqliteTable("alcohol_stock_levels", {
+  menuItemId: text("menu_item_id").primaryKey().references(() => menuItems.id),
+  sealedLargeCount: integer("sealed_large_count").notNull().default(0),
+  openLargeMl: integer("open_large_ml").notNull().default(0),
+  sealedSmallCount: integer("sealed_small_count").notNull().default(0),
+  updatedAt: text("updated_at").notNull()
+});
+
+export const alcoholRecipeIngredients = sqliteTable(
+  "alcohol_recipe_ingredients",
+  {
+    id: text("id").primaryKey(),
+    productMenuItemId: text("product_menu_item_id").notNull().references(() => menuItems.id),
+    liquorMenuItemId: text("liquor_menu_item_id").notNull().references(() => menuItems.id),
+    mlPerUnit: integer("ml_per_unit").notNull()
+  },
+  (table) => [
+    index("idx_alcohol_recipe_product").on(table.productMenuItemId),
+    index("idx_alcohol_recipe_liquor").on(table.liquorMenuItemId)
+  ]
+);
+
+export const alcoholStockMovements = sqliteTable(
+  "alcohol_stock_movements",
+  {
+    id: text("id").primaryKey(),
+    menuItemId: text("menu_item_id").notNull().references(() => menuItems.id),
+    sourceType: text("source_type").notNull(),
+    sourceId: text("source_id").notNull(),
+    deltaSealedLarge: integer("delta_sealed_large").notNull().default(0),
+    deltaOpenLargeMl: integer("delta_open_large_ml").notNull().default(0),
+    deltaSealedSmall: integer("delta_sealed_small").notNull().default(0),
+    balanceSealedLarge: integer("balance_sealed_large").notNull(),
+    balanceOpenLargeMl: integer("balance_open_large_ml").notNull(),
+    balanceSealedSmall: integer("balance_sealed_small").notNull(),
+    approvedBy: text("approved_by"),
+    createdAt: text("created_at").notNull()
+  },
+  (table) => [
+    index("idx_alcohol_stock_movements_item").on(table.menuItemId, table.createdAt),
+    index("idx_alcohol_stock_movements_source").on(table.sourceType, table.sourceId)
+  ]
+);
+
 export const orders = sqliteTable(
   "orders",
   {
@@ -129,7 +193,12 @@ export const orderItems = sqliteTable(
     id: text("id").primaryKey(),
     orderId: text("order_id").notNull().references(() => orders.id),
     menuItemId: text("menu_item_id").references(() => menuItems.id),
+    menuItemVariantId: text("menu_item_variant_id").references(() => menuItemVariants.id),
     nameSnapshot: text("name_snapshot").notNull(),
+    variantNameSnapshot: text("variant_name_snapshot").notNull().default(""),
+    variantVolumeMl: integer("variant_volume_ml"),
+    inventoryActionSnapshot: text("inventory_action_snapshot").notNull().default("none"),
+    alcoholRecipeSnapshotJson: text("alcohol_recipe_snapshot_json").notNull().default("[]"),
     unitPricePaise: integer("unit_price_paise").notNull(),
     quantity: integer("quantity").notNull(),
     productionUnitId: text("production_unit_id").references(() => productionUnits.id),

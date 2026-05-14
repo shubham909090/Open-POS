@@ -29,6 +29,20 @@
       "when": 1778525000000,
       "tag": "0003_captain_security_notifications",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1778775000000,
+      "tag": "0004_alcohol_management",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1778782000000,
+      "tag": "0005_alcohol_recipe_snapshots",
+      "breakpoints": true
     }
   ]
 }

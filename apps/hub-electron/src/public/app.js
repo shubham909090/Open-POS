@@ -81,7 +81,7 @@ function renderLockedHub(error) {
   state.closeSummary = null;
   $("hubHealth").textContent = "Hub locked";
   $("syncStatus").textContent = "Enter hub password";
-  $("dayStatus").textContent = "POS day locked";
+  $("dayStatus").textContent = "Business day locked";
   renderOperationalStats();
   renderTables();
   renderMenu();
@@ -133,7 +133,7 @@ function isDryRunPrinting() {
 
 function setupSteps() {
   const hasToken = Boolean(($("deviceToken")?.value || localStorage.getItem("deviceToken") || "").trim());
-  const hasDay = Boolean(state.bootstrap?.openDay);
+  const hasDay = Boolean(state.bootstrap?.currentBusinessDay);
   const hasPrinter = Boolean(state.receiptPrinter?.printerName || state.receiptPrinter?.printerHost);
   const printerCanBeSkipped = isDryRunPrinting();
   const printerReady = hasPrinter || printerCanBeSkipped;
@@ -154,11 +154,11 @@ function setupSteps() {
     },
     {
       key: "day",
-      label: "Open Today's POS Day",
+      label: "Business Day",
       done: hasDay,
       required: true,
-      hint: hasDay ? "Day is open" : "Open the day before orders",
-      missing: "Open today's POS day before orders and bills."
+      hint: hasDay ? "Automatic 6 AM IST day is active" : "Hub will create the business day automatically",
+      missing: "The hub must load the current 6 AM IST business day."
     },
     {
       key: "printer",
@@ -312,7 +312,7 @@ async function loadAdminPanels() {
   const [devices, backups, closeSummary] = await Promise.all([
     api("/devices").catch(() => []),
     api("/backups").catch(() => []),
-    api("/pos-days/close-summary").catch(() => null)
+    api("/business-day/current-summary").catch(() => null)
   ]);
   state.devices = devices;
   state.backups = backups;
@@ -348,19 +348,15 @@ function renderCloseSummary() {
   const targets = [$("closeSummary"), $("closeSummaryReport")].filter(Boolean);
   if (!targets.length) return;
   const summary = state.closeSummary;
-  if (!summary?.openDay) {
-    for (const target of targets) target.textContent = "No open day.";
+  if (!summary?.businessDay) {
+    for (const target of targets) target.textContent = "Business day is loading.";
     return;
   }
-  const closingCashPaise = Number($("closingCash")?.value || 0) * 100;
-  const hasClosingCash = $("closingCash")?.value !== "";
-  const variancePaise = hasClosingCash ? closingCashPaise - summary.expectedClosingCashPaise : 0;
-  const canClose = summary.openOrders === 0 && summary.unpaidBills === 0;
   const markup = `
-    <span>Opening cash <strong>${money(summary.openingCashPaise)}</strong></span>
+    <span>Business date <strong>${escapeHtml(summary.businessDay.business_date)}</strong></span>
+    <span>Period start <strong>${new Date(summary.businessDay.period_start_at).toLocaleString()}</strong></span>
+    <span>Period end <strong>${new Date(summary.businessDay.period_end_at).toLocaleString()}</strong></span>
     <span>Cash sales <strong>${money(summary.cashPaymentsPaise)}</strong></span>
-    <span>Expected drawer <strong>${money(summary.expectedClosingCashPaise)}</strong></span>
-    <span>Typed variance <strong class="${variancePaise === 0 ? "" : variancePaise > 0 ? "positive" : "negative"}">${hasClosingCash ? money(variancePaise) : "Enter closing cash"}</strong></span>
     <span>UPI <strong>${money(summary.upiPaymentsPaise)}</strong></span>
     <span>Card <strong>${money(summary.cardPaymentsPaise)}</strong></span>
     <span>Online <strong>${money(summary.onlinePaymentsPaise)}</strong></span>
@@ -372,7 +368,7 @@ function renderCloseSummary() {
     <span>Paid bills <strong>${summary.paidBills}</strong></span>
     <span>Open orders <strong class="${summary.openOrders ? "negative" : ""}">${summary.openOrders}</strong></span>
     <span>Unpaid bills <strong class="${summary.unpaidBills ? "negative" : ""}">${summary.unpaidBills}</strong></span>
-    <span>Close status <strong class="${canClose ? "positive" : "negative"}">${canClose ? "Ready" : "Blocked"}</strong></span>
+    <span>Finalization <strong>${summary.openOrders || summary.unpaidBills ? "Waits for settlement" : "Ready after 6 AM"}</strong></span>
   `;
   for (const target of targets) target.innerHTML = markup;
 }
@@ -464,7 +460,7 @@ function renderFloorAdmin() {
   if (!list) return;
   list.textContent = "";
   const floors = state.bootstrap?.floors ?? [];
-  if (floors.length === 0) return list.append(emptyNode("No rooms yet", "Add your first room or floor."));
+  if (floors.length === 0) return list.append(emptyNode("No floors yet", "Add your first floor."));
   for (const floor of floors) {
     const isEditing = state.editing.floor === floor.id;
     const row = document.createElement("div");
@@ -710,10 +706,8 @@ function renderBackups() {
 }
 
 function renderDay() {
-  const day = state.bootstrap?.openDay;
-  $("dayStatus").textContent = day ? "POS day open" : "POS day closed";
-  $("openDayForm").style.display = day ? "none" : "flex";
-  $("closeDayForm").style.display = day ? "flex" : "none";
+  const day = state.bootstrap?.currentBusinessDay;
+  $("dayStatus").textContent = day ? `Business day ${day.business_date}` : "Business day loading";
 }
 
 function renderTables() {
@@ -724,9 +718,6 @@ function renderTables() {
   if (activeRows.length === 0) {
     tables.append(emptyNode("No tables yet", "Add your first table in Setup before taking orders."));
     return;
-  }
-  if (!state.bootstrap?.openDay) {
-    tables.append(emptyNode("Open today's POS day", "Open the day in Setup before taking orders."));
   }
   for (const table of activeRows) {
     const tile = document.createElement("button");
@@ -1142,41 +1133,6 @@ function emptyNode(title = "Nothing here yet", text = "") {
   return node;
 }
 
-$("openDayForm").addEventListener("submit", async (event) => {
-  event.preventDefault();
-  const today = new Date().toISOString().slice(0, 10);
-  await runAction(async () => {
-    await api("/pos-days/open", {
-      method: "POST",
-      body: JSON.stringify({
-        outletId: "outlet-main",
-        businessDate: today,
-        openingCashPaise: Number($("openingCash").value || 0) * 100,
-        openedBy: "cashier-1"
-      })
-    });
-    await loadBootstrap();
-    focusNextSetupStep();
-  }, "POS day opened");
-});
-
-$("closeDayForm").addEventListener("submit", async (event) => {
-  event.preventDefault();
-  await runAction(async () => {
-    await api("/pos-days/close", {
-      method: "POST",
-      body: JSON.stringify({
-        closingCashPaise: Number($("closingCash").value || 0) * 100,
-        closedBy: "cashier-1"
-      })
-    });
-    state.selectedOrder = null;
-    state.draft.clear();
-    await loadBootstrap();
-    renderOrder();
-  }, "POS day closed");
-});
-
 $("submitOrder").addEventListener("click", async () => {
   if (!state.selectedTableId) return;
   await runAction(async () => {
@@ -1269,7 +1225,6 @@ $("menuSearch").addEventListener("input", () => {
   state.menuSearch = $("menuSearch").value;
   renderMenu();
 });
-$("closingCash").addEventListener("input", renderCloseSummary);
 for (const id of ["billDiscount", "billTip", "discountType"]) {
   $(id)?.addEventListener("input", () => {
     $(id).dataset.touched = "1";
@@ -1347,7 +1302,7 @@ $("floorForm").addEventListener("submit", async (event) => {
     $("floorCustomId").value = "";
     await loadBootstrap();
     keepSetupStep("tables");
-  }, "Room added");
+  }, "Floor added");
 });
 $("tableForm").addEventListener("submit", async (event) => {
   event.preventDefault();

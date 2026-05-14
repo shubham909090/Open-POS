@@ -86,7 +86,7 @@ flowchart TD
 
   CloudApp --> CloudAuth["WorkOS Google auth"]
   CloudApp --> CloudSetup["Restaurant + staff + hub connection"]
-  CloudApp --> CloudReports["Closed-day reports"]
+  CloudApp --> CloudReports["Finalized business-day reports"]
   CloudApp --> CloudAdvanced["Advanced hub command queue"]
 
   ConvexApp --> ConvexSchema["Cloud schema"]
@@ -138,7 +138,7 @@ flowchart TD
   Admin --> A1["Setup/admin/device/printer/tax/sync/backups"]
   Admin --> A2["Billing, movement, reports"]
 
-  Cashier --> C1["Open/close POS day"]
+  Cashier --> C1["Billing, reports, print operation"]
   Cashier --> C2["Generate, print, revise, NC, settle bills"]
   Cashier --> C3["Move valid tables/items"]
 
@@ -161,31 +161,29 @@ flowchart TD
 flowchart TD
   Start["Cashier starts hub app"]
   Unlock["Unlock hub using HUB_ADMIN_TOKEN"]
-  DayOpen{"POS day open?"}
-  OpenDay["Open today's POS day<br/>opening cash + business date"]
+  AutoDay["Hub assigns current business day<br/>6 AM IST to 6 AM IST"]
   Service["Restaurant service"]
   Orders["Captains/waiters take orders"]
   Kitchen["Kitchen/bar handles KOT/BOT"]
   Billing["Cashier bills occupied tables"]
-  ReadyClose{"Any open/billed tables left?"}
-  FixTables["Settle or cancel remaining tables"]
-  CloseDay["Close POS day<br/>closing cash entered"]
-  LocalReport["Hub saves daily_report_snapshots"]
+  Boundary{"6 AM IST boundary passed?"}
+  ReadyFinalize{"Old day has open/billed tables?"}
+  FixTables["Settle or cancel remaining old tables"]
+  LocalReport["Hub auto-finalizes daily_report_snapshots"]
   SyncCloud["Hub queues cloud sync"]
-  CloudReport["Cloud Admin Reports show closed day after sync"]
+  CloudReport["Cloud Admin Reports show finalized day after sync"]
 
   Start --> Unlock
-  Unlock --> DayOpen
-  DayOpen -- "No" --> OpenDay
-  OpenDay --> Service
-  DayOpen -- "Yes" --> Service
+  Unlock --> AutoDay
+  AutoDay --> Service
   Service --> Orders
   Orders --> Kitchen
   Orders --> Billing
-  Billing --> ReadyClose
-  ReadyClose -- "Yes" --> FixTables --> ReadyClose
-  ReadyClose -- "No" --> CloseDay
-  CloseDay --> LocalReport
+  Billing --> Boundary
+  Boundary -- "No" --> Service
+  Boundary -- "Yes" --> ReadyFinalize
+  ReadyFinalize -- "Yes" --> FixTables --> ReadyFinalize
+  ReadyFinalize -- "No" --> LocalReport
   LocalReport --> SyncCloud
   SyncCloud --> CloudReport
 ```
@@ -195,7 +193,7 @@ flowchart TD
 ```mermaid
 flowchart TD
   Setup["Hub Setup"]
-  POSDay["Open POS day"]
+  BusinessDay["Business day auto-active<br/>6 AM IST boundary"]
   Floors["Add/edit/disable floors"]
   Tables["Add/edit/disable/delete-safe tables"]
   Counters["Add/edit/disable/delete-safe kitchens/counters"]
@@ -207,7 +205,7 @@ flowchart TD
   PairDevices["Pair admin/cashier/captain/waiter/kitchen devices"]
   Ready["Ready for service"]
 
-  Setup --> POSDay
+  Setup --> BusinessDay
   Setup --> Floors --> Tables
   Setup --> Counters --> Dishes
   Setup --> Printers
@@ -215,7 +213,7 @@ flowchart TD
   Setup --> SaleGroups
   Setup --> PrintText
   Setup --> PairDevices
-  POSDay --> Ready
+  BusinessDay --> Ready
   Tables --> Ready
   Dishes --> Ready
 ```
@@ -397,11 +395,11 @@ flowchart TD
   ValidCheck -- "Yes" --> Apply --> Audit --> TransferTickets --> Refresh
 ```
 
-## 13. Day Close And Cloud Report Flow
+## 13. Business Day Finalization And Cloud Report Flow
 
 ```mermaid
 sequenceDiagram
-  participant Cashier as Cashier/Admin
+  participant HubTimer as Hub startup/report check
   participant Hub as Hub API
   participant Service as OrderService
   participant DB as SQLite
@@ -409,20 +407,19 @@ sequenceDiagram
   participant Convex as Convex
   participant Cloud as Cloud Admin Reports
 
-  Cashier->>Hub: GET /pos-days/close-summary
-  Hub->>Service: compute open/billed/paid/cash totals
-  Service-->>Cashier: Summary and blockers
-  Cashier->>Hub: POST /pos-days/close with closing cash
-  Hub->>Service: close day
+  HubTimer->>Hub: Startup, report list, or order action
+  Hub->>Service: ensure current 6 AM IST business day
+  Hub->>Service: finalize completed old business days
+  Service->>DB: Skip old day if open/billed orders remain
   Service->>DB: Compute finalized daily snapshot
   Service->>DB: Store daily_report_snapshots
   Service->>DB: Append event_log + sync_outbox
-  Hub-->>Cashier: Day closed locally
+  Hub-->>HubTimer: Current business-day summary stays available
   Sync->>Convex: POST /pos/ingest-events when internet exists
   Convex->>Convex: Store syncedEvents
   Convex->>Convex: Upsert dailyReports, bills, items, groups
   Cloud->>Convex: Query reports
-  Convex-->>Cloud: Closed-day report details
+  Convex-->>Cloud: Finalized business-day report details
 ```
 
 ## 14. Cloud Command Pull Flow
@@ -502,4 +499,3 @@ flowchart LR
   HubTruth -->|"event sync"| ConvexTruth
   ConvexTruth -->|"command pull"| HubTruth
 ```
-

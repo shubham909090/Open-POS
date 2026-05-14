@@ -254,6 +254,7 @@ label {
 
 .setup-card,
 .panel {
+  min-width: 0;
   background: rgba(255, 253, 247, 0.96);
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -407,9 +408,13 @@ label {
 
 .orders-grid {
   display: grid;
-  grid-template-columns: 220px minmax(340px, 1fr) minmax(360px, 470px);
+  grid-template-columns: minmax(180px, 220px) minmax(280px, 1fr) minmax(0, 470px);
   gap: 16px;
   align-items: start;
+}
+
+.orders-grid > * {
+  min-width: 0;
 }
 
 .panel-title {
@@ -507,6 +512,7 @@ label {
 }
 
 .ticket-workspace {
+  min-width: 0;
   min-height: 620px;
   display: grid;
   align-content: start;
@@ -531,6 +537,8 @@ label {
 }
 
 .segmented {
+  width: 100%;
+  min-width: 0;
   padding: 5px;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -538,6 +546,7 @@ label {
 }
 
 .segmented button {
+  min-width: 0;
   flex: 1;
   min-height: 38px;
   background: transparent;
@@ -553,11 +562,14 @@ label {
 .ticket-section,
 .billing-panel,
 .bill-start {
+  min-width: 0;
   display: grid;
   gap: 14px;
 }
 
 .guest-row {
+  display: grid;
+  grid-template-columns: minmax(110px, 130px) minmax(0, 1fr);
   align-items: end;
 }
 
@@ -565,9 +577,20 @@ label {
 .template-form,
 .approval-grid {
   display: grid;
-  grid-template-columns: minmax(160px, 1fr) 120px minmax(130px, 160px) minmax(150px, 180px) auto;
+  grid-template-columns: repeat(auto-fit, minmax(min(170px, 100%), 1fr));
   gap: 10px;
   align-items: end;
+}
+
+.open-item-form label,
+.open-item-form input,
+.open-item-form select {
+  min-width: 0;
+}
+
+.open-item-form button {
+  width: 100%;
+  min-height: 48px;
 }
 
 .template-form {
@@ -613,11 +636,11 @@ label {
 }
 
 .guest-row label {
-  max-width: 130px;
+  max-width: none;
 }
 
 .guest-row button {
-  flex: 1;
+  width: 100%;
   background: var(--accent-dark);
 }
 
@@ -757,6 +780,10 @@ label {
   align-items: start;
 }
 
+.reports-wide {
+  grid-column: 1 / -1;
+}
+
 .kot-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
@@ -797,6 +824,7 @@ label {
 }
 
 .empty-state {
+  min-width: 0;
   display: grid;
   gap: 5px;
   padding: 16px;
@@ -804,10 +832,196 @@ label {
   border-radius: 8px;
   color: var(--muted);
   background: rgba(255, 255, 255, 0.65);
+  overflow-wrap: anywhere;
 }
 
 .empty-state strong {
   color: var(--ink);
+}
+
+.variant-buttons {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  width: 100%;
+}
+
+.variant-buttons button {
+  min-height: 44px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  background: #fbfaf7;
+  color: var(--ink);
+}
+
+.variant-buttons span,
+.variant-buttons b {
+  display: block;
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.alcohol-board,
+.alcohol-layout,
+.storage-list {
+  display: grid;
+  gap: 14px;
+}
+
+.segment-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.segment-row button {
+  min-height: 38px;
+  background: #f3eee4;
+  color: var(--ink);
+}
+
+.segment-row button.active {
+  background: var(--ink);
+  color: #fff;
+}
+
+.alcohol-layout {
+  grid-template-columns: minmax(320px, 0.9fr) minmax(360px, 1.1fr);
+  align-items: start;
+}
+
+.alcohol-form,
+.recipe-list,
+.alcohol-item-list {
+  display: grid;
+  gap: 10px;
+}
+
+.three-col,
+.stock-adjust-form {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.stock-adjust-form {
+  grid-template-columns: 130px repeat(3, minmax(90px, 1fr)) minmax(120px, 1fr) auto;
+}
+
+.recipe-row,
+.stock-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.alcohol-catalog-row {
+  align-items: start;
+}
+
+.catalog-row-actions {
+  display: grid;
+  justify-items: end;
+  gap: 8px;
+}
+
+.recipe-row {
+  grid-template-columns: minmax(0, 1fr) 90px 34px;
+}
+
+.secondary-inline {
+  width: fit-content;
+  min-height: 34px;
+  background: #eef3ec;
+  color: var(--ink);
+}
+
+.stock-row,
+.storage-card {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.stock-row strong,
+.stock-row span {
+  display: block;
+}
+
+.variant-price-list {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.variant-price-list span,
+.stock-metrics span {
+  padding: 5px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfaf7;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.alcohol-edit-form {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.variant-edit-list {
+  display: grid;
+  gap: 8px;
+}
+
+.variant-edit-row {
+  display: grid;
+  grid-template-columns: 76px minmax(120px, 1fr) 90px 120px;
+  gap: 8px;
+  align-items: center;
+}
+
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  font-weight: 800;
+  color: var(--ink);
+}
+
+.checkbox-row input {
+  width: 16px;
+  height: 16px;
+}
+
+.form-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.stock-movement-row span {
+  color: var(--muted);
+}
+
+.stock-metrics {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.stock-metrics b {
+  display: block;
+  color: var(--ink);
+  font-size: 15px;
 }
 
 @media (max-width: 1180px) {
@@ -824,7 +1038,7 @@ label {
   }
 
   .nav-stack {
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-template-columns: repeat(6, minmax(0, 1fr));
   }
 
   .unlock-card {
@@ -832,6 +1046,7 @@ label {
   }
 
   .orders-grid,
+  .alcohol-layout,
   .reports-layout {
     grid-template-columns: 1fr;
   }
@@ -872,6 +1087,20 @@ label {
   .report-metrics,
   .adjust-grid,
   .payment-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .variant-buttons,
+  .three-col,
+  .variant-edit-row,
+  .stock-adjust-form,
+  .stock-metrics,
+  .recipe-row,
+  .stock-row {
+    grid-template-columns: 1fr;
+  }
+
+  .guest-row {
     grid-template-columns: 1fr;
   }
 

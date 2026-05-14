@@ -112,9 +112,9 @@ pnpm --filter @gaurav-pos/mobile android:aab
 ## Daily Restaurant Flow
 
 1. Cashier opens the hub app.
-2. Cashier opens today’s POS day.
+2. Hub automatically uses the current 6 AM IST business day.
 3. Waiters take orders on tablets.
 4. Hub creates KOTs and print jobs locally.
 5. Cashier punches bills from occupied tables.
-6. Cashier closes day.
+6. After the next 6 AM IST boundary, hub finalizes the old settled business day.
 7. Hub saves the local report and syncs it to cloud when internet is available.

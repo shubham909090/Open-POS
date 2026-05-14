@@ -3,7 +3,9 @@ export type Role = "admin" | "cashier" | "captain" | "waiter" | "kitchen";
 export interface PosDay {
   id: string;
   business_date: string;
-  opening_cash_paise: number;
+  period_start_at: string;
+  period_end_at: string;
+  status: string;
 }
 
 export interface Floor {
@@ -45,6 +47,19 @@ export interface MenuItem {
   sale_group_kind: string;
   ticket_label: "KOT" | "BOT";
   active: boolean;
+  variants?: MenuItemVariant[];
+}
+
+export interface MenuItemVariant {
+  id: string;
+  menu_item_id: string;
+  label: string;
+  kind: "default" | "shot" | "small_bottle" | "large_bottle" | string;
+  price_paise: number;
+  volume_ml: number | null;
+  inventory_action: "none" | "large_ml" | "small_bottle" | "large_bottle" | string;
+  sort_order: number;
+  active: boolean | number;
 }
 
 export interface SaleGroup {
@@ -71,7 +86,7 @@ export interface PrintJob {
 }
 
 export interface Bootstrap {
-  openDay?: PosDay | null;
+  currentBusinessDay: PosDay;
   floors: Floor[];
   tables: Table[];
   productionUnits: ProductionUnit[];
@@ -87,7 +102,11 @@ export interface OrderItem {
   id: string;
   order_id: string;
   menu_item_id: string | null;
+  menu_item_variant_id?: string | null;
   name_snapshot: string;
+  variant_name_snapshot?: string;
+  variant_volume_ml?: number | null;
+  inventory_action_snapshot?: string;
   unit_price_paise: number;
   quantity: number;
   production_unit_id: string | null;
@@ -98,6 +117,52 @@ export interface OrderItem {
   ticket_label_snapshot: "KOT" | "BOT";
   is_open_item?: boolean | number;
   status: string;
+}
+
+export interface AlcoholCatalog {
+  items: Array<MenuItem & {
+    type: "plain_liquor" | "prepared_product";
+    large_bottle_ml: number;
+    small_bottle_ml: number;
+    sealed_large_count: number;
+    open_large_ml: number;
+    sealed_small_count: number;
+    recipeIngredients: Array<{ liquor_menu_item_id: string; liquor_name: string; ml_per_unit: number }>;
+  }>;
+  storage: AlcoholStorageRow[];
+}
+
+export interface AlcoholStorageRow {
+  id: string;
+  name: string;
+  active: boolean | number;
+  large_bottle_ml: number;
+  small_bottle_ml: number;
+  sealed_large_count: number;
+  open_large_ml: number;
+  sealed_small_count: number;
+  total_available_ml: number;
+  pending_large_ml: number;
+  pending_large_bottles: number;
+  pending_small_bottles: number;
+  pending_total_ml: number;
+  expected_after_settlement_ml: number;
+}
+
+export interface AlcoholStockMovement {
+  id: string;
+  menu_item_id: string;
+  item_name: string;
+  source_type: string;
+  source_id: string;
+  delta_sealed_large: number;
+  delta_open_large_ml: number;
+  delta_sealed_small: number;
+  balance_sealed_large: number;
+  balance_open_large_ml: number;
+  balance_sealed_small: number;
+  approved_by: string | null;
+  created_at: string;
 }
 
 export interface Bill {
@@ -137,15 +202,12 @@ export interface TableOrder {
 }
 
 export interface CloseSummary {
-  openDay: PosDay | null;
+  businessDay: PosDay;
   openOrders: number;
   billedOrders: number;
   paidBills: number;
   unpaidBills: number;
   cancelledOrders?: number;
-  openingCashPaise: number;
-  closingCashPaise?: number | null;
-  cashVariancePaise?: number | null;
   billCount: number;
   grossSalesPaise: number;
   discountPaise: number;
@@ -157,7 +219,6 @@ export interface CloseSummary {
   onlinePaymentsPaise: number;
   totalPaymentsPaise: number;
   nonCashPaymentsPaise: number;
-  expectedClosingCashPaise: number;
   groupSummaries?: Array<{ name: string; kind: string; quantity: number; grossSalesPaise: number; taxPaise: number; finalSalesPaise: number; ncQuantity: number; ncGrossSalesPaise: number }>;
 }
 
@@ -169,7 +230,6 @@ export interface DailyReportRow {
   gross_sales_paise: number;
   final_sales_paise: number;
   total_payments_paise: number;
-  cash_variance_paise: number;
   finalized_at: string;
 }
 
@@ -214,24 +274,10 @@ export async function apiFetch<T>(path: string, options: RequestInit & { idempot
 export const hubApi = {
   bootstrap: () => apiFetch<Bootstrap>("/sync/bootstrap"),
   tableOrder: (tableId: string) => apiFetch<TableOrder | null>(`/tables/${tableId}/order`),
-  closeSummary: () => apiFetch<CloseSummary>("/pos-days/close-summary"),
+  currentBusinessDaySummary: () => apiFetch<CloseSummary>("/business-day/current-summary"),
   dailyReports: () => apiFetch<DailyReportRow[]>("/reports/daily"),
+  alcoholStockMovements: () => apiFetch<AlcoholStockMovement[]>("/reports/alcohol-stock-movements?limit=100"),
   kds: (unitId: string) => apiFetch<KdsTicket[]>(`/kds/${unitId}`),
-  openDay: (openingCashPaise: number) =>
-    apiFetch<{ id: string }>("/pos-days/open", {
-      method: "POST",
-      body: JSON.stringify({
-        outletId: "outlet-main",
-        businessDate: new Date().toISOString().slice(0, 10),
-        openingCashPaise,
-        openedBy: "cashier"
-      })
-    }),
-  closeDay: (closingCashPaise: number) =>
-    apiFetch<{ id: string; report: CloseSummary }>("/pos-days/close", {
-      method: "POST",
-      body: JSON.stringify({ closingCashPaise, closedBy: "cashier" })
-    }),
   createFloor: (name: string) => apiFetch<{ id: string }>("/floors", { method: "POST", body: JSON.stringify({ name }) }),
   updateFloor: (id: string, payload: { name?: string; active?: boolean }) =>
     apiFetch<{ id: string }>(`/floors/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
@@ -266,6 +312,7 @@ export const hubApi = {
       pax: number;
       items: Array<
         | { menuItemId: string; quantity: number }
+        | { menuItemId: string; menuItemVariantId: string; quantity: number }
         | { openName: string; openPricePaise: number; saleGroupId: string; productionUnitId?: string | null; quantity: number }
       >;
     }
@@ -296,7 +343,7 @@ export const hubApi = {
     billId: string,
     payload: ManagerApprovalPayload & {
       items: Array<
-        | { orderItemId?: string; menuItemId: string; quantity: number }
+        | { orderItemId?: string; menuItemId: string; menuItemVariantId?: string; quantity: number }
         | { orderItemId?: string; openName: string; openPricePaise: number; saleGroupId: string; productionUnitId?: string | null; quantity: number }
       >;
     }
@@ -319,6 +366,10 @@ export const hubApi = {
     apiFetch<{ orderId: string; kotIds: string[] }>("/tables/move", { method: "POST", body: JSON.stringify(payload) }),
   moveItems: (payload: { fromTableId: string; toTableId: string; reason: string; items: Array<{ orderItemId: string; quantity: number }> }) =>
     apiFetch<{ fromOrderId: string; toOrderId: string; sourceKotIds: string[]; targetKotIds: string[] }>("/orders/items/move", { method: "POST", body: JSON.stringify(payload) }),
+  alcohol: () => apiFetch<AlcoholCatalog>("/alcohol"),
+  createAlcoholItem: (payload: unknown) => apiFetch<{ id: string }>("/alcohol/items", { method: "POST", body: JSON.stringify(payload) }),
+  updateAlcoholItem: (id: string, payload: unknown) => apiFetch<{ id: string }>(`/alcohol/items/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
+  adjustAlcoholStock: (id: string, payload: unknown) => apiFetch<{ id: string }>(`/alcohol/stock/${id}/adjust`, { method: "POST", body: JSON.stringify(payload) }),
   updateKotStatus: (kotId: string, status: string) =>
     apiFetch<{ id: string }>(`/kot/${kotId}/status`, { method: "PATCH", body: JSON.stringify({ status }) }),
   processPrints: () => apiFetch<{ printed: number; failed: number }>("/print-jobs/process", { method: "POST" }),

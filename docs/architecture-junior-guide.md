@@ -64,11 +64,11 @@ This runs on the cashier/admin PC. It is the local server, local database owner,
 
 It has four main areas:
 
-- Setup: POS day, printers, floors/tables, kitchens/counters, menu, sale groups, manager PIN, device pairing, backups, and sync.
+- Setup: automatic 6 AM IST business day, printers, floors/tables, kitchens/counters, menu, sale groups, manager PIN, device pairing, backups, and sync.
 - Service: live table order entry, menu search, draft totals, and KOT submission.
 - Kitchen: KOT/KDS status and print queue handling.
 - Billing: bill generation, receipt reprint, discounts, tips, split payments, NC bills, and settlement.
-- Reports: day close, cash reconciliation, sale-group summaries, and local backup/report history.
+- Reports: current business-day summary, finalized sale-group summaries, and local backup/report history.
 
 If the internet is down, this app still runs the restaurant.
 
@@ -115,7 +115,7 @@ The current workflow is built around real restaurant operations:
 - Captain movement is device-owned: a captain can shift only tables/items opened by that captain device. Cashier/admin can correct any valid table.
 - Open items are stored as order snapshots, not hidden dishes, so setup stays clean.
 - NC bills print like normal bills but do not count into sales, tax, or payment totals. Their item quantities still appear in usage/group summaries.
-- Day close stores local grouped reports and queues them to Convex so the owner can review closed days later.
+- The hub automatically finalizes old 6 AM IST business days and queues reports to Convex so the owner can review finalized days later.
 
 ### 3. Cloud Admin App
 
@@ -145,7 +145,7 @@ Current database approach:
 - `apps/hub-electron/drizzle` contains the generated Drizzle migrations.
 - `HubDatabase.orm` is the main database handle.
 - Hub startup runs Drizzle migrations directly with `drizzle-orm/better-sqlite3/migrator`.
-- The service-hour write path in `OrderService` uses Drizzle query APIs for POS days, order item diffs, KOT creation, billing, payments, print jobs, and event/outbox writes.
+- The service-hour write path in `OrderService` uses Drizzle query APIs for business-day rows, order item diffs, KOT creation, billing, payments, print jobs, and event/outbox writes.
 
 ## Local API
 
@@ -153,7 +153,7 @@ The hub exposes a Fastify REST API and WebSocket endpoint.
 
 REST is used for commands:
 
-- open/close POS day
+- get current business-day summary
 - create floors/tables
 - create/update menu items
 - submit orders
@@ -272,7 +272,7 @@ flowchart LR
   billPending --> settle["Settle payment"]
   settle --> paid["Order + bill paid"]
   paid --> freeTable["Table becomes free"]
-  paid --> closeSummary["Included in day close summary"]
+  paid --> closeSummary["Included in business-day summary"]
 ```
 
 Current billing supports manual cashier-entered payments. This does not call any payment gateway. If the guest pays by UPI/card/online, the cashier enters the method and amount after seeing the payment externally.
@@ -292,15 +292,14 @@ The bill becomes paid only when total entered payments cover the final bill amou
 
 Tax is currently a simple default GST calculation. Real GST/service charge rules still need the restaurant's final billing policy.
 
-Before closing the POS day, the hub shows a richer reconciliation summary:
+The hub shows a current 6 AM IST business-day summary:
 
-- opening cash
 - cash sales
-- expected drawer cash
-- typed closing-cash variance
 - UPI/card/online totals
 - gross sales, discounts, tips, and final sales
 - paid bills, unpaid bills, and open-order blockers
+
+After the next 6 AM IST boundary, the hub automatically finalizes the old business day once old open/billed tables are settled or cancelled. No cashier has to press an open-day or close-day button.
 
 ## Cloud Sync
 

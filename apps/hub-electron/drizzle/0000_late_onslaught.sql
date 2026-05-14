@@ -159,12 +159,10 @@ CREATE TABLE `pos_days` (
 	`outlet_id` text NOT NULL,
 	`business_date` text NOT NULL,
 	`status` text NOT NULL,
-	`opening_cash_paise` integer NOT NULL,
-	`closing_cash_paise` integer,
-	`opened_by` text NOT NULL,
-	`closed_by` text,
-	`opened_at` text NOT NULL,
-	`closed_at` text
+	`period_start_at` text NOT NULL,
+	`period_end_at` text NOT NULL,
+	`created_at` text NOT NULL,
+	`finalized_at` text
 );
 --> statement-breakpoint
 CREATE TABLE `print_jobs` (

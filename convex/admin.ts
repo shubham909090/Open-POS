@@ -591,7 +591,6 @@ export const listDailyReports = query({
       tipPaise: v.number(),
       finalSalesPaise: v.number(),
       totalPaymentsPaise: v.number(),
-      cashVariancePaise: v.number(),
       finalizedAt: v.string(),
       updatedAt: v.string()
     })
@@ -613,7 +612,6 @@ export const listDailyReports = query({
       tipPaise: row.tipPaise,
       finalSalesPaise: row.finalSalesPaise,
       totalPaymentsPaise: row.totalPaymentsPaise,
-      cashVariancePaise: row.cashVariancePaise,
       finalizedAt: row.finalizedAt,
       updatedAt: row.updatedAt
     }));
@@ -628,10 +626,6 @@ export const getDailyReport = query({
       report: v.object({
         businessDate: v.string(),
         status: v.literal("finalized"),
-        openingCashPaise: v.number(),
-        closingCashPaise: v.number(),
-        expectedClosingCashPaise: v.number(),
-        cashVariancePaise: v.number(),
         grossSalesPaise: v.number(),
         discountPaise: v.number(),
         tipPaise: v.number(),
@@ -732,10 +726,6 @@ export const getDailyReport = query({
       report: {
         businessDate: report.businessDate,
         status: report.status,
-        openingCashPaise: report.openingCashPaise,
-        closingCashPaise: report.closingCashPaise,
-        expectedClosingCashPaise: report.expectedClosingCashPaise,
-        cashVariancePaise: report.cashVariancePaise,
         grossSalesPaise: report.grossSalesPaise,
         discountPaise: report.discountPaise,
         tipPaise: report.tipPaise,

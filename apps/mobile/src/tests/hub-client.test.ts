@@ -8,9 +8,22 @@ describe("HubClient", () => {
 
   it("sends the local device token to protected hub routes", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(JSON.stringify({ openDay: null, tables: [], productionUnits: [], menuItems: [], syncStatus: { counts: {} } }), {
-        status: 200
-      })
+      new Response(
+        JSON.stringify({
+          currentBusinessDay: {
+            id: "day-2026-05-09",
+            business_date: "2026-05-09",
+            period_start_at: "2026-05-09T00:30:00.000Z",
+            period_end_at: "2026-05-10T00:30:00.000Z",
+            status: "active"
+          },
+          tables: [],
+          productionUnits: [],
+          menuItems: [],
+          syncStatus: { counts: {} }
+        }),
+        { status: 200 }
+      )
     );
 
     const client = new HubClient("http://hub.local:3737", "device-token");

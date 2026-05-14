@@ -66,10 +66,6 @@ type DailyReportPayload = {
   paidBills?: number;
   unpaidBills?: number;
   cancelledOrders?: number;
-  openingCashPaise?: number;
-  closingCashPaise?: number | null;
-  expectedClosingCashPaise?: number;
-  cashVariancePaise?: number | null;
   billCount?: number;
   grossSalesPaise?: number;
   discountPaise?: number;
@@ -147,10 +143,6 @@ async function upsertDailyReport(
     posDayId,
     businessDate,
     status: "finalized" as const,
-    openingCashPaise: numberOrZero(payload.openingCashPaise),
-    closingCashPaise: numberOrZero(payload.closingCashPaise),
-    expectedClosingCashPaise: numberOrZero(payload.expectedClosingCashPaise),
-    cashVariancePaise: numberOrZero(payload.cashVariancePaise),
     grossSalesPaise: numberOrZero(payload.grossSalesPaise),
     discountPaise: numberOrZero(payload.discountPaise),
     tipPaise: numberOrZero(payload.tipPaise),

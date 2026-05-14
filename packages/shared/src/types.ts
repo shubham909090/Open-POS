@@ -1,5 +1,5 @@
 export type UserRole = "admin" | "cashier" | "captain" | "waiter" | "kitchen";
-export type PosDayStatus = "open" | "closed";
+export type PosDayStatus = "active" | "finalized";
 export type TableStatus = "free" | "occupied" | "billed" | "attention";
 export type TableDisplayState = "free" | "running" | "bill_printed" | "needs_attention" | "disabled";
 export type OrderType = "dine_in" | "takeaway";
@@ -57,6 +57,7 @@ export interface RestaurantTable {
 
 export interface OrderItemInput {
   menuItemId?: string;
+  menuItemVariantId?: string;
   quantity: number;
   openName?: string;
   openPricePaise?: number;

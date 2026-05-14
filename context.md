@@ -8,9 +8,9 @@ Gaurav POS is an offline-first restaurant point-of-sale system for Indian restau
 
 The core design choice is:
 
-- The restaurant must keep taking orders, printing KOT/BOT, billing, and closing the day even when internet is down.
+- The restaurant must keep taking orders, printing KOT/BOT, billing, and finalizing reports even when internet is down.
 - The Windows hub PC inside the restaurant is the service-hour source of truth.
-- Convex cloud is used for owner login, restaurant ownership, hub connection, synced audit events, command queue, and closed-day reports.
+- Convex cloud is used for owner login, restaurant ownership, hub connection, synced audit events, command queue, and finalized business-day reports.
 
 ## Monorepo Shape
 
@@ -46,13 +46,12 @@ Responsibilities:
 
 - Owns the local SQLite database.
 - Runs Drizzle migrations at startup.
-- Bridges old custom migration metadata into Drizzle metadata for existing dev hub DBs.
 - Exposes a LAN REST API and WebSocket endpoint.
 - Serves the local hub React UI.
 - Stores local device tokens for offline authentication.
 - Creates pairing QR/manual codes for phones.
 - Manages floors, tables, kitchens/counters, dishes, sale/tax groups, ticket templates, manager PIN, printers, backups, and cloud sync.
-- Runs the service flow: table selection, order entry, KOT/BOT creation, billing, payment recording, NC bills, revisions, and day close.
+- Runs the service flow: table selection, order entry, KOT/BOT creation, billing, payment recording, NC bills, revisions, and automatic 6 AM IST business-day reporting.
 - Creates durable print jobs and retries failed jobs.
 - Writes an append-only local event log and sync outbox.
 - Uploads events/reports to Convex when internet is available.
@@ -60,10 +59,10 @@ Responsibilities:
 
 Hub UI sections in the React renderer:
 
-- `Setup`: POS day open, floors, tables, kitchens/counters, dishes.
+- `Setup`: automatic business-day status, floors, tables, kitchens/counters, dishes.
 - `Take Orders`: floor/table view, menu, open items, table check, KOT/BOT send, table/item shift, bill panel.
 - `Kitchen`: KDS ticket list and KOT/BOT status controls.
-- `Reports & Backups`: day close summary, close day, local daily reports.
+- `Reports & Backups`: current business-day summary, finalized local daily reports, and backups.
 - `Advanced`: manager PIN, sale/tax groups, print text/template settings, printers/backups/sync support surfaces.
 
 ### 2. Android Mobile App
@@ -104,7 +103,7 @@ Responsibilities:
 - Create a hub connection for a restaurant. This generates `POS_INSTALLATION_ID` and `POS_SYNC_SECRET` and shows an env block for the hub PC.
 - Show hub installation health and recent synced events.
 - Queue advanced support commands for the hub.
-- Show cloud daily reports after the hub closes a POS day and syncs.
+- Show cloud daily reports after the hub finalizes a 6 AM IST business day and syncs.
 
 Cloud portal roles:
 
@@ -144,8 +143,8 @@ Local hub/mobile device roles are defined in `packages/shared/src/types.ts`:
 
 Current local permission model:
 
-- `admin`: full hub setup/admin permissions, device pairing/revoke, sync, backups, settings, printer setup, day operations.
-- `cashier`: POS day, order/billing/report/print operation permissions. Sensitive actions still require manager PIN where applicable.
+- `admin`: full hub setup/admin permissions, device pairing/revoke, sync, backups, settings, printer setup, and reports.
+- `cashier`: order/billing/report/print operation permissions. Sensitive actions still require manager PIN where applicable.
 - `captain`: mobile/floor service role. Can submit orders, view running orders, shift own open tables/items, and receive ready alerts.
 - `waiter`: mobile/basic order-taking role. Can submit/view orders, cannot shift tables/items.
 - `kitchen`: KDS role. Can view kitchen/bar tickets and update KOT/BOT statuses.
@@ -237,7 +236,7 @@ Migration behavior:
 
 - Drizzle migrations live in `apps/hub-electron/drizzle`.
 - Hub startup runs Drizzle migrations.
-- `HubDatabase` includes a compatibility bridge for old DBs that were created before Drizzle migration metadata existed. It marks already-present schemas as applied, then lets Drizzle run the remaining migrations.
+- The product is still in development and has no production users yet, so the repo does not keep legacy SQLite compatibility bridges. If an old local dev DB conflicts with current migrations, delete/recreate the dev DB instead of adding backwards-compatibility code.
 
 ## Restaurant Setup Data
 
@@ -282,6 +281,7 @@ Menu item fields:
 - optional kitchen/counter
 - sale group
 - active flag
+- internal sellable variants in `menu_item_variants`
 
 If a dish has no kitchen/counter:
 
@@ -289,6 +289,39 @@ If a dish has no kitchen/counter:
 - it does not generate a KOT/BOT until assigned to a kitchen/counter.
 
 No modifier/spice/note-template catalog is currently part of the implemented basic dish setup.
+
+### Alcohol Catalog And Stock
+
+Alcohol is managed as a dedicated Hub feature while still selling under the Alcohol sale group/BOT flow.
+
+Alcohol item types:
+
+- `plain_liquor`: stock-managed bottle/shot liquor.
+- `prepared_product`: cocktail/alcohol product sold like a normal menu item, with optional liquor recipe ingredients.
+
+Plain liquor uses variants for sellable prices:
+
+- shot, usually 30 ml, deducts large/open stock,
+- small bottle, deducts sealed small bottle count,
+- large bottle, deducts sealed large bottle count.
+
+Prepared alcohol products use one regular/default non-stock variant. Their recipe can list one or more plain liquors with ml per sold unit.
+
+Stock rules:
+
+- Alcohol stock is local Hub-only for v1.
+- Stock is deducted only when a bill is paid/settled.
+- Pending unpaid orders show as pending expected usage on the Storage tab.
+- Shots and cocktails consume open large ml first, then auto-open sealed large bottles, then allow negative open ml if insufficient.
+- Small bottle sales reduce sealed small count.
+- Large bottle sales reduce sealed large count.
+- Manual stock edits require Manager PIN.
+
+Important snapshot rule:
+
+- `order_items` stores variant label/volume, inventory action, unit price, tax/group/routing snapshots, and `alcohol_recipe_snapshot_json`.
+- Settlement and pending stock use the order-time recipe snapshot, not the current live cocktail recipe.
+- Catalog/recipe/price edits must not rewrite old open order or printed bill line values.
 
 ### Sale / Tax Groups
 
@@ -311,14 +344,14 @@ Sale groups affect:
 
 ## Order Flow
 
-1. POS day must be open.
+1. The hub automatically assigns the order to the current 6 AM IST business day.
 2. User selects a table.
 3. User adds menu dishes or open items.
 4. Draft items are local UI state until sent.
 5. Submit order calls `/orders/submit`.
 6. Hub validates role and token.
 7. Hub creates or updates the table's open order.
-8. Hub stores item snapshots: name, price, sale group, tax info, ticket label, kitchen/counter.
+8. Hub stores item snapshots: name, price, variant, sale group, tax info, ticket label, kitchen/counter, inventory action, and alcohol recipe where relevant.
 9. Hub creates KOT/BOT only for items with a kitchen/counter.
 10. Hub creates print jobs for generated KOT/BOT.
 11. Hub appends events to `event_log` and `sync_outbox`.
@@ -360,6 +393,8 @@ Important rule:
 - The Dishes setup list remains clean.
 - Open items still print, bill, tax, and report using their snapshots.
 
+Menu catalog items also snapshot their sellable values at order time. Normal client order payloads submit menu item id + variant id; the Hub service resolves and stores the authoritative price.
+
 ## Table And Item Movement
 
 Implemented movement:
@@ -379,6 +414,8 @@ Movement behavior:
 - Movement audit is written to `order_movements`.
 - Event is appended to `event_log`.
 - Transfer KOT/BOT tickets are created where kitchen/bar context needs to remain aligned.
+- Selected item movement copies the source order-item snapshot.
+- A moved item merges into an existing target row only if the full snapshot matches, including price, variant, recipe, tax, group, and routing.
 
 ## Billing Flow
 
@@ -453,6 +490,8 @@ Implemented revision behavior:
 - Revised KOT/BOT is queued where item changes affect kitchen/bar.
 - Revision is blocked after any normal payment has been recorded.
 - NC bills cannot be revised through the normal revision button.
+- Existing printed bill lines submitted with their `orderItemId` preserve the original price, variant, recipe, tax/group, and routing snapshots unless the request explicitly performs a manager-approved edit.
+- Catalog price or recipe changes after bill print must not reprice old bill lines during quantity-only revision.
 
 ## NC Bills
 
@@ -519,17 +558,21 @@ Flow:
 
 No OS push notification service is currently implemented; ready alerts are hub-polled.
 
-## Day Close And Reports
+## Business Day And Reports
 
-Hub day close computes and stores a finalized local report snapshot.
+The hub uses a Petpooja-style automatic business day:
 
-Close summary/report includes:
+- every business day starts at 6:00 AM IST,
+- every business day ends at the next 6:00 AM IST,
+- staff do not manually open or close the day,
+- new orders after 6:00 AM IST go into the new business date.
+
+When the boundary has passed, the hub automatically finalizes old settled business days. If an old business day still has open or billed tables, the hub waits until those tables are paid or cancelled, then finalizes that day.
+
+Current/finalized summary includes:
 
 - business date,
-- opening cash,
-- closing cash entered,
-- expected closing cash,
-- cash variance,
+- period start/end,
 - bill count,
 - gross sales,
 - discounts,
@@ -545,10 +588,10 @@ Close summary/report includes:
 
 Rules:
 
-- Day close is blocked while open/billed orders remain unsettled or uncancelled.
-- Day close saves report locally.
-- Day close queues a `daily_report.finalized` style synced event through the event/outbox flow.
-- Cloud sync attempts when internet is available, but local day close is not intended to depend on internet.
+- Report finalization waits while open/billed orders remain unsettled or uncancelled.
+- Finalization saves the report locally.
+- Finalization queues a `daily_report.finalized` synced event through the event/outbox flow.
+- Cloud sync attempts when internet is available, but local finalization does not depend on internet.
 
 Cloud reports:
 
@@ -636,9 +679,7 @@ Routes currently registered:
 - `GET /orders/:id`
 - `GET /notifications/ready`
 - `GET /realtime` WebSocket
-- `POST /pos-days/open`
-- `POST /pos-days/close`
-- `GET /pos-days/close-summary`
+- `GET /business-day/current-summary`
 - `GET /reports/daily`
 - `GET /reports/daily/:posDayId`
 - `POST /orders/submit`
@@ -711,7 +752,7 @@ These are not hallucinated features; they are current operational notes:
 - Real restaurant printer hardware must still be tested on Windows with actual installed/network printers.
 - Mobile ready alerts are polling-based, not native push notifications.
 - Cloud admin has a `dev` and `typecheck` script, but no package-level `build` script in `apps/cloud-admin/package.json`.
-- Hub is the live source of truth; cloud reports appear after hub day close and sync.
+- Hub is the live source of truth; cloud reports appear after the hub finalizes a 6 AM IST business day and syncs.
 - The system is not a payment gateway; UPI/card/online payments are manually recorded by cashier.
 - Convex cloud is not used as the live order database.
 - SQLite should not be shared over a network file system.
@@ -726,4 +767,3 @@ These commands have passed after the latest fixes:
 - `pnpm --filter @gaurav-pos/hub-electron build`
 - `node --check apps/hub-electron/src/public/app.js`
 - `npx tsc --noEmit --project convex/tsconfig.json`
-

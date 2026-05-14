@@ -69,7 +69,7 @@ export default function CloudAdminHome() {
         <div>
           <span className="product-mark">Gaurav POS</span>
           <h1>Owner Portal</h1>
-          <p>Connect the restaurant hub, invite cloud users, and read closed-day reports.</p>
+          <p>Connect the restaurant hub, invite cloud users, and read finalized business-day reports.</p>
         </div>
         {user ? (
           <div className="topbar-actions">
@@ -214,7 +214,7 @@ function CloudDashboard({ userLabel }: { userLabel: string }) {
         <div className="identity-card">
           <span className="eyebrow">Signed in</span>
           <strong>{userLabel}</strong>
-          <p>Reports are available here after the hub closes and syncs a POS day.</p>
+          <p>Reports appear here after the hub finalizes a 6 AM business day and syncs.</p>
         </div>
 
         <label className="field-label">
@@ -347,7 +347,6 @@ function ReportsSection({
     tipPaise: number;
     finalSalesPaise: number;
     totalPaymentsPaise: number;
-    cashVariancePaise: number;
     finalizedAt: string;
   }>;
   selectedDate: string;
@@ -356,10 +355,6 @@ function ReportsSection({
     | {
         report: {
           businessDate: string;
-          openingCashPaise: number;
-          closingCashPaise: number;
-          expectedClosingCashPaise: number;
-          cashVariancePaise: number;
           grossSalesPaise: number;
           discountPaise: number;
           tipPaise: number;
@@ -392,8 +387,8 @@ function ReportsSection({
     return (
       <section className="admin-panel">
         <span className="eyebrow">Reports</span>
-        <h2>No closed-day reports yet</h2>
-        <p>Close a POS day in the hub. When the hub syncs, the full day report will appear here.</p>
+        <h2>No finalized reports yet</h2>
+        <p>The hub finalizes each business day after the 6 AM IST boundary once old tables are settled or cancelled. Synced reports will appear here.</p>
       </section>
     );
   }
@@ -403,7 +398,7 @@ function ReportsSection({
     <div className="cloud-report-layout">
       <section className="admin-panel">
         <span className="eyebrow">Reports</span>
-        <h2>Closed days</h2>
+        <h2>Finalized business days</h2>
         <label className="field-label date-picker">
           Business date
           <select value={selectedDate} onChange={(event) => onSelectDate(event.target.value)}>
@@ -438,9 +433,6 @@ function ReportsSection({
               <Metric label="UPI" value={money(report.upiPaymentsPaise)} />
               <Metric label="Card" value={money(report.cardPaymentsPaise)} />
               <Metric label="Online" value={money(report.onlinePaymentsPaise)} />
-              <Metric label="Expected cash" value={money(report.expectedClosingCashPaise)} />
-              <Metric label="Actual cash" value={money(report.closingCashPaise)} />
-              <Metric label="Cash variance" value={money(report.cashVariancePaise)} />
               <Metric label="Bills" value={String(report.billCount)} />
             </div>
 
@@ -494,7 +486,7 @@ function ReportsSection({
             </div>
           </>
         ) : (
-          <EmptyState title="Report loading" text="Choose a closed day to see sales, payments, bills, and item totals." />
+          <EmptyState title="Report loading" text="Choose a finalized business day to see sales, payments, bills, and item totals." />
         )}
       </section>
     </div>
@@ -571,7 +563,7 @@ function SetupSection({
       <section className="admin-panel step-panel">
         <span className="step-number">3</span>
         <h2>Confirm sync</h2>
-        <p>{activeHubCount > 0 ? "The hub has checked in. Reports will arrive after day close." : "Start the hub app. This portal will show the hub as connected after it syncs."}</p>
+        <p>{activeHubCount > 0 ? "The hub has checked in. Reports will arrive after each 6 AM business-day finalization." : "Start the hub app. This portal will show the hub as connected after it syncs."}</p>
       </section>
     </div>
   );

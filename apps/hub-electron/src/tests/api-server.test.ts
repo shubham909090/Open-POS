@@ -330,7 +330,75 @@ describe("Hub API auth and service flow", () => {
     database.close();
   });
 
-  it("reprints a generated bill and closes the POS day after settlement", async () => {
+  it("allows cashier stock edits with manager PIN and exposes alcohol movement reports", async () => {
+    const { app, database } = createTestServer();
+    const adminHeaders = { "x-device-token": "test-admin-token" };
+    const pairingResponse = await app.inject({
+      method: "POST",
+      url: "/devices/pairing-codes",
+      headers: adminHeaders,
+      payload: { deviceName: "Cashier tablet", role: "cashier", expiresInMinutes: 10 }
+    });
+    const pairing = pairingResponse.json<{ code: string }>();
+    const exchangeResponse = await app.inject({
+      method: "POST",
+      url: "/devices/pair/exchange",
+      payload: { code: pairing.code, deviceName: "Cashier tablet" }
+    });
+    const cashier = exchangeResponse.json<{ token: string }>();
+    await app.inject({
+      method: "PUT",
+      url: "/settings/manager-pin",
+      headers: adminHeaders,
+      payload: { newPin: "1234", updatedBy: "admin" }
+    });
+    const alcoholResponse = await app.inject({
+      method: "POST",
+      url: "/alcohol/items",
+      headers: adminHeaders,
+      payload: {
+        type: "plain_liquor",
+        name: "Cashier Whisky",
+        productionUnitId: "unit-bar",
+        largeBottleMl: 750,
+        smallBottleMl: 180,
+        sealedLargeCount: 0,
+        openLargeMl: 0,
+        sealedSmallCount: 0,
+        variants: [{ label: "30 ml", kind: "shot", pricePaise: 10_000, volumeMl: 30, inventoryAction: "large_ml", sortOrder: 0, active: true }],
+        recipeIngredients: []
+      }
+    });
+    const alcohol = alcoholResponse.json<{ id: string }>();
+
+    const adjustResponse = await app.inject({
+      method: "POST",
+      url: `/alcohol/stock/${alcohol.id}/adjust`,
+      headers: { "x-device-token": cashier.token },
+      payload: {
+        mode: "delta",
+        sealedLargeCount: 2,
+        managerApproval: { pin: "1234", reason: "Alcohol stock edit", approvedBy: "manager" }
+      }
+    });
+    const movementsResponse = await app.inject({
+      method: "GET",
+      url: "/reports/alcohol-stock-movements",
+      headers: { "x-device-token": cashier.token }
+    });
+
+    expect(adjustResponse.statusCode).toBe(200);
+    expect(movementsResponse.statusCode).toBe(200);
+    expect(movementsResponse.json<Array<{ item_name: string; source_type: string }>>()[0]).toMatchObject({
+      item_name: "Cashier Whisky",
+      source_type: "manual_adjustment"
+    });
+
+    await app.close();
+    database.close();
+  });
+
+  it("reprints a generated bill and exposes current business-day summary after settlement", async () => {
     const { app, database } = createTestServer();
     const headers = { "x-device-token": "test-admin-token" };
     await app.inject({
@@ -377,15 +445,15 @@ describe("Hub API auth and service flow", () => {
       headers,
       payload: { method: "cash", amountPaise: bill.totalPaise, receivedBy: "cashier-1" }
     });
-    const closeResponse = await app.inject({
-      method: "POST",
-      url: "/pos-days/close",
-      headers,
-      payload: { closingCashPaise: 100_000, closedBy: "admin" }
+    const summaryResponse = await app.inject({
+      method: "GET",
+      url: "/business-day/current-summary",
+      headers
     });
 
     expect(reprintResponse.statusCode).toBe(200);
-    expect(closeResponse.statusCode).toBe(200);
+    expect(summaryResponse.statusCode).toBe(200);
+    expect(summaryResponse.json()).toMatchObject({ paidBills: 1, unpaidBills: 0 });
     expect(database.db.prepare("SELECT COUNT(*) AS count FROM print_jobs WHERE target_type = 'BILL'").get()).toEqual({
       count: 2
     });
