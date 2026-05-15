@@ -143,6 +143,31 @@ describe("HubClient", () => {
     );
   });
 
+  it("loads kitchen tickets and updates KOT status for kitchen devices", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response(JSON.stringify([{ id: "kot-1", table_name: "T1", status: "queued", items: [] }]), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ id: "kot-1", status: "ready" }), { status: 200 }));
+
+    const client = new HubClient("http://hub.local:3737", "kitchen-token");
+    const tickets = await client.kds("unit-kitchen");
+    await client.updateKotStatus("kot-1", "ready");
+
+    expect(tickets).toHaveLength(1);
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "http://hub.local:3737/kds/unit-kitchen",
+      expect.objectContaining({ headers: expect.objectContaining({ "x-device-token": "kitchen-token" }) })
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "http://hub.local:3737/kot/kot-1/status",
+      expect.objectContaining({
+        method: "PATCH",
+        body: JSON.stringify({ status: "ready" })
+      })
+    );
+  });
+
   it("uses captain billing routes with idempotency keys and manager approval payloads", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(new Response(JSON.stringify({ billId: "bill-1", totalPaise: 12100 }), { status: 200 }))

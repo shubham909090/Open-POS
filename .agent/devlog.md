@@ -1,5 +1,53 @@
 # Devlog
 
+## 2026-05-16
+
+- Task: Polished the mobile APK role experience and added the missing kitchen-device flow.
+- APK behavior: phones paired as kitchen now open a dedicated KDS screen with enabled counters, active ticket cards, item quantities, and Start / Ready / Served status actions. Waiter/captain transfer targets continue to include running active tables with clearer target status labels.
+- APK polish: Android top spacing now has a fallback safe-area inset so the header does not bleed into the status bar on devices where Expo does not report `StatusBar.currentHeight`.
+- Verification: mobile tests, mobile typecheck/lint, and `git diff --check` passed.
+
+## 2026-05-16
+
+- Task: Added bulk CSV import for menu dishes and alcohol catalog items.
+- Backend: new admin-only CSV import endpoints create normal dishes, plain liquor stock, and prepared alcohol products while returning per-row success/error results.
+- Hub UI: Setup > Dishes and Alcohol > Add Alcohol Item now have compact CSV import panels with downloadable templates, file upload, import status, and row-level error summaries. Follow-up polish removed extra visible explanation copy and fixed setup/import/transfer buttons that were inheriting the heavy black global button style.
+- Verification: import API tests, hub typecheck/lint, renderer build, and `git diff --check` passed.
+
+## 2026-05-16
+
+- Task: Started the POS UI/UX rescue pass across Hub and APK operational flows.
+- Hub changes: added `.agent/ui-ux-rescue-plan.md`, made KDS respect `kds_enabled`, added full-table transfer into running target tables, replaced the shift panel with full/partial transfer controls, stabilized recent-menu tracking, improved table/button contrast, collapsed saved cloud/printer forms, hid backup UI from normal Reports, removed kitchen routing from Sale & Tax Categories, added role cards to device pairing, and expanded current/closed reports with payment/category/bill/item detail.
+- APK changes: transfer targets now include active running tables, and transfer copy/buttons show full table vs selected quantity behavior.
+- Verification: Hub typecheck/lint/tests passed, mobile typecheck/lint/tests passed, and targeted order/store tests passed after the final UI edits.
+- Follow-up notes: Split-payment polish, printer hardware boldness validation, full dashboard visual review, and user visual sign-off remain open in the tracker.
+
+## 2026-05-16
+
+- Task: Corrected the first visible polish regressions from the rescue UI pass.
+- Hub UI fixes: role cards no longer inherit the global black button style, topbar refresh no longer renders as a black square, printer test actions are compact secondary buttons, menu/alcohol variant buttons now fill stable cells instead of cramming into 44px, and report payment/detail grids collapse correctly in nested closed-day rows.
+- Verification: Hub typecheck, hub lint, targeted hub tests, `git diff --check`, and hub renderer build passed.
+
+## 2026-05-16
+
+- Task: Fixed transfer/menu/support polish issues caught during visual review.
+- Hub UI fixes: item transfer rows now use a minus/input/plus quantity control and clamp to the available quantity, single-dish add buttons center the plus icon, and Advanced support tools use compact utility styling instead of oversized black primary buttons.
+- Verification: Hub typecheck, hub lint, targeted hub tests, hub renderer build, and `git diff --check` passed.
+
+## 2026-05-16
+
+- Task: Added the missing running-table operational shortcuts in the Hub Take Orders table rail.
+- Hub behavior: table rows in bootstrap now include live order total and sent item count, computed from active order items and tax components.
+- Hub UX: running and bill-printed table tiles now show the live rupee total and expose direct Sent and Bill shortcuts, opening the selected table directly in the sent-items or billing tab.
+- Verification: `pnpm --filter @gaurav-pos/hub-electron test -- src/tests/order-service.test.ts`, `pnpm --filter @gaurav-pos/hub-electron typecheck`, `pnpm --filter @gaurav-pos/hub-electron lint`, `pnpm --filter @gaurav-pos/hub-electron build:renderer`, and `git diff --check` passed.
+
+## 2026-05-16
+
+- Task: Reduced setup/report clutter and fixed utility button presentation.
+- Hub UX: Transfer table/items is collapsed by default. Setup sections now collapse when already ready and auto-collapse after save; Business Day is just a compact summary; printer layout templates are tucked behind a nested collapsible control.
+- Hub polish: support tools, print-test buttons, and alcohol tabs use tighter utility/segmented styling. Reports now use a one-column layout, compact business-day metadata, and Load more pagination for closed reports, bill details, item summaries, and alcohol stock movements.
+- Verification: `pnpm --filter @gaurav-pos/hub-electron typecheck`, `pnpm --filter @gaurav-pos/hub-electron lint`, `pnpm --filter @gaurav-pos/hub-electron build:renderer`, and `git diff --check` passed.
+
 ## 2026-05-15
 
 - Task: Fixed Android mobile header overlap with the system status bar.

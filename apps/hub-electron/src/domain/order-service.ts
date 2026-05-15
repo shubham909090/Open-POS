@@ -200,6 +200,18 @@ interface BillTotals {
   taxBreakdown: TaxComponentAmount[];
 }
 
+type CsvImportResult = {
+  created: number;
+  failed: number;
+  ids: string[];
+  errors: Array<{ row: number; message: string }>;
+};
+
+type CsvRow = {
+  rowNumber: number;
+  values: Record<string, string>;
+};
+
 interface DaySummary {
   businessDay: {
     id: string;
@@ -909,14 +921,23 @@ export class OrderService {
   }
 
   listTables(): unknown[] {
-    return this.db
+    const rows = this.db
       .prepare(
         `SELECT t.id, t.floor_id, f.name AS floor_name, t.name, t.active, t.status, t.current_order_id, t.occupied_at
          FROM restaurant_tables t
          JOIN floors f ON f.id = t.floor_id
          ORDER BY t.active DESC, f.name, t.name`
       )
-      .all();
+      .all() as Array<Record<string, unknown> & { current_order_id: string | null }>;
+    const summaries = this.getCurrentOrderSummaries(rows.map((row) => row.current_order_id).filter((id): id is string => Boolean(id)));
+    return rows.map((row) => {
+      const summary = row.current_order_id ? summaries.get(row.current_order_id) : null;
+      return {
+        ...row,
+        current_order_total_paise: summary?.totalPaise ?? 0,
+        sent_item_count: summary?.itemCount ?? 0
+      };
+    });
   }
 
   listKds(productionUnitId: string): unknown[] {
@@ -927,7 +948,8 @@ export class OrderService {
          FROM kots k
          JOIN orders o ON o.id = k.order_id
          JOIN restaurant_tables t ON t.id = o.table_id
-         WHERE k.production_unit_id = ? AND k.status IN ('queued', 'preparing', 'ready')
+         JOIN production_units pu ON pu.id = k.production_unit_id
+         WHERE k.production_unit_id = ? AND pu.kds_enabled = 1 AND k.status IN ('queued', 'preparing', 'ready')
          ORDER BY k.created_at ASC`
       )
       .all(productionUnitId);
@@ -1188,6 +1210,33 @@ export class OrderService {
     return { id };
   }
 
+  importMenuItemsFromCsv(csv: string): CsvImportResult {
+    const rows = this.parseCsvRows(csv);
+    const result: CsvImportResult = { created: 0, failed: 0, ids: [], errors: [] };
+    for (const row of rows) {
+      try {
+        const name = this.requireCsvText(row, ["name", "item_name", "dish_name"]);
+        if (this.findMenuItemIdByName(name)) throw new DomainError(`Menu item "${name}" already exists`);
+        const pricePaise = this.csvMoneyToPaise(this.requireCsvText(row, ["price", "price_rupees", "rate"]));
+        const productionUnitId = this.resolveProductionUnitRef(this.csvText(row, ["kitchen_or_counter", "kitchen", "counter", "production_unit"]));
+        const saleGroupId = this.resolveSaleGroupRef(this.csvText(row, ["sale_category", "sale_group", "category"]) || "Food");
+        const created = this.createMenuItem({
+          name,
+          pricePaise,
+          productionUnitId,
+          saleGroupId,
+          active: this.csvBoolean(this.csvText(row, ["active"]), true)
+        });
+        result.created += 1;
+        result.ids.push(created.id);
+      } catch (error) {
+        result.failed += 1;
+        result.errors.push({ row: row.rowNumber, message: error instanceof Error ? error.message : "Could not import row" });
+      }
+    }
+    return result;
+  }
+
   updateMenuItem(id: string, input: UpdateMenuItemInput): { id: string } {
     if (input.productionUnitId) this.requireProductionUnit(input.productionUnitId);
     if (input.saleGroupId) this.requireSaleGroup(input.saleGroupId);
@@ -1365,6 +1414,67 @@ export class OrderService {
       return item;
     });
     return run();
+  }
+
+  importAlcoholItemsFromCsv(csv: string, type: "plain_liquor" | "prepared_product"): CsvImportResult {
+    const rows = this.parseCsvRows(csv);
+    const result: CsvImportResult = { created: 0, failed: 0, ids: [], errors: [] };
+    for (const row of rows) {
+      try {
+        const name = this.requireCsvText(row, ["name", "item_name", "liquor_name", "product_name"]);
+        if (this.findMenuItemIdByName(name)) throw new DomainError(`Alcohol item "${name}" already exists`);
+        const productionUnitId = this.resolveProductionUnitRef(this.csvText(row, ["bar_counter", "kitchen_or_counter", "counter", "production_unit"]));
+        const active = this.csvBoolean(this.csvText(row, ["active"]), true);
+        const largeBottleMl = this.csvInteger(this.csvText(row, ["large_bottle_ml", "large_ml"]), 750);
+        const smallBottleMl = this.csvInteger(this.csvText(row, ["small_bottle_ml", "small_ml"]), 180);
+        const shotPricePaise = this.csvMoneyToPaiseOptional(this.csvText(row, ["shot_price", "price_30_ml", "thirty_ml_price"]));
+        const smallPricePaise = this.csvMoneyToPaiseOptional(this.csvText(row, ["small_bottle_price", "small_price"]));
+        const largePricePaise = this.csvMoneyToPaiseOptional(this.csvText(row, ["large_bottle_price", "large_price"]));
+        const plainVariants: CreateAlcoholItemInput["variants"] = [
+          ...(shotPricePaise > 0 ? [{ label: "30 ml", kind: "shot" as const, pricePaise: shotPricePaise, volumeMl: 30, inventoryAction: "large_ml" as const, sortOrder: 0, active: true }] : []),
+          ...(smallPricePaise > 0 ? [{ label: `${smallBottleMl} ml`, kind: "small_bottle" as const, pricePaise: smallPricePaise, volumeMl: smallBottleMl, inventoryAction: "small_bottle" as const, sortOrder: 1, active: true }] : []),
+          ...(largePricePaise > 0 ? [{ label: `${largeBottleMl} ml`, kind: "large_bottle" as const, pricePaise: largePricePaise, volumeMl: largeBottleMl, inventoryAction: "large_bottle" as const, sortOrder: 2, active: true }] : [])
+        ];
+        const created = type === "plain_liquor"
+          ? this.createAlcoholItem({
+              type,
+              name,
+              productionUnitId,
+              largeBottleMl,
+              smallBottleMl,
+              sealedLargeCount: this.csvInteger(this.csvText(row, ["sealed_large_count", "large_bottles", "large_stock"]), 0),
+              openLargeMl: this.csvInteger(this.csvText(row, ["open_large_ml", "open_ml"]), 0),
+              sealedSmallCount: this.csvInteger(this.csvText(row, ["sealed_small_count", "small_bottles", "small_stock"]), 0),
+              variants: plainVariants,
+              recipeIngredients: [],
+              active
+            })
+          : this.createAlcoholItem({
+              type,
+              name,
+              productionUnitId,
+              variants: [
+                {
+                  label: "Regular",
+                  kind: "default",
+                  pricePaise: this.csvMoneyToPaise(this.requireCsvText(row, ["price", "price_rupees", "rate"])),
+                  volumeMl: null,
+                  inventoryAction: "none",
+                  sortOrder: 0,
+                  active: true
+                }
+              ],
+              recipeIngredients: this.parseAlcoholRecipeCsv(this.csvText(row, ["recipe", "recipe_ml", "ingredients"])),
+              active
+            });
+        result.created += 1;
+        result.ids.push(created.id);
+      } catch (error) {
+        result.failed += 1;
+        result.errors.push({ row: row.rowNumber, message: error instanceof Error ? error.message : "Could not import row" });
+      }
+    }
+    return result;
   }
 
   updateAlcoholItem(id: string, input: UpdateAlcoholItemInput): { id: string } {
@@ -1905,6 +2015,33 @@ export class OrderService {
   }
 
   moveTable(input: MoveTableInput, actor: DeviceActor): { fromTableId: string; toTableId: string; orderId: string; kotIds: string[] } {
+    const targetPreview = this.requireTable(input.toTableId);
+    if (targetPreview.current_order_id) {
+      const fromTable = this.requireTable(input.fromTableId);
+      if (!fromTable.current_order_id) throw new DomainError("Source table has no running order");
+      const order = this.requireOrderById(fromTable.current_order_id);
+      this.assertCanMoveOrder(order, actor, "items");
+      const items = this.getOrderItems(order.id)
+        .filter((item) => item.status !== "cancelled" && item.quantity > 0)
+        .map((item) => ({ orderItemId: item.id, quantity: item.quantity }));
+      if (!items.length) throw new DomainError("Source table has no movable items");
+      const movement = this.moveOrderItems(
+        {
+          fromTableId: input.fromTableId,
+          toTableId: input.toTableId,
+          reason: `Full table transfer: ${input.reason}`,
+          items
+        },
+        actor
+      );
+      return {
+        fromTableId: input.fromTableId,
+        toTableId: input.toTableId,
+        orderId: movement.toOrderId,
+        kotIds: [...movement.sourceKotIds, ...movement.targetKotIds]
+      };
+    }
+
     const run = this.db.transaction(() => {
       const fromTable = this.requireTable(input.fromTableId);
       const toTable = this.requireTable(input.toTableId);
@@ -2480,6 +2617,31 @@ export class OrderService {
     };
   }
 
+  private getCurrentOrderSummaries(orderIds: string[]): Map<string, { totalPaise: number; itemCount: number }> {
+    const uniqueOrderIds = [...new Set(orderIds)];
+    if (uniqueOrderIds.length === 0) return new Map();
+    const placeholders = uniqueOrderIds.map(() => "?").join(",");
+    const rows = this.db
+      .prepare(
+        `SELECT order_id, unit_price_paise, quantity, tax_components_json
+         FROM order_items
+         WHERE order_id IN (${placeholders})
+           AND status != 'cancelled'
+           AND quantity > 0`
+      )
+      .all(...uniqueOrderIds) as Array<{ order_id: string; unit_price_paise: number; quantity: number; tax_components_json: string }>;
+    const summaries = new Map<string, { totalPaise: number; itemCount: number }>();
+    for (const item of rows) {
+      const lineSubtotal = calculateLineTotal(item.unit_price_paise, item.quantity);
+      const taxPaise = calculateTaxComponents(lineSubtotal, this.parseTaxComponents(item.tax_components_json)).reduce((total, component) => total + component.amountPaise, 0);
+      const current = summaries.get(item.order_id) ?? { totalPaise: 0, itemCount: 0 };
+      current.totalPaise += lineSubtotal + taxPaise;
+      current.itemCount += item.quantity;
+      summaries.set(item.order_id, current);
+    }
+    return summaries;
+  }
+
   private deductAlcoholStockForPaidBill(billId: string, orderId: string): void {
     const existing = this.orm
       .select({ id: alcoholStockMovements.id })
@@ -2752,6 +2914,158 @@ export class OrderService {
       .get(id) as SaleGroupRow | undefined;
     if (!group) throw new DomainError("Sale group not found", 404);
     return group;
+  }
+
+  private findMenuItemIdByName(name: string): string | null {
+    const row = this.db
+      .prepare("SELECT id FROM menu_items WHERE lower(name) = lower(?) LIMIT 1")
+      .get(name.trim()) as { id: string } | undefined;
+    return row?.id ?? null;
+  }
+
+  private resolveProductionUnitRef(value: string | null): string | null {
+    const ref = value?.trim();
+    if (!ref) return null;
+    const row = this.db
+      .prepare("SELECT id FROM production_units WHERE active = 1 AND (lower(id) = lower(?) OR lower(name) = lower(?)) LIMIT 1")
+      .get(ref, ref) as { id: string } | undefined;
+    if (!row) throw new DomainError(`Kitchen/counter "${ref}" not found`);
+    return row.id;
+  }
+
+  private resolveSaleGroupRef(value: string): string {
+    const ref = value.trim();
+    const row = this.db
+      .prepare("SELECT id FROM sale_groups WHERE active = 1 AND (lower(id) = lower(?) OR lower(name) = lower(?) OR lower(report_label) = lower(?)) LIMIT 1")
+      .get(ref, ref, ref) as { id: string } | undefined;
+    if (!row) throw new DomainError(`Sale category "${ref}" not found`);
+    return row.id;
+  }
+
+  private resolvePlainLiquorRef(value: string): string {
+    const ref = value.trim();
+    const row = this.db
+      .prepare(
+        `SELECT mi.id
+         FROM menu_items mi
+         JOIN alcohol_profiles ap ON ap.menu_item_id = mi.id
+         WHERE ap.type = 'plain_liquor'
+           AND mi.active = 1
+           AND (lower(mi.id) = lower(?) OR lower(mi.name) = lower(?))
+         LIMIT 1`
+      )
+      .get(ref, ref) as { id: string } | undefined;
+    if (!row) throw new DomainError(`Plain liquor "${ref}" not found`);
+    return row.id;
+  }
+
+  private parseAlcoholRecipeCsv(value: string | null): Array<{ liquorMenuItemId: string; mlPerUnit: number }> {
+    if (!value?.trim()) return [];
+    return value
+      .split(/[;|]/)
+      .map((entry) => entry.trim())
+      .filter(Boolean)
+      .map((entry) => {
+        const [name, ml] = entry.split(":").map((part) => part.trim());
+        if (!name || !ml) throw new DomainError(`Recipe entry "${entry}" must look like Whisky:60`);
+        return { liquorMenuItemId: this.resolvePlainLiquorRef(name), mlPerUnit: this.csvInteger(ml, 0) };
+      });
+  }
+
+  private parseCsvRows(csv: string): CsvRow[] {
+    const records = this.parseCsvRecords(csv);
+    if (records.length < 2) throw new DomainError("CSV needs a header row and at least one item row");
+    const headerRecord = records[0];
+    if (!headerRecord) throw new DomainError("CSV header row is empty");
+    const headers = headerRecord.map((header) => this.normalizeCsvHeader(header));
+    if (!headers.some(Boolean)) throw new DomainError("CSV header row is empty");
+    return records
+      .slice(1)
+      .map((cells, index) => ({
+        rowNumber: index + 2,
+        values: Object.fromEntries(headers.map((header, cellIndex) => [header, (cells[cellIndex] ?? "").trim()]))
+      }))
+      .filter((row) => Object.values(row.values).some((value) => value.length > 0));
+  }
+
+  private parseCsvRecords(csv: string): string[][] {
+    const records: string[][] = [];
+    let row: string[] = [];
+    let cell = "";
+    let quoted = false;
+    for (let index = 0; index < csv.length; index += 1) {
+      const char = csv[index];
+      const next = csv[index + 1];
+      if (char === "\"") {
+        if (quoted && next === "\"") {
+          cell += "\"";
+          index += 1;
+        } else {
+          quoted = !quoted;
+        }
+      } else if (char === "," && !quoted) {
+        row.push(cell);
+        cell = "";
+      } else if ((char === "\n" || char === "\r") && !quoted) {
+        if (char === "\r" && next === "\n") index += 1;
+        row.push(cell);
+        if (row.some((value) => value.trim().length > 0)) records.push(row);
+        row = [];
+        cell = "";
+      } else {
+        cell += char;
+      }
+    }
+    row.push(cell);
+    if (row.some((value) => value.trim().length > 0)) records.push(row);
+    if (quoted) throw new DomainError("CSV has an unclosed quoted cell");
+    return records;
+  }
+
+  private normalizeCsvHeader(value: string): string {
+    return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+  }
+
+  private csvText(row: CsvRow, keys: string[]): string | null {
+    for (const key of keys) {
+      const value = row.values[this.normalizeCsvHeader(key)];
+      if (value?.trim()) return value.trim();
+    }
+    return null;
+  }
+
+  private requireCsvText(row: CsvRow, keys: string[]): string {
+    const value = this.csvText(row, keys);
+    if (!value) throw new DomainError(`Missing ${(keys[0] ?? "value").replaceAll("_", " ")}`);
+    return value;
+  }
+
+  private csvMoneyToPaise(value: string): number {
+    const amount = Number(value.replace(/[₹,\s]/g, ""));
+    if (!Number.isFinite(amount) || amount <= 0) throw new DomainError(`Invalid price "${value}"`);
+    return Math.round(amount * 100);
+  }
+
+  private csvMoneyToPaiseOptional(value: string | null): number {
+    if (!value?.trim()) return 0;
+    const amount = Number(value.replace(/[₹,\s]/g, ""));
+    if (!Number.isFinite(amount) || amount < 0) throw new DomainError(`Invalid price "${value}"`);
+    return Math.round(amount * 100);
+  }
+
+  private csvInteger(value: string | null, fallback: number): number {
+    if (!value?.trim()) return fallback;
+    const parsed = Number(value.replace(/,/g, "").trim());
+    if (!Number.isInteger(parsed)) throw new DomainError(`Invalid number "${value}"`);
+    return parsed;
+  }
+
+  private csvBoolean(value: string | null, fallback: boolean): boolean {
+    if (!value?.trim()) return fallback;
+    const normalized = value.trim().toLowerCase();
+    if (["true", "yes", "y", "1", "active"].includes(normalized)) return true;
+    if (["false", "no", "n", "0", "inactive", "disabled"].includes(normalized)) return false;
+    throw new DomainError(`Invalid active value "${value}"`);
   }
 
   private defaultAlcoholProductionUnitId(): string | null {

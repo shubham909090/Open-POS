@@ -48,6 +48,8 @@ export interface Table {
   status: "free" | "occupied" | "billed" | string;
   current_order_id: string | null;
   occupied_at: string | null;
+  current_order_total_paise: number;
+  sent_item_count: number;
 }
 
 export interface ProductionUnit {
@@ -302,7 +304,50 @@ export interface CloseSummary {
   onlinePaymentsPaise: number;
   totalPaymentsPaise: number;
   nonCashPaymentsPaise: number;
-  groupSummaries?: Array<{ name: string; kind: string; quantity: number; grossSalesPaise: number; taxPaise: number; finalSalesPaise: number; ncQuantity: number; ncGrossSalesPaise: number }>;
+  billSummaries?: ReportBillSummary[];
+  itemSummaries?: ReportItemSummary[];
+  groupSummaries?: ReportGroupSummary[];
+}
+
+export interface ReportBillSummary {
+  billId: string;
+  orderId: string;
+  tableName: string;
+  status: string;
+  totalPaise: number;
+  discountPaise: number;
+  tipPaise: number;
+  finalTotalPaise: number;
+  paidPaise: number;
+  settledAt: string | null;
+  payments: Array<{ method: string; amountPaise: number; reference: string | null }>;
+  isNc?: boolean;
+  ncReason?: string | null;
+  revisionNumber?: number;
+}
+
+export interface ReportItemSummary {
+  menuItemId: string;
+  name: string;
+  saleGroupId: string;
+  saleGroupName: string;
+  saleGroupKind: string;
+  quantity: number;
+  grossSalesPaise: number;
+  ncQuantity: number;
+  ncGrossSalesPaise: number;
+}
+
+export interface ReportGroupSummary {
+  saleGroupId: string;
+  name: string;
+  kind: string;
+  quantity: number;
+  grossSalesPaise: number;
+  taxPaise: number;
+  finalSalesPaise: number;
+  ncQuantity: number;
+  ncGrossSalesPaise: number;
 }
 
 export interface DailyReportRow {
@@ -316,6 +361,12 @@ export interface DailyReportRow {
   finalized_at: string;
 }
 
+export interface DailyReportDetail extends DailyReportRow {
+  billSummaries: ReportBillSummary[];
+  itemSummaries: ReportItemSummary[];
+  groupSummaries: ReportGroupSummary[];
+}
+
 export interface KdsTicket {
   id: string;
   sequence: number;
@@ -323,6 +374,13 @@ export interface KdsTicket {
   status: string;
   captain_id: string;
   items: Array<{ name_snapshot: string; quantity_delta: number }>;
+}
+
+export interface CsvImportResult {
+  created: number;
+  failed: number;
+  ids: string[];
+  errors: Array<{ row: number; message: string }>;
 }
 
 let authToken = localStorage.getItem("deviceToken") || "dev-admin-token";
@@ -368,6 +426,7 @@ export const hubApi = {
   tableOrder: (tableId: string) => apiFetch<TableOrder | null>(`/tables/${tableId}/order`),
   currentBusinessDaySummary: () => apiFetch<CloseSummary>("/business-day/current-summary"),
   dailyReports: () => apiFetch<DailyReportRow[]>("/reports/daily"),
+  dailyReport: (posDayId: string) => apiFetch<DailyReportDetail>(`/reports/daily/${posDayId}`),
   backups: () => apiFetch<BackupSummary[]>("/backups"),
   createBackup: (label: string) => apiFetch<BackupSummary>("/backups", { method: "POST", body: JSON.stringify({ label }) }),
   scheduleRestore: (fileName: string) =>
@@ -409,6 +468,8 @@ export const hubApi = {
   deleteUnit: (id: string) => apiFetch<{ id: string; deleted: boolean }>(`/production-units/${id}`, { method: "DELETE" }),
   createDish: (payload: { name: string; pricePaise: number; productionUnitId: string | null; saleGroupId?: string; active: boolean }) =>
     apiFetch<{ id: string }>("/menu-items", { method: "POST", body: JSON.stringify(payload) }),
+  importDishesCsv: (csv: string) =>
+    apiFetch<CsvImportResult>("/menu-items/import-csv", { method: "POST", body: JSON.stringify({ csv }) }),
   updateDish: (id: string, payload: { name?: string; pricePaise?: number; productionUnitId?: string | null; saleGroupId?: string; active?: boolean }) =>
     apiFetch<{ id: string }>(`/menu-items/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
   deleteDish: (id: string) => apiFetch<{ id: string; deleted: boolean }>(`/menu-items/${id}`, { method: "DELETE" }),
@@ -520,6 +581,8 @@ export const hubApi = {
   moveItems: (payload: { fromTableId: string; toTableId: string; reason: string; items: Array<{ orderItemId: string; quantity: number }> }) =>
     apiFetch<{ fromOrderId: string; toOrderId: string; sourceKotIds: string[]; targetKotIds: string[] }>("/orders/items/move", { method: "POST", body: JSON.stringify(payload) }),
   alcohol: () => apiFetch<AlcoholCatalog>("/alcohol"),
+  importAlcoholCsv: (type: "plain_liquor" | "prepared_product", csv: string) =>
+    apiFetch<CsvImportResult>("/alcohol/items/import-csv", { method: "POST", body: JSON.stringify({ type, csv }) }),
   createAlcoholItem: (payload: unknown) => apiFetch<{ id: string }>("/alcohol/items", { method: "POST", body: JSON.stringify(payload) }),
   updateAlcoholItem: (id: string, payload: unknown) => apiFetch<{ id: string }>(`/alcohol/items/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
   adjustAlcoholStock: (id: string, payload: unknown) => apiFetch<{ id: string }>(`/alcohol/stock/${id}/adjust`, { method: "POST", body: JSON.stringify(payload) }),

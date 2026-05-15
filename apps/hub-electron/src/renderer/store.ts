@@ -56,9 +56,8 @@ export const useHubStore = create<HubUiState>((set) => ({
       if (!variant && item.sale_group_kind === "alcohol") return state;
       const key = variant ? `${item.id}:${variant.id}` : item.id;
       const current = tableDraft[key];
-      const recentMenuItemIds = [item.id, ...state.recentMenuItemIds.filter((id) => id !== item.id)].slice(0, 12);
       return {
-        recentMenuItemIds,
+        recentMenuItemIds: [item.id, ...state.recentMenuItemIds.filter((id) => id !== item.id)].slice(0, 12),
         drafts: {
           ...state.drafts,
           [tableId]: {

@@ -1,18 +1,29 @@
 :root {
   color-scheme: light;
   --radius: 8px;
-  --ink: #0f172a;
-  --muted: #647067;
+
+  /* Canonical palette — synced with packages/shared/src/design-tokens.ts */
+  --ink: #191815;
+  --muted: #6b6560;
   --paper: #f5f5ef;
-  --panel: #fffefa;
-  --line: #d9ded4;
-  --line-strong: #a8b5ab;
+  --panel: #fffdf7;
+  --wash: #f0ead9;
+  --line: #d8cebd;
+  --line-strong: #a8a298;
   --accent: #0f766e;
   --accent-dark: #134e4a;
-  --danger: #b42318;
-  --warning: #a16207;
+  --accent-soft: #e5f3ed;
+  --danger: #a83a2f;
+  --danger-soft: #fff0ed;
+  --warning: #986022;
+  --warning-soft: #fff0d6;
   --blue: #1d4ed8;
-  --shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
+  --blue-soft: #eff6ff;
+  --sidebar: #0c211b;
+
+  --shadow: 0 12px 30px rgba(25, 24, 21, 0.08);
+  --shadow-lg: 0 18px 50px rgba(25, 24, 21, 0.1);
+
   font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-size: 15px;
   line-height: 1.4;

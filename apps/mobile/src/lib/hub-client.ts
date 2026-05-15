@@ -11,7 +11,7 @@ export interface HubBootstrap {
     active?: number | boolean;
     current_order_id: string | null;
   }>;
-  productionUnits: Array<{ id: string; name: string }>;
+  productionUnits: Array<{ id: string; name: string; active?: number | boolean; kds_enabled?: number | boolean }>;
   menuItems: Array<{
     id: string;
     name: string;
@@ -99,6 +99,15 @@ export interface ReadyNotification {
   createdAt: string;
 }
 
+export interface KdsTicket {
+  id: string;
+  sequence: number;
+  table_name: string;
+  status: "queued" | "preparing" | "ready" | "served" | "cancelled" | string;
+  captain_id: string;
+  items: Array<{ name_snapshot: string; quantity_delta: number }>;
+}
+
 export class HubClient {
   constructor(
     private readonly baseUrl: string,
@@ -154,6 +163,17 @@ export class HubClient {
 
   async readyNotifications(): Promise<ReadyNotification[]> {
     return this.request("/notifications/ready");
+  }
+
+  async kds(productionUnitId: string): Promise<KdsTicket[]> {
+    return this.request(`/kds/${productionUnitId}`);
+  }
+
+  async updateKotStatus(kotId: string, status: "queued" | "preparing" | "ready" | "served" | "cancelled"): Promise<{ id: string; status: string }> {
+    return this.request(`/kot/${kotId}/status`, {
+      method: "PATCH",
+      body: JSON.stringify({ status })
+    });
   }
 
   async generateBill(orderId: string, options: RequestOptions = {}): Promise<{ billId: string; totalPaise: number }> {

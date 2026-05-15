@@ -4,27 +4,30 @@ import { type ButtonHTMLAttributes, forwardRef } from "react";
 import { cn } from "../../lib/utils.js";
 
 const buttonVariants = cva(
-  "inline-flex min-h-9 items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-700/25 disabled:pointer-events-none disabled:opacity-45",
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/25 disabled:pointer-events-none disabled:opacity-45",
   {
     variants: {
       variant: {
-        default: "bg-slate-950 text-white hover:bg-slate-800",
-        secondary: "border border-slate-200 bg-white text-slate-900 hover:bg-slate-50",
-        ghost: "bg-transparent text-slate-700 hover:bg-slate-100",
-        danger: "bg-red-700 text-white hover:bg-red-800",
-        warning: "bg-amber-600 text-white hover:bg-amber-700"
+        default: "bg-ink text-white hover:bg-ink/85",
+        accent: "bg-accent text-white hover:bg-accent-dark",
+        secondary: "border border-line bg-panel text-ink hover:bg-wash",
+        ghost: "bg-transparent text-muted hover:bg-wash hover:text-ink",
+        danger: "bg-danger text-white hover:bg-danger/85",
+        warning: "bg-warning text-white hover:bg-warning/85",
       },
       size: {
         sm: "h-8 px-3 text-xs",
         md: "h-9 px-4",
         lg: "h-10 px-5",
-        icon: "h-9 w-9 p-0"
-      }
+        touch: "h-11 px-5 text-base",
+        icon: "h-9 w-9 p-0",
+        "icon-sm": "h-8 w-8 p-0",
+      },
     },
     defaultVariants: {
       variant: "default",
-      size: "md"
-    }
+      size: "md",
+    },
   }
 );
 

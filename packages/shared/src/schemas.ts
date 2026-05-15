@@ -155,6 +155,14 @@ export const createMenuItemSchema = z.object({
   customId: customIdSchema
 });
 
+export const importCsvSchema = z.object({
+  csv: z.string().min(1).max(2_000_000)
+});
+
+export const importAlcoholCsvSchema = importCsvSchema.extend({
+  type: z.enum(["plain_liquor", "prepared_product"])
+});
+
 export const updateMenuItemSchema = z.object({
   name: z.string().trim().min(1).max(160).optional(),
   pricePaise: z.number().int().min(1).optional(),
@@ -346,6 +354,8 @@ export type CreateProductionUnitInput = z.input<typeof createProductionUnitSchem
 export type UpdateProductionUnitInput = z.infer<typeof updateProductionUnitSchema>;
 export type CreateMenuItemInput = z.input<typeof createMenuItemSchema>;
 export type UpdateMenuItemInput = z.infer<typeof updateMenuItemSchema>;
+export type ImportCsvInput = z.infer<typeof importCsvSchema>;
+export type ImportAlcoholCsvInput = z.infer<typeof importAlcoholCsvSchema>;
 export type CreateAlcoholItemInput = z.input<typeof createAlcoholItemSchema>;
 export type UpdateAlcoholItemInput = z.infer<typeof updateAlcoholItemSchema>;
 export type AdjustAlcoholStockInput = z.infer<typeof adjustAlcoholStockSchema>;

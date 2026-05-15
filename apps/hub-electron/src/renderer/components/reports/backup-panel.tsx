@@ -1,0 +1,123 @@
+import { useMutation } from "@tanstack/react-query";
+import { useState } from "react";
+import { hubApi, type BackupSummary } from "../../hub-api.js";
+import { messageOf } from "../../lib/format.js";
+import { EmptyState } from "../ui/empty-state.js";
+
+export function BackupPanel({
+  backups,
+  loading,
+  onChanged,
+}: {
+  backups: BackupSummary[];
+  loading: boolean;
+  onChanged: () => Promise<unknown>;
+}) {
+  const [label, setLabel] = useState("");
+  const [restoreFile, setRestoreFile] = useState<string | null>(null);
+  const createBackup = useMutation({
+    mutationFn: () => hubApi.createBackup(label.trim() || "manual"),
+    onSuccess: async () => {
+      setLabel("");
+      await onChanged();
+    },
+  });
+  const scheduleRestore = useMutation({
+    mutationFn: hubApi.scheduleRestore,
+    onSuccess: async () => {
+      setRestoreFile(null);
+      await onChanged();
+    },
+  });
+
+  return (
+    <section className="panel">
+      <div className="panel-title">
+        <h2>Local backups</h2>
+        <span>{backups.length} saved</span>
+      </div>
+      <form
+        className="inline-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          createBackup.mutate();
+        }}
+      >
+        <label>
+          Backup label
+          <input
+            value={label}
+            onChange={(event) => setLabel(event.target.value)}
+            placeholder="before-menu-change"
+          />
+        </label>
+        <button type="submit" disabled={createBackup.isPending}>
+          {createBackup.isPending ? "Creating..." : "Create backup"}
+        </button>
+      </form>
+      {createBackup.error ? (
+        <p className="text-sm text-muted bad">{messageOf(createBackup.error)}</p>
+      ) : null}
+      {scheduleRestore.error ? (
+        <p className="text-sm text-muted bad">
+          {messageOf(scheduleRestore.error)}
+        </p>
+      ) : null}
+      <div className="record-list">
+        {loading ? (
+          <p className="text-sm text-muted">Loading backups...</p>
+        ) : null}
+        {!loading && backups.length === 0 ? (
+          <EmptyState
+            title="No backups yet"
+            description="Create a local backup before major setup changes or before testing a restore."
+          />
+        ) : null}
+        {backups.map((backup) => (
+          <article key={backup.fileName} className="record-row">
+            <div>
+              <strong>{backup.fileName}</strong>
+              <span>
+                {new Date(backup.createdAt).toLocaleString()} ·{" "}
+                {Math.ceil(backup.sizeBytes / 1024)} KB
+              </span>
+            </div>
+            {restoreFile === backup.fileName ? (
+              <div className="row-actions">
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={() => setRestoreFile(null)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="danger-button"
+                  disabled={scheduleRestore.isPending}
+                  onClick={() => scheduleRestore.mutate(backup.fileName)}
+                >
+                  Schedule restore
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                className="danger-button"
+                onClick={() => setRestoreFile(backup.fileName)}
+              >
+                Restore
+              </button>
+            )}
+          </article>
+        ))}
+      </div>
+      {restoreFile ? (
+        <p className="warning-text">
+          Restore is scheduled for the next hub restart. Use this only when you
+          really want to roll the local DB back.
+        </p>
+      ) : null}
+    </section>
+  );
+}

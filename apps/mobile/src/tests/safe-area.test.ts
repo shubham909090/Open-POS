@@ -8,6 +8,9 @@ describe("mobile safe area sizing", () => {
 
   it("does not add synthetic top padding when the platform has its own safe area", () => {
     expect(getAndroidStatusBarTopInset("ios", 28)).toBe(0);
-    expect(getAndroidStatusBarTopInset("android")).toBe(0);
+  });
+
+  it("keeps a fallback Android top inset when Expo does not report one", () => {
+    expect(getAndroidStatusBarTopInset("android")).toBe(24);
   });
 });

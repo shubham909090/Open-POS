@@ -14,6 +14,8 @@ import {
   createFloorSchema,
   fullResetSchema,
   createMenuItemSchema,
+  importAlcoholCsvSchema,
+  importCsvSchema,
   createPairingCodeSchema,
   createProductionUnitSchema,
   createSaleGroupSchema,
@@ -374,6 +376,11 @@ export function createHubServer(input: {
     input.eventBus.publish({ type: "menu_item.created", result });
     return result;
   });
+  app.post("/menu-items/import-csv", { preHandler: adminOnly }, async (request) => {
+    const result = input.orderService.importMenuItemsFromCsv(importCsvSchema.parse(request.body).csv);
+    input.eventBus.publish({ type: "menu_items.imported", result });
+    return result;
+  });
   app.patch("/menu-items/:id/active", { preHandler: adminOnly }, async (request) => {
     const params = request.params as { id: string };
     const body = request.body as { active?: boolean };
@@ -398,6 +405,12 @@ export function createHubServer(input: {
   app.post("/alcohol/items", { preHandler: adminOnly }, async (request) => {
     const result = input.orderService.createAlcoholItem(createAlcoholItemSchema.parse(request.body));
     input.eventBus.publish({ type: "alcohol_item.created", result });
+    return result;
+  });
+  app.post("/alcohol/items/import-csv", { preHandler: adminOnly }, async (request) => {
+    const body = importAlcoholCsvSchema.parse(request.body);
+    const result = input.orderService.importAlcoholItemsFromCsv(body.csv, body.type);
+    input.eventBus.publish({ type: "alcohol_items.imported", result });
     return result;
   });
   app.patch("/alcohol/items/:id", { preHandler: adminOnly }, async (request) => {

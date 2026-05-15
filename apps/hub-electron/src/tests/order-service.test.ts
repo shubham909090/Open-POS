@@ -43,6 +43,30 @@ describe("OrderService KOT lifecycle", () => {
     database.close();
   });
 
+  it("includes live order totals and sent counts on table rows", () => {
+    const { database, orderService } = createTestHub();
+
+    orderService.submitOrder({
+      tableId: "table-t1",
+      captainId: "waiter-1",
+      pax: 2,
+      orderType: "dine_in",
+      items: [{ menuItemId: "item-dal-fry", quantity: 2 }]
+    });
+
+    const tables = orderService.listTables() as Array<{ id: string; current_order_total_paise: number; sent_item_count: number }>;
+    expect(tables.find((table) => table.id === "table-t1")).toMatchObject({
+      current_order_total_paise: 37_800,
+      sent_item_count: 2
+    });
+    expect(tables.find((table) => table.id === "table-t2")).toMatchObject({
+      current_order_total_paise: 0,
+      sent_item_count: 0
+    });
+
+    database.close();
+  });
+
   it("creates modified KOTs when more items are added to a table", () => {
     const { database, orderService } = createTestHub();
 
@@ -104,6 +128,22 @@ describe("OrderService KOT lifecycle", () => {
 
     const bill = orderService.generateBill(order.orderId);
     expect(bill.totalPaise).toBe(21_000);
+
+    database.close();
+  });
+
+  it("hides KDS tickets when the kitchen screen is disabled for a counter", () => {
+    const { database, orderService } = createTestHub();
+    orderService.updateProductionUnit("unit-kitchen", { kdsEnabled: false });
+    orderService.submitOrder({
+      tableId: "table-t1",
+      captainId: "waiter-1",
+      pax: 1,
+      orderType: "dine_in",
+      items: [{ menuItemId: "item-dal-fry", quantity: 1 }]
+    });
+
+    expect(orderService.listKds("unit-kitchen")).toEqual([]);
 
     database.close();
   });
@@ -1541,6 +1581,46 @@ describe("OrderService KOT lifecycle", () => {
     expect(database.db.prepare("SELECT current_order_id FROM restaurant_tables WHERE id = 'table-t2'").get()).toEqual({
       current_order_id: order.orderId
     });
+
+    database.close();
+  });
+
+  it("merges a full table transfer into a running target table", () => {
+    const { database, orderService } = createTestHub();
+    const sourceOrder = orderService.submitOrder({
+      tableId: "table-t1",
+      captainId: "waiter-1",
+      pax: 1,
+      orderType: "dine_in",
+      items: [{ menuItemId: "item-dal-fry", quantity: 2 }]
+    });
+    const targetOrder = orderService.submitOrder({
+      tableId: "table-t2",
+      captainId: "waiter-2",
+      pax: 2,
+      orderType: "dine_in",
+      items: [{ menuItemId: "item-paneer-tikka", quantity: 1 }]
+    });
+
+    const movement = orderService.moveTable(
+      { fromTableId: "table-t1", toTableId: "table-t2", reason: "Join tables" },
+      { id: "device-local-admin", name: "Local Admin", role: "admin" }
+    );
+
+    expect(movement).toMatchObject({
+      fromTableId: "table-t1",
+      toTableId: "table-t2",
+      orderId: targetOrder.orderId
+    });
+    expect(database.db.prepare("SELECT status, current_order_id FROM restaurant_tables WHERE id = 'table-t1'").get()).toEqual({
+      status: "free",
+      current_order_id: null
+    });
+    expect(database.db.prepare("SELECT current_order_id FROM restaurant_tables WHERE id = 'table-t2'").get()).toEqual({
+      current_order_id: targetOrder.orderId
+    });
+    expect(database.db.prepare("SELECT status FROM orders WHERE id = ?").get(sourceOrder.orderId)).toEqual({ status: "cancelled" });
+    expect(database.db.prepare("SELECT COUNT(*) AS count FROM order_items WHERE order_id = ? AND quantity > 0").get(targetOrder.orderId)).toEqual({ count: 2 });
 
     database.close();
   });

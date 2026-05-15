@@ -4,18 +4,32 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        ink: "#17211c",
-        muted: "#68756d",
-        paper: "#f7f6f0",
-        panel: "#fffdf7",
-        line: "#d8ded4",
-        accent: "#0f766e",
-        danger: "#b42318"
+        ink: "var(--ink)",
+        muted: "var(--muted)",
+        paper: "var(--paper)",
+        panel: "var(--panel)",
+        wash: "var(--wash)",
+        line: "var(--line)",
+        "line-strong": "var(--line-strong)",
+        accent: "var(--accent)",
+        "accent-dark": "var(--accent-dark)",
+        "accent-soft": "var(--accent-soft)",
+        danger: "var(--danger)",
+        "danger-soft": "var(--danger-soft)",
+        warning: "var(--warning)",
+        "warning-soft": "var(--warning-soft)",
+        blue: "var(--blue)",
+        "blue-soft": "var(--blue-soft)",
+        sidebar: "var(--sidebar)",
+      },
+      borderRadius: {
+        DEFAULT: "var(--radius)",
       },
       boxShadow: {
-        pos: "0 18px 50px rgba(23, 33, 28, 0.1)"
-      }
-    }
+        pos: "var(--shadow)",
+        "pos-lg": "var(--shadow-lg)",
+      },
+    },
   },
-  plugins: []
+  plugins: [],
 };

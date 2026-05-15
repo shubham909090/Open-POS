@@ -990,6 +990,127 @@ describe("Hub API auth and service flow", () => {
     database.close();
   });
 
+  it("imports normal dishes from CSV and reports bad rows", async () => {
+    const { app, database } = createTestServer();
+    const headers = { "x-device-token": "test-admin-token" };
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/menu-items/import-csv",
+      headers,
+      payload: {
+        csv: [
+          "name,price,kitchen_or_counter,sale_category,active",
+          "Veg Fried Rice,180,Kitchen,Food,true",
+          "Bad Free Item,0,Kitchen,Food,true"
+        ].join("\n")
+      }
+    });
+    const catalogResponse = await app.inject({ method: "GET", url: "/menu-items?includeInactive=1", headers });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      created: 1,
+      failed: 1,
+      errors: [{ row: 3 }]
+    });
+    expect(catalogResponse.json<Array<{ name: string; price_paise: number; production_unit_name: string; sale_group_name: string }>>()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "Veg Fried Rice",
+          price_paise: 18_000,
+          production_unit_name: "Kitchen",
+          sale_group_name: "Food"
+        })
+      ])
+    );
+
+    await app.close();
+    database.close();
+  });
+
+  it("imports plain liquor stock from CSV", async () => {
+    const { app, database } = createTestServer();
+    const headers = { "x-device-token": "test-admin-token" };
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/alcohol/items/import-csv",
+      headers,
+      payload: {
+        type: "plain_liquor",
+        csv: [
+          "name,bar_counter,large_bottle_ml,small_bottle_ml,sealed_large_count,open_large_ml,sealed_small_count,shot_price,small_bottle_price,large_bottle_price,active",
+          "Imported Whisky,Bar,750,180,6,120,3,40,250,900,true"
+        ].join("\n")
+      }
+    });
+    const catalogResponse = await app.inject({ method: "GET", url: "/alcohol", headers });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ created: 1, failed: 0 });
+    expect(catalogResponse.json<{ items: Array<{ name: string; type: string; sealed_large_count: number; open_large_ml: number; sealed_small_count: number; variants: Array<{ label: string; price_paise: number }> }> }>().items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "Imported Whisky",
+          type: "plain_liquor",
+          sealed_large_count: 6,
+          open_large_ml: 120,
+          sealed_small_count: 3,
+          variants: expect.arrayContaining([
+            expect.objectContaining({ label: "30 ml", price_paise: 4_000 }),
+            expect.objectContaining({ label: "180 ml", price_paise: 25_000 }),
+            expect.objectContaining({ label: "750 ml", price_paise: 90_000 })
+          ])
+        })
+      ])
+    );
+
+    await app.close();
+    database.close();
+  });
+
+  it("imports prepared alcohol products with recipe references", async () => {
+    const { app, database } = createTestServer();
+    const headers = { "x-device-token": "test-admin-token" };
+
+    await app.inject({
+      method: "POST",
+      url: "/alcohol/items/import-csv",
+      headers,
+      payload: {
+        type: "plain_liquor",
+        csv: "name,bar_counter,shot_price\nImported Vodka,Bar,60"
+      }
+    });
+    const response = await app.inject({
+      method: "POST",
+      url: "/alcohol/items/import-csv",
+      headers,
+      payload: {
+        type: "prepared_product",
+        csv: "name,bar_counter,price,recipe,active\nImported Cocktail,Bar,350,Imported Vodka:60,true"
+      }
+    });
+    const catalogResponse = await app.inject({ method: "GET", url: "/alcohol", headers });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ created: 1, failed: 0 });
+    expect(catalogResponse.json<{ items: Array<{ name: string; type: string; variants: Array<{ label: string; price_paise: number }>; recipeIngredients: Array<{ liquor_name: string; ml_per_unit: number }> }> }>().items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "Imported Cocktail",
+          type: "prepared_product",
+          variants: expect.arrayContaining([expect.objectContaining({ label: "Regular", price_paise: 35_000 })]),
+          recipeIngredients: expect.arrayContaining([expect.objectContaining({ liquor_name: "Imported Vodka", ml_per_unit: 60 })])
+        })
+      ])
+    );
+
+    await app.close();
+    database.close();
+  });
+
   it("requires manager approval after first bill print and exposes current business-day summary after settlement", async () => {
     const { app, database } = createTestServer();
     const headers = { "x-device-token": "test-admin-token" };

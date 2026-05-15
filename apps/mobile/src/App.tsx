@@ -18,7 +18,7 @@ import {
 } from "react-native";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { getTableDisplayState, rankMenuQuickPicks, searchMenuItems, tableDisplayLabel, type MenuQuickPick, type OrderItemInput, type SaleGroupKind } from "@gaurav-pos/shared";
-import { HubClient, type CurrentDaySummary, type HubBootstrap, type HubOrder } from "./lib/hub-client";
+import { HubClient, type CurrentDaySummary, type HubBootstrap, type HubOrder, type KdsTicket } from "./lib/hub-client";
 import { clearDraft, getDeviceToken, getHubUrl, loadDraft, saveDraft, setDeviceToken, setHubUrl } from "./lib/draft-store";
 import { getAndroidStatusBarTopInset } from "./lib/safe-area";
 
@@ -67,6 +67,8 @@ export default function App() {
   const [selectedTableId, setSelectedTableId] = useState<string | null>(null);
   const [currentOrder, setCurrentOrder] = useState<HubOrder | null>(null);
   const [currentSummary, setCurrentSummary] = useState<CurrentDaySummary | null>(null);
+  const [kitchenUnitId, setKitchenUnitId] = useState("");
+  const [kdsTickets, setKdsTickets] = useState<KdsTicket[]>([]);
   const [pax, setPax] = useState("2");
   const [items, setItems] = useState<OrderItemInput[]>([]);
   const [menuSearch, setMenuSearch] = useState("");
@@ -90,6 +92,7 @@ export default function App() {
   const tableTotal = sentTotal + draftTotal;
   const hasNewItems = items.length > 0;
   const canBill = deviceRole === "admin" || deviceRole === "captain";
+  const isKitchenDevice = deviceRole === "kitchen";
   const shouldShowOnboarding = setupOpen || !deviceToken || connection === "offline";
   const useVirtualMenu = mode === "menu" && !isWide;
 
@@ -107,6 +110,7 @@ export default function App() {
         .map((item) => [item.sale_group_kind as SaleGroupKind, item.sale_group_name ?? item.sale_group_kind ?? "Other"])
     ).entries()
   );
+  const activeKdsUnits = (bootstrap?.productionUnits ?? []).filter((unit) => unit.active !== false && unit.active !== 0 && unit.kds_enabled !== false && unit.kds_enabled !== 0);
 
   function operationKey(prefix: string, scope: unknown) {
     const mapKey = `${prefix}:${stableStringify(scope)}`;
@@ -140,7 +144,7 @@ export default function App() {
     void refresh();
     const interval = setInterval(() => void refresh(false), 8_000);
     return () => clearInterval(interval);
-  }, [client, initializing, selectedTableId]);
+  }, [client, initializing, kitchenUnitId, selectedTableId]);
 
   async function refresh(showSpinner = true) {
     if (showSpinner) setLoading(true);
@@ -158,6 +162,16 @@ export default function App() {
       const session = await client.me();
       setDeviceNameState(session.name);
       setDeviceRoleState(session.role);
+      if (session.role === "kitchen") {
+        const kitchenUnits = nextBootstrap.productionUnits.filter((unit) => unit.active !== false && unit.active !== 0 && unit.kds_enabled !== false && unit.kds_enabled !== 0);
+        const nextUnitId = kitchenUnits.some((unit) => unit.id === kitchenUnitId) ? kitchenUnitId : kitchenUnits[0]?.id ?? "";
+        setKitchenUnitId(nextUnitId);
+        setCurrentSummary(null);
+        setCurrentOrder(null);
+        setKdsTickets(nextUnitId ? await client.kds(nextUnitId) : []);
+        setMessage(nextUnitId ? `Kitchen screen connected for ${kitchenUnits.find((unit) => unit.id === nextUnitId)?.name ?? "selected counter"}.` : "No enabled kitchen screen is available. Enable KDS on the hub setup screen.");
+        return;
+      }
       if (session.role === "admin" || session.role === "captain") {
         try {
           setCurrentSummary(await client.currentBusinessDaySummary());
@@ -330,7 +344,7 @@ export default function App() {
       setSelectedTableId(toTableId);
       await loadTableOrder(toTableId);
       setMode("ticket");
-      setMessage("Table shifted. The running order is now on the new table.");
+      setMessage("Table transferred. Source and target checks have been refreshed.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not shift table.");
     } finally {
@@ -357,7 +371,7 @@ export default function App() {
       });
       await refresh(false);
       await loadTableOrder(selectedTableId);
-      setMessage("Item shifted. The table checks have been refreshed.");
+      setMessage("Item quantity transferred. The table checks have been refreshed.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not shift item.");
     } finally {
@@ -514,6 +528,37 @@ export default function App() {
       setMessage("Bill revised. Latest bill is ready for payment or print.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not revise bill.");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  async function selectKitchenUnit(unitId: string) {
+    setKitchenUnitId(unitId);
+    if (connection !== "online") return;
+    try {
+      setLoading(true);
+      setKdsTickets(await client.kds(unitId));
+      setMessage("Kitchen tickets refreshed.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not load kitchen tickets.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function changeKotStatus(kotId: string, status: "preparing" | "ready" | "served") {
+    if (!kitchenUnitId) {
+      setMessage("Choose a kitchen counter first.");
+      return;
+    }
+    try {
+      setSending(true);
+      await client.updateKotStatus(kotId, status);
+      setKdsTickets(await client.kds(kitchenUnitId));
+      setMessage(status === "ready" ? "Ticket marked ready. Captain has been notified." : `Ticket marked ${status}.`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not update kitchen ticket.");
     } finally {
       setSending(false);
     }
@@ -697,7 +742,20 @@ export default function App() {
     </View>
   );
 
-  const serviceContent = (
+  const serviceContent = isKitchenDevice ? (
+    <>
+      <ConnectionBanner message={message} savingDraft={false} />
+      <KitchenScreen
+        units={activeKdsUnits}
+        selectedUnitId={kitchenUnitId}
+        tickets={kdsTickets}
+        loading={loading}
+        sending={sending}
+        onSelectUnit={(unitId) => void selectKitchenUnit(unitId)}
+        onStatusChange={(kotId, status) => void changeKotStatus(kotId, status)}
+      />
+    </>
+  ) : (
     <>
       <ConnectionBanner message={message} savingDraft={savingDraft} />
       <ModeTabs mode={mode} onModeChange={setMode} />
@@ -711,8 +769,8 @@ export default function App() {
       <KeyboardAvoidingView style={styles.keyboardShell} behavior={Platform.OS === "ios" ? "padding" : undefined}>
         <AppHeader
           connection={connection}
-          title={selectedTable ? `Table ${selectedTable.name}` : canBill ? "Captain POS" : "Waiter"}
-          subtitle={selectedTable ? "Add dishes or review sent items" : "Pick a table to start"}
+          title={isKitchenDevice ? "Kitchen Screen" : selectedTable ? `Table ${selectedTable.name}` : canBill ? "Captain POS" : "Waiter"}
+          subtitle={isKitchenDevice ? deviceName || "Kitchen device" : selectedTable ? "Add dishes or review sent items" : "Pick a table to start"}
           onSetupPress={() => {
             setHubUrlDraft(hubUrl);
             setDeviceTokenDraft(deviceToken);
@@ -754,7 +812,7 @@ export default function App() {
                 {serviceContent}
               </ScrollView>
             )}
-            {hasNewItems && mode !== "ticket" ? (
+            {!isKitchenDevice && hasNewItems && mode !== "ticket" ? (
               <DraftBar
                 count={items.reduce((total, item) => total + item.quantity, 0)}
                 total={draftTotal}
@@ -1054,6 +1112,93 @@ function TableTile({
   );
 }
 
+function KitchenScreen({
+  units,
+  selectedUnitId,
+  tickets,
+  loading,
+  sending,
+  onSelectUnit,
+  onStatusChange
+}: {
+  units: HubBootstrap["productionUnits"];
+  selectedUnitId: string;
+  tickets: KdsTicket[];
+  loading: boolean;
+  sending: boolean;
+  onSelectUnit: (unitId: string) => void;
+  onStatusChange: (kotId: string, status: "preparing" | "ready" | "served") => void;
+}) {
+  const selectedUnit = units.find((unit) => unit.id === selectedUnitId);
+  return (
+    <View style={[styles.panel, styles.kitchenPanel]}>
+      <View style={styles.cardHeader}>
+        <View style={styles.flexText}>
+          <Text style={styles.sectionTitle}>{selectedUnit?.name ?? "Kitchen"}</Text>
+          <Text style={styles.muted}>{tickets.length} active ticket{tickets.length === 1 ? "" : "s"}</Text>
+        </View>
+        {loading ? <ActivityIndicator /> : null}
+      </View>
+
+      {units.length > 1 ? (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterChips}>
+          {units.map((unit) => (
+            <Pressable key={unit.id} style={[styles.filterChip, selectedUnitId === unit.id && styles.filterChipActive]} onPress={() => onSelectUnit(unit.id)}>
+              <Text style={[styles.filterChipText, selectedUnitId === unit.id && styles.filterChipTextActive]}>{unit.name}</Text>
+            </Pressable>
+          ))}
+        </ScrollView>
+      ) : null}
+
+      {units.length === 0 ? (
+        <EmptyState title="No kitchen screen enabled" text="Enable Kitchen screen on the hub for the counters that should appear here." />
+      ) : tickets.length === 0 ? (
+        <EmptyState title="No active tickets" text="New KOTs will appear here as soon as waiters send items." />
+      ) : (
+        <View style={styles.kotList}>
+          {tickets.map((ticket) => (
+            <View key={ticket.id} style={[styles.kotCard, ticket.status === "ready" && styles.kotCardReady]}>
+              <View style={styles.kotHeader}>
+                <View style={styles.flexText}>
+                  <Text style={styles.kotTable}>Table {ticket.table_name}</Text>
+                  <Text style={styles.muted}>KOT #{ticket.sequence}</Text>
+                </View>
+                <View style={[styles.kotStatusPill, ticket.status === "ready" && styles.kotStatusReady]}>
+                  <Text style={[styles.kotStatusText, ticket.status === "ready" && styles.kotStatusTextReady]}>{ticket.status}</Text>
+                </View>
+              </View>
+              <View style={styles.kotItems}>
+                {ticket.items.map((item, index) => (
+                  <View key={`${ticket.id}-${index}`} style={styles.kotItemRow}>
+                    <Text style={styles.kotQty}>{Math.abs(item.quantity_delta)}x</Text>
+                    <Text style={styles.kotItemName}>{item.name_snapshot}</Text>
+                  </View>
+                ))}
+              </View>
+              <View style={styles.kotActions}>
+                {ticket.status === "queued" ? (
+                  <Pressable style={[styles.secondaryButton, styles.kotActionButton, sending && styles.buttonDisabled]} disabled={sending} onPress={() => onStatusChange(ticket.id, "preparing")}>
+                    <Text style={styles.secondaryButtonText}>Start</Text>
+                  </Pressable>
+                ) : null}
+                {ticket.status !== "ready" ? (
+                  <Pressable style={[styles.primaryButton, styles.kotActionButton, sending && styles.buttonDisabled]} disabled={sending} onPress={() => onStatusChange(ticket.id, "ready")}>
+                    <Text style={styles.primaryButtonText}>Ready</Text>
+                  </Pressable>
+                ) : (
+                  <Pressable style={[styles.primaryButton, styles.kotActionButton, sending && styles.buttonDisabled]} disabled={sending} onPress={() => onStatusChange(ticket.id, "served")}>
+                    <Text style={styles.primaryButtonText}>Served</Text>
+                  </Pressable>
+                )}
+              </View>
+            </View>
+          ))}
+        </View>
+      )}
+    </View>
+  );
+}
+
 function MenuScreen({
   selectedTableName,
   visibleMenu,
@@ -1292,7 +1437,7 @@ function TicketScreen({
   const [itemShiftTargetId, setItemShiftTargetId] = useState("");
   const [itemShiftQty, setItemShiftQty] = useState<Record<string, string>>({});
   const canSubmit = Boolean(selectedTableName && items.length > 0 && !sending);
-  const shiftTargets = tables.filter((table) => table.id !== selectedTableId && table.status === "free");
+  const shiftTargets = tables.filter((table) => table.id !== selectedTableId && getTableDisplayState(table) !== "disabled");
   return (
     <View style={styles.panel}>
       <View style={styles.cardHeader}>
@@ -1364,24 +1509,26 @@ function TicketScreen({
         <>
           <Text style={styles.subhead}>Shift Table Or Items</Text>
           {shiftTargets.length === 0 ? (
-            <Text style={styles.smallMuted}>No free table is available for shifting.</Text>
+            <Text style={styles.smallMuted}>No other active table is available for transfer.</Text>
           ) : (
             <>
-              <Text style={styles.smallMuted}>Full table</Text>
+              <Text style={styles.smallMuted}>Full table transfer</Text>
               <View style={styles.shiftGrid}>
                 {shiftTargets.map((table) => (
                   <Pressable key={table.id} style={styles.shiftButton} onPress={() => onShiftTable(table.id)}>
                     <Text style={styles.shiftButtonText}>{table.name}</Text>
+                    <Text style={styles.shiftButtonMeta}>{tableDisplayLabel(getTableDisplayState(table))}</Text>
                   </Pressable>
                 ))}
               </View>
-              <Text style={styles.smallMuted}>Selected item</Text>
+              <Text style={styles.smallMuted}>Selected item quantities</Text>
               <View style={styles.fieldBlock}>
-                <Text style={styles.inputLabel}>Move item to</Text>
+                <Text style={styles.inputLabel}>Transfer items to</Text>
                 <View style={styles.shiftGrid}>
                   {shiftTargets.map((table) => (
                     <Pressable key={table.id} style={[styles.shiftButton, itemShiftTargetId === table.id && styles.shiftButtonActive]} onPress={() => setItemShiftTargetId(table.id)}>
                       <Text style={styles.shiftButtonText}>{table.name}</Text>
+                      <Text style={styles.shiftButtonMeta}>{tableDisplayLabel(getTableDisplayState(table))}</Text>
                     </Pressable>
                   ))}
                 </View>
@@ -1403,7 +1550,7 @@ function TicketScreen({
                       disabled={!itemShiftTargetId || sending}
                       onPress={() => onShiftItem(item.id, quantity, itemShiftTargetId)}
                     >
-                      <Text style={styles.shiftButtonText}>Move</Text>
+                      <Text style={styles.shiftButtonText}>Transfer</Text>
                     </Pressable>
                   </View>
                 );
@@ -1833,8 +1980,8 @@ const styles = StyleSheet.create({
   onboardingContent: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 34, gap: 12 },
   header: {
     paddingHorizontal: 16,
-    paddingTop: Platform.OS === "android" ? 14 : 8,
-    paddingBottom: 12,
+    paddingTop: 10,
+    paddingBottom: 10,
     backgroundColor: palette.paper,
     borderBottomWidth: 1,
     borderColor: palette.line,
@@ -1847,7 +1994,7 @@ const styles = StyleSheet.create({
   headerActions: { alignItems: "flex-end", gap: 6 },
   flexText: { flex: 1, minWidth: 0 },
   kicker: { color: palette.green, fontWeight: "800", fontSize: 11, textTransform: "uppercase", letterSpacing: 0 },
-  title: { fontSize: 23, fontWeight: "900", color: palette.ink },
+  title: { fontSize: 22, fontWeight: "900", color: palette.ink, lineHeight: 27 },
   heroTitle: { color: palette.ink, fontSize: 25, fontWeight: "900", lineHeight: 31 },
   heroCopy: { color: palette.muted, fontSize: 14, lineHeight: 21 },
   muted: { color: palette.muted, fontSize: 12, lineHeight: 17 },
@@ -2009,6 +2156,48 @@ const styles = StyleSheet.create({
   tableStatus: { color: palette.green, fontWeight: "900", fontSize: 12 },
   tableStatusBusy: { color: palette.amber },
   tableStatusBilled: { color: "#2867b2" },
+  kitchenPanel: { gap: 14 },
+  kotList: { gap: 10 },
+  kotCard: {
+    borderWidth: 1,
+    borderColor: "#e5dccd",
+    borderRadius: 12,
+    backgroundColor: "#fffaf1",
+    padding: 12,
+    gap: 12
+  },
+  kotCardReady: { borderColor: "#a7cbc3", backgroundColor: palette.greenSoft },
+  kotHeader: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: 10 },
+  kotTable: { color: palette.ink, fontSize: 22, fontWeight: "900", lineHeight: 27 },
+  kotStatusPill: {
+    minHeight: 30,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#d8cdbb",
+    backgroundColor: palette.paper,
+    paddingHorizontal: 10,
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  kotStatusReady: { borderColor: "#a7cbc3", backgroundColor: "#fff" },
+  kotStatusText: { color: palette.muted, fontSize: 11, fontWeight: "900", textTransform: "uppercase" },
+  kotStatusTextReady: { color: palette.green },
+  kotItems: { gap: 8 },
+  kotItemRow: {
+    minHeight: 42,
+    borderRadius: 9,
+    backgroundColor: "#fffdfa",
+    borderWidth: 1,
+    borderColor: "#ece2d4",
+    paddingHorizontal: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10
+  },
+  kotQty: { minWidth: 34, color: palette.green, fontSize: 16, fontWeight: "900" },
+  kotItemName: { flex: 1, color: palette.ink, fontSize: 16, fontWeight: "800", lineHeight: 20 },
+  kotActions: { flexDirection: "row", gap: 8 },
+  kotActionButton: { flex: 1 },
   shiftGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   shiftButton: {
     minHeight: 42,
@@ -2023,6 +2212,7 @@ const styles = StyleSheet.create({
   },
   shiftButtonActive: { backgroundColor: palette.greenSoft, borderColor: palette.green },
   shiftButtonText: { color: "#1b4d84", fontWeight: "900" },
+  shiftButtonMeta: { color: "#4f6f93", fontWeight: "800", fontSize: 11 },
   fieldBlock: { gap: 8 },
   itemShiftRow: {
     minHeight: 52,
