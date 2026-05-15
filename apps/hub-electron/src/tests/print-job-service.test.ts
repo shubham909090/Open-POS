@@ -80,4 +80,36 @@ describe("PrintJobService", () => {
 
     database.close();
   });
+
+  it("prints a job after a manual retry resets the retry cap", async () => {
+    const { database, orderService } = createTestHub();
+    orderService.submitOrder({
+      tableId: "table-t1",
+      captainId: "waiter-1",
+      pax: 1,
+      orderType: "dine_in",
+      items: [{ menuItemId: "item-dal-fry", quantity: 1 }]
+    });
+    const printJob = database.db.prepare("SELECT id FROM print_jobs LIMIT 1").get() as { id: string };
+
+    const failingService = new PrintJobService(database.orm, new FailingPrinterAdapter());
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      await failingService.processPending();
+    }
+
+    orderService.retryPrintJob(printJob.id, { requestedBy: "captain-1" });
+    const adapter = new DryRunPrinterAdapter();
+    const retryService = new PrintJobService(database.orm, adapter);
+    const result = await retryService.processPending();
+
+    expect(result).toEqual({ printed: 1, failed: 0 });
+    expect(adapter.printed).toHaveLength(1);
+    expect(database.db.prepare("SELECT status, attempts, last_error FROM print_jobs WHERE id = ?").get(printJob.id)).toEqual({
+      status: "printed",
+      attempts: 1,
+      last_error: null
+    });
+
+    database.close();
+  });
 });

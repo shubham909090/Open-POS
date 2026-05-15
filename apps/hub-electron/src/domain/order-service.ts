@@ -1455,7 +1455,7 @@ export class OrderService {
   retryPrintJob(printJobId: string, input: RetryPrintJobInput): { id: string } {
     const now = new Date().toISOString();
     const result = this.db
-      .prepare("UPDATE print_jobs SET status = 'pending', last_error = NULL, updated_at = ? WHERE id = ?")
+      .prepare("UPDATE print_jobs SET status = 'pending', attempts = 0, last_error = NULL, updated_at = ? WHERE id = ?")
       .run(now, printJobId);
     if (result.changes === 0) throw new DomainError("Print job not found", 404);
     this.appendEvent("print_job.retry_requested", "print_job", printJobId, { ...input, printJobId });
