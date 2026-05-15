@@ -21,8 +21,14 @@ import {
   X
 } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
+import { Badge } from "./components/ui/badge.js";
+import { Button } from "./components/ui/button.js";
+import { Card, CardContent, CardHeader, CardTitle } from "./components/ui/card.js";
+import { Dialog } from "./components/ui/dialog.js";
 import { clearAuthToken, hubApi, setAuthToken, type AlcoholCatalog, type AlcoholStockMovement, type AlcoholStorageRow, type Bootstrap, type Floor, type MenuItem, type MenuItemVariant, type PrintLayoutSettings, type ProductionUnit, type Table, type TableOrder } from "./hub-api.js";
 import { useHubStore, type HubView } from "./store.js";
+import "./styles/tokens.css";
+import "./styles/globals.css";
 import "./styles.css";
 
 const queryClient = new QueryClient({
@@ -236,10 +242,10 @@ function NavButton({
   onClick: (view: HubView) => void;
 }) {
   return (
-    <button type="button" className={active ? "nav-button active" : "nav-button"} onClick={() => onClick(view)}>
+    <Button type="button" variant="ghost" className={active ? "nav-button active" : "nav-button"} onClick={() => onClick(view)}>
       {icon}
       {label}
-    </button>
+    </Button>
   );
 }
 
@@ -392,17 +398,9 @@ function ManagerApprovalModal({
 
 function Modal({ title, children, onClose, danger = false }: { title: string; children: ReactNode; onClose: () => void; danger?: boolean }) {
   return (
-    <div className="modal-backdrop" role="presentation">
-      <section className={danger ? "modal-card danger" : "modal-card"} role="dialog" aria-modal="true" aria-label={title}>
-        <header>
-          <h2>{title}</h2>
-          <button type="button" className="icon-button" onClick={onClose} aria-label="Close">
-            <X size={18} />
-          </button>
-        </header>
-        {children}
-      </section>
-    </div>
+    <Dialog open onOpenChange={(open) => { if (!open) onClose(); }} title={title} danger={danger}>
+      {children}
+    </Dialog>
   );
 }
 
@@ -479,10 +477,16 @@ function SetupView({ bootstrap, setNotice, requestManagerApproval }: { bootstrap
     },
     onError: (error) => setNotice({ tone: "bad", text: messageOf(error) })
   });
-  const requestPrinterMode = (mode: "test" | "live") => {
+  const requestPrinterMode = async (mode: "test" | "live") => {
     if (mode === "live" && printerOutputMode !== "live") {
-      const confirmed = window.confirm("Live Mode sends real bills and kitchen tickets to connected printers. Run test prints first. Switch to Live Mode now?");
-      if (!confirmed) return;
+      const approval = await requestManagerApproval({
+        title: "Turn on live printing",
+        message: "Live Mode sends real bills and kitchen tickets to connected printers. Run test prints first.",
+        defaultReason: "Enable live printer output",
+        requireReason: false,
+        confirmLabel: "Turn on Live Mode"
+      }).catch(() => null);
+      if (!approval) return;
     }
     updatePrinterMode.mutate(mode);
   };
@@ -655,7 +659,7 @@ function SetupView({ bootstrap, setNotice, requestManagerApproval }: { bootstrap
             <button
               type="button"
               className={printerOutputMode === "test" ? "active" : ""}
-              onClick={() => requestPrinterMode("test")}
+              onClick={() => void requestPrinterMode("test")}
               disabled={updatePrinterMode.isPending}
             >
               Test Mode
@@ -663,7 +667,7 @@ function SetupView({ bootstrap, setNotice, requestManagerApproval }: { bootstrap
             <button
               type="button"
               className={printerOutputMode === "live" ? "active" : ""}
-              onClick={() => requestPrinterMode("live")}
+              onClick={() => void requestPrinterMode("live")}
               disabled={updatePrinterMode.isPending}
             >
               Live Mode
@@ -2632,16 +2636,16 @@ function PrintLayoutEditor({
 
 function SetupCard({ title, done, icon, children }: { title: string; done: boolean; icon: ReactNode; children: ReactNode }) {
   return (
-    <section className={done ? "setup-card done" : "setup-card"}>
-      <header>
-        <div className="setup-icon">{icon}</div>
-        <div>
-          <h2>{title}</h2>
-          <span>{done ? "Ready" : "Needs setup"}</span>
+    <Card className={done ? "setup-card done" : "setup-card"}>
+      <CardHeader className="setup-card-header">
+        <div className="setup-heading">
+          <div className="setup-icon">{icon}</div>
+          <CardTitle>{title}</CardTitle>
         </div>
-      </header>
-      {children}
-    </section>
+        <Badge className={done ? "setup-status ready" : "setup-status"}>{done ? "Ready" : "Needs setup"}</Badge>
+      </CardHeader>
+      <CardContent className="setup-card-content">{children}</CardContent>
+    </Card>
   );
 }
 
@@ -2764,14 +2768,27 @@ function TableEditForm({
 
 function UnitEditForm({ unit, onSaved, setNotice }: { unit: ProductionUnit; onSaved: () => Promise<void>; setNotice: NoticeSetter }) {
   const [name, setName] = useState(unit.name);
+  const [printerMode, setPrinterMode] = useState<"system" | "network">(unit.printer_mode ?? "system");
+  const [printerName, setPrinterName] = useState(unit.printer_name ?? "");
+  const [printerHost, setPrinterHost] = useState(unit.printer_host ?? "");
+  const [printerPort, setPrinterPort] = useState(String(unit.printer_port ?? 9100));
+  const [kdsEnabled, setKdsEnabled] = useState(Boolean(unit.kds_enabled));
   const [saving, setSaving] = useState(false);
+  const systemPrinters = useQuery({ queryKey: ["system-printers"], queryFn: hubApi.systemPrinters, enabled: false });
   return (
     <form className="row-edit-form" onSubmit={(event) => {
       event.preventDefault();
       setSaving(true);
-      hubApi.updateUnit(unit.id, { name })
+      hubApi.updateUnit(unit.id, {
+        name,
+        printerMode,
+        printerName: printerMode === "system" ? printerName || null : null,
+        printerHost: printerMode === "network" ? printerHost : "",
+        printerPort: Number(printerPort || 9100),
+        kdsEnabled
+      })
         .then(onSaved)
-        .then(() => setNotice({ tone: "good", text: "Kitchen updated." }))
+        .then(() => setNotice({ tone: "good", text: "Kitchen/counter printer settings saved." }))
         .catch((error) => setNotice({ tone: "bad", text: messageOf(error) }))
         .finally(() => setSaving(false));
     }}>
@@ -2779,7 +2796,49 @@ function UnitEditForm({ unit, onSaved, setNotice }: { unit: ProductionUnit; onSa
         Kitchen or counter name
         <input value={name} onChange={(event) => setName(event.target.value)} />
       </label>
-      <button type="submit" disabled={!name.trim() || saving}>Save</button>
+      <label>
+        Printer type
+        <select value={printerMode} onChange={(event) => setPrinterMode(event.target.value as "system" | "network")}>
+          <option value="system">PC printer installed on this computer</option>
+          <option value="network">LAN printer by IP address</option>
+        </select>
+      </label>
+      {printerMode === "system" ? (
+        <>
+          <label>
+            PC printer
+            <select value={printerName} onChange={(event) => setPrinterName(event.target.value)}>
+              <option value="">{systemPrinters.data?.length ? "Choose PC printer" : "Load PC printers first"}</option>
+              {(systemPrinters.data ?? []).map((printer) => (
+                <option key={printer.name} value={printer.name}>
+                  {printer.displayName}{printer.isDefault ? " (default)" : ""}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button type="button" className="secondary-button" onClick={() => void systemPrinters.refetch()} disabled={systemPrinters.isFetching}>
+            Load PC printers
+          </button>
+        </>
+      ) : (
+        <>
+          <label>
+            LAN printer IP
+            <input value={printerHost} onChange={(event) => setPrinterHost(event.target.value)} placeholder="192.168.1.50" />
+          </label>
+          <label>
+            Port
+            <input value={printerPort} onChange={(event) => setPrinterPort(event.target.value)} inputMode="numeric" placeholder="9100" />
+          </label>
+        </>
+      )}
+      <label className="checkbox-row">
+        <input type="checkbox" checked={kdsEnabled} onChange={(event) => setKdsEnabled(event.target.checked)} />
+        Kitchen screen enabled
+      </label>
+      <button type="submit" disabled={!name.trim() || saving || (printerMode === "network" && !printerHost.trim())}>
+        Save kitchen printer
+      </button>
     </form>
   );
 }

@@ -1,41 +1,3 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-
-:root {
-  color-scheme: light;
-  --ink: #17211c;
-  --muted: #68756d;
-  --paper: #f7f6f0;
-  --panel: #fffdf7;
-  --line: #d8ded4;
-  --line-strong: #a9b9ad;
-  --accent: #0f766e;
-  --accent-dark: #164e46;
-  --danger: #b42318;
-  --warning: #a16207;
-  --blue: #1d4ed8;
-  --shadow: 0 18px 50px rgba(23, 33, 28, 0.1);
-  font-family: Avenir Next, Aptos, Segoe UI, sans-serif;
-  font-size: 16px;
-  line-height: 1.4;
-  color: var(--ink);
-  background: var(--paper);
-}
-
-* {
-  box-sizing: border-box;
-}
-
-body {
-  margin: 0;
-  background:
-    linear-gradient(90deg, rgba(15, 118, 110, 0.08) 1px, transparent 1px),
-    linear-gradient(180deg, rgba(15, 118, 110, 0.08) 1px, transparent 1px),
-    var(--paper);
-  background-size: 42px 42px;
-}
-
 .first-run-shell button,
 .first-run-shell input,
 .first-run-shell select,
@@ -812,6 +774,11 @@ body {
   grid-column: 1 / -1;
 }
 
+.template-form > .action-strip {
+  grid-column: 1 / -1;
+  justify-content: flex-start;
+}
+
 .sub-panel {
   display: grid;
   gap: 14px;
@@ -859,6 +826,14 @@ body {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fff;
+}
+
+.checkbox-grid input[type="checkbox"] {
+  width: 16px;
+  min-width: 16px;
+  height: 16px;
+  min-height: 16px;
+  padding: 0;
 }
 
 .manager-approval {
@@ -1443,5 +1418,368 @@ body {
   .line-row,
   .report-row {
     grid-template-columns: 1fr;
+  }
+}
+
+/* UI rebuild overrides: compact shadcn-style POS shell */
+.hub-shell {
+  grid-template-columns: 224px minmax(0, 1fr);
+  background: #f5f5ef;
+}
+
+.side-rail {
+  padding: 16px;
+  gap: 16px;
+  background: #0c211b;
+}
+
+.brand-block strong {
+  font-size: 1.35rem;
+  letter-spacing: 0;
+}
+
+.nav-stack {
+  gap: 4px;
+}
+
+.nav-button {
+  min-height: 38px;
+  justify-content: flex-start;
+  border-radius: 6px;
+  padding: 0 10px;
+  background: transparent;
+  color: #d6e7dd;
+  font-size: 0.92rem;
+  font-weight: 650;
+}
+
+.nav-button.active,
+.nav-button:hover {
+  background: #e9f4ed;
+  color: #0c211b;
+}
+
+.unlock-card {
+  padding: 10px;
+  border-radius: 8px;
+}
+
+.hub-main {
+  width: 100%;
+  max-width: 1560px;
+  padding: 16px;
+  gap: 12px;
+}
+
+.topbar {
+  min-height: 64px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  box-shadow: none;
+}
+
+.topbar h1 {
+  font-size: 1.5rem;
+  line-height: 1.15;
+}
+
+.topbar p {
+  font-size: 0.82rem;
+}
+
+.status-pill,
+.total-chip {
+  min-height: 28px;
+  padding: 0 9px;
+  font-size: 0.78rem;
+}
+
+.setup-board {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+}
+
+.setup-card,
+.panel {
+  border-radius: 8px;
+  background: #fffefa;
+  box-shadow: none;
+}
+
+.setup-card {
+  display: block;
+  overflow: hidden;
+  padding: 0;
+}
+
+.setup-card-header {
+  align-items: center;
+  padding: 12px 14px;
+}
+
+.setup-card-content {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  padding: 14px;
+}
+
+.setup-heading {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+}
+
+.setup-heading h2 {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 1rem;
+}
+
+.setup-icon {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  border-radius: 7px;
+}
+
+.setup-status {
+  flex: 0 0 auto;
+  border-color: #d8ded4;
+  background: #f7f6f0;
+  color: #68756d;
+}
+
+.setup-status.ready {
+  border-color: #bbf7d0;
+  background: #ecfdf3;
+  color: #166534;
+}
+
+.plain-state,
+.warning-text {
+  max-width: 900px;
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.warning-text {
+  color: #8a4b05;
+}
+
+.inline-form,
+.dish-form,
+.printer-form,
+.template-form,
+.open-item-form,
+.layout-editor,
+.approval-grid,
+.close-day-form,
+.row-edit-form,
+.dish-edit-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  align-items: end;
+  gap: 10px;
+  min-width: 0;
+}
+
+.printer-form {
+  grid-template-columns: minmax(220px, 1.4fr) auto minmax(180px, 1fr) minmax(96px, 0.4fr) auto;
+}
+
+.inline-form button,
+.dish-form button,
+.printer-form button,
+.template-form button,
+.open-item-form button,
+.close-day-form button,
+.row-edit-form button,
+.dish-edit-form button {
+  min-width: 0;
+  min-height: 36px;
+  align-self: end;
+  padding: 0 12px;
+  font-size: 0.9rem;
+}
+
+.inline-form button {
+  justify-self: start;
+  min-width: 140px;
+}
+
+.hub-shell input,
+.hub-shell select,
+.first-run-shell input,
+.first-run-shell select {
+  min-height: 36px;
+  border-radius: 6px;
+  font-size: 0.92rem;
+}
+
+.hub-shell label,
+.first-run-shell label {
+  gap: 5px;
+  font-size: 0.86rem;
+}
+
+.segment-row {
+  display: inline-flex;
+  width: max-content;
+  max-width: 100%;
+  gap: 4px;
+  border-radius: 7px;
+  border: 1px solid #d8ded4;
+  background: #f0eee7;
+  padding: 4px;
+}
+
+.segment-row button {
+  min-height: 32px;
+  border-radius: 5px;
+  background: transparent;
+  color: #526058;
+  padding: 0 12px;
+}
+
+.segment-row button.active {
+  background: #10201b;
+  color: #fff;
+}
+
+.action-strip {
+  gap: 8px;
+}
+
+.action-strip button,
+.secondary-button,
+.danger-button {
+  min-height: 36px;
+  padding: 0 12px;
+  border-radius: 6px;
+  font-size: 0.9rem;
+}
+
+.secondary-button {
+  border: 1px solid #d8ded4;
+  background: #fff;
+  color: #17211c;
+}
+
+.record-row,
+.line-row,
+.report-row {
+  min-height: 48px;
+  padding: 10px;
+  border-radius: 7px;
+}
+
+.record-row .row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.record-row .row-actions button {
+  min-height: 34px;
+  padding: 0 10px;
+}
+
+.print-preview {
+  max-width: 100%;
+  overflow: auto;
+}
+
+.layout-editor {
+  grid-template-columns: minmax(0, 1fr) minmax(360px, 520px);
+}
+
+.layout-editor .template-form {
+  grid-template-columns: repeat(3, minmax(150px, 1fr));
+}
+
+.layout-editor .checkbox-grid,
+.layout-editor .template-form > button {
+  grid-column: 1 / -1;
+}
+
+.layout-editor .template-form > button {
+  width: min(260px, 100%);
+}
+
+.print-preview {
+  width: 100%;
+  max-width: 520px;
+  justify-self: end;
+  white-space: pre-wrap;
+}
+
+.setup-card-content > .template-form {
+  grid-template-columns: repeat(4, minmax(180px, 1fr));
+}
+
+.setup-card-content > .template-form > .action-strip {
+  grid-column: 1 / -1;
+  align-self: end;
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.setup-card-content > .template-form > .action-strip button {
+  width: auto;
+  justify-content: center;
+}
+
+@media (max-width: 1180px) {
+  .hub-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .side-rail {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+  }
+
+  .nav-stack {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+
+  .unlock-card {
+    grid-column: auto;
+  }
+}
+
+@media (max-width: 900px) {
+  .printer-form {
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  }
+
+  .layout-editor,
+  .layout-editor .template-form,
+  .setup-card-content > .template-form {
+    grid-template-columns: 1fr;
+  }
+
+  .setup-card-content > .template-form > .action-strip {
+    grid-column: 1 / -1;
+  }
+
+  .print-preview {
+    justify-self: stretch;
+    max-width: none;
+  }
+
+  .side-rail {
+    grid-template-columns: 1fr;
+  }
+
+  .nav-stack {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }

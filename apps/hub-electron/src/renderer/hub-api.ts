@@ -359,7 +359,18 @@ export const hubApi = {
       method: "POST",
       body: JSON.stringify({ name, printerMode: "system", printerName: "", printerPort: 9100, kdsEnabled: true, active: true })
     }),
-  updateUnit: (id: string, payload: { name?: string; active?: boolean }) =>
+  updateUnit: (
+    id: string,
+    payload: {
+      name?: string;
+      active?: boolean;
+      printerMode?: "system" | "network";
+      printerName?: string | null;
+      printerHost?: string;
+      printerPort?: number;
+      kdsEnabled?: boolean;
+    }
+  ) =>
     apiFetch<{ id: string }>(`/production-units/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
   deleteUnit: (id: string) => apiFetch<{ id: string; deleted: boolean }>(`/production-units/${id}`, { method: "DELETE" }),
   createDish: (payload: { name: string; pricePaise: number; productionUnitId: string | null; saleGroupId?: string; active: boolean }) =>
