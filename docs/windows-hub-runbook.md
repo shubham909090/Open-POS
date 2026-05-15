@@ -17,11 +17,14 @@ For normal restaurant installs:
 
 1. Start `Gaurav POS Hub`.
 2. Create the Manager PIN on the hub PC itself. First PIN creation is blocked from other LAN devices.
-3. Open **Setup → Hub Connection And Security**.
-4. Paste the cloud URL, hub connection ID, sync secret, and hub public LAN URL.
-5. Test the cloud connection.
+3. Click **Unlock setup** and enter the Manager PIN.
+4. Open **Setup → Hub Connection And Security**.
+5. Paste the cloud URL, hub connection ID, sync secret, and hub public LAN URL.
+6. Save, reveal, or test sensitive cloud values through the Manager Approval popup.
 
 The app stores these values in local SQLite settings. The raw Manager PIN is never stored.
+The local SQLite database and backups are stored in the Windows app-data folder by default, so normal installs do not need `HUB_DATABASE_PATH` or `HUB_BACKUP_DIR`.
+If the hub needs to be wiped during setup or support, use **Advanced → Danger zone → Full Reset Hub**. The reset is Manager PIN protected, requires typing `RESET HUB`, and restarts the app after scheduling the wipe.
 
 ## Recovery Envs
 
@@ -36,8 +39,9 @@ The app also reads `%APPDATA%\Gaurav POS Hub\hub.env`, `HUB_CONFIG_FILE`, or `GA
 ```bash
 HUB_HOST=0.0.0.0
 HUB_PORT=3737
-HUB_DATABASE_PATH=C:\ProgramData\Gaurav POS Hub\data\hub.sqlite
-HUB_BACKUP_DIR=C:\ProgramData\Gaurav POS Hub\backups
+# Optional. Leave these out for normal installs.
+# HUB_DATABASE_PATH=C:\ProgramData\Gaurav POS Hub\data\hub.sqlite
+# HUB_BACKUP_DIR=C:\ProgramData\Gaurav POS Hub\backups
 ```
 
 Cloud sync values may still be read from env as a recovery fallback, but the production workflow is the Hub setup screen.

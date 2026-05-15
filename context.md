@@ -756,7 +756,7 @@ Normal restaurant setup is done inside the hub UI, not by editing `hub.env`.
 Fresh hub setup:
 
 1. Create a Manager PIN on the hub PC itself. First PIN creation is blocked from other LAN devices.
-2. Unlock setup with that PIN.
+2. Unlock setup with that PIN from the side-rail **Unlock setup** button.
 3. Save cloud connection values in **Setup → Hub Connection And Security**.
 4. Save the hub public LAN URL, for example `http://192.168.1.20:3737`.
 5. Use **Test cloud connection** before service.
@@ -772,7 +772,14 @@ SQLite `hub_settings` stores:
 - per-printer print layouts
 - Manager PIN hash
 
-The Manager PIN is hashed; the raw PIN cannot be read back. It unlocks setup and approves sensitive actions.
+The Manager PIN is hashed; the raw PIN cannot be read back. It unlocks setup and approves sensitive actions. The hub UI must not show scattered inline PIN fields: sensitive actions use the shared Manager Approval modal, and changing the Manager PIN locks setup so the new PIN must be entered again.
+
+Full local reset:
+
+- Available at **Advanced → Danger zone → Full Reset Hub**.
+- Requires Manager PIN approval and typing `RESET HUB`.
+- Can delete only the local SQLite DB, or delete the DB plus local backups.
+- The hub schedules the reset, restarts/relaunches, deletes `hub.sqlite`, `hub.sqlite-wal`, `hub.sqlite-shm`, and `hub.sqlite-journal`, then returns to first-run Manager PIN setup.
 
 Environment variables and `hub.env` remain developer/recovery fallbacks only. See `docs/packaging/restaurant-handoff.md`.
 

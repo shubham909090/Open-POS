@@ -1,15 +1,21 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createHash } from "node:crypto";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createHubServer, isRealtimeEventVisibleForRole } from "../api/server.js";
 import { BackupService } from "../db/backup-service.js";
+import { HubDatabase } from "../db/database.js";
 import { cloudCommandFailures, idempotencyRecords } from "../db/drizzle-schema.js";
+import { AuthService } from "../domain/auth-service.js";
 import { EventBus } from "../domain/event-bus.js";
+import { OrderService } from "../domain/order-service.js";
 import { DryRunPrinterAdapter } from "../printing/escpos.js";
 import { PrintJobService } from "../printing/print-job-service.js";
 import { ConvexSyncBridge } from "../sync/convex-sync.js";
 import { createTestHub } from "./helpers.js";
 
-function createTestServer() {
+function createTestServer(options: { requestRestart?: () => void } = {}) {
   const hub = createTestHub();
   const printJobService = new PrintJobService(hub.database.orm, new DryRunPrinterAdapter());
   const app = createHubServer({
@@ -19,10 +25,34 @@ function createTestServer() {
     orderService: hub.orderService,
     printJobService,
     syncBridge: new ConvexSyncBridge(hub.database.orm, undefined, undefined),
-    eventBus: new EventBus<unknown>()
+    eventBus: new EventBus<unknown>(),
+    requestRestart: options.requestRestart
   });
 
   return { ...hub, app };
+}
+
+function createFileBackedTestServer(root: string, options: { requestRestart?: () => void } = {}) {
+  const databasePath = join(root, "hub.sqlite");
+  const backupDir = join(root, "backups");
+  const database = new HubDatabase(databasePath);
+  database.migrate();
+  database.seedDemoData();
+  const authService = new AuthService(database.orm);
+  authService.seedAdminDevice("test-admin-token");
+  const orderService = new OrderService(database.orm);
+  const printJobService = new PrintJobService(database.orm, new DryRunPrinterAdapter());
+  const app = createHubServer({
+    database,
+    backupService: new BackupService(database, databasePath, backupDir),
+    authService,
+    orderService,
+    printJobService,
+    syncBridge: new ConvexSyncBridge(database.orm, undefined, undefined),
+    eventBus: new EventBus<unknown>(),
+    requestRestart: options.requestRestart
+  });
+  return { app, database, databasePath };
 }
 
 describe("Hub API auth and service flow", () => {
@@ -111,6 +141,41 @@ describe("Hub API auth and service flow", () => {
 
     await app.close();
     database.close();
+  });
+
+  it("schedules a manager-approved full reset and restart", async () => {
+    const root = mkdtempSync(join(tmpdir(), "gaurav-pos-api-reset-"));
+    const requestRestart = vi.fn();
+    const { app, database, databasePath } = createFileBackedTestServer(root, { requestRestart });
+
+    await app.inject({
+      method: "PUT",
+      url: "/settings/manager-pin",
+      headers: { "x-device-token": "test-admin-token" },
+      payload: { newPin: "4321", updatedBy: "owner" }
+    });
+    const reset = await app.inject({
+      method: "POST",
+      url: "/system/full-reset",
+      headers: { "x-device-token": "test-admin-token" },
+      payload: {
+        confirmationText: "RESET HUB",
+        includeBackups: false,
+        managerApproval: { pin: "4321", reason: "Full reset hub", approvedBy: "manager" }
+      }
+    });
+
+    expect(reset.statusCode).toBe(200);
+    expect(reset.json()).toMatchObject({ scheduled: true, restartRequired: true, includeBackups: false });
+    expect(existsSync(join(root, "backups", "reset-pending.json"))).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(requestRestart).toHaveBeenCalledTimes(1);
+
+    await app.close();
+    database.close();
+    BackupService.applyPendingReset(databasePath, join(root, "backups"));
+    expect(existsSync(databasePath)).toBe(false);
+    rmSync(root, { recursive: true, force: true });
   });
 
   it("saves masked hub cloud settings behind Manager PIN and tests cloud connectivity", async () => {

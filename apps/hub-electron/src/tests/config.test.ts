@@ -37,4 +37,18 @@ describe("hub runtime config", () => {
 
     rmSync(root, { recursive: true, force: true });
   });
+
+  it("uses an absolute application data database path when env files do not configure one", () => {
+    const config = loadHubConfig({
+      HUB_CONFIG_FILE: join(tmpdir(), `missing-gaurav-pos-${Date.now()}.env`),
+      GAURAV_POS_CONFIG: join(tmpdir(), `missing-gaurav-pos-alt-${Date.now()}.env`)
+    });
+
+    expect(config.databasePath).toContain("Gaurav POS Hub");
+    expect(config.databasePath).toContain("hub.sqlite");
+    expect(config.databasePath.startsWith(".")).toBe(false);
+    expect(config.backupDir).toContain("Gaurav POS Hub");
+    expect(config.backupDir).toContain("backups");
+    expect(config.backupDir.startsWith(".")).toBe(false);
+  });
 });

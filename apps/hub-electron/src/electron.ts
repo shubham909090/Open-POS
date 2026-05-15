@@ -4,7 +4,12 @@ import { startHub } from "./runtime.js";
 let mainWindow: BrowserWindow | null = null;
 
 async function createWindow() {
-  const hub = await startHub();
+  const hub = await startHub({
+    requestRestart: () => {
+      app.relaunch();
+      app.exit(0);
+    }
+  });
 
   mainWindow = new BrowserWindow({
     width: 1440,

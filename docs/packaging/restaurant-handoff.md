@@ -14,17 +14,22 @@ The cloud portal is not installed on the restaurant computer. The owner opens it
 ## Windows Hub Setup
 
 For normal restaurant use, do **not** put cloud secrets or an admin password into `hub.env`.
+You also do not need to create a database path by hand. Fresh installs store the local SQLite database under the OS app-data folder by default.
 
 The installed hub now sets itself up from the app:
 
 1. Start **Gaurav POS Hub**.
 2. Create the first **Manager PIN** on the hub PC itself. First PIN creation is blocked from other LAN devices.
-3. Go to **Setup → Hub Connection And Security**.
-4. Paste the cloud connection values from the cloud portal.
-5. Enter the Manager PIN and save.
-6. Use **Test cloud connection** to confirm sync is working.
+3. Click **Unlock setup** and enter the Manager PIN.
+4. Go to **Setup → Hub Connection And Security**.
+5. Paste the cloud connection values from the cloud portal.
+6. Save or reveal sensitive values through the Manager Approval popup.
+7. Use **Test cloud connection** to confirm sync is working.
 
 The Manager PIN unlocks setup and approves sensitive restaurant actions like NC bills, bill reprints, revisions, cancellation, and alcohol stock adjustment.
+After the Manager PIN is changed, setup is locked and must be unlocked again with the new PIN.
+
+If a restaurant PC needs to start from zero, use **Advanced → Danger zone → Full Reset Hub**. It requires Manager PIN approval and typing `RESET HUB`, then can either keep backups or delete backups too.
 
 ## Optional Recovery Config File
 
@@ -50,8 +55,9 @@ Create the folder if it does not exist. Copy `apps/hub-electron/resources/hub.en
 ```env
 HUB_HOST=0.0.0.0
 HUB_PORT=3737
-HUB_DATABASE_PATH=C:\ProgramData\Gaurav POS Hub\data\hub.sqlite
-HUB_BACKUP_DIR=C:\ProgramData\Gaurav POS Hub\backups
+# Optional. Leave these out for normal installs.
+# HUB_DATABASE_PATH=C:\ProgramData\Gaurav POS Hub\data\hub.sqlite
+# HUB_BACKUP_DIR=C:\ProgramData\Gaurav POS Hub\backups
 ```
 
 Cloud URL, hub connection ID, sync secret, and hub public LAN URL are saved inside the hub UI. Give the Windows PC a fixed router DHCP reservation before pairing tablets so the hub public URL does not keep changing.

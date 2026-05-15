@@ -152,6 +152,10 @@ export interface PrintLayouts {
   units: Array<{ productionUnitId: string; name: string; layout: PrintLayoutSettings }>;
 }
 
+export interface ManagerApprovalPayload {
+  managerApproval: { pin: string; reason: string; approvedBy: string };
+}
+
 export interface OrderItem {
   id: string;
   order_id: string;
@@ -390,6 +394,11 @@ export const hubApi = {
       headers: { "x-manager-pin": managerPin },
       body: JSON.stringify(payload)
     }),
+  fullReset: (payload: ManagerApprovalPayload & { confirmationText: string; includeBackups: boolean }) =>
+    apiFetch<{ scheduled: true; restartRequired: true; includeBackups: boolean }>("/system/full-reset", {
+      method: "POST",
+      body: JSON.stringify(payload)
+    }),
   updateSaleGroup: (id: string, payload: { defaultProductionUnitId?: string | null; taxComponents?: Array<{ name: string; rateBps: number }>; ticketLabel?: "KOT" | "BOT"; active?: boolean }) =>
     apiFetch<{ id: string }>(`/sale-groups/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
   systemPrinters: () => apiFetch<SystemPrinterInfo[]>("/system-printers"),
@@ -479,11 +488,3 @@ export const hubApi = {
   resolveCloudCommandFailure: (commandId: string) =>
     apiFetch<{ commandId: string; resolved: boolean }>(`/sync/cloud-command-failures/${encodeURIComponent(commandId)}`, { method: "DELETE" })
 };
-
-export interface ManagerApprovalPayload {
-  managerApproval: {
-    pin: string;
-    reason: string;
-    approvedBy: string;
-  };
-}

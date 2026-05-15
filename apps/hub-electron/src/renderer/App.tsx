@@ -59,14 +59,16 @@ export default function App() {
 function HubShell() {
   const [pin, setPin] = useState("");
   const [newPin, setNewPin] = useState("");
+  const [unlockModalOpen, setUnlockModalOpen] = useState(false);
   const [notice, setNotice] = useState<{ tone: "good" | "bad"; text: string } | null>(null);
+  const managerApproval = useManagerApproval();
   const view = useHubStore((state) => state.view);
   const setView = useHubStore((state) => state.setView);
   const sessionStatus = useQuery({ queryKey: ["admin-session-status"], queryFn: hubApi.adminSessionStatus });
   const bootstrap = useQuery({ queryKey: ["bootstrap"], queryFn: hubApi.bootstrap });
   const hubUnlocked = Boolean(bootstrap.data && !bootstrap.error);
   const managerPinConfigured = bootstrap.data?.setup?.managerPinConfigured ?? sessionStatus.data?.managerPinConfigured ?? true;
-  const firstRunNeedsPin = sessionStatus.data?.managerPinConfigured === false && !hubUnlocked;
+  const firstRunNeedsPin = sessionStatus.data?.managerPinConfigured === false;
   const createPin = useMutation({
     mutationFn: () => hubApi.setManagerPin({ newPin, updatedBy: "admin" }),
     onSuccess: async () => {
@@ -151,32 +153,16 @@ function HubShell() {
           <NavButton icon={<Settings size={18} />} label="Advanced" view="advanced" active={view === "advanced"} onClick={setView} />
         </nav>
         <section className="unlock-card">
-          {!managerPinConfigured ? (
-            <form className="unlock-form" onSubmit={(event) => { event.preventDefault(); createPin.mutate(); }}>
-              <label>
-                Create Manager PIN
-                <input value={newPin} onChange={(event) => setNewPin(event.target.value)} type="password" autoComplete="new-password" placeholder="4 digits or more" />
-              </label>
-              <div className="unlock-actions">
-                <button type="submit" disabled={newPin.length < 4 || createPin.isPending}>
-                  <Save size={16} />
-                  Save PIN
-                </button>
+          {!hubUnlocked ? (
+            <div className="unlock-status">
+              <div>
+                <span>Setup access</span>
+                <strong>{managerPinConfigured ? "Locked" : "PIN needed"}</strong>
               </div>
-            </form>
-          ) : !hubUnlocked ? (
-            <form className="unlock-form" onSubmit={(event) => { event.preventDefault(); unlock.mutate(); }}>
-              <label>
-                Manager PIN
-                <input value={pin} onChange={(event) => setPin(event.target.value)} type="password" autoComplete="current-password" />
-              </label>
-              <div className="unlock-actions">
-                <button type="submit" disabled={pin.length < 4 || unlock.isPending}>
-                  <Save size={16} />
-                  Unlock setup
-                </button>
-              </div>
-            </form>
+              <button type="button" className="secondary-button" onClick={() => setUnlockModalOpen(true)}>
+                {managerPinConfigured ? "Unlock setup" : "Create PIN"}
+              </button>
+            </div>
           ) : (
             <div className="unlock-status">
               <div>
@@ -214,15 +200,24 @@ function HubShell() {
 
         {bootstrap.data ? (
           <>
-            {view === "setup" ? <SetupView bootstrap={bootstrap.data} setNotice={setNotice} /> : null}
-            {view === "orders" ? <OrdersView bootstrap={bootstrap.data} setNotice={setNotice} /> : null}
-            {view === "alcohol" ? <AlcoholView bootstrap={bootstrap.data} setNotice={setNotice} /> : null}
+            {view === "setup" ? <SetupView bootstrap={bootstrap.data} setNotice={setNotice} requestManagerApproval={managerApproval.request} /> : null}
+            {view === "orders" ? <OrdersView bootstrap={bootstrap.data} setNotice={setNotice} requestManagerApproval={managerApproval.request} /> : null}
+            {view === "alcohol" ? <AlcoholView bootstrap={bootstrap.data} setNotice={setNotice} requestManagerApproval={managerApproval.request} /> : null}
             {view === "kitchen" ? <KitchenView bootstrap={bootstrap.data} setNotice={setNotice} /> : null}
             {view === "reports" ? <ReportsView /> : null}
-            {view === "advanced" ? <AdvancedView bootstrap={bootstrap.data} setNotice={setNotice} /> : null}
+            {view === "advanced" ? <AdvancedView bootstrap={bootstrap.data} setNotice={setNotice} requestManagerApproval={managerApproval.request} onLocked={lockHub} /> : null}
           </>
         ) : null}
       </section>
+      <UnlockSetupModal
+        open={unlockModalOpen}
+        pin={pin}
+        setPin={setPin}
+        pending={unlock.isPending}
+        onClose={() => setUnlockModalOpen(false)}
+        onSubmit={() => unlock.mutate(undefined, { onSuccess: () => setUnlockModalOpen(false) })}
+      />
+      <ManagerApprovalModal state={managerApproval.state} setState={managerApproval.setState} />
     </main>
   );
 }
@@ -248,7 +243,170 @@ function NavButton({
   );
 }
 
-function SetupView({ bootstrap, setNotice }: { bootstrap: Bootstrap; setNotice: NoticeSetter }) {
+type ManagerApproval = { pin: string; reason: string; approvedBy: string };
+type ManagerApprovalRequest = (options: {
+  title: string;
+  message?: string;
+  defaultReason?: string;
+  reasonLabel?: string;
+  requireReason?: boolean;
+  confirmLabel?: string;
+  danger?: boolean;
+}) => Promise<ManagerApproval>;
+type ManagerApprovalState = {
+  open: boolean;
+  title: string;
+  message?: string;
+  reason: string;
+  reasonLabel: string;
+  requireReason: boolean;
+  confirmLabel: string;
+  danger: boolean;
+  pin: string;
+  resolve?: (approval: ManagerApproval) => void;
+  reject?: () => void;
+};
+
+function useManagerApproval() {
+  const [state, setState] = useState<ManagerApprovalState>({
+    open: false,
+    title: "",
+    reason: "",
+    reasonLabel: "Reason",
+    requireReason: true,
+    confirmLabel: "Approve",
+    danger: false,
+    pin: ""
+  });
+
+  const request: ManagerApprovalRequest = (options) =>
+    new Promise((resolve, reject) => {
+      setState({
+        open: true,
+        title: options.title,
+        message: options.message,
+        reason: options.defaultReason ?? "",
+        reasonLabel: options.reasonLabel ?? "Reason",
+        requireReason: options.requireReason ?? true,
+        confirmLabel: options.confirmLabel ?? "Approve",
+        danger: Boolean(options.danger),
+        pin: "",
+        resolve,
+        reject
+      });
+    });
+
+  return { state, setState, request };
+}
+
+function UnlockSetupModal({
+  open,
+  pin,
+  setPin,
+  pending,
+  onClose,
+  onSubmit
+}: {
+  open: boolean;
+  pin: string;
+  setPin: (pin: string) => void;
+  pending: boolean;
+  onClose: () => void;
+  onSubmit: () => void;
+}) {
+  if (!open) return null;
+  return (
+    <Modal title="Unlock setup" onClose={onClose}>
+      <p className="plain-state">Enter the Manager PIN for this hub. This unlocks setup tools on this screen only.</p>
+      <form
+        className="approval-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          onSubmit();
+        }}
+      >
+        <label>
+          Manager PIN
+          <input value={pin} onChange={(event) => setPin(event.target.value)} type="password" autoComplete="current-password" autoFocus />
+        </label>
+        <div className="modal-actions">
+          <button type="button" className="secondary-button" onClick={onClose}>Cancel</button>
+          <button type="submit" disabled={pin.length < 4 || pending}>{pending ? "Unlocking..." : "Unlock setup"}</button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function ManagerApprovalModal({
+  state,
+  setState
+}: {
+  state: ManagerApprovalState;
+  setState: (updater: ManagerApprovalState | ((state: ManagerApprovalState) => ManagerApprovalState)) => void;
+}) {
+  if (!state.open) return null;
+  const close = () => {
+    state.reject?.();
+    setState({ ...state, open: false, pin: "", resolve: undefined, reject: undefined });
+  };
+  const canSubmit = state.pin.length >= 4 && (!state.requireReason || state.reason.trim().length >= 3);
+  return (
+    <Modal title={state.title} onClose={close} danger={state.danger}>
+      {state.message ? <p className="plain-state">{state.message}</p> : null}
+      <form
+        className="approval-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (!canSubmit) return;
+          state.resolve?.({ pin: state.pin, reason: state.reason.trim(), approvedBy: "manager" });
+          setState({ ...state, open: false, pin: "", resolve: undefined, reject: undefined });
+        }}
+      >
+        <label>
+          {state.reasonLabel}
+          <input
+            value={state.reason}
+            onChange={(event) => setState((current) => ({ ...current, reason: event.target.value }))}
+            placeholder={state.requireReason ? "Required" : "Optional"}
+          />
+        </label>
+        <label>
+          Manager PIN
+          <input
+            value={state.pin}
+            onChange={(event) => setState((current) => ({ ...current, pin: event.target.value }))}
+            type="password"
+            autoComplete="current-password"
+            autoFocus
+          />
+        </label>
+        <div className="modal-actions">
+          <button type="button" className="secondary-button" onClick={close}>Cancel</button>
+          <button type="submit" className={state.danger ? "danger-button" : ""} disabled={!canSubmit}>{state.confirmLabel}</button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function Modal({ title, children, onClose, danger = false }: { title: string; children: ReactNode; onClose: () => void; danger?: boolean }) {
+  return (
+    <div className="modal-backdrop" role="presentation">
+      <section className={danger ? "modal-card danger" : "modal-card"} role="dialog" aria-modal="true" aria-label={title}>
+        <header>
+          <h2>{title}</h2>
+          <button type="button" className="icon-button" onClick={onClose} aria-label="Close">
+            <X size={18} />
+          </button>
+        </header>
+        {children}
+      </section>
+    </div>
+  );
+}
+
+function SetupView({ bootstrap, setNotice, requestManagerApproval }: { bootstrap: Bootstrap; setNotice: NoticeSetter; requestManagerApproval: ManagerApprovalRequest }) {
   const queryClient = useQueryClient();
   const [floorName, setFloorName] = useState("");
   const [tableName, setTableName] = useState("");
@@ -262,7 +420,6 @@ function SetupView({ bootstrap, setNotice }: { bootstrap: Bootstrap; setNotice: 
   const [receiptPrinterName, setReceiptPrinterName] = useState("");
   const [receiptHost, setReceiptHost] = useState("");
   const [receiptPort, setReceiptPort] = useState("9100");
-  const [connectionPin, setConnectionPin] = useState("");
   const [cloudUrl, setCloudUrl] = useState(bootstrap.setup?.hubConnection?.cloudUrl ?? "");
   const [installationId, setInstallationId] = useState(bootstrap.setup?.hubConnection?.installationId ?? "");
   const [syncSecret, setSyncSecret] = useState(bootstrap.setup?.hubConnection?.syncSecret ?? "");
@@ -344,7 +501,7 @@ function SetupView({ bootstrap, setNotice }: { bootstrap: Bootstrap; setNotice: 
     onError: (error) => setNotice({ tone: "bad", text: messageOf(error) })
   });
   const revealHubConnection = useMutation({
-    mutationFn: () => hubApi.hubConnection(connectionPin),
+    mutationFn: (pin: string) => hubApi.hubConnection(pin),
     onSuccess: (result) => {
       setCloudUrl(result.cloudUrl);
       setInstallationId(result.installationId);
@@ -355,7 +512,7 @@ function SetupView({ bootstrap, setNotice }: { bootstrap: Bootstrap; setNotice: 
     onError: (error) => setNotice({ tone: "bad", text: messageOf(error) })
   });
   const saveHubConnection = useMutation({
-    mutationFn: () => hubApi.updateHubConnection({ cloudUrl, installationId, syncSecret, hubPublicUrl }, connectionPin),
+    mutationFn: (pin: string) => hubApi.updateHubConnection({ cloudUrl, installationId, syncSecret, hubPublicUrl }, pin),
     onSuccess: async () => {
       await invalidate();
       setNotice({ tone: "good", text: "Cloud connection saved." });
@@ -363,10 +520,12 @@ function SetupView({ bootstrap, setNotice }: { bootstrap: Bootstrap; setNotice: 
     onError: (error) => setNotice({ tone: "bad", text: messageOf(error) })
   });
   const testHubConnection = useMutation({
-    mutationFn: () => hubApi.testHubConnection(connectionPin),
+    mutationFn: (pin: string) => hubApi.testHubConnection(pin),
     onSuccess: (result) => setNotice({ tone: result.status === "connected" ? "good" : "bad", text: result.message }),
     onError: (error) => setNotice({ tone: "bad", text: messageOf(error) })
   });
+  const approveConnectionAction = async (title: string, defaultReason: string) =>
+    requestManagerApproval({ title, defaultReason, confirmLabel: "Continue" }).catch(() => null);
   const testBillPrint = useMutation({
     mutationFn: hubApi.testBillPrint,
     onSuccess: async (result) => {
@@ -436,11 +595,7 @@ function SetupView({ bootstrap, setNotice }: { bootstrap: Bootstrap; setNotice: 
 
       <SetupCard title="Hub Connection And Security" done={Boolean(bootstrap.setup?.hubConnection?.configured)} icon={<Settings size={20} />}>
         <p className="plain-state">Paste the hub connection values from the cloud portal here. These fields are saved on this hub and hidden unless the Manager PIN is entered.</p>
-        <form className="template-form" onSubmit={(event) => { event.preventDefault(); saveHubConnection.mutate(); }}>
-          <label>
-            Manager PIN
-            <input value={connectionPin} onChange={(event) => setConnectionPin(event.target.value)} type="password" autoComplete="current-password" />
-          </label>
+        <form className="template-form" onSubmit={(event) => event.preventDefault()}>
           <label>
             Cloud URL
             <input value={cloudUrl} onChange={(event) => setCloudUrl(event.target.value)} placeholder="https://your-deployment.convex.site" />
@@ -458,9 +613,38 @@ function SetupView({ bootstrap, setNotice }: { bootstrap: Bootstrap; setNotice: 
             <input value={hubPublicUrl} onChange={(event) => setHubPublicUrl(event.target.value)} placeholder="http://192.168.1.20:3737" />
           </label>
           <div className="action-strip">
-            <button type="submit" disabled={connectionPin.length < 4 || saveHubConnection.isPending}>Save connection</button>
-            <button type="button" className="secondary-button" onClick={() => revealHubConnection.mutate()} disabled={connectionPin.length < 4 || revealHubConnection.isPending}>Show saved details</button>
-            <button type="button" className="secondary-button" onClick={() => testHubConnection.mutate()} disabled={connectionPin.length < 4 || testHubConnection.isPending}>Test cloud connection</button>
+            <button
+              type="button"
+              disabled={saveHubConnection.isPending}
+              onClick={async () => {
+                const approval = await approveConnectionAction("Save cloud connection", "Save hub cloud connection");
+                if (approval) saveHubConnection.mutate(approval.pin);
+              }}
+            >
+              Save connection
+            </button>
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={async () => {
+                const approval = await approveConnectionAction("Show cloud connection secrets", "Reveal saved hub cloud connection");
+                if (approval) revealHubConnection.mutate(approval.pin);
+              }}
+              disabled={revealHubConnection.isPending}
+            >
+              Show saved details
+            </button>
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={async () => {
+                const approval = await approveConnectionAction("Test cloud connection", "Test hub cloud connection");
+                if (approval) testHubConnection.mutate(approval.pin);
+              }}
+              disabled={testHubConnection.isPending}
+            >
+              Test cloud connection
+            </button>
           </div>
         </form>
       </SetupCard>
@@ -528,6 +712,7 @@ function SetupView({ bootstrap, setNotice }: { bootstrap: Bootstrap; setNotice: 
           layouts={printLayouts.data}
           units={bootstrap.productionUnits}
           setNotice={setNotice}
+          requestManagerApproval={requestManagerApproval}
           onSaved={async () => {
             await printLayouts.refetch();
             await invalidate();
@@ -663,7 +848,7 @@ function SetupView({ bootstrap, setNotice }: { bootstrap: Bootstrap; setNotice: 
   );
 }
 
-function AlcoholView({ bootstrap, setNotice }: { bootstrap: Bootstrap; setNotice: NoticeSetter }) {
+function AlcoholView({ bootstrap, setNotice, requestManagerApproval }: { bootstrap: Bootstrap; setNotice: NoticeSetter; requestManagerApproval: ManagerApprovalRequest }) {
   const queryClient = useQueryClient();
   const alcohol = useQuery({ queryKey: ["alcohol"], queryFn: hubApi.alcohol });
   const [tab, setTab] = useState<"items" | "storage">("items");
@@ -687,7 +872,7 @@ function AlcoholView({ bootstrap, setNotice }: { bootstrap: Bootstrap; setNotice
       {alcohol.isLoading ? <div className="loading-panel">Loading alcohol stock...</div> : null}
       {alcohol.error ? <div className="notice bad">{messageOf(alcohol.error)}</div> : null}
       {alcohol.data && tab === "items" ? <AlcoholItemsPanel bootstrap={bootstrap} catalog={alcohol.data} invalidate={invalidate} setNotice={setNotice} /> : null}
-      {alcohol.data && tab === "storage" ? <AlcoholStoragePanel rows={alcohol.data.storage} invalidate={invalidate} setNotice={setNotice} /> : null}
+      {alcohol.data && tab === "storage" ? <AlcoholStoragePanel rows={alcohol.data.storage} invalidate={invalidate} setNotice={setNotice} requestManagerApproval={requestManagerApproval} /> : null}
     </div>
   );
 }
@@ -1047,25 +1232,24 @@ function AlcoholEditForm({
   );
 }
 
-function AlcoholStoragePanel({ rows, invalidate, setNotice }: { rows: AlcoholStorageRow[]; invalidate: () => Promise<void>; setNotice: NoticeSetter }) {
+function AlcoholStoragePanel({ rows, invalidate, setNotice, requestManagerApproval }: { rows: AlcoholStorageRow[]; invalidate: () => Promise<void>; setNotice: NoticeSetter; requestManagerApproval: ManagerApprovalRequest }) {
   return (
     <div className="storage-list">
       {rows.map((row) => (
-        <AlcoholStorageCard key={row.id} row={row} invalidate={invalidate} setNotice={setNotice} />
+        <AlcoholStorageCard key={row.id} row={row} invalidate={invalidate} setNotice={setNotice} requestManagerApproval={requestManagerApproval} />
       ))}
       {rows.length === 0 ? <Empty title="No liquor stock yet" text="Add plain liquor from the Items tab first." /> : null}
     </div>
   );
 }
 
-function AlcoholStorageCard({ row, invalidate, setNotice }: { row: AlcoholStorageRow; invalidate: () => Promise<void>; setNotice: NoticeSetter }) {
+function AlcoholStorageCard({ row, invalidate, setNotice, requestManagerApproval }: { row: AlcoholStorageRow; invalidate: () => Promise<void>; setNotice: NoticeSetter; requestManagerApproval: ManagerApprovalRequest }) {
   const [mode, setMode] = useState<"delta" | "set">("delta");
   const [large, setLarge] = useState("");
   const [open, setOpen] = useState("");
   const [small, setSmall] = useState("");
-  const [pin, setPin] = useState("");
   const adjust = useMutation({
-    mutationFn: () => hubApi.adjustAlcoholStock(row.id, {
+    mutationFn: (pin: string) => hubApi.adjustAlcoholStock(row.id, {
       mode,
       sealedLargeCount: large === "" ? undefined : Number(large),
       openLargeMl: open === "" ? undefined : Number(open),
@@ -1076,7 +1260,6 @@ function AlcoholStorageCard({ row, invalidate, setNotice }: { row: AlcoholStorag
       setLarge("");
       setOpen("");
       setSmall("");
-      setPin("");
       await invalidate();
       setNotice({ tone: "good", text: "Alcohol stock updated." });
     },
@@ -1098,7 +1281,20 @@ function AlcoholStorageCard({ row, invalidate, setNotice }: { row: AlcoholStorag
         <span>Pending <b>{row.pending_total_ml} ml</b></span>
         <span>Expected <b>{row.expected_after_settlement_ml} ml</b></span>
       </div>
-      <form className="stock-adjust-form" onSubmit={(event) => { event.preventDefault(); adjust.mutate(); }}>
+      <form
+        className="stock-adjust-form"
+        onSubmit={async (event) => {
+          event.preventDefault();
+          const approval = await requestManagerApproval({
+            title: `Approve stock edit for ${row.name}`,
+            defaultReason: "Alcohol stock edit",
+            confirmLabel: "Save stock",
+            danger: true
+          }).catch(() => null);
+          if (!approval) return;
+          adjust.mutate(approval.pin);
+        }}
+      >
         <select value={mode} onChange={(event) => setMode(event.target.value as "delta" | "set")}>
           <option value="delta">Plus / minus</option>
           <option value="set">Set exact</option>
@@ -1106,14 +1302,13 @@ function AlcoholStorageCard({ row, invalidate, setNotice }: { row: AlcoholStorag
         <input value={large} onChange={(event) => setLarge(event.target.value)} placeholder="Large bottles" inputMode="numeric" />
         <input value={open} onChange={(event) => setOpen(event.target.value)} placeholder="Open ml" inputMode="numeric" />
         <input value={small} onChange={(event) => setSmall(event.target.value)} placeholder="Small bottles" inputMode="numeric" />
-        <input value={pin} onChange={(event) => setPin(event.target.value)} placeholder="Manager PIN" type="password" />
-        <button type="submit" disabled={!pin || adjust.isPending}>Save</button>
+        <button type="submit" disabled={adjust.isPending}>Save</button>
       </form>
     </article>
   );
 }
 
-function OrdersView({ bootstrap, setNotice }: { bootstrap: Bootstrap; setNotice: NoticeSetter }) {
+function OrdersView({ bootstrap, setNotice, requestManagerApproval }: { bootstrap: Bootstrap; setNotice: NoticeSetter; requestManagerApproval: ManagerApprovalRequest }) {
   const selectedTableId = useHubStore((state) => state.selectedTableId);
   const selectTable = useHubStore((state) => state.selectTable);
   const search = useHubStore((state) => state.menuSearch);
@@ -1226,7 +1421,7 @@ function OrdersView({ bootstrap, setNotice }: { bootstrap: Bootstrap; setNotice:
         )}
       </section>
 
-      <TableWorkspace tableId={selectedTable?.id ?? null} tableName={selectedTable?.name ?? ""} bootstrap={bootstrap} setNotice={setNotice} />
+      <TableWorkspace tableId={selectedTable?.id ?? null} tableName={selectedTable?.name ?? ""} bootstrap={bootstrap} setNotice={setNotice} requestManagerApproval={requestManagerApproval} />
     </div>
   );
 }
@@ -1299,7 +1494,7 @@ function MenuCard({ item, onAdd }: { item: MenuItem; onAdd: (variantId?: string)
   );
 }
 
-function TableWorkspace({ tableId, tableName, bootstrap, setNotice }: { tableId: string | null; tableName: string; bootstrap: Bootstrap; setNotice: NoticeSetter }) {
+function TableWorkspace({ tableId, tableName, bootstrap, setNotice, requestManagerApproval }: { tableId: string | null; tableName: string; bootstrap: Bootstrap; setNotice: NoticeSetter; requestManagerApproval: ManagerApprovalRequest }) {
   const queryClient = useQueryClient();
   const orderPanel = useHubStore((state) => state.orderPanel);
   const setOrderPanel = useHubStore((state) => state.setOrderPanel);
@@ -1312,8 +1507,6 @@ function TableWorkspace({ tableId, tableName, bootstrap, setNotice }: { tableId:
   const [openPrice, setOpenPrice] = useState("");
   const [openGroup, setOpenGroup] = useState("sg-food");
   const [openUnit, setOpenUnit] = useState("");
-  const [managerPin, setManagerPin] = useState("");
-  const [managerReason, setManagerReason] = useState("");
   const [shiftTargetTableId, setShiftTargetTableId] = useState("");
   const operationKeys = useOperationKeys();
   const draft = tableId ? Object.values(drafts[tableId] ?? {}) : [];
@@ -1376,15 +1569,13 @@ function TableWorkspace({ tableId, tableName, bootstrap, setNotice }: { tableId:
   });
 
   const cancelOrder = useMutation({
-    mutationFn: () => {
+    mutationFn: (approval: ManagerApproval) => {
       const orderId = data?.order?.id;
       if (!orderId) throw new Error("No active order to cancel.");
-      return hubApi.cancelOrder(orderId, { managerApproval: { pin: managerPin, reason: managerReason || "Order cancelled", approvedBy: "manager" } });
+      return hubApi.cancelOrder(orderId, { managerApproval: approval });
     },
     onSuccess: async () => {
       if (tableId) clearDraft(tableId);
-      setManagerPin("");
-      setManagerReason("");
       await refreshTable();
       setOrderPanel("new");
     },
@@ -1535,17 +1726,22 @@ function TableWorkspace({ tableId, tableName, bootstrap, setNotice }: { tableId:
             </div>
           ) : null}
           {data?.order ? (
-            <ManagerApprovalBox
-              title="Cancel running order"
-              pin={managerPin}
-              reason={managerReason}
-              onPin={setManagerPin}
-              onReason={setManagerReason}
-              buttonLabel={cancelOrder.isPending ? "Cancelling..." : "Cancel order"}
-              danger
-              disabled={cancelOrder.isPending || managerPin.length < 4 || managerReason.trim().length < 3}
-              onSubmit={() => cancelOrder.mutate()}
-            />
+            <button
+              type="button"
+              className="danger-link"
+              disabled={cancelOrder.isPending}
+              onClick={async () => {
+                const approval = await requestManagerApproval({
+                  title: "Cancel running order",
+                  defaultReason: "Order cancelled",
+                  confirmLabel: cancelOrder.isPending ? "Cancelling..." : "Cancel order",
+                  danger: true
+                }).catch(() => null);
+                if (approval) cancelOrder.mutate(approval);
+              }}
+            >
+              {cancelOrder.isPending ? "Cancelling..." : "Cancel order"}
+            </button>
           ) : null}
         </div>
       ) : null}
@@ -1559,6 +1755,7 @@ function TableWorkspace({ tableId, tableName, bootstrap, setNotice }: { tableId:
           generating={generateBill.isPending || tableOrder.isFetching}
           onSettled={refreshTable}
           setNotice={setNotice}
+          requestManagerApproval={requestManagerApproval}
         />
       ) : null}
     </section>
@@ -1585,7 +1782,8 @@ function BillingPanel({
   generateBill,
   generating,
   onSettled,
-  setNotice
+  setNotice,
+  requestManagerApproval
 }: {
   tableOrder?: TableOrder | null;
   menuItems: MenuItem[];
@@ -1594,6 +1792,7 @@ function BillingPanel({
   generating: boolean;
   onSettled: () => Promise<void>;
   setNotice: NoticeSetter;
+  requestManagerApproval: ManagerApprovalRequest;
 }) {
   const queryClient = useQueryClient();
   const [discountType, setDiscountType] = useState<"amount" | "percent">("amount");
@@ -1601,8 +1800,6 @@ function BillingPanel({
   const [tip, setTip] = useState("0");
   const [reference, setReference] = useState("");
   const [payments, setPayments] = useState({ cash: "0", upi: "0", card: "0", online: "0" });
-  const [managerPin, setManagerPin] = useState("");
-  const [managerReason, setManagerReason] = useState("");
   const [revisionOpen, setRevisionOpen] = useState(false);
   const [revisionItems, setRevisionItems] = useState<RevisionItem[]>([]);
   const [revisionAddMenuItemId, setRevisionAddMenuItemId] = useState("");
@@ -1659,40 +1856,36 @@ function BillingPanel({
     onError: (error) => setNotice({ tone: "bad", text: messageOf(error) })
   });
   const reprintBill = useMutation({
-    mutationFn: () => {
+    mutationFn: (approval: ManagerApproval) => {
       if (!bill) throw new Error("Generate the bill first.");
-      const payload = { managerApproval: { pin: managerPin, reason: managerReason || "Bill reprint", approvedBy: "manager" } };
+      const payload = { managerApproval: approval };
       const scope = { billId: bill.id, payload };
       pendingScopes.current["bill-reprint"] = scope;
       return hubApi.reprintBill(bill.id, payload, operationKeys.keyFor("bill-reprint", scope));
     },
     onSuccess: () => {
       if (pendingScopes.current["bill-reprint"]) operationKeys.clear("bill-reprint", pendingScopes.current["bill-reprint"]);
-      setManagerPin("");
-      setManagerReason("");
       setNotice({ tone: "good", text: "Reprint queued after manager approval." });
     },
     onError: (error) => setNotice({ tone: "bad", text: messageOf(error) })
   });
   const markNc = useMutation({
-    mutationFn: () => {
+    mutationFn: (approval: ManagerApproval) => {
       if (!bill) throw new Error("Generate the bill first.");
-      const payload = { managerApproval: { pin: managerPin, reason: managerReason || "NC bill", approvedBy: "manager" } };
+      const payload = { managerApproval: approval };
       const scope = { billId: bill.id, payload };
       pendingScopes.current["bill-nc"] = scope;
       return hubApi.markBillNc(bill.id, payload, operationKeys.keyFor("bill-nc", scope));
     },
     onSuccess: async () => {
       if (pendingScopes.current["bill-nc"]) operationKeys.clear("bill-nc", pendingScopes.current["bill-nc"]);
-      setManagerPin("");
-      setManagerReason("");
       await onSettled();
       setNotice({ tone: "good", text: "NC bill printed and excluded from sales totals." });
     },
     onError: (error) => setNotice({ tone: "bad", text: messageOf(error) })
   });
   const reviseBill = useMutation({
-    mutationFn: () => {
+    mutationFn: (approval: ManagerApproval) => {
       if (!bill) throw new Error("Generate the bill first.");
       const items = revisionItems
         .filter((item) => item.quantity > 0)
@@ -1709,7 +1902,7 @@ function BillingPanel({
               }
         );
       if (items.length === 0) throw new Error("A revised bill needs at least one item.");
-      const payload = { items, managerApproval: { pin: managerPin, reason: managerReason || "Bill revised", approvedBy: "manager" } };
+      const payload = { items, managerApproval: approval };
       const scope = { billId: bill.id, payload };
       pendingScopes.current["bill-revise"] = scope;
       return hubApi.reviseBill(bill.id, payload, operationKeys.keyFor("bill-revise", scope));
@@ -1717,8 +1910,6 @@ function BillingPanel({
     onSuccess: async () => {
       if (pendingScopes.current["bill-revise"]) operationKeys.clear("bill-revise", pendingScopes.current["bill-revise"]);
       setRevisionOpen(false);
-      setManagerPin("");
-      setManagerReason("");
       await onSettled();
       setNotice({ tone: "good", text: "Bill revised and totals refreshed." });
     },
@@ -1844,16 +2035,23 @@ function BillingPanel({
         {settle.isPending ? "Punching..." : `Punch bill · ${remaining > 0 ? `${formatInr(remaining)} left` : "paid"}`}
       </button>
       {overpaid > 0 ? <p className="plain-state bad">Payment is {formatInr(overpaid)} more than the balance.</p> : null}
-      <ManagerApprovalBox
-        title="Manager-only bill actions"
-        pin={managerPin}
-        reason={managerReason}
-        onPin={setManagerPin}
-        onReason={setManagerReason}
-        buttonLabel={reprintBill.isPending ? "Queueing..." : "Reprint bill"}
-        disabled={reprintBill.isPending || managerPin.length < 4 || managerReason.trim().length < 3}
-        onSubmit={() => reprintBill.mutate()}
-      />
+      <div className="action-strip">
+        <button
+          type="button"
+          className="secondary-button"
+          disabled={reprintBill.isPending}
+          onClick={async () => {
+            const approval = await requestManagerApproval({
+              title: "Approve bill reprint",
+              defaultReason: "Bill reprint",
+              confirmLabel: reprintBill.isPending ? "Queueing..." : "Reprint bill"
+            }).catch(() => null);
+            if (approval) reprintBill.mutate(approval);
+          }}
+        >
+          {reprintBill.isPending ? "Queueing..." : "Reprint bill"}
+        </button>
+      </div>
       {!revisionOpen ? (
         <button type="button" className="secondary-button" disabled={Boolean(bill.is_nc) || existingPaid > 0} onClick={openRevisionEditor}>
           Revise printed bill
@@ -1908,8 +2106,16 @@ function BillingPanel({
           <button
             type="button"
             className="secondary-button"
-            disabled={reviseBill.isPending || managerPin.length < 4 || managerReason.trim().length < 3 || revisionItems.every((item) => item.quantity <= 0)}
-            onClick={() => reviseBill.mutate()}
+            disabled={reviseBill.isPending || revisionItems.every((item) => item.quantity <= 0)}
+            onClick={async () => {
+              const approval = await requestManagerApproval({
+                title: "Approve revised bill",
+                defaultReason: "Bill revised",
+                confirmLabel: reviseBill.isPending ? "Saving..." : "Save revised bill",
+                danger: true
+              }).catch(() => null);
+              if (approval) reviseBill.mutate(approval);
+            }}
           >
             {reviseBill.isPending ? "Saving revision..." : "Save revised bill"}
           </button>
@@ -1918,8 +2124,17 @@ function BillingPanel({
       <button
         type="button"
         className="danger-link"
-        disabled={markNc.isPending || managerPin.length < 4 || managerReason.trim().length < 3}
-        onClick={() => markNc.mutate()}
+        disabled={markNc.isPending}
+        onClick={async () => {
+          const approval = await requestManagerApproval({
+            title: "Approve NC bill",
+            defaultReason: "NC bill",
+            message: "NC bills print normally, but their money is excluded from sales totals.",
+            confirmLabel: markNc.isPending ? "Marking..." : "Mark NC bill",
+            danger: true
+          }).catch(() => null);
+          if (approval) markNc.mutate(approval);
+        }}
       >
         {markNc.isPending ? "Marking NC..." : "Mark NC bill"}
       </button>
@@ -2058,10 +2273,21 @@ function ReportsView() {
   );
 }
 
-function AdvancedView({ bootstrap, setNotice }: { bootstrap: Bootstrap; setNotice: NoticeSetter }) {
+function AdvancedView({
+  bootstrap,
+  setNotice,
+  requestManagerApproval,
+  onLocked
+}: {
+  bootstrap: Bootstrap;
+  setNotice: NoticeSetter;
+  requestManagerApproval: ManagerApprovalRequest;
+  onLocked: () => Promise<void>;
+}) {
   const queryClient = useQueryClient();
   const [newPin, setNewPin] = useState("");
-  const [currentPin, setCurrentPin] = useState("");
+  const [resetPhrase, setResetPhrase] = useState("");
+  const [resetBackups, setResetBackups] = useState(false);
   const pullCloud = useMutation({
     mutationFn: hubApi.pullCloud,
     onSuccess: async (result) => {
@@ -2095,11 +2321,23 @@ function AdvancedView({ bootstrap, setNotice }: { bootstrap: Bootstrap; setNotic
     onError: (error) => setNotice({ tone: "bad", text: messageOf(error) })
   });
   const savePin = useMutation({
-    mutationFn: () => hubApi.setManagerPin({ currentPin: currentPin || undefined, newPin, updatedBy: "admin" }),
-    onSuccess: () => {
-      setCurrentPin("");
+    mutationFn: (currentPin: string) => hubApi.setManagerPin({ currentPin, newPin, updatedBy: "admin" }),
+    onSuccess: async () => {
       setNewPin("");
-      setNotice({ tone: "good", text: "Manager PIN saved." });
+      await onLocked();
+      setNotice({ tone: "good", text: "Manager PIN changed. Unlock setup again with the new PIN." });
+    },
+    onError: (error) => setNotice({ tone: "bad", text: messageOf(error) })
+  });
+  const fullReset = useMutation({
+    mutationFn: (approval: ManagerApproval) =>
+      hubApi.fullReset({
+        managerApproval: approval,
+        confirmationText: resetPhrase,
+        includeBackups: resetBackups
+      }),
+    onSuccess: () => {
+      setNotice({ tone: "good", text: "Full reset scheduled. The hub will restart now." });
     },
     onError: (error) => setNotice({ tone: "bad", text: messageOf(error) })
   });
@@ -2110,16 +2348,27 @@ function AdvancedView({ bootstrap, setNotice }: { bootstrap: Bootstrap; setNotic
         <div className="panel-title">
           <h2>Manager approval</h2>
         </div>
-        <form className="inline-form" onSubmit={(event) => { event.preventDefault(); savePin.mutate(); }}>
-          <label>
-            Current PIN
-            <input value={currentPin} onChange={(event) => setCurrentPin(event.target.value)} type="password" placeholder="Only needed when changing PIN" />
-          </label>
+        <form className="inline-form" onSubmit={(event) => event.preventDefault()}>
           <label>
             New manager PIN
             <input value={newPin} onChange={(event) => setNewPin(event.target.value)} type="password" />
           </label>
-          <button type="submit" disabled={newPin.length < 4 || savePin.isPending}>Save PIN</button>
+          <button
+            type="button"
+            disabled={newPin.length < 4 || savePin.isPending}
+            onClick={async () => {
+              const approval = await requestManagerApproval({
+                title: "Change Manager PIN",
+                defaultReason: "Manager PIN changed",
+                message: "After this is saved, setup will lock and must be unlocked with the new PIN.",
+                confirmLabel: savePin.isPending ? "Saving..." : "Save new PIN",
+                danger: true
+              }).catch(() => null);
+              if (approval) savePin.mutate(approval.pin);
+            }}
+          >
+            Save PIN
+          </button>
         </form>
       </section>
       <section className="panel">
@@ -2179,6 +2428,44 @@ function AdvancedView({ bootstrap, setNotice }: { bootstrap: Bootstrap; setNotic
           ))}
         </div>
       </section>
+      <section className="panel danger-zone">
+        <div className="panel-title">
+          <h2>Danger zone</h2>
+          <span>Reset this hub PC</span>
+        </div>
+        <p className="warning-text">
+          Full reset removes the local restaurant database from this PC. Use this only when you want to start setup from zero.
+        </p>
+        <div className="reset-options">
+          <label>
+            Type RESET HUB
+            <input value={resetPhrase} onChange={(event) => setResetPhrase(event.target.value)} placeholder="RESET HUB" />
+          </label>
+          <label className="checkbox-row">
+            <input type="checkbox" checked={resetBackups} onChange={(event) => setResetBackups(event.target.checked)} />
+            Also delete local backup files
+          </label>
+          <button
+            type="button"
+            className="danger-button"
+            disabled={resetPhrase !== "RESET HUB" || fullReset.isPending}
+            onClick={async () => {
+              const approval = await requestManagerApproval({
+                title: "Full reset hub",
+                defaultReason: "Full reset hub",
+                message: resetBackups
+                  ? "This will delete local data and local backup files, then restart the hub."
+                  : "This will delete local data, keep backup files, then restart the hub.",
+                confirmLabel: fullReset.isPending ? "Resetting..." : "Reset hub",
+                danger: true
+              }).catch(() => null);
+              if (approval) fullReset.mutate(approval);
+            }}
+          >
+            Reset hub
+          </button>
+        </div>
+      </section>
     </div>
   );
 }
@@ -2187,16 +2474,17 @@ function PrintLayoutEditor({
   layouts,
   units,
   setNotice,
+  requestManagerApproval,
   onSaved
 }: {
   layouts?: { default: PrintLayoutSettings; receipt: PrintLayoutSettings; units: Array<{ productionUnitId: string; name: string; layout: PrintLayoutSettings }> };
   units: ProductionUnit[];
   setNotice: NoticeSetter;
+  requestManagerApproval: ManagerApprovalRequest;
   onSaved: () => Promise<void>;
 }) {
   const [scope, setScope] = useState<"receipt" | "unit">("receipt");
   const [unitId, setUnitId] = useState("");
-  const [layoutPin, setLayoutPin] = useState("");
   const selectedUnitId = unitId || units[0]?.id || "";
   const selectedLayout =
     scope === "receipt"
@@ -2213,13 +2501,12 @@ function PrintLayoutEditor({
   }, [selectedLayout]);
 
   const save = useMutation({
-    mutationFn: () => {
+    mutationFn: (pin: string) => {
       if (!draft) throw new Error("Print layout is still loading");
-      return hubApi.updatePrintLayout(scope, { ...draft, scope, productionUnitId: scope === "unit" ? selectedUnitId : undefined }, layoutPin);
+      return hubApi.updatePrintLayout(scope, { ...draft, scope, productionUnitId: scope === "unit" ? selectedUnitId : undefined }, pin);
     },
     onSuccess: async () => {
       await onSaved();
-      setLayoutPin("");
       setNotice({ tone: "good", text: "Print layout saved." });
     },
     onError: (error) => setNotice({ tone: "bad", text: messageOf(error) })
@@ -2254,7 +2541,7 @@ function PrintLayoutEditor({
         </div>
       </div>
       <div className="layout-editor">
-        <form className="template-form" onSubmit={(event) => { event.preventDefault(); save.mutate(); }}>
+        <form className="template-form" onSubmit={(event) => event.preventDefault()}>
           <label>
             Layout for
             <select value={scope} onChange={(event) => setScope(event.target.value as "receipt" | "unit")}>
@@ -2270,10 +2557,6 @@ function PrintLayoutEditor({
               </select>
             </label>
           ) : null}
-          <label>
-            Manager PIN
-            <input value={layoutPin} onChange={(event) => setLayoutPin(event.target.value)} type="password" autoComplete="current-password" placeholder="Required to save layout" />
-          </label>
           <label>
             Paper width
             <select value={draft.lineWidthChars} onChange={(event) => update("lineWidthChars", Number(event.target.value))}>
@@ -2326,7 +2609,20 @@ function PrintLayoutEditor({
             <label><input type="checkbox" checked={draft.showCaptain} onChange={(event) => update("showCaptain", event.target.checked)} /> Captain on KOT</label>
             <label><input type="checkbox" checked={draft.showNcReprintRevision} onChange={(event) => update("showNcReprintRevision", event.target.checked)} /> NC/reprint labels</label>
           </div>
-          <button type="submit" disabled={layoutPin.length < 4 || save.isPending}>Save layout</button>
+          <button
+            type="button"
+            disabled={save.isPending}
+            onClick={async () => {
+              const approval = await requestManagerApproval({
+                title: "Save print layout",
+                defaultReason: "Print layout changed",
+                confirmLabel: save.isPending ? "Saving..." : "Save layout"
+              }).catch(() => null);
+              if (approval) save.mutate(approval.pin);
+            }}
+          >
+            Save layout
+          </button>
         </form>
         <pre className="print-preview">{preview}</pre>
       </div>
@@ -2647,47 +2943,6 @@ function LineItems({
         </article>
       ))}
     </div>
-  );
-}
-
-function ManagerApprovalBox({
-  title,
-  pin,
-  reason,
-  onPin,
-  onReason,
-  buttonLabel,
-  disabled,
-  danger,
-  onSubmit
-}: {
-  title: string;
-  pin: string;
-  reason: string;
-  onPin: (value: string) => void;
-  onReason: (value: string) => void;
-  buttonLabel: string;
-  disabled: boolean;
-  danger?: boolean;
-  onSubmit: () => void;
-}) {
-  return (
-    <section className="manager-approval">
-      <strong>{title}</strong>
-      <div className="approval-grid">
-        <label>
-          Manager PIN
-          <input value={pin} onChange={(event) => onPin(event.target.value)} type="password" placeholder="4+ digit PIN" />
-        </label>
-        <label>
-          Reason
-          <input value={reason} onChange={(event) => onReason(event.target.value)} placeholder="Reason required" />
-        </label>
-        <button type="button" className={danger ? "danger-link" : undefined} disabled={disabled} onClick={onSubmit}>
-          {buttonLabel}
-        </button>
-      </div>
-    </section>
   );
 }
 

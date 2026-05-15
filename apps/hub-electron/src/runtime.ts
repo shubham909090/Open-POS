@@ -30,8 +30,9 @@ export function createSyncTick(syncBridge: SyncBridgeLike, log: SyncLogger) {
   };
 }
 
-export async function startHub() {
+export async function startHub(options: { requestRestart?: () => void } = {}) {
   const config = loadHubConfig();
+  BackupService.applyPendingReset(config.databasePath, config.backupDir);
   BackupService.applyPendingRestore(config.databasePath, config.backupDir);
   const database = new HubDatabase(config.databasePath);
   database.migrate();
@@ -64,7 +65,8 @@ export async function startHub() {
     printJobService,
     syncBridge,
     eventBus,
-    publicUrl: config.publicUrl
+    publicUrl: config.publicUrl,
+    requestRestart: options.requestRestart
   });
 
   await app.listen({ host: config.host, port: config.port });

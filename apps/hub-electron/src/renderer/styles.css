@@ -1,3 +1,7 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 :root {
   color-scheme: light;
   --ink: #17211c;
@@ -32,13 +36,28 @@ body {
   background-size: 42px 42px;
 }
 
-button,
-input,
-select {
+.first-run-shell button,
+.first-run-shell input,
+.first-run-shell select,
+.hub-shell button,
+.hub-shell input,
+.hub-shell select {
   font: inherit;
 }
 
-button {
+.first-run-shell button,
+.first-run-shell input,
+.first-run-shell select,
+.first-run-shell textarea,
+.hub-shell button,
+.hub-shell input,
+.hub-shell select,
+.hub-shell textarea {
+  position: relative;
+}
+
+.first-run-shell button,
+.hub-shell button {
   border: 0;
   border-radius: 8px;
   background: var(--ink);
@@ -49,13 +68,16 @@ button {
   font-weight: 760;
 }
 
-button:disabled {
+.first-run-shell button:disabled,
+.hub-shell button:disabled {
   cursor: not-allowed;
   opacity: 0.48;
 }
 
-input,
-select {
+.first-run-shell input,
+.first-run-shell select,
+.hub-shell input,
+.hub-shell select {
   min-height: 42px;
   border: 1px solid var(--line-strong);
   border-radius: 8px;
@@ -65,7 +87,20 @@ select {
   width: 100%;
 }
 
-label {
+.first-run-shell input:focus,
+.first-run-shell select:focus,
+.first-run-shell textarea:focus,
+.first-run-shell button:focus-visible,
+.hub-shell input:focus,
+.hub-shell select:focus,
+.hub-shell textarea:focus,
+.hub-shell button:focus-visible {
+  outline: 3px solid rgba(15, 118, 110, 0.22);
+  outline-offset: 2px;
+}
+
+.first-run-shell label,
+.hub-shell label {
   display: grid;
   gap: 7px;
   color: var(--muted);
@@ -1247,6 +1282,70 @@ label {
   display: block;
   color: var(--ink);
   font-size: 15px;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(16, 32, 27, 0.42);
+  backdrop-filter: blur(4px);
+}
+
+.modal-card {
+  width: min(520px, 100%);
+  display: grid;
+  gap: 16px;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: 0 24px 80px rgba(16, 32, 27, 0.28);
+}
+
+.modal-card.danger {
+  border-color: #f3b1aa;
+}
+
+.modal-card header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.modal-card h2 {
+  margin: 0;
+  font-size: 1.45rem;
+}
+
+.approval-form {
+  display: grid;
+  gap: 12px;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.danger-button {
+  background: var(--danger);
+  color: #fff;
+}
+
+.danger-zone {
+  border-color: #f0b8b2;
+}
+
+.reset-options {
+  display: grid;
+  gap: 12px;
 }
 
 @media (max-width: 1180px) {

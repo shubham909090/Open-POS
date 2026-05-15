@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
+import { homedir, platform } from "node:os";
 import { join, resolve } from "node:path";
 
 export interface HubConfig {
@@ -40,10 +40,21 @@ function defaultConfigPaths(env: EnvMap): string[] {
     env.GAURAV_POS_CONFIG,
     env.APPDATA ? join(env.APPDATA, "Gaurav POS Hub", "hub.env") : undefined,
     env.PROGRAMDATA ? join(env.PROGRAMDATA, "Gaurav POS Hub", "hub.env") : undefined,
+    join(defaultAppDataRoot(env), "hub.env"),
     join(homedir(), "AppData", "Roaming", "Gaurav POS Hub", "hub.env"),
     resolve(process.cwd(), "hub.env"),
     resolve(process.cwd(), ".env.local")
   ].filter((path): path is string => Boolean(path));
+}
+
+function defaultAppDataRoot(env: EnvMap = process.env): string {
+  if (platform() === "win32") {
+    return join(env.APPDATA ?? join(homedir(), "AppData", "Roaming"), "Gaurav POS Hub");
+  }
+  if (platform() === "darwin") {
+    return join(homedir(), "Library", "Application Support", "Gaurav POS Hub");
+  }
+  return join(env.XDG_DATA_HOME ?? join(homedir(), ".local", "share"), "Gaurav POS Hub");
 }
 
 export function loadHubEnvFiles(env: EnvMap = process.env): EnvMap {
@@ -61,8 +72,8 @@ export function loadHubConfig(env = process.env): HubConfig {
   return {
     host: source.HUB_HOST ?? "0.0.0.0",
     port: Number(source.HUB_PORT ?? 3737),
-    databasePath: source.HUB_DATABASE_PATH ?? "./data/hub.sqlite",
-    backupDir: source.HUB_BACKUP_DIR ?? "./data/backups",
+    databasePath: source.HUB_DATABASE_PATH ?? join(defaultAppDataRoot(source), "data", "hub.sqlite"),
+    backupDir: source.HUB_BACKUP_DIR ?? join(defaultAppDataRoot(source), "data", "backups"),
     printerOutputModeDefault: source.HUB_PRINTER_DRY_RUN === "false" ? "live" : "test",
     convexHttpUrl: source.CONVEX_HTTP_URL ?? source.CONVEX_URL,
     posSyncSecret: source.POS_SYNC_SECRET,

@@ -5,9 +5,15 @@ import type { HubDatabase } from "./database.js";
 
 const BACKUP_EXTENSION = ".sqlite";
 const RESTORE_MARKER = "restore-pending.json";
+const RESET_MARKER = "reset-pending.json";
 
 interface RestoreMarker {
   backupPath: string;
+  requestedAt: string;
+}
+
+interface ResetMarker {
+  includeBackups: boolean;
   requestedAt: string;
 }
 
@@ -49,6 +55,37 @@ export class BackupService {
     return BackupService.toSummary(databasePath);
   }
 
+  static applyPendingReset(databasePath: string, backupDir: string): { reset: true; includeBackups: boolean } | null {
+    if (databasePath === ":memory:") return null;
+
+    const markerPath = join(backupDir, RESET_MARKER);
+    if (!existsSync(markerPath)) return null;
+
+    let marker: ResetMarker;
+    try {
+      marker = JSON.parse(readFileSync(markerPath, "utf8")) as ResetMarker;
+    } catch {
+      renameSync(markerPath, `${markerPath}.invalid-${Date.now()}`);
+      return null;
+    }
+    mkdirSync(dirname(databasePath), { recursive: true });
+    mkdirSync(backupDir, { recursive: true });
+
+    for (const path of BackupService.sqliteRuntimeFiles(databasePath)) {
+      rmSync(path, { force: true });
+    }
+
+    if (marker.includeBackups && existsSync(backupDir)) {
+      for (const file of readdirSync(backupDir)) {
+        if (file.endsWith(BACKUP_EXTENSION)) rmSync(join(backupDir, file), { force: true });
+      }
+    }
+
+    rmSync(markerPath, { force: true });
+    rmSync(join(backupDir, RESTORE_MARKER), { force: true });
+    return { reset: true, includeBackups: Boolean(marker.includeBackups) };
+  }
+
   async createBackup(label = "manual"): Promise<BackupSummary> {
     if (this.databasePath === ":memory:") {
       throw new Error("Backups are not available for in-memory databases");
@@ -84,6 +121,24 @@ export class BackupService {
     };
     writeFileSync(join(this.backupDir, RESTORE_MARKER), JSON.stringify(marker, null, 2));
     return { scheduled: true, restartRequired: true, backup: BackupService.toSummary(backupPath) };
+  }
+
+  scheduleFullReset(includeBackups: boolean): { scheduled: true; restartRequired: true; includeBackups: boolean } {
+    if (this.databasePath === ":memory:") {
+      throw new Error("Full reset is not available for in-memory databases");
+    }
+
+    mkdirSync(this.backupDir, { recursive: true });
+    const marker: ResetMarker = {
+      includeBackups,
+      requestedAt: new Date().toISOString()
+    };
+    writeFileSync(join(this.backupDir, RESET_MARKER), JSON.stringify(marker, null, 2));
+    return { scheduled: true, restartRequired: true, includeBackups };
+  }
+
+  private static sqliteRuntimeFiles(databasePath: string): string[] {
+    return [databasePath, `${databasePath}-wal`, `${databasePath}-shm`, `${databasePath}-journal`];
   }
 
   private static validateBackupFile(path: string): void {

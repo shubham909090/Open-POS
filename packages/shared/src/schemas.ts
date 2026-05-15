@@ -323,6 +323,12 @@ export const scheduleRestoreSchema = z.object({
   fileName: z.string().trim().min(1).max(260)
 });
 
+export const fullResetSchema = z.object({
+  managerApproval: managerApprovalSchema,
+  confirmationText: z.string().trim(),
+  includeBackups: z.boolean().default(false)
+}).refine((value) => value.confirmationText === "RESET HUB", "Type RESET HUB to confirm");
+
 export type SubmitOrderInput = z.infer<typeof submitOrderSchema>;
 export type SettleBillInput = z.input<typeof settleBillSchema>;
 export type ReprintKotInput = z.infer<typeof reprintKotSchema>;
@@ -362,3 +368,4 @@ export type ExchangePairingCodeInput = z.infer<typeof exchangePairingCodeSchema>
 export type RevokeDeviceInput = z.infer<typeof revokeDeviceSchema>;
 export type CreateBackupInput = z.infer<typeof createBackupSchema>;
 export type ScheduleRestoreInput = z.infer<typeof scheduleRestoreSchema>;
+export type FullResetInput = z.infer<typeof fullResetSchema>;

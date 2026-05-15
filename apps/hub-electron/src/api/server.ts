@@ -12,6 +12,7 @@ import {
   createAlcoholItemSchema,
   createBackupSchema,
   createFloorSchema,
+  fullResetSchema,
   createMenuItemSchema,
   createPairingCodeSchema,
   createProductionUnitSchema,
@@ -73,6 +74,7 @@ export function createHubServer(input: {
   syncBridge?: ConvexSyncBridge;
   eventBus: EventBus<unknown>;
   publicUrl?: string;
+  requestRestart?: () => void;
 }) {
   const app = Fastify({ logger: true });
 
@@ -696,6 +698,15 @@ export function createHubServer(input: {
   app.post("/backups/restore", { preHandler: adminOnly }, async (request) => {
     const body = scheduleRestoreSchema.parse(request.body);
     return input.backupService.scheduleRestore(body.fileName);
+  });
+  app.post("/system/full-reset", { preHandler: adminOnly }, async (request) => {
+    const body = fullResetSchema.parse(request.body);
+    input.orderService.verifyManagerPinForSession(body.managerApproval.pin);
+    const result = input.backupService.scheduleFullReset(body.includeBackups);
+    setTimeout(() => {
+      if (input.requestRestart) input.requestRestart();
+    }, 250).unref();
+    return result;
   });
 
   return app;
