@@ -41,7 +41,7 @@ If copying the payload is awkward:
 - Pairing codes expire after 10 minutes.
 - A pairing code can be used once.
 - Revoke lost devices from hub Setup.
-- Captain devices can take orders, send KOT/BOT, view running table checks, shift a full running table, shift selected items, run billing/payment actions, view the current-day summary, and receive kitchen/bar ready alerts.
+- Captain devices can take orders, send KOT/BOT, view running table checks, shift any running table, shift selected items from any running table, run billing/payment actions, view the current-day summary, and receive kitchen/bar ready alerts.
 - Waiter devices can take orders and view running checks, but cannot shift tables/items.
 - Kitchen devices can open the KDS screen and mark KOT/BOT tickets queued, preparing, ready, served, or cancelled.
 - Admin/captain devices are trusted devices. They can see bill/payment details and run billing/report/print workflows.

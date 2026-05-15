@@ -1473,6 +1473,43 @@ describe("OrderService KOT lifecycle", () => {
     database.close();
   });
 
+  it("lets captains shift running tables and selected items opened by another captain", () => {
+    const { database, orderService } = createTestHub();
+    const captainOne = { id: "device-captain-one", name: "Captain One", role: "captain" as const };
+    const captainTwo = { id: "device-captain-two", name: "Captain Two", role: "captain" as const };
+    const order = orderService.submitOrder(
+      {
+        tableId: "table-t1",
+        captainId: "spoofed",
+        pax: 1,
+        orderType: "dine_in",
+        items: [{ menuItemId: "item-dal-fry", quantity: 2 }]
+      },
+      captainOne
+    );
+
+    const tableMove = orderService.moveTable({ fromTableId: "table-t1", toTableId: "table-t2", reason: "Captain handoff" }, captainTwo);
+    const movedOrder = orderService.getOrder(order.orderId) as { items: Array<{ id: string }>; order: { captain_device_id: string; table_id: string } };
+    const item = movedOrder.items[0];
+    expect(item).toBeDefined();
+    if (!item) throw new Error("Expected submitted order to include a movable item");
+    const itemMove = orderService.moveOrderItems(
+      { fromTableId: "table-t2", toTableId: "table-t1", reason: "Split after handoff", items: [{ orderItemId: item.id, quantity: 1 }] },
+      captainTwo
+    );
+    const sourceOrderAfterSplit = orderService.getOrder(order.orderId) as { order: { captain_device_id: string; table_id: string } };
+
+    expect(tableMove).toMatchObject({ fromTableId: "table-t1", toTableId: "table-t2", orderId: order.orderId });
+    expect(itemMove).toMatchObject({ fromOrderId: order.orderId });
+    expect(sourceOrderAfterSplit.order).toMatchObject({
+      captain_device_id: "device-captain-one",
+      table_id: "table-t2"
+    });
+    expect(orderService.getTableOrder("table-t1")).not.toBeNull();
+
+    database.close();
+  });
+
   it("shifts selected items and creates source and target KOT transfer tickets", () => {
     const { database, orderService } = createTestHub();
     const order = orderService.submitOrder({

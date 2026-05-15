@@ -42,7 +42,7 @@ Local hub/mobile device roles:
 | Hub setup, device pairing, printers, templates, manager PIN, backups, sync tools | yes | no | no | no |
 | View full order/bill/payment/KOT data | yes | yes | no | no |
 | Submit table orders | yes | yes | yes | no |
-| Move table/items | yes | own captain tables/items only | no | no |
+| Move table/items | yes | any running table/items | no | no |
 | Billing, settlement, NC, reprint, revisions | yes | yes | no | no |
 | Reports and alcohol stock reports | yes | yes | no | no |
 | KDS ticket screen and KOT/BOT status updates | yes | no | no | yes |

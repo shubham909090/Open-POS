@@ -85,8 +85,8 @@ Responsibilities:
 - Send finalized order items to the hub.
 - Save local drafts when needed.
 - View running table order from the hub.
-- Captain-only: shift a full running table to another free table.
-- Captain-only: shift selected sent items to another table.
+- Captain-only: shift any running table to another free table.
+- Captain-only: shift selected sent items from any running table to another table.
 - Captain-only: generate bills, print/reprint through the hub printer, record cash/UPI/card/online/split payments, add discount/tip, mark NC with Manager PIN, and view the current business-day summary.
 - Waiter scope only: no billing, reports, movement, manager settings, or cloud admin features.
 - Poll ready notifications from the hub for kitchen/bar ready alerts.
@@ -145,7 +145,7 @@ Local hub/mobile device roles are defined in `packages/shared/src/types.ts`:
 Current local permission model:
 
 - `admin`: full hub setup/admin permissions, device pairing/revoke, sync, backups, settings, printer setup, and reports.
-- `captain`: full restaurant operations role. Can submit orders, bill/settle/print, view current reports, adjust alcohol stock with Manager PIN, shift own open tables/items from APK, and receive ready alerts.
+- `captain`: full restaurant operations role. Can submit orders, bill/settle/print, view current reports, adjust alcohol stock with Manager PIN, shift any running table/items from APK, and receive ready alerts.
 - `waiter`: mobile/basic order-taking role. Can submit/view orders, cannot shift tables/items.
 - `kitchen`: KDS role. Can view kitchen/bar tickets and update KOT/BOT statuses.
 
@@ -161,7 +161,7 @@ Authority matrix:
 | View full table/order with bill, payments, KOT/BOT | yes | yes | no | no |
 | View running table order without bill/payment/KOT details | yes | yes | yes | no |
 | Submit table orders / open items | yes | yes | yes | no |
-| Move full table / selected items | yes | own open table/items only | no | no |
+| Move full table / selected items | yes | any running table/items | no | no |
 | Generate, print, revise, settle, NC, reprint bills | yes | yes | no | no |
 | Cancel/remove orders | yes, manager PIN required | yes, manager PIN required | no | no |
 | Reprint KOT/BOT | yes, manager PIN required | yes, manager PIN required | no | no |
@@ -174,9 +174,9 @@ Important security rule:
 
 - Hub endpoints derive actor identity from the authenticated local device token.
 - The system does not trust client-sent `captainId`, `movedBy`, or display names for security decisions.
-- Captain ownership is based on paired device identity.
-- Captains can shift only their own open/running tables/items.
-- Admin can correct valid table/item movement from the hub; captain APK movement remains own-open-table scoped.
+- Captain identity is still based on paired device identity for order audit and ready notifications.
+- Captains can shift any running/open table or selected items, regardless of who first opened the table.
+- Admin can also move billed tables for manager correction; captain movement remains running-table scoped.
 
 ## Auth Model
 

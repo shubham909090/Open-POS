@@ -85,8 +85,8 @@ It does a smaller set of tasks:
 - add simple dish quantities
 - review the KOT before sending
 - save a draft if the hub is temporarily unreachable
-- captain only: shift a full running table to another free table
-- captain only: shift selected items to another table
+- captain only: shift any running table to another free table
+- captain only: shift selected items from any running table to another table
 - captain only: generate/print/settle bills and view the current-day summary
 - captain only: receive kitchen/bar ready alerts
 
@@ -100,7 +100,7 @@ It does not write directly to SQLite. It sends final orders to the hub.
 | Submit orders | yes | yes | yes | no |
 | View running table order | yes | yes | yes | no |
 | See bill/payment/KOT details | yes | yes | no | no |
-| Shift full table or selected items | yes | own captain tables/items only | no | no |
+| Shift full table or selected items | yes | any running table/items | no | no |
 | Generate, print, settle, revise, NC bills | yes | yes | no | no |
 | Current reports/alcohol stock reports | yes | yes | no | no |
 | KDS ticket status updates | yes | no | no | yes |

@@ -230,7 +230,7 @@ describe("Hub API auth and service flow", () => {
     expect(isRealtimeEventVisibleForRole({ type: "table.shifted" }, "waiter")).toBe(true);
   });
 
-  it("lets captains shift only their own running tables and items", async () => {
+  it("lets captains shift any running table and selected items", async () => {
     const { app, database } = createTestServer();
     const adminHeaders = { "x-device-token": "test-admin-token" };
 
@@ -282,19 +282,13 @@ describe("Hub API auth and service flow", () => {
       method: "POST",
       url: "/tables/move",
       headers: { "x-device-token": captainTwo.token },
-      payload: { fromTableId: "table-t1", toTableId: "table-t2", reason: "Wrong owner" }
-    });
-    const ownMove = await app.inject({
-      method: "POST",
-      url: "/tables/move",
-      headers: { "x-device-token": captainOne.token },
       payload: { fromTableId: "table-t1", toTableId: "table-t2", reason: "Guest moved" }
     });
     const item = database.db.prepare("SELECT id FROM order_items WHERE order_id = ? LIMIT 1").get(order.orderId) as { id: string };
-    const ownItemMove = await app.inject({
+    const otherCaptainItemMove = await app.inject({
       method: "POST",
       url: "/orders/items/move",
-      headers: { "x-device-token": captainOne.token },
+      headers: { "x-device-token": captainTwo.token },
       payload: { fromTableId: "table-t2", toTableId: "table-t1", reason: "Split table", items: [{ orderItemId: item.id, quantity: 1 }] }
     });
     const captainKdsStatus = await app.inject({
@@ -307,10 +301,59 @@ describe("Hub API auth and service flow", () => {
     expect(orderRow.captain_id).toBe("Captain One");
     expect(orderRow.captain_device_id).toMatch(/^device_/);
     expect(waiterMove.statusCode).toBe(403);
-    expect(otherCaptainMove.statusCode).toBe(403);
-    expect(ownMove.statusCode).toBe(200);
-    expect(ownItemMove.statusCode).toBe(200);
+    expect(otherCaptainMove.statusCode).toBe(200);
+    expect(otherCaptainItemMove.statusCode).toBe(200);
     expect(captainKdsStatus.statusCode).toBe(403);
+
+    await app.close();
+    database.close();
+  });
+
+  it("keeps billed-table movement admin-only", async () => {
+    const { app, database } = createTestServer();
+    const adminHeaders = { "x-device-token": "test-admin-token" };
+    const pairingResponse = await app.inject({
+      method: "POST",
+      url: "/devices/pairing-codes",
+      headers: adminHeaders,
+      payload: { deviceName: "Captain Billing Move", role: "captain", expiresInMinutes: 10 }
+    });
+    const captainResponse = await app.inject({
+      method: "POST",
+      url: "/devices/pair/exchange",
+      payload: { code: pairingResponse.json<{ code: string }>().code, deviceName: "Captain Billing Move" }
+    });
+    const captainHeaders = { "x-device-token": captainResponse.json<{ token: string }>().token };
+    const orderResponse = await app.inject({
+      method: "POST",
+      url: "/orders/submit",
+      headers: captainHeaders,
+      payload: {
+        tableId: "table-t1",
+        pax: 2,
+        orderType: "dine_in",
+        items: [{ menuItemId: "item-dal-fry", quantity: 1 }]
+      }
+    });
+    const order = orderResponse.json<{ orderId: string }>();
+    await app.inject({ method: "POST", url: `/bills/${order.orderId}/generate`, headers: captainHeaders });
+
+    const captainMove = await app.inject({
+      method: "POST",
+      url: "/tables/move",
+      headers: captainHeaders,
+      payload: { fromTableId: "table-t1", toTableId: "table-t2", reason: "After bill print" }
+    });
+    const adminMove = await app.inject({
+      method: "POST",
+      url: "/tables/move",
+      headers: adminHeaders,
+      payload: { fromTableId: "table-t1", toTableId: "table-t2", reason: "Manager correction" }
+    });
+
+    expect(captainMove.statusCode).toBe(403);
+    expect(captainMove.json()).toMatchObject({ error: "Captains can shift only running tables before billing" });
+    expect(adminMove.statusCode).toBe(200);
 
     await app.close();
     database.close();

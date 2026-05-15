@@ -2807,7 +2807,6 @@ export class OrderService {
     }
     if (actor.role !== "captain") throw new DomainError("Only captains can shift tables from the APK", 403);
     if (order.status !== "open") throw new DomainError("Captains can shift only running tables before billing", 403);
-    if (order.captain_device_id !== actor.id) throw new DomainError("Captains can shift only their own tables", 403);
   }
 
   private createOrder(input: Pick<SubmitOrderInput, "tableId" | "pax" | "orderType"> & { captainId: string }, posDayId: string, now: string, actor?: DeviceActor): OrderRow {
