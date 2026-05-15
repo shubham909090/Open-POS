@@ -31,7 +31,7 @@ describe("hub runtime config", () => {
       port: 4747,
       publicUrl: "http://192.168.1.20:3737",
       databasePath: "C:\\ProgramData\\Gaurav POS Hub\\data\\hub.sqlite",
-      printerDryRun: false,
+      printerOutputModeDefault: "live",
       adminToken: "file-token"
     });
 

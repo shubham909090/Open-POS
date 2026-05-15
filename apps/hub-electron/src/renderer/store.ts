@@ -22,6 +22,7 @@ interface HubUiState {
   selectedTableId: string | null;
   orderPanel: OrderPanel;
   menuSearch: string;
+  recentMenuItemIds: string[];
   selectedKdsUnitId: string | null;
   drafts: Record<string, Record<string, DraftItem>>;
   setView: (view: HubView) => void;
@@ -40,6 +41,7 @@ export const useHubStore = create<HubUiState>((set) => ({
   selectedTableId: null,
   orderPanel: "new",
   menuSearch: "",
+  recentMenuItemIds: [],
   selectedKdsUnitId: null,
   drafts: {},
   setView: (view) => set({ view }),
@@ -54,7 +56,9 @@ export const useHubStore = create<HubUiState>((set) => ({
       if (!variant && item.sale_group_kind === "alcohol") return state;
       const key = variant ? `${item.id}:${variant.id}` : item.id;
       const current = tableDraft[key];
+      const recentMenuItemIds = [item.id, ...state.recentMenuItemIds.filter((id) => id !== item.id)].slice(0, 12);
       return {
+        recentMenuItemIds,
         drafts: {
           ...state.drafts,
           [tableId]: {

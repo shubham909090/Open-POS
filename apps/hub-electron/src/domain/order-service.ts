@@ -17,6 +17,7 @@ import {
   type MoveOrderItemsInput,
   type MoveTableInput,
   type KotType,
+  type PrinterOutputMode,
   type ReprintKotInput,
   type ReviseBillInput,
   type RetryPrintJobInput,
@@ -845,8 +846,10 @@ export class OrderService {
       productionUnits: this.listProductionUnits(),
       saleGroups: this.listSaleGroups(true),
       menuItems: this.listMenuItems(true),
+      menuPopularity: this.getCurrentMenuPopularity(),
       ticketTemplate: this.getTicketTemplate(),
       printJobs: this.listPrintJobs(20),
+      printerOutputMode: this.getPrinterOutputMode(),
       syncStatus: this.getSyncStatus()
     };
   }
@@ -1021,6 +1024,23 @@ export class OrderService {
       .all();
     const variants = this.listVariantsForMenuItems((rows as Array<{ id: string }>).map((row) => row.id), includeInactive);
     return (rows as Array<Record<string, unknown>>).map((row) => ({ ...row, variants: variants.get(String(row.id)) ?? [] }));
+  }
+
+  getCurrentMenuPopularity(): Array<{ menuItemId: string; quantity: number }> {
+    const businessDay = this.ensureCurrentBusinessDay() as { id: string };
+    return this.db
+      .prepare(
+        `SELECT oi.menu_item_id AS menuItemId, COALESCE(SUM(oi.quantity), 0) AS quantity
+         FROM order_items oi
+         JOIN orders o ON o.id = oi.order_id
+         WHERE o.pos_day_id = ?
+           AND oi.status != 'cancelled'
+           AND oi.menu_item_id IS NOT NULL
+         GROUP BY oi.menu_item_id
+         HAVING quantity > 0
+         ORDER BY quantity DESC, oi.menu_item_id ASC`
+      )
+      .all(businessDay.id) as Array<{ menuItemId: string; quantity: number }>;
   }
 
   private listVariantsForMenuItems(menuItemIds: string[], includeInactive = false): Map<string, MenuItemVariantRow[]> {
@@ -1496,6 +1516,86 @@ export class OrderService {
     });
     run();
     return input;
+  }
+
+  getPrinterOutputMode(): PrinterOutputMode {
+    return this.readPrinterOutputMode() ?? "test";
+  }
+
+  ensurePrinterOutputMode(defaultMode: PrinterOutputMode): PrinterOutputMode {
+    const current = this.readPrinterOutputMode();
+    if (current) return current;
+    this.upsertSetting("printer_output_mode", defaultMode);
+    return defaultMode;
+  }
+
+  updatePrinterOutputMode(mode: PrinterOutputMode): { mode: PrinterOutputMode } {
+    this.upsertSetting("printer_output_mode", mode);
+    this.appendEvent("printer_output_mode.updated", "hub_setting", "printer_output_mode", { mode });
+    return { mode };
+  }
+
+  enqueueTestBillPrint(requestedBy: string): { printJobId: string } {
+    const receipt = this.getReceiptPrinter();
+    const template = this.getTicketTemplate();
+    const printJobId = this.enqueuePrintJob({
+      targetType: "BILL",
+      targetId: "test-bill",
+      productionUnitId: null,
+      printerHost: receipt.printerHost,
+      printerPort: receipt.printerPort,
+      printerName: receipt.printerName,
+      payload: renderBillTicket({
+        tableName: "TEST",
+        billId: "TEST-BILL",
+        subtotalPaise: 100,
+        taxPaise: 0,
+        totalPaise: 100,
+        finalTotalPaise: 100,
+        createdAt: new Date().toISOString(),
+        restaurantName: template.restaurantName,
+        taxRegistrationText: template.taxRegistrationText,
+        header: template.billHeader || "Printer test bill",
+        footer: template.billFooter || "If you can read this, bill printing is connected."
+      })
+    });
+    this.appendEvent("print_job.test_bill_queued", "print_job", printJobId, { requestedBy, printJobId });
+    return { printJobId };
+  }
+
+  enqueueTestKotPrint(requestedBy: string): { printJobId: string } {
+    const unit = this.db
+      .prepare(
+        `SELECT id, name, printer_host, printer_port, printer_name
+         FROM production_units
+         WHERE active = 1
+         ORDER BY name
+         LIMIT 1`
+      )
+      .get() as { id: string; name: string; printer_host: string | null; printer_port: number | null; printer_name: string | null } | undefined;
+    const template = this.getTicketTemplate();
+    const printJobId = this.enqueuePrintJob({
+      targetType: "KOT",
+      targetId: "test-kot",
+      productionUnitId: unit?.id ?? null,
+      printerHost: unit?.printer_host ?? null,
+      printerPort: unit?.printer_port ?? null,
+      printerName: unit?.printer_name ?? null,
+      payload: renderKotTicket({
+        sequence: 0,
+        type: "test",
+        tableName: "TEST",
+        productionUnitName: unit?.name ?? "Kitchen / Counter",
+        ticketLabel: "KOT",
+        captainId: requestedBy,
+        createdAt: new Date().toISOString(),
+        items: [{ name: "Printer test item", quantityDelta: 1 }],
+        header: template.kotHeader || "Printer test kitchen ticket",
+        footer: template.kotFooter || "If you can read this, KOT printing is connected."
+      })
+    });
+    this.appendEvent("print_job.test_kot_queued", "print_job", printJobId, { requestedBy, printJobId, productionUnitId: unit?.id ?? null });
+    return { printJobId };
   }
 
   getSyncStatus(): unknown {
@@ -3606,6 +3706,11 @@ export class OrderService {
   private getSetting(key: string): string | undefined {
     const row = this.orm.select({ value: hubSettings.value }).from(hubSettings).where(eq(hubSettings.key, key)).get();
     return row?.value;
+  }
+
+  private readPrinterOutputMode(): PrinterOutputMode | undefined {
+    const value = this.getSetting("printer_output_mode");
+    return value === "live" || value === "test" ? value : undefined;
   }
 
   private getBillPaidPaise(billId: string): number {

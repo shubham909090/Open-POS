@@ -27,12 +27,13 @@ HUB_PORT=3737
 HUB_PUBLIC_URL=http://<windows-lan-ip>:3737
 HUB_DATABASE_PATH=C:\ProgramData\Gaurav POS Hub\data\hub.sqlite
 HUB_BACKUP_DIR=C:\ProgramData\Gaurav POS Hub\backups
-HUB_PRINTER_DRY_RUN=false
 HUB_ADMIN_TOKEN=<long local admin token>
 CONVEX_HTTP_URL=<convex http url>
 POS_SYNC_SECRET=<sync secret>
 POS_INSTALLATION_ID=<restaurant installation id>
 ```
+
+Fresh installs start in **Printer Test Mode**. Change printing from Hub → Setup → Printer Mode And Cash Counter after printer tests pass.
 
 See [restaurant-handoff.md](packaging/restaurant-handoff.md) for the full packaging and install flow.
 
@@ -50,5 +51,6 @@ Before a live service day:
 
 - Confirm each printer appears in Windows printers.
 - Select the receipt printer and each production-unit printer in Setup.
-- Send one KOT and one bill in dry-run disabled mode.
+- Run **Print test bill** and **Print test kitchen ticket** in Test Mode.
+- Switch to **Live Mode** in Hub Setup, then confirm one real KOT/BOT and one real bill print.
 - Confirm failed print jobs stay retryable.

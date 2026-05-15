@@ -93,8 +93,12 @@
               </div>
               <h2>Choose Cash Counter Printer</h2>
               <p>This printer is used for final bills and payment receipts.</p>
+              <div class="printer-mode-row">
+                <button id="printerModeTest" class="secondary" type="button">Test Mode</button>
+                <button id="printerModeLive" class="secondary" type="button">Live Mode</button>
+              </div>
               <button id="loadPrinters" type="button" class="secondary">Load PC Printers</button>
-              <p id="printerHelp" class="field-help">Choose a printer from this PC. If none is connected yet, development dry-run mode can let you continue.</p>
+              <p id="printerHelp" class="field-help">Fresh installs start in Test Mode. Switch to Live Mode only after real test prints work.</p>
               <form id="receiptPrinterForm" class="form-stack">
                 <select id="receiptPrinterName"></select>
                 <details class="advanced-fields">
@@ -106,6 +110,10 @@
                 </details>
                 <button type="submit">Save Cash Counter Printer</button>
               </form>
+              <div class="printer-mode-row">
+                <button id="testBillPrint" type="button" class="secondary">Print test bill</button>
+                <button id="testKotPrint" type="button" class="secondary">Print test kitchen ticket</button>
+              </div>
               <button id="skipPrinter" type="button" class="secondary">Continue Without Printer For Now</button>
             </section>
 

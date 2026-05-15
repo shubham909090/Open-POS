@@ -85,6 +85,13 @@ export interface PrintJob {
   created_at: string;
 }
 
+export interface SystemPrinterInfo {
+  name: string;
+  displayName: string;
+  isDefault: boolean;
+  status?: string;
+}
+
 export interface Bootstrap {
   currentBusinessDay: PosDay;
   floors: Floor[];
@@ -92,6 +99,7 @@ export interface Bootstrap {
   productionUnits: ProductionUnit[];
   saleGroups: SaleGroup[];
   menuItems: MenuItem[];
+  menuPopularity?: Array<{ menuItemId: string; quantity: number }>;
   ticketTemplate?: { billHeader: string; billFooter: string; kotHeader: string; kotFooter: string; restaurantName: string; taxRegistrationText: string };
   printJobs: PrintJob[];
   syncStatus: {
@@ -99,7 +107,7 @@ export interface Bootstrap {
     lastEvent?: unknown;
     commandFailures?: Array<{ commandId: string; type: string; error: string; failedAt: string }>;
   };
-  setup?: { printerDryRun: boolean };
+  setup?: { printerOutputMode: "test" | "live" };
 }
 
 export interface OrderItem {
@@ -311,6 +319,12 @@ export const hubApi = {
     apiFetch("/settings/ticket-template", { method: "PUT", body: JSON.stringify(payload) }),
   updateSaleGroup: (id: string, payload: { defaultProductionUnitId?: string | null; taxComponents?: Array<{ name: string; rateBps: number }>; ticketLabel?: "KOT" | "BOT"; active?: boolean }) =>
     apiFetch<{ id: string }>(`/sale-groups/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
+  systemPrinters: () => apiFetch<SystemPrinterInfo[]>("/system-printers"),
+  receiptPrinter: () => apiFetch<{ printerHost: string | null; printerPort: number | null; printerName: string | null }>("/settings/receipt-printer"),
+  updateReceiptPrinter: (payload: { printerMode: "system" | "network"; printerName?: string; printerHost?: string; printerPort: number }) =>
+    apiFetch("/settings/receipt-printer", { method: "PUT", body: JSON.stringify(payload) }),
+  updatePrinterMode: (mode: "test" | "live") =>
+    apiFetch<{ mode: "test" | "live" }>("/settings/printer-mode", { method: "PUT", body: JSON.stringify({ mode }) }),
   submitOrder: (
     payload: {
       tableId: string;
@@ -385,6 +399,8 @@ export const hubApi = {
   updateKotStatus: (kotId: string, status: string) =>
     apiFetch<{ id: string }>(`/kot/${kotId}/status`, { method: "PATCH", body: JSON.stringify({ status }) }),
   processPrints: () => apiFetch<{ printed: number; failed: number }>("/print-jobs/process", { method: "POST" }),
+  testBillPrint: () => apiFetch<{ printJobId: string; processed: { printed: number; failed: number } }>("/print-jobs/test-bill", { method: "POST" }),
+  testKotPrint: () => apiFetch<{ printJobId: string; processed: { printed: number; failed: number } }>("/print-jobs/test-kot", { method: "POST" }),
   pullCloud: () => apiFetch<{ applied: number; failed?: number }>("/sync/pull", { method: "POST" }),
   requeueFailedSync: () => apiFetch<{ requeued: number }>("/sync/requeue-failed", { method: "POST" }),
   resolveCloudCommandFailure: (commandId: string) =>

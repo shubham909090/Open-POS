@@ -133,10 +133,45 @@ label {
   border-radius: 8px;
 }
 
+.unlock-form {
+  display: grid;
+  gap: 10px;
+}
+
 .unlock-card input {
   background: #0d1915;
   color: #fff;
   border-color: rgba(255, 255, 255, 0.28);
+}
+
+.secret-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.unlock-actions,
+.unlock-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.unlock-status {
+  justify-content: space-between;
+}
+
+.unlock-status span {
+  display: block;
+  color: #a9b9b0;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.unlock-status strong {
+  display: block;
+  color: #f8fbf7;
+  font-size: 1rem;
 }
 
 .unlock-card button,
@@ -306,15 +341,30 @@ label {
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
 }
 
+.printer-mode-card {
+  display: grid;
+  gap: 10px;
+}
+
+.printer-form {
+  display: grid;
+  grid-template-columns: minmax(190px, 1.2fr) auto minmax(170px, 1fr) minmax(90px, 0.45fr) auto;
+  align-items: end;
+  gap: 10px;
+}
+
 .dish-form label,
-.dish-edit-form label {
+.dish-edit-form label,
+.printer-form label {
   min-width: 0;
 }
 
 .dish-form input,
 .dish-form select,
 .dish-edit-form input,
-.dish-edit-form select {
+.dish-edit-form select,
+.printer-form input,
+.printer-form select {
   width: 100%;
   min-width: 0;
 }
@@ -430,9 +480,25 @@ label {
   margin-bottom: 14px;
 }
 
+.menu-browser .panel-title {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  padding-bottom: 4px;
+  background: var(--paper);
+}
+
 .panel-title input,
 .panel-title select {
   max-width: 260px;
+}
+
+.setup-search-row {
+  margin: 12px 0;
+}
+
+.setup-search-row input {
+  width: min(360px, 100%);
 }
 
 .table-list {
@@ -486,6 +552,50 @@ label {
   grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
   gap: 10px;
   align-items: start;
+}
+
+.menu-filter-row {
+  position: sticky;
+  top: 54px;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 0 12px;
+  margin-bottom: 4px;
+  background: var(--paper);
+}
+
+.menu-filter-row button {
+  min-height: 38px;
+  padding: 8px 12px;
+  color: var(--ink);
+  background: #fff;
+  border: 1px solid var(--line);
+}
+
+.menu-filter-row button.active {
+  color: #fff;
+  background: var(--ink);
+  border-color: var(--ink);
+}
+
+.menu-filter-row select {
+  min-height: 38px;
+  max-width: 180px;
+}
+
+.menu-result-section {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.menu-result-section h3 {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.92rem;
 }
 
 .menu-card {
@@ -1081,6 +1191,7 @@ label {
   .nav-stack,
   .setup-board,
   .inline-form,
+  .printer-form,
   .dish-form,
   .open-item-form,
   .template-form,

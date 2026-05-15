@@ -19,8 +19,7 @@ function createTestServer() {
     orderService: hub.orderService,
     printJobService,
     syncBridge: new ConvexSyncBridge(hub.database.orm, undefined, undefined),
-    eventBus: new EventBus<unknown>(),
-    printerDryRun: true
+    eventBus: new EventBus<unknown>()
   });
 
   return { ...hub, app };
@@ -39,7 +38,7 @@ describe("Hub API auth and service flow", () => {
 
     expect(unauthorized.statusCode).toBe(401);
     expect(authorized.statusCode).toBe(200);
-    expect(authorized.json<{ setup: { printerDryRun: boolean } }>().setup.printerDryRun).toBe(true);
+    expect(authorized.json<{ setup: { printerOutputMode: "test" | "live" } }>().setup.printerOutputMode).toBe("test");
 
     await app.close();
     database.close();
@@ -372,7 +371,69 @@ describe("Hub API auth and service flow", () => {
     database.close();
   });
 
-  it("configures receipt printer and processes bill print in dry-run", async () => {
+  it("lets admins switch printer mode and queue test prints", async () => {
+    const { app, database } = createTestServer();
+    const adminHeaders = { "x-device-token": "test-admin-token" };
+    const pairingResponse = await app.inject({
+      method: "POST",
+      url: "/devices/pairing-codes",
+      headers: adminHeaders,
+      payload: { deviceName: "Waiter phone", role: "waiter", expiresInMinutes: 10 }
+    });
+    const waiter = await app.inject({
+      method: "POST",
+      url: "/devices/pair/exchange",
+      payload: { code: pairingResponse.json<{ code: string }>().code, deviceName: "Waiter phone" }
+    });
+    const waiterHeaders = { "x-device-token": waiter.json<{ token: string }>().token };
+
+    const blocked = await app.inject({
+      method: "PUT",
+      url: "/settings/printer-mode",
+      headers: waiterHeaders,
+      payload: { mode: "live" }
+    });
+    const live = await app.inject({
+      method: "PUT",
+      url: "/settings/printer-mode",
+      headers: adminHeaders,
+      payload: { mode: "live" }
+    });
+    const mode = await app.inject({
+      method: "GET",
+      url: "/settings/printer-mode",
+      headers: adminHeaders
+    });
+    const test = await app.inject({
+      method: "PUT",
+      url: "/settings/printer-mode",
+      headers: adminHeaders,
+      payload: { mode: "test" }
+    });
+    const testBill = await app.inject({
+      method: "POST",
+      url: "/print-jobs/test-bill",
+      headers: adminHeaders
+    });
+    const testKot = await app.inject({
+      method: "POST",
+      url: "/print-jobs/test-kot",
+      headers: adminHeaders
+    });
+
+    expect(blocked.statusCode).toBe(403);
+    expect(live.json()).toEqual({ mode: "live" });
+    expect(mode.json()).toEqual({ mode: "live" });
+    expect(test.json()).toEqual({ mode: "test" });
+    expect(testBill.statusCode).toBe(200);
+    expect(testKot.statusCode).toBe(200);
+    expect(database.db.prepare("SELECT COUNT(*) AS count FROM print_jobs WHERE target_id IN ('test-bill', 'test-kot') AND status = 'printed'").get()).toEqual({ count: 2 });
+
+    await app.close();
+    database.close();
+  });
+
+  it("configures receipt printer and processes bill print in test mode", async () => {
     const { app, database } = createTestServer();
     const headers = { "x-device-token": "test-admin-token" };
 

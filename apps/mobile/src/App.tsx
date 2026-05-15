@@ -8,6 +8,7 @@ import {
   Pressable,
   SafeAreaView,
   ScrollView,
+  SectionList,
   StatusBar,
   StyleSheet,
   Text,
@@ -16,7 +17,7 @@ import {
   View
 } from "react-native";
 import { CameraView, useCameraPermissions } from "expo-camera";
-import { getTableDisplayState, tableDisplayLabel, type OrderItemInput } from "@gaurav-pos/shared";
+import { getTableDisplayState, rankMenuQuickPicks, searchMenuItems, tableDisplayLabel, type MenuQuickPick, type OrderItemInput, type SaleGroupKind } from "@gaurav-pos/shared";
 import { HubClient, type CurrentDaySummary, type HubBootstrap, type HubOrder } from "./lib/hub-client";
 import { clearDraft, getDeviceToken, getHubUrl, loadDraft, saveDraft, setDeviceToken, setHubUrl } from "./lib/draft-store";
 
@@ -68,6 +69,9 @@ export default function App() {
   const [pax, setPax] = useState("2");
   const [items, setItems] = useState<OrderItemInput[]>([]);
   const [menuSearch, setMenuSearch] = useState("");
+  const [menuGroupFilter, setMenuGroupFilter] = useState<SaleGroupKind | "all">("all");
+  const [menuUnitFilter, setMenuUnitFilter] = useState("");
+  const [recentMenuItemIds, setRecentMenuItemIds] = useState<string[]>([]);
   const [mode, setMode] = useState<ViewMode>("tables");
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const operationKeysRef = useRef<Record<string, string>>({});
@@ -86,12 +90,22 @@ export default function App() {
   const hasNewItems = items.length > 0;
   const canBill = deviceRole === "admin" || deviceRole === "captain";
   const shouldShowOnboarding = setupOpen || !deviceToken || connection === "offline";
+  const useVirtualMenu = mode === "menu" && !isWide;
 
-  const visibleMenu = (bootstrap?.menuItems ?? []).filter((item) => {
-    if (!item.active) return false;
-    const query = menuSearch.trim().toLowerCase();
-    return !query || `${item.name} ${item.production_unit_name ?? ""}`.toLowerCase().includes(query);
-  });
+  const hasMenuSearch = menuSearch.trim().length > 0;
+  const menuFilters = { saleGroupKind: menuGroupFilter, productionUnitId: menuUnitFilter || undefined };
+  const quickPicks = hasMenuSearch
+    ? []
+    : rankMenuQuickPicks(bootstrap?.menuItems ?? [], recentMenuItemIds, bootstrap?.menuPopularity ?? [], menuFilters).slice(0, 8);
+  const quickPickIds = new Set(quickPicks.map((pick) => pick.item.id));
+  const visibleMenu = searchMenuItems(bootstrap?.menuItems ?? [], menuSearch, menuFilters).filter((item) => hasMenuSearch || !quickPickIds.has(item.id));
+  const saleGroupFilters = Array.from(
+    new Map(
+      (bootstrap?.menuItems ?? [])
+        .filter((item) => Boolean(item.active) && Boolean(item.sale_group_kind))
+        .map((item) => [item.sale_group_kind as SaleGroupKind, item.sale_group_name ?? item.sale_group_kind ?? "Other"])
+    ).entries()
+  );
 
   function operationKey(prefix: string, scope: unknown) {
     const mapKey = `${prefix}:${stableStringify(scope)}`;
@@ -216,6 +230,7 @@ export default function App() {
       setMode("tables");
       return;
     }
+    setRecentMenuItemIds((current) => [menuItemId, ...current.filter((id) => id !== menuItemId)].slice(0, 12));
     const current = items.find((item) => item.menuItemId === menuItemId && item.menuItemVariantId === menuItemVariantId);
     const next = current
       ? items.map((item) => (item.menuItemId === menuItemId && item.menuItemVariantId === menuItemVariantId ? { ...item, quantity: item.quantity + 1 } : item))
@@ -613,6 +628,82 @@ export default function App() {
     );
   }
 
+  const workArea = (
+    <View style={[styles.workArea, isWide && styles.workAreaWide, useVirtualMenu && styles.workAreaMenuOnly]}>
+      {(mode === "tables" || isWide) && (
+        <TablePicker
+          activeTables={activeTables}
+          selectedTableId={selectedTableId}
+          loading={loading}
+          tileWidth={tableTileWidth}
+          onSelectTable={(tableId) => void selectTable(tableId)}
+        />
+      )}
+      {(mode === "menu" || isWide) && (
+        <MenuScreen
+          selectedTableName={selectedTable?.name ?? null}
+          visibleMenu={visibleMenu}
+          quickPicks={quickPicks}
+          saleGroupFilters={saleGroupFilters}
+          selectedSaleGroup={menuGroupFilter}
+          productionUnits={bootstrap?.productionUnits ?? []}
+          selectedProductionUnit={menuUnitFilter}
+          hasSearch={hasMenuSearch}
+          draftTotal={draftTotal}
+          searchValue={menuSearch}
+          virtualized={useVirtualMenu}
+          onSearchChange={setMenuSearch}
+          onSaleGroupChange={setMenuGroupFilter}
+          onProductionUnitChange={setMenuUnitFilter}
+          onAddItem={addItem}
+        />
+      )}
+      {(mode === "ticket" || isWide) && (
+        <TicketScreen
+          selectedTableName={selectedTable?.name ?? null}
+          deviceName={deviceName}
+          pax={pax}
+          items={items}
+          sentItems={sentItems}
+          menuItems={bootstrap?.menuItems ?? []}
+          tables={activeTables}
+          selectedTableId={selectedTableId}
+          draftTotal={draftTotal}
+          tableTotal={tableTotal}
+          currentOrder={currentOrder}
+          currentSummary={currentSummary}
+          connection={connection}
+          sending={sending}
+          canShift={deviceRole === "admin" || deviceRole === "captain"}
+          canBill={canBill}
+          onPaxChange={(value) => {
+            const clean = value.replace(/\D/g, "").slice(0, 3);
+            setPax(clean);
+            void persistDraft(items, clean);
+          }}
+          onChangeQty={changeQty}
+          onShiftTable={(tableId) => void shiftTable(tableId)}
+          onShiftItem={(orderItemId, quantity, toTableId) => void shiftItem(orderItemId, quantity, toTableId)}
+          onGenerateBill={() => void generateBillForSelectedTable()}
+          onPrintBill={() => void printSelectedBill()}
+          onReprintBill={(pin, reason) => void reprintSelectedBill(pin, reason)}
+          onMarkNc={(pin, reason) => void markSelectedBillNc(pin, reason)}
+          onReviseBill={(pin, reason) => void reviseSelectedBill(pin, reason)}
+          onSettleBill={(input) => void settleSelectedBill(input)}
+          onSubmit={() => void submitOrder()}
+        />
+      )}
+    </View>
+  );
+
+  const serviceContent = (
+    <>
+      <ConnectionBanner message={message} savingDraft={savingDraft} />
+      <ModeTabs mode={mode} onModeChange={setMode} />
+      {workArea}
+    </>
+  );
+
   return (
     <SafeAreaView style={styles.safe}>
       <StatusBar barStyle="dark-content" backgroundColor={palette.wash} />
@@ -651,66 +742,17 @@ export default function App() {
           />
         ) : (
           <>
-            <ScrollView style={styles.screen} contentContainerStyle={styles.screenContent} keyboardShouldPersistTaps="always">
-              <ConnectionBanner message={message} savingDraft={savingDraft} />
-              <ModeTabs mode={mode} onModeChange={setMode} />
-              <View style={[styles.workArea, isWide && styles.workAreaWide]}>
-                {(mode === "tables" || isWide) && (
-                  <TablePicker
-                    activeTables={activeTables}
-                    selectedTableId={selectedTableId}
-                    loading={loading}
-                    tileWidth={tableTileWidth}
-                    onSelectTable={(tableId) => void selectTable(tableId)}
-                  />
-                )}
-                {(mode === "menu" || isWide) && (
-                  <MenuScreen
-                    selectedTableName={selectedTable?.name ?? null}
-                    visibleMenu={visibleMenu}
-                    draftTotal={draftTotal}
-                    searchKey={selectedTableId ?? "no-table"}
-                    onSearchChange={setMenuSearch}
-                    onAddItem={addItem}
-                  />
-                )}
-                {(mode === "ticket" || isWide) && (
-                  <TicketScreen
-                    selectedTableName={selectedTable?.name ?? null}
-                    deviceName={deviceName}
-                    pax={pax}
-                    items={items}
-                    sentItems={sentItems}
-                    menuItems={bootstrap?.menuItems ?? []}
-                    tables={activeTables}
-                    selectedTableId={selectedTableId}
-                    draftTotal={draftTotal}
-                    tableTotal={tableTotal}
-                    currentOrder={currentOrder}
-                    currentSummary={currentSummary}
-                    connection={connection}
-                    sending={sending}
-                    canShift={deviceRole === "admin" || deviceRole === "captain"}
-                    canBill={canBill}
-                    onPaxChange={(value) => {
-                      const clean = value.replace(/\D/g, "").slice(0, 3);
-                      setPax(clean);
-                      void persistDraft(items, clean);
-                    }}
-                    onChangeQty={changeQty}
-                    onShiftTable={(tableId) => void shiftTable(tableId)}
-                    onShiftItem={(orderItemId, quantity, toTableId) => void shiftItem(orderItemId, quantity, toTableId)}
-                    onGenerateBill={() => void generateBillForSelectedTable()}
-                    onPrintBill={() => void printSelectedBill()}
-                    onReprintBill={(pin, reason) => void reprintSelectedBill(pin, reason)}
-                    onMarkNc={(pin, reason) => void markSelectedBillNc(pin, reason)}
-                    onReviseBill={(pin, reason) => void reviseSelectedBill(pin, reason)}
-                    onSettleBill={(input) => void settleSelectedBill(input)}
-                    onSubmit={() => void submitOrder()}
-                  />
-                )}
+            {useVirtualMenu ? (
+              <View style={styles.screen}>
+                <View style={[styles.screenContent, styles.virtualMenuContent]}>
+                  {serviceContent}
+                </View>
               </View>
-            </ScrollView>
+            ) : (
+              <ScrollView style={styles.screen} contentContainerStyle={styles.screenContent} keyboardShouldPersistTaps="always">
+                {serviceContent}
+              </ScrollView>
+            )}
             {hasNewItems && mode !== "ticket" ? (
               <DraftBar
                 count={items.reduce((total, item) => total + item.quantity, 0)}
@@ -1014,20 +1056,45 @@ function TableTile({
 function MenuScreen({
   selectedTableName,
   visibleMenu,
+  quickPicks,
+  saleGroupFilters,
+  selectedSaleGroup,
+  productionUnits,
+  selectedProductionUnit,
+  hasSearch,
   draftTotal,
-  searchKey,
+  searchValue,
+  virtualized,
   onSearchChange,
+  onSaleGroupChange,
+  onProductionUnitChange,
   onAddItem
 }: {
   selectedTableName: string | null;
   visibleMenu: HubBootstrap["menuItems"];
+  quickPicks: Array<MenuQuickPick<HubBootstrap["menuItems"][number]>>;
+  saleGroupFilters: Array<[SaleGroupKind, string]>;
+  selectedSaleGroup: SaleGroupKind | "all";
+  productionUnits: HubBootstrap["productionUnits"];
+  selectedProductionUnit: string;
+  hasSearch: boolean;
   draftTotal: number;
-  searchKey: string;
+  searchValue: string;
+  virtualized: boolean;
   onSearchChange: (value: string) => void;
+  onSaleGroupChange: (value: SaleGroupKind | "all") => void;
+  onProductionUnitChange: (value: string) => void;
   onAddItem: (menuItemId: string, variantId?: string) => void;
 }) {
-  return (
-    <View style={[styles.panel, styles.menuPanel]}>
+  const recentItems = quickPicks.filter((pick) => pick.section === "recent").map((pick) => pick.item);
+  const popularItems = quickPicks.filter((pick) => pick.section === "popular").map((pick) => pick.item);
+  const sections = [
+    { title: "Recent", data: recentItems },
+    { title: "Popular today", data: popularItems },
+    { title: hasSearch ? "Best matches" : "All dishes", data: visibleMenu }
+  ].filter((section) => section.data.length > 0);
+  const header = (
+    <>
       <View style={styles.cardHeader}>
         <View style={styles.flexText}>
           <Text style={styles.sectionTitle}>Menu</Text>
@@ -1035,47 +1102,126 @@ function MenuScreen({
         </View>
         <Text style={styles.totalText}>Rs {formatRupees(draftTotal)}</Text>
       </View>
-      <UncontrolledInput
-        inputKey={`search-${searchKey}`}
-        label="Search dishes"
-        defaultValue=""
-        onChangeText={onSearchChange}
-        autoCorrect={false}
-        returnKeyType="search"
-        placeholder="Type dish name"
-      />
+      <View style={styles.inputGroup}>
+        <Text style={styles.inputLabel}>Search dishes</Text>
+        <TextInput
+          style={styles.input}
+          value={searchValue}
+          onChangeText={onSearchChange}
+          autoCorrect={false}
+          returnKeyType="search"
+          placeholder="Type dish name"
+          placeholderTextColor="#81786b"
+        />
+      </View>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always" contentContainerStyle={styles.filterChips}>
+        <Pressable style={[styles.filterChip, selectedSaleGroup === "all" && styles.filterChipActive]} onPress={() => onSaleGroupChange("all")}>
+          <Text style={[styles.filterChipText, selectedSaleGroup === "all" && styles.filterChipTextActive]}>All</Text>
+        </Pressable>
+        {saleGroupFilters.map(([kind, label]) => (
+          <Pressable key={kind} style={[styles.filterChip, selectedSaleGroup === kind && styles.filterChipActive]} onPress={() => onSaleGroupChange(kind)}>
+            <Text style={[styles.filterChipText, selectedSaleGroup === kind && styles.filterChipTextActive]}>{label}</Text>
+          </Pressable>
+        ))}
+        <Pressable style={[styles.filterChip, !selectedProductionUnit && styles.filterChipActive]} onPress={() => onProductionUnitChange("")}>
+          <Text style={[styles.filterChipText, !selectedProductionUnit && styles.filterChipTextActive]}>All kitchens</Text>
+        </Pressable>
+        {productionUnits.map((unit) => (
+          <Pressable key={unit.id} style={[styles.filterChip, selectedProductionUnit === unit.id && styles.filterChipActive]} onPress={() => onProductionUnitChange(unit.id)}>
+            <Text style={[styles.filterChipText, selectedProductionUnit === unit.id && styles.filterChipTextActive]}>{unit.name}</Text>
+          </Pressable>
+        ))}
+      </ScrollView>
+    </>
+  );
+
+  if (virtualized) {
+    return (
+      <View style={[styles.panel, styles.menuPanel, styles.virtualMenuPanel]}>
+        <SectionList
+          sections={selectedTableName ? sections : []}
+          keyExtractor={(item) => item.id}
+          renderItem={({ item }) => <MenuItemRow menuItem={item} onAddItem={onAddItem} />}
+          renderSectionHeader={({ section }) => <Text style={[styles.subhead, styles.menuSectionHeader]}>{section.title}</Text>}
+          ListHeaderComponent={header}
+          ListEmptyComponent={
+            !selectedTableName ? (
+              <EmptyState title="No table selected" text="Tap a table, then add dishes here." />
+            ) : (
+              <EmptyState title="No dishes found" text="Check spelling, clear filters, or add dishes on the hub." />
+            )
+          }
+          stickySectionHeadersEnabled={false}
+          keyboardShouldPersistTaps="always"
+          contentContainerStyle={styles.virtualMenuList}
+        />
+      </View>
+    );
+  }
+
+  return (
+    <View style={[styles.panel, styles.menuPanel]}>
+      {header}
       {!selectedTableName ? (
         <EmptyState title="No table selected" text="Tap a table, then add dishes here." />
-      ) : visibleMenu.length === 0 ? (
-        <EmptyState title="No dishes found" text="Try another search or add dishes on the hub." />
+      ) : sections.length === 0 ? (
+        <EmptyState title="No dishes found" text="Check spelling, clear filters, or add dishes on the hub." />
       ) : (
-        <View style={styles.menuList}>
-          {visibleMenu.map((menuItem) => {
-            const variants = menuItem.variants?.filter((variant) => Boolean(variant.active)) ?? [];
-            const activeVariants = variants.length || menuItem.sale_group_kind === "alcohol" ? variants : [{ id: "", label: "Regular", kind: "default", price_paise: menuItem.price_paise }];
-            return (
-              <View key={menuItem.id} style={styles.menuItem}>
-                <View style={styles.menuText}>
-                  <Text style={styles.menuName} numberOfLines={2}>{menuItem.name}</Text>
-                  <Text style={styles.muted} numberOfLines={1}>{menuItem.production_unit_name ?? "No kitchen assigned"}</Text>
-                </View>
-                <View style={activeVariants.length > 1 ? styles.variantStack : styles.menuPriceBlock}>
-                  {activeVariants.length === 0 ? (
-                    <Text style={styles.muted}>Unavailable</Text>
-                  ) : (
-                    activeVariants.map((variant) => (
-                      <Pressable key={variant.id || menuItem.id} style={activeVariants.length > 1 ? styles.variantChip : undefined} onPress={() => onAddItem(menuItem.id, variant.id || undefined)}>
-                        <Text style={styles.price}>{variant.kind === "default" ? "" : `${variant.label} `}Rs {formatRupees(variant.price_paise)}</Text>
-                        <Text style={styles.addText}>Add</Text>
-                      </Pressable>
-                    ))
-                  )}
-                </View>
-              </View>
-            );
-          })}
-        </View>
+        sections.map((section) => <MenuListSection key={section.title} title={section.title} items={section.data} onAddItem={onAddItem} />)
       )}
+    </View>
+  );
+}
+
+function MenuListSection({
+  title,
+  items,
+  onAddItem
+}: {
+  title: string;
+  items: HubBootstrap["menuItems"];
+  onAddItem: (menuItemId: string, variantId?: string) => void;
+}) {
+  if (!items.length) return null;
+  return (
+    <View style={styles.menuSection}>
+      <Text style={styles.subhead}>{title}</Text>
+      <View style={styles.menuList}>
+        {items.map((menuItem) => (
+          <MenuItemRow key={menuItem.id} menuItem={menuItem} onAddItem={onAddItem} />
+        ))}
+      </View>
+    </View>
+  );
+}
+
+function MenuItemRow({
+  menuItem,
+  onAddItem
+}: {
+  menuItem: HubBootstrap["menuItems"][number];
+  onAddItem: (menuItemId: string, variantId?: string) => void;
+}) {
+  const variants = menuItem.variants?.filter((variant) => Boolean(variant.active)) ?? [];
+  const activeVariants = variants.length || menuItem.sale_group_kind === "alcohol" ? variants : [{ id: "", label: "Regular", kind: "default", price_paise: menuItem.price_paise }];
+  return (
+    <View style={styles.menuItem}>
+      <View style={styles.menuText}>
+        <Text style={styles.menuName} numberOfLines={2}>{menuItem.name}</Text>
+        <Text style={styles.muted} numberOfLines={1}>{menuItem.production_unit_name ?? "No kitchen assigned"}</Text>
+      </View>
+      <View style={activeVariants.length > 1 ? styles.variantStack : styles.menuPriceBlock}>
+        {activeVariants.length === 0 ? (
+          <Text style={styles.muted}>Unavailable</Text>
+        ) : (
+          activeVariants.map((variant) => (
+            <Pressable key={variant.id || menuItem.id} style={activeVariants.length > 1 ? styles.variantChip : undefined} onPress={() => onAddItem(menuItem.id, variant.id || undefined)}>
+              <Text style={styles.price}>{variant.kind === "default" ? "" : `${variant.label} `}Rs {formatRupees(variant.price_paise)}</Text>
+              <Text style={styles.addText}>Add</Text>
+            </Pressable>
+          ))
+        )}
+      </View>
     </View>
   );
 }
@@ -1680,6 +1826,7 @@ const styles = StyleSheet.create({
   loadingText: { color: palette.ink, fontWeight: "800" },
   screen: { flex: 1 },
   screenContent: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 118, gap: 12 },
+  virtualMenuContent: { flex: 1 },
   onboardingContent: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 34, gap: 12 },
   header: {
     paddingHorizontal: 16,
@@ -1830,6 +1977,7 @@ const styles = StyleSheet.create({
   modeTabText: { color: palette.ink, fontWeight: "900" },
   modeTabTextActive: { color: "#fffdfa" },
   workArea: { gap: 12 },
+  workAreaMenuOnly: { flex: 1 },
   workAreaWide: { flexDirection: "row", alignItems: "flex-start" },
   panel: {
     borderWidth: 1,
@@ -1840,6 +1988,7 @@ const styles = StyleSheet.create({
     gap: 12
   },
   menuPanel: { flex: 1 },
+  virtualMenuPanel: { padding: 0, overflow: "hidden" },
   tableGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
   tableTile: {
     minHeight: 82,
@@ -1895,6 +2044,23 @@ const styles = StyleSheet.create({
     backgroundColor: palette.paper
   },
   totalText: { color: palette.green, fontSize: 19, fontWeight: "900" },
+  filterChips: { gap: 8, paddingVertical: 2, paddingRight: 8 },
+  filterChip: {
+    minHeight: 36,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#d8cdbb",
+    paddingHorizontal: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: palette.paper
+  },
+  filterChipActive: { backgroundColor: palette.ink, borderColor: palette.ink },
+  filterChipText: { color: palette.ink, fontWeight: "900", fontSize: 12 },
+  filterChipTextActive: { color: "#fffdfa" },
+  virtualMenuList: { padding: 14, gap: 12, paddingBottom: 118 },
+  menuSection: { gap: 8 },
+  menuSectionHeader: { paddingTop: 4, paddingBottom: 2, backgroundColor: palette.paper },
   menuList: { gap: 8 },
   menuItem: {
     minHeight: 72,

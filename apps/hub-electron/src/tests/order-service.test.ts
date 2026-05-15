@@ -2,6 +2,18 @@ import { describe, expect, it } from "vitest";
 import { createTestHub } from "./helpers.js";
 
 describe("OrderService KOT lifecycle", () => {
+  it("defaults printer output to test mode and persists explicit mode changes", () => {
+    const { database, orderService } = createTestHub();
+
+    expect(orderService.getPrinterOutputMode()).toBe("test");
+    expect(orderService.ensurePrinterOutputMode("live")).toBe("live");
+    expect(orderService.getPrinterOutputMode()).toBe("live");
+    expect(orderService.updatePrinterOutputMode("test")).toEqual({ mode: "test" });
+    expect(database.db.prepare("SELECT value FROM hub_settings WHERE key = 'printer_output_mode'").get()).toEqual({ value: "test" });
+
+    database.close();
+  });
+
   it("creates an order, KOT, print job, event, and sync outbox in one transaction", () => {
     const { database, orderService } = createTestHub();
 
@@ -505,6 +517,33 @@ describe("OrderService KOT lifecycle", () => {
     expect((orderService.getCurrentBusinessDaySummary() as { groupSummaries: Array<{ kind: string; finalSalesPaise: number }> }).groupSummaries).toContainEqual(
       expect.objectContaining({ kind: "food", finalSalesPaise: finalTotalPaise })
     );
+
+    database.close();
+  });
+
+  it("exposes safe current-day menu popularity without payment totals in bootstrap", () => {
+    const { database, orderService } = createTestHub();
+
+    orderService.submitOrder({
+      tableId: "table-t1",
+      captainId: "captain-1",
+      pax: 2,
+      orderType: "dine_in",
+      items: [
+        { menuItemId: "item-paneer-tikka", quantity: 3 },
+        { menuItemId: "item-lassi", quantity: 1 }
+      ]
+    });
+
+    const bootstrap = orderService.bootstrap() as {
+      menuPopularity: Array<{ menuItemId: string; quantity: number; finalSalesPaise?: number }>;
+    };
+
+    expect(bootstrap.menuPopularity).toEqual([
+      { menuItemId: "item-paneer-tikka", quantity: 3 },
+      { menuItemId: "item-lassi", quantity: 1 }
+    ]);
+    expect(bootstrap.menuPopularity[0]).not.toHaveProperty("finalSalesPaise");
 
     database.close();
   });

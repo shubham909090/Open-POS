@@ -22,7 +22,7 @@ describe("PrintJobService", () => {
     });
 
     const adapter = new DryRunPrinterAdapter();
-    const service = new PrintJobService(database.orm, adapter);
+    const service = new PrintJobService(database.orm, new FailingPrinterAdapter(), adapter);
     const result = await service.processPending();
 
     expect(result).toEqual({ printed: 1, failed: 0 });
@@ -34,6 +34,7 @@ describe("PrintJobService", () => {
 
   it("keeps failed jobs retryable when the printer is offline", async () => {
     const { database, orderService } = createTestHub();
+    orderService.updatePrinterOutputMode("live");
     orderService.submitOrder({
       tableId: "table-t1",
       captainId: "waiter-1",
@@ -57,6 +58,7 @@ describe("PrintJobService", () => {
 
   it("stops automatic retries after five failed print attempts", async () => {
     const { database, orderService } = createTestHub();
+    orderService.updatePrinterOutputMode("live");
     orderService.submitOrder({
       tableId: "table-t1",
       captainId: "waiter-1",
@@ -83,6 +85,7 @@ describe("PrintJobService", () => {
 
   it("prints a job after a manual retry resets the retry cap", async () => {
     const { database, orderService } = createTestHub();
+    orderService.updatePrinterOutputMode("live");
     orderService.submitOrder({
       tableId: "table-t1",
       captainId: "waiter-1",
@@ -98,8 +101,9 @@ describe("PrintJobService", () => {
     }
 
     orderService.retryPrintJob(printJob.id, { requestedBy: "captain-1" });
+    orderService.updatePrinterOutputMode("test");
     const adapter = new DryRunPrinterAdapter();
-    const retryService = new PrintJobService(database.orm, adapter);
+    const retryService = new PrintJobService(database.orm, new FailingPrinterAdapter(), adapter);
     const result = await retryService.processPending();
 
     expect(result).toEqual({ printed: 1, failed: 0 });
@@ -108,6 +112,65 @@ describe("PrintJobService", () => {
       status: "printed",
       attempts: 1,
       last_error: null
+    });
+
+    database.close();
+  });
+
+  it("uses the current printer mode for the next print job without restarting", async () => {
+    const { database, orderService } = createTestHub();
+    orderService.submitOrder({
+      tableId: "table-t1",
+      captainId: "waiter-1",
+      pax: 1,
+      orderType: "dine_in",
+      items: [{ menuItemId: "item-dal-fry", quantity: 1 }]
+    });
+    const printJob = database.db.prepare("SELECT id FROM print_jobs LIMIT 1").get() as { id: string };
+    const liveAdapter = new FailingPrinterAdapter();
+    const testAdapter = new DryRunPrinterAdapter();
+    const service = new PrintJobService(database.orm, liveAdapter, testAdapter);
+
+    orderService.updatePrinterOutputMode("test");
+    expect(await service.processPending()).toEqual({ printed: 1, failed: 0 });
+    expect(testAdapter.printed).toHaveLength(1);
+
+    orderService.retryPrintJob(printJob.id, { requestedBy: "captain-1" });
+    orderService.updatePrinterOutputMode("live");
+    expect(await service.processPending()).toEqual({ printed: 0, failed: 1 });
+    expect(database.db.prepare("SELECT status, last_error FROM print_jobs WHERE id = ?").get(printJob.id)).toEqual({
+      status: "failed",
+      last_error: "printer offline"
+    });
+
+    database.close();
+  });
+
+  it("processes one requested print job without draining older queued jobs", async () => {
+    const { database, orderService } = createTestHub();
+    orderService.submitOrder({
+      tableId: "table-t1",
+      captainId: "waiter-1",
+      pax: 1,
+      orderType: "dine_in",
+      items: [{ menuItemId: "item-dal-fry", quantity: 1 }]
+    });
+    const olderJob = database.db.prepare("SELECT id FROM print_jobs LIMIT 1").get() as { id: string };
+    const testJob = orderService.enqueueTestBillPrint("admin");
+    const testAdapter = new DryRunPrinterAdapter();
+    const service = new PrintJobService(database.orm, new FailingPrinterAdapter(), testAdapter);
+
+    const result = await service.processOne(testJob.printJobId);
+
+    expect(result).toEqual({ printed: 1, failed: 0, skipped: false });
+    expect(testAdapter.printed).toHaveLength(1);
+    expect(database.db.prepare("SELECT status, attempts FROM print_jobs WHERE id = ?").get(olderJob.id)).toEqual({
+      status: "pending",
+      attempts: 0
+    });
+    expect(database.db.prepare("SELECT status, attempts FROM print_jobs WHERE id = ?").get(testJob.printJobId)).toEqual({
+      status: "printed",
+      attempts: 1
     });
 
     database.close();

@@ -127,15 +127,15 @@ function renderOperationalStats() {
   $("metricSync").textContent = String(pending);
 }
 
-function isDryRunPrinting() {
-  return Boolean(state.bootstrap?.setup?.printerDryRun);
+function isPrinterTestMode() {
+  return state.bootstrap?.setup?.printerOutputMode !== "live";
 }
 
 function setupSteps() {
   const hasToken = Boolean(($("deviceToken")?.value || localStorage.getItem("deviceToken") || "").trim());
   const hasDay = Boolean(state.bootstrap?.currentBusinessDay);
   const hasPrinter = Boolean(state.receiptPrinter?.printerName || state.receiptPrinter?.printerHost);
-  const printerCanBeSkipped = isDryRunPrinting();
+  const printerCanBeSkipped = isPrinterTestMode();
   const printerReady = hasPrinter || printerCanBeSkipped;
   const hasKitchens = (state.bootstrap?.productionUnits ?? []).some((unit) => unit.active);
   const hasTables = (state.bootstrap?.tables ?? []).some((table) => table.active);
@@ -165,7 +165,7 @@ function setupSteps() {
       label: "Choose Cash Counter Printer",
       done: printerReady,
       required: true,
-      hint: hasPrinter ? "Bill printer saved" : printerCanBeSkipped ? "Dry-run printing is on" : "Pick the bill printer",
+      hint: hasPrinter ? "Bill printer saved" : printerCanBeSkipped ? "Printer Test Mode is on" : "Pick the bill printer",
       missing: "Choose the cash counter printer, or enter the printer IP in Advanced."
     },
     {
@@ -336,10 +336,10 @@ async function loadSystemPrinters() {
   renderSetupProgress();
   if (state.systemPrinters.length === 0) {
     showToast(
-      isDryRunPrinting()
-        ? "No PC printers found. Dry-run printing is on, so you can continue setup."
+      isPrinterTestMode()
+        ? "No PC printers found. Printer Test Mode is on, so you can continue setup."
         : "No PC printers found. Install one or use the LAN fallback fields.",
-      isDryRunPrinting() ? "ok" : "error"
+      isPrinterTestMode() ? "ok" : "error"
     );
   }
 }
@@ -832,17 +832,21 @@ function renderPrinterSetupState() {
   const help = $("printerHelp");
   const skipButton = $("skipPrinter");
   const hasPrinter = Boolean(state.receiptPrinter?.printerName || state.receiptPrinter?.printerHost);
-  const dryRun = isDryRunPrinting();
+  const testMode = isPrinterTestMode();
+  const testButton = $("printerModeTest");
+  const liveButton = $("printerModeLive");
+  if (testButton) testButton.classList.toggle("active", testMode);
+  if (liveButton) liveButton.classList.toggle("active", !testMode);
   if (help) {
     help.textContent = hasPrinter
       ? "Cash counter printer is saved. Bills and payment receipts will use this printer."
-      : dryRun
-        ? "Development dry-run printing is on, so setup can continue without a physical printer. Add the real printer here before restaurant use."
+      : testMode
+        ? "Printer Test Mode is on, so setup can continue without a physical printer. Add the real printer here before restaurant use."
         : "Choose a PC printer, or open Advanced and enter the printer IP address.";
   }
   if (skipButton) {
-    skipButton.hidden = !dryRun || hasPrinter;
-    skipButton.textContent = state.printerSkipped ? "Dry-Run Printer Skipped" : "Continue Without Printer For Now";
+    skipButton.hidden = !testMode || hasPrinter;
+    skipButton.textContent = state.printerSkipped ? "Printer Setup Skipped In Test Mode" : "Continue Without Printer For Now";
     skipButton.disabled = state.printerSkipped;
   }
 }
@@ -1266,12 +1270,40 @@ $("processPrints").addEventListener("click", async () => {
     await loadBootstrap();
   }, "Print queue processed");
 });
+$("printerModeTest").addEventListener("click", async () => {
+  await runAction(async () => {
+    await api("/settings/printer-mode", { method: "PUT", body: JSON.stringify({ mode: "test" }) });
+    await loadBootstrap();
+  }, "Printer Test Mode is on");
+});
+$("printerModeLive").addEventListener("click", async () => {
+  if (isPrinterTestMode()) {
+    const confirmed = window.confirm("Live Mode sends real bills and kitchen tickets to connected printers. Run test prints first. Switch to Live Mode now?");
+    if (!confirmed) return;
+  }
+  await runAction(async () => {
+    await api("/settings/printer-mode", { method: "PUT", body: JSON.stringify({ mode: "live" }) });
+    await loadBootstrap();
+  }, "Printers are live");
+});
+$("testBillPrint").addEventListener("click", async () => {
+  await runAction(async () => {
+    await api("/print-jobs/test-bill", { method: "POST" });
+    await loadBootstrap();
+  }, "Test bill print queued");
+});
+$("testKotPrint").addEventListener("click", async () => {
+  await runAction(async () => {
+    await api("/print-jobs/test-kot", { method: "POST" });
+    await loadBootstrap();
+  }, "Test kitchen ticket queued");
+});
 $("loadPrinters").addEventListener("click", loadSystemPrinters);
 $("skipPrinter").addEventListener("click", () => {
   state.printerSkipped = true;
   localStorage.setItem("printerSetupSkipped", "1");
   focusNextSetupStep();
-  showToast("Dry-run printing is enabled. Add the real printer before live restaurant use.");
+  showToast("Printer Test Mode is enabled. Add the real printer before live restaurant use.");
 });
 $("receiptPrinterForm").addEventListener("submit", async (event) => {
   event.preventDefault();

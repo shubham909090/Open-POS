@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { formatInr, getTableDisplayState, tableDisplayClass, tableDisplayLabel } from "@gaurav-pos/shared";
+import { formatInr, getTableDisplayState, rankMenuQuickPicks, searchMenuItems, tableDisplayClass, tableDisplayLabel, type SaleGroupKind } from "@gaurav-pos/shared";
 import {
   BadgeIndianRupee,
   Beer,
@@ -58,14 +58,20 @@ export default function App() {
 
 function HubShell() {
   const [token, setToken] = useState(getAuthToken());
+  const [editingHubPassword, setEditingHubPassword] = useState(false);
+  const [showHubPassword, setShowHubPassword] = useState(false);
   const [notice, setNotice] = useState<{ tone: "good" | "bad"; text: string } | null>(null);
   const view = useHubStore((state) => state.view);
   const setView = useHubStore((state) => state.setView);
   const bootstrap = useQuery({ queryKey: ["bootstrap"], queryFn: hubApi.bootstrap });
+  const hubUnlocked = Boolean(bootstrap.data && !bootstrap.error);
+  const showUnlockForm = editingHubPassword || !hubUnlocked;
 
   function saveToken(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setAuthToken(token);
+    setEditingHubPassword(false);
+    setShowHubPassword(false);
     void queryClient.invalidateQueries();
     setNotice({ tone: "good", text: "Hub unlocked on this device." });
   }
@@ -85,16 +91,42 @@ function HubShell() {
           <NavButton icon={<BadgeIndianRupee size={18} />} label="Reports" view="reports" active={view === "reports"} onClick={setView} />
           <NavButton icon={<Settings size={18} />} label="Advanced" view="advanced" active={view === "advanced"} onClick={setView} />
         </nav>
-        <form className="unlock-card" onSubmit={saveToken}>
-          <label>
-            Hub password
-            <input value={token} onChange={(event) => setToken(event.target.value)} type="password" />
-          </label>
-          <button type="submit">
-            <Save size={16} />
-            Save
-          </button>
-        </form>
+        <section className="unlock-card">
+          {showUnlockForm ? (
+            <form className="unlock-form" onSubmit={saveToken}>
+              <label>
+                Hub password
+                <div className="secret-field">
+                  <input value={token} onChange={(event) => setToken(event.target.value)} type={showHubPassword ? "text" : "password"} autoComplete="current-password" />
+                  <button type="button" className="secondary-button" onClick={() => setShowHubPassword((current) => !current)}>
+                    {showHubPassword ? "Hide" : "Show"}
+                  </button>
+                </div>
+              </label>
+              <div className="unlock-actions">
+                <button type="submit">
+                  <Save size={16} />
+                  Unlock
+                </button>
+                {hubUnlocked ? (
+                  <button type="button" className="secondary-button" onClick={() => { setEditingHubPassword(false); setShowHubPassword(false); }}>
+                    Cancel
+                  </button>
+                ) : null}
+              </div>
+            </form>
+          ) : (
+            <div className="unlock-status">
+              <div>
+                <span>Hub access</span>
+                <strong>Unlocked</strong>
+              </div>
+              <button type="button" className="secondary-button" onClick={() => setEditingHubPassword(true)}>
+                Change
+              </button>
+            </div>
+          )}
+        </section>
       </aside>
 
       <section className="hub-main">
@@ -104,7 +136,9 @@ function HubShell() {
             <h1>{titleForView(view)}</h1>
           </div>
           <div className="topbar-actions">
-            <span className={bootstrap.data?.setup?.printerDryRun ? "status-pill warn" : "status-pill"}>{bootstrap.data?.setup?.printerDryRun ? "Printer test mode" : "Printers live"}</span>
+            <span className={bootstrap.data?.setup?.printerOutputMode === "live" ? "status-pill" : "status-pill warn"}>
+              {bootstrap.data?.setup?.printerOutputMode === "live" ? "Printers Live" : "Printer Test Mode"}
+            </span>
             <span className="status-pill">Sync pending {bootstrap.data?.syncStatus?.counts?.pending ?? 0}</span>
             <button type="button" className="icon-button" onClick={() => void bootstrap.refetch()} aria-label="Refresh">
               <RefreshCw size={18} />
@@ -161,12 +195,20 @@ function SetupView({ bootstrap, setNotice }: { bootstrap: Bootstrap; setNotice: 
   const [dishPrice, setDishPrice] = useState("");
   const [dishUnit, setDishUnit] = useState("");
   const [dishGroup, setDishGroup] = useState("sg-food");
+  const [dishListSearch, setDishListSearch] = useState("");
   const [tableFloorId, setTableFloorId] = useState("");
+  const [receiptPrinterName, setReceiptPrinterName] = useState("");
+  const [receiptHost, setReceiptHost] = useState("");
+  const [receiptPort, setReceiptPort] = useState("9100");
   const firstFloorId = bootstrap.floors.find((floor) => floor.active)?.id ?? bootstrap.floors[0]?.id ?? "";
   const activeFloors = bootstrap.floors.filter((floor) => floor.active);
   const dishSaleGroups = bootstrap.saleGroups.filter((group) => group.active && group.kind !== "alcohol");
-  const setupDishItems = bootstrap.menuItems.filter((item) => item.sale_group_kind !== "alcohol");
+  const rawSetupDishItems = bootstrap.menuItems.filter((item) => item.sale_group_kind !== "alcohol");
+  const setupDishItems = searchMenuItems(rawSetupDishItems, dishListSearch, { includeInactive: true });
   const dishPricePaise = Math.round(Number(dishPrice || 0) * 100);
+  const printerOutputMode = bootstrap.setup?.printerOutputMode ?? "test";
+  const receiptPrinter = useQuery({ queryKey: ["receipt-printer"], queryFn: hubApi.receiptPrinter });
+  const systemPrinters = useQuery({ queryKey: ["system-printers"], queryFn: hubApi.systemPrinters, enabled: false });
 
   useEffect(() => {
     if (!tableFloorId || !bootstrap.floors.some((floor) => floor.id === tableFloorId && floor.active)) {
@@ -180,7 +222,66 @@ function SetupView({ bootstrap, setNotice }: { bootstrap: Bootstrap; setNotice: 
     }
   }, [dishGroup, dishSaleGroups]);
 
+  useEffect(() => {
+    if (!receiptPrinter.data) return;
+    setReceiptPrinterName(receiptPrinter.data.printerName ?? "");
+    setReceiptHost(receiptPrinter.data.printerHost ?? "");
+    setReceiptPort(String(receiptPrinter.data.printerPort ?? 9100));
+  }, [receiptPrinter.data]);
+
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ["bootstrap"] });
+  const invalidatePrinter = async () => {
+    await queryClient.invalidateQueries({ queryKey: ["receipt-printer"] });
+    await invalidate();
+  };
+  const updatePrinterMode = useMutation({
+    mutationFn: (mode: "test" | "live") => hubApi.updatePrinterMode(mode),
+    onSuccess: async (result) => {
+      await invalidate();
+      setNotice({
+        tone: "good",
+        text: result.mode === "live" ? "Printers are live. Real tickets will print." : "Printer Test Mode is on. Tickets are logged without real printing."
+      });
+    },
+    onError: (error) => setNotice({ tone: "bad", text: messageOf(error) })
+  });
+  const requestPrinterMode = (mode: "test" | "live") => {
+    if (mode === "live" && printerOutputMode !== "live") {
+      const confirmed = window.confirm("Live Mode sends real bills and kitchen tickets to connected printers. Run test prints first. Switch to Live Mode now?");
+      if (!confirmed) return;
+    }
+    updatePrinterMode.mutate(mode);
+  };
+  const saveReceiptPrinter = useMutation({
+    mutationFn: () =>
+      hubApi.updateReceiptPrinter({
+        printerMode: receiptPrinterName ? "system" : "network",
+        printerName: receiptPrinterName || undefined,
+        printerHost: receiptHost,
+        printerPort: Number(receiptPort || 9100)
+      }),
+    onSuccess: async () => {
+      await invalidatePrinter();
+      setNotice({ tone: "good", text: "Cash counter printer saved." });
+    },
+    onError: (error) => setNotice({ tone: "bad", text: messageOf(error) })
+  });
+  const testBillPrint = useMutation({
+    mutationFn: hubApi.testBillPrint,
+    onSuccess: async (result) => {
+      await invalidate();
+      setNotice({ tone: result.processed.failed ? "bad" : "good", text: result.processed.failed ? "Test bill print failed. Check Recent print jobs." : "Test bill print queued successfully." });
+    },
+    onError: (error) => setNotice({ tone: "bad", text: messageOf(error) })
+  });
+  const testKotPrint = useMutation({
+    mutationFn: hubApi.testKotPrint,
+    onSuccess: async (result) => {
+      await invalidate();
+      setNotice({ tone: result.processed.failed ? "bad" : "good", text: result.processed.failed ? "Test kitchen ticket failed. Check Recent print jobs." : "Test kitchen ticket queued successfully." });
+    },
+    onError: (error) => setNotice({ tone: "bad", text: messageOf(error) })
+  });
   const createFloor = useMutation({
     mutationFn: () => hubApi.createFloor(floorName),
     onSuccess: async () => {
@@ -230,6 +331,67 @@ function SetupView({ bootstrap, setNotice }: { bootstrap: Bootstrap; setNotice: 
         <p className="plain-state">
           Current day is {bootstrap.currentBusinessDay.business_date}. The hub starts a new business day automatically every day at 6:00 AM IST.
         </p>
+      </SetupCard>
+
+      <SetupCard title="Printer Mode And Cash Counter" done={printerOutputMode === "test" || Boolean(receiptPrinter.data?.printerName || receiptPrinter.data?.printerHost)} icon={<Printer size={20} />}>
+        <div className="printer-mode-card">
+          <div className="segment-row">
+            <button
+              type="button"
+              className={printerOutputMode === "test" ? "active" : ""}
+              onClick={() => requestPrinterMode("test")}
+              disabled={updatePrinterMode.isPending}
+            >
+              Test Mode
+            </button>
+            <button
+              type="button"
+              className={printerOutputMode === "live" ? "active" : ""}
+              onClick={() => requestPrinterMode("live")}
+              disabled={updatePrinterMode.isPending}
+            >
+              Live Mode
+            </button>
+          </div>
+          <p className={printerOutputMode === "live" ? "plain-state" : "warning-text"}>
+            {printerOutputMode === "live"
+              ? "Live Mode sends real bills and kitchen tickets to the connected printers."
+              : "Test Mode is safe for setup. Print jobs are recorded, but nothing is sent to hardware."}
+          </p>
+        </div>
+        <form className="printer-form" onSubmit={(event) => { event.preventDefault(); saveReceiptPrinter.mutate(); }}>
+          <label>
+            PC printer
+            <select value={receiptPrinterName} onChange={(event) => setReceiptPrinterName(event.target.value)}>
+              <option value="">{systemPrinters.data?.length ? "Use LAN printer below" : "Load PC printers first"}</option>
+              {(systemPrinters.data ?? []).map((printer) => (
+                <option key={printer.name} value={printer.name}>
+                  {printer.displayName}{printer.isDefault ? " (default)" : ""}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button type="button" className="secondary-button" onClick={() => void systemPrinters.refetch()} disabled={systemPrinters.isFetching}>
+            Load PC Printers
+          </button>
+          <label>
+            LAN printer IP
+            <input value={receiptHost} onChange={(event) => setReceiptHost(event.target.value)} placeholder="192.168.1.50" />
+          </label>
+          <label>
+            Port
+            <input value={receiptPort} onChange={(event) => setReceiptPort(event.target.value)} inputMode="numeric" placeholder="9100" />
+          </label>
+          <button type="submit" disabled={saveReceiptPrinter.isPending}>Save Cash Counter Printer</button>
+        </form>
+        <div className="action-strip">
+          <button type="button" onClick={() => testBillPrint.mutate()} disabled={testBillPrint.isPending}>
+            <Printer size={18} /> Print test bill
+          </button>
+          <button type="button" onClick={() => testKotPrint.mutate()} disabled={testKotPrint.isPending}>
+            <ChefHat size={18} /> Print test kitchen ticket
+          </button>
+        </div>
       </SetupCard>
 
       <SetupCard title="Floors And Tables" done={bootstrap.tables.some((table) => table.active)} icon={<Users size={20} />}>
@@ -309,7 +471,7 @@ function SetupView({ bootstrap, setNotice }: { bootstrap: Bootstrap; setNotice: 
         />
       </SetupCard>
 
-      <SetupCard title="Dishes" done={setupDishItems.some((item) => item.active)} icon={<ClipboardList size={20} />}>
+      <SetupCard title="Dishes" done={rawSetupDishItems.some((item) => item.active)} icon={<ClipboardList size={20} />}>
         <form className="dish-form" onSubmit={(event) => { event.preventDefault(); createDish.mutate(); }}>
           <label>
             Dish name
@@ -338,6 +500,9 @@ function SetupView({ bootstrap, setNotice }: { bootstrap: Bootstrap; setNotice: 
           </label>
           <button disabled={!dishName.trim() || dishPricePaise <= 0 || createDish.isPending} type="submit">Add dish</button>
         </form>
+        <div className="setup-search-row">
+          <input value={dishListSearch} onChange={(event) => setDishListSearch(event.target.value)} placeholder="Search saved dishes" />
+        </div>
         <EditableRecordList
           setNotice={setNotice}
           rows={setupDishItems.map((item) => ({
@@ -812,17 +977,26 @@ function OrdersView({ bootstrap, setNotice }: { bootstrap: Bootstrap; setNotice:
   const selectTable = useHubStore((state) => state.selectTable);
   const search = useHubStore((state) => state.menuSearch);
   const setSearch = useHubStore((state) => state.setMenuSearch);
+  const recentMenuItemIds = useHubStore((state) => state.recentMenuItemIds);
   const addDraftItem = useHubStore((state) => state.addDraftItem);
+  const [saleGroupFilter, setSaleGroupFilter] = useState<SaleGroupKind | "all">("all");
+  const [unitFilter, setUnitFilter] = useState("");
   const selectedTable = bootstrap.tables.find((table) => table.id === selectedTableId) ?? bootstrap.tables.find((table) => table.active) ?? null;
 
   useEffect(() => {
     if (!selectedTableId && selectedTable) selectTable(selectedTable.id);
   }, [selectedTableId, selectedTable, selectTable]);
 
-  const activeItems = bootstrap.menuItems
-    .filter((item) => item.active)
-    .filter((item) => item.name.toLowerCase().includes(search.toLowerCase()))
-    .sort((a, b) => a.name.localeCompare(b.name));
+  const hasSearch = search.trim().length > 0;
+  const searchFilters = {
+    saleGroupKind: saleGroupFilter,
+    productionUnitId: unitFilter || undefined
+  };
+  const quickPicks = hasSearch ? [] : rankMenuQuickPicks(bootstrap.menuItems, recentMenuItemIds, bootstrap.menuPopularity ?? [], searchFilters).slice(0, 10);
+  const quickPickIds = new Set(quickPicks.map((pick) => pick.item.id));
+  const activeItems = searchMenuItems(bootstrap.menuItems, search, searchFilters)
+    .filter((item) => hasSearch || !quickPickIds.has(item.id));
+  const saleGroupKinds = Array.from(new Map(bootstrap.saleGroups.filter((group) => group.active).map((group) => [group.kind, group.name])).entries());
 
   return (
     <div className="orders-grid">
@@ -866,18 +1040,81 @@ function OrdersView({ bootstrap, setNotice }: { bootstrap: Bootstrap; setNotice:
           <h2>Menu</h2>
           <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search dish" />
         </div>
-        {selectedTable ? (
-          <div className="menu-grid">
-            {activeItems.map((item) => (
-              <MenuCard key={item.id} item={item} onAdd={(variantId) => addDraftItem(selectedTable.id, item, variantId)} />
+        <div className="menu-filter-row" aria-label="Menu filters">
+          <button type="button" className={saleGroupFilter === "all" ? "active" : ""} onClick={() => setSaleGroupFilter("all")}>All</button>
+          {saleGroupKinds.map(([kind, label]) => (
+            <button key={kind} type="button" className={saleGroupFilter === kind ? "active" : ""} onClick={() => setSaleGroupFilter(kind as SaleGroupKind)}>
+              {label}
+            </button>
+          ))}
+          <select value={unitFilter} onChange={(event) => setUnitFilter(event.target.value)} aria-label="Kitchen or counter filter">
+            <option value="">All kitchens</option>
+            {bootstrap.productionUnits.filter((unit) => unit.active).map((unit) => (
+              <option key={unit.id} value={unit.id}>{unit.name}</option>
             ))}
-          </div>
+          </select>
+        </div>
+        {selectedTable ? (
+          <>
+            {quickPicks.some((pick) => pick.section === "recent") ? (
+              <MenuResultSection
+                title="Recent"
+                items={quickPicks.filter((pick) => pick.section === "recent").map((pick) => pick.item)}
+                selectedTableId={selectedTable.id}
+                onAdd={addDraftItem}
+              />
+            ) : null}
+            {quickPicks.some((pick) => pick.section === "popular") ? (
+              <MenuResultSection
+                title="Popular today"
+                items={quickPicks.filter((pick) => pick.section === "popular").map((pick) => pick.item)}
+                selectedTableId={selectedTable.id}
+                onAdd={addDraftItem}
+              />
+            ) : null}
+            <MenuResultSection
+              title={hasSearch ? "Best matches" : "All dishes"}
+              items={activeItems}
+              selectedTableId={selectedTable.id}
+              onAdd={addDraftItem}
+              emptyText={hasSearch ? "No dishes found. Check spelling or clear filters." : "No dishes found. Add active dishes in setup."}
+            />
+          </>
         ) : (
           <Empty title="Add a table first" text="Setup needs at least one active table before orders can start." />
         )}
       </section>
 
       <TableWorkspace tableId={selectedTable?.id ?? null} tableName={selectedTable?.name ?? ""} bootstrap={bootstrap} setNotice={setNotice} />
+    </div>
+  );
+}
+
+function MenuResultSection({
+  title,
+  items,
+  selectedTableId,
+  onAdd,
+  emptyText
+}: {
+  title: string;
+  items: MenuItem[];
+  selectedTableId: string;
+  onAdd: (tableId: string, item: MenuItem, variantId?: string) => void;
+  emptyText?: string;
+}) {
+  return (
+    <div className="menu-result-section">
+      <h3>{title}</h3>
+      {items.length ? (
+        <div className="menu-grid">
+          {items.map((item) => (
+            <MenuCard key={item.id} item={item} onAdd={(variantId) => onAdd(selectedTableId, item, variantId)} />
+          ))}
+        </div>
+      ) : emptyText ? (
+        <Empty title="No dishes found" text={emptyText} />
+      ) : null}
     </div>
   );
 }
@@ -1229,11 +1466,13 @@ function BillingPanel({
   const [revisionItems, setRevisionItems] = useState<RevisionItem[]>([]);
   const [revisionAddMenuItemId, setRevisionAddMenuItemId] = useState("");
   const [revisionAddVariantId, setRevisionAddVariantId] = useState("");
+  const [revisionSearch, setRevisionSearch] = useState("");
   const operationKeys = useOperationKeys();
   const pendingScopes = useRef<Record<string, unknown>>({});
   const bill = tableOrder?.bill;
   const revisionAddMenuItem = menuItems.find((menuItem) => menuItem.id === revisionAddMenuItemId);
   const revisionAddVariants = menuItemVariantOptions(revisionAddMenuItem);
+  const revisionSearchItems = searchMenuItems(menuItems, revisionSearch);
   const existingPaid = bill?.paid_paise ?? (tableOrder?.payments ?? []).reduce((total, payment) => total + payment.amount_paise, 0);
   const discountPaise = bill
     ? discountType === "percent"
@@ -1485,6 +1724,7 @@ function BillingPanel({
             <button type="button" onClick={() => setRevisionOpen(false)}>Cancel</button>
           </div>
           <div className="revision-add-row">
+            <input value={revisionSearch} onChange={(event) => setRevisionSearch(event.target.value)} placeholder="Search dish to add" />
             <select
               value={revisionAddMenuItemId}
               onChange={(event) => {
@@ -1496,7 +1736,7 @@ function BillingPanel({
               }}
             >
               <option value="">Add dish</option>
-              {menuItems.filter((item) => item.active).map((item) => (
+              {revisionSearchItems.map((item) => (
                 <option key={item.id} value={item.id}>{item.name} · {formatInr(item.price_paise)}</option>
               ))}
             </select>

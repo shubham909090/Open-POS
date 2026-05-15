@@ -80,7 +80,8 @@ It does a smaller set of tasks:
 - pair with the hub by QR/manual code
 - show LAN connection status
 - choose a table
-- search menu items
+- search menu items with shared Fuse.js fuzzy search across dish name, sale group, kitchen/counter, and variation labels
+- use recent and popular-today quick picks before scrolling the full menu
 - add simple dish quantities
 - review the KOT before sending
 - save a draft if the hub is temporarily unreachable

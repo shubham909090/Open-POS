@@ -34,6 +34,7 @@ import {
   updateFloorSchema,
   updateKotStatusSchema,
   updateMenuItemSchema,
+  updatePrinterOutputModeSchema,
   updateProductionUnitSchema,
   updateReceiptPrinterSchema,
   updateSaleGroupSchema,
@@ -69,7 +70,6 @@ export function createHubServer(input: {
   syncBridge?: ConvexSyncBridge;
   eventBus: EventBus<unknown>;
   publicUrl?: string;
-  printerDryRun?: boolean;
 }) {
   const app = Fastify({ logger: true });
 
@@ -254,7 +254,7 @@ export function createHubServer(input: {
     return {
       ...publicBootstrapForRole(bootstrap, session.role),
       setup: {
-        printerDryRun: Boolean(input.printerDryRun)
+        printerOutputMode: input.orderService.getPrinterOutputMode()
       }
     };
   });
@@ -385,6 +385,12 @@ export function createHubServer(input: {
     return result;
   });
   app.get("/settings/receipt-printer", { preHandler: captainOrAdmin }, async () => input.orderService.getReceiptPrinter());
+  app.get("/settings/printer-mode", { preHandler: adminOnly }, async () => ({ mode: input.orderService.getPrinterOutputMode() }));
+  app.put("/settings/printer-mode", { preHandler: adminOnly }, async (request) => {
+    const result = input.orderService.updatePrinterOutputMode(updatePrinterOutputModeSchema.parse(request.body).mode);
+    input.eventBus.publish({ type: "printer_output_mode.updated", result });
+    return result;
+  });
   app.get("/system-printers", { preHandler: adminOnly }, async () => listSystemPrinters());
   app.put("/settings/receipt-printer", { preHandler: adminOnly }, async (request) => {
     const result = input.orderService.updateReceiptPrinter(updateReceiptPrinterSchema.parse(request.body));
@@ -585,6 +591,20 @@ export function createHubServer(input: {
   });
 
   app.post("/print-jobs/process", { preHandler: captainOrAdmin }, async () => input.printJobService.processPending());
+  app.post("/print-jobs/test-bill", { preHandler: captainOrAdmin }, async (request) => {
+    const session = getSession(request);
+    const result = input.orderService.enqueueTestBillPrint(session.name);
+    const processed = await input.printJobService.processOne(result.printJobId);
+    input.eventBus.publish({ type: "print_job.test_bill_queued", result });
+    return { ...result, processed };
+  });
+  app.post("/print-jobs/test-kot", { preHandler: captainOrAdmin }, async (request) => {
+    const session = getSession(request);
+    const result = input.orderService.enqueueTestKotPrint(session.name);
+    const processed = await input.printJobService.processOne(result.printJobId);
+    input.eventBus.publish({ type: "print_job.test_kot_queued", result });
+    return { ...result, processed };
+  });
   app.get("/print-jobs", { preHandler: captainOrAdmin }, async (request) => {
     const query = request.query as { limit?: string };
     return input.orderService.listPrintJobs(Number(query.limit ?? 50));

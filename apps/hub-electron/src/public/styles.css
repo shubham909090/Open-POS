@@ -59,6 +59,17 @@ button.secondary,
   color: var(--ink);
 }
 
+.printer-mode-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.printer-mode-row button.active {
+  background: var(--dark);
+  color: #f8fbf7;
+}
+
 button.danger {
   border-color: var(--danger);
   background: var(--danger);

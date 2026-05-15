@@ -37,12 +37,12 @@ export async function startHub() {
   database.migrate();
   const backupService = new BackupService(database, config.databasePath, config.backupDir);
 
-  const printerAdapter = config.printerDryRun ? new DryRunPrinterAdapter() : new RoutedPrinterAdapter();
-  const printJobService = new PrintJobService(database.orm, printerAdapter);
+  const printJobService = new PrintJobService(database.orm, new RoutedPrinterAdapter(), new DryRunPrinterAdapter());
   const eventBus = new EventBus<unknown>();
   const authService = new AuthService(database.orm);
   authService.seedAdminDevice(config.adminToken);
   const orderService = new OrderService(database.orm);
+  orderService.ensurePrinterOutputMode(config.printerOutputModeDefault);
   const syncBridge = new ConvexSyncBridge(database.orm, config.convexHttpUrl, config.posSyncSecret, config.installationId);
   const app = createHubServer({
     database,
@@ -52,8 +52,7 @@ export async function startHub() {
     printJobService,
     syncBridge,
     eventBus,
-    publicUrl: config.publicUrl,
-    printerDryRun: config.printerDryRun
+    publicUrl: config.publicUrl
   });
 
   await app.listen({ host: config.host, port: config.port });

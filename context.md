@@ -60,7 +60,7 @@ Responsibilities:
 Hub UI sections in the React renderer:
 
 - `Setup`: automatic business-day status, floors, tables, kitchens/counters, dishes.
-- `Take Orders`: floor/table view, menu, open items, table check, KOT/BOT send, table/item shift, bill panel.
+- `Take Orders`: floor/table view, fuzzy menu search, recent/popular quick picks, open items, table check, KOT/BOT send, table/item shift, bill panel.
 - `Kitchen`: KDS ticket list and KOT/BOT status controls.
 - `Reports & Backups`: current business-day summary, finalized local daily reports, and backups.
 - `Advanced`: manager PIN, sale/tax groups, print text/template settings, printers/backups/sync support surfaces.
@@ -79,14 +79,15 @@ Responsibilities:
 - Refresh paired device role/name from `/devices/me`.
 - Show connection status.
 - Pick a floor/table.
-- Search menu items.
+- Search menu items with shared Fuse.js fuzzy search across dish name, sale group, kitchen/counter, and variation labels.
+- Use recent and popular-today quick picks before scrolling the full menu.
 - Add dishes and review new items before sending.
 - Send finalized order items to the hub.
 - Save local drafts when needed.
 - View running table order from the hub.
 - Captain-only: shift a full running table to another free table.
 - Captain-only: shift selected sent items to another table.
-- Captain/waiter scope only: no billing, reports, manager settings, or cloud admin features.
+- Waiter scope only: no billing, reports, manager settings, or cloud admin features.
 - Poll ready notifications from the hub for kitchen/bar ready alerts.
 
 ### 3. Cloud Admin App
@@ -546,7 +547,7 @@ Printer support:
 
 - system printer mode for installed OS printers,
 - network printer mode with host/port for ESC/POS style LAN printers,
-- dry-run mode through config for development,
+- global Printer Test/Live Mode stored in local hub settings,
 - retry endpoint for failed jobs,
 - event logging for print failures.
 
@@ -748,11 +749,12 @@ Important hub variables:
 - `HUB_PUBLIC_URL`: LAN URL phones should use, for example `http://192.168.1.20:3737`.
 - `HUB_DATABASE_PATH`: SQLite file path.
 - `HUB_BACKUP_DIR`: local backup folder.
-- `HUB_PRINTER_DRY_RUN`: `true` for development/no real printing, `false` for restaurant printer use.
 - `HUB_ADMIN_TOKEN`: long local admin unlock token.
 - `CONVEX_HTTP_URL`: Convex site HTTP URL for sync endpoints.
 - `POS_INSTALLATION_ID`: generated in cloud portal when connecting a hub.
 - `POS_SYNC_SECRET`: generated in cloud portal when connecting a hub.
+
+Printer output mode is changed in Hub → Setup → Printer Mode And Cash Counter. Fresh installs default to Test Mode; Live Mode sends real KOT/BOT/bill prints to configured printers. `HUB_PRINTER_DRY_RUN` may still be read as an old developer fallback on first start, but it is not the restaurant setup workflow.
 
 Cloud/WorkOS envs are documented in `docs/workos-authkit-setup.md`.
 

@@ -3,7 +3,7 @@ import { useHubStore } from "../renderer/store.js";
 
 describe("hub UI draft store", () => {
   beforeEach(() => {
-    useHubStore.setState({ selectedTableId: null, orderPanel: "new", drafts: {} });
+    useHubStore.setState({ selectedTableId: null, orderPanel: "new", menuSearch: "", recentMenuItemIds: [], drafts: {} });
   });
 
   it("keeps new order drafts separate per table and clears only the submitted table", () => {
@@ -31,5 +31,26 @@ describe("hub UI draft store", () => {
 
     expect(useHubStore.getState().drafts["table-1"]).toEqual({});
     expect(useHubStore.getState().drafts["table-2"]?.["dish-1"]?.quantity).toBe(1);
+  });
+
+  it("keeps menu search stable while tracking recent dishes", () => {
+    const dish = {
+      id: "dish-1",
+      name: "Paneer Tikka",
+      price_paise: 22000,
+      production_unit_id: null,
+      production_unit_name: null,
+      sale_group_id: "sg-food",
+      sale_group_name: "Food",
+      sale_group_kind: "food",
+      ticket_label: "KOT" as const,
+      active: true
+    };
+
+    useHubStore.getState().setMenuSearch("panr");
+    useHubStore.getState().addDraftItem("table-1", dish);
+
+    expect(useHubStore.getState().menuSearch).toBe("panr");
+    expect(useHubStore.getState().recentMenuItemIds).toEqual(["dish-1"]);
   });
 });

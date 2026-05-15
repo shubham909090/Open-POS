@@ -210,6 +210,12 @@ export const retryPrintJobSchema = z.object({
   requestedBy: z.string().min(1)
 });
 
+export const printerOutputModeSchema = z.enum(["test", "live"]);
+
+export const updatePrinterOutputModeSchema = z.object({
+  mode: printerOutputModeSchema
+});
+
 export const updateReceiptPrinterSchema = z.object({
   printerMode: z.enum(["system", "network"]).default("system"),
   printerName: z.string().trim().max(240).optional(),
@@ -301,6 +307,8 @@ export type UpdateAlcoholItemInput = z.infer<typeof updateAlcoholItemSchema>;
 export type AdjustAlcoholStockInput = z.infer<typeof adjustAlcoholStockSchema>;
 export type UpdateKotStatusInput = z.infer<typeof updateKotStatusSchema>;
 export type RetryPrintJobInput = z.infer<typeof retryPrintJobSchema>;
+export type PrinterOutputMode = z.infer<typeof printerOutputModeSchema>;
+export type UpdatePrinterOutputModeInput = z.infer<typeof updatePrinterOutputModeSchema>;
 export type UpdateReceiptPrinterInput = z.infer<typeof updateReceiptPrinterSchema>;
 export type PrintActionInput = z.infer<typeof printActionSchema>;
 export type TicketTemplateInput = z.infer<typeof ticketTemplateSchema>;

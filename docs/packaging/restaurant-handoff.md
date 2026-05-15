@@ -39,7 +39,6 @@ HUB_PUBLIC_URL=http://192.168.1.20:3737
 
 HUB_DATABASE_PATH=C:\ProgramData\Gaurav POS Hub\data\hub.sqlite
 HUB_BACKUP_DIR=C:\ProgramData\Gaurav POS Hub\backups
-HUB_PRINTER_DRY_RUN=false
 HUB_ADMIN_TOKEN=replace-with-a-long-random-password
 
 CONVEX_HTTP_URL=https://your-convex-site.convex.site
@@ -48,6 +47,8 @@ POS_SYNC_SECRET=paste-from-cloud-portal
 ```
 
 `HUB_PUBLIC_URL` must use the Windows PC LAN IP. Give that PC a fixed router DHCP reservation before pairing tablets.
+
+Printer output is controlled from the hub UI, not by env. A fresh hub starts in **Printer Test Mode**. In Hub → Setup → Printer Mode And Cash Counter, select printers, run test prints, then switch to **Live Mode** before service.
 
 ## Build Windows Hub Installer
 

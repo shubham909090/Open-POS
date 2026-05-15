@@ -18,6 +18,7 @@ export interface HubBootstrap {
     price_paise: number;
     production_unit_id: string | null;
     production_unit_name: string | null;
+    sale_group_name?: string;
     sale_group_kind?: string;
     active: number;
     variants?: Array<{
@@ -30,6 +31,7 @@ export interface HubBootstrap {
       active: number | boolean;
     }>;
   }>;
+  menuPopularity?: Array<{ menuItemId: string; quantity: number }>;
   syncStatus?: { counts: Record<string, number> };
 }
 
