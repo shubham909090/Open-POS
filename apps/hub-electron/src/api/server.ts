@@ -2,7 +2,7 @@ import fastifyStatic from "@fastify/static";
 import websocket from "@fastify/websocket";
 import { and, eq } from "drizzle-orm";
 import Fastify from "fastify";
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import QRCode from "qrcode";
@@ -18,7 +18,9 @@ import {
   createSaleGroupSchema,
   createTableSchema,
   exchangePairingCodeSchema,
+  hubConnectionSettingsSchema,
   managerPinSchema,
+  managerPinUnlockSchema,
   markNcBillSchema,
   moveOrderItemsSchema,
   moveTableSchema,
@@ -27,6 +29,7 @@ import {
   reviseBillSchema,
   retryPrintJobSchema,
   settleBillSchema,
+  printLayoutSettingsSchema,
   scheduleRestoreSchema,
   submitOrderSchema,
   ticketTemplateSchema,
@@ -128,6 +131,15 @@ export function createHubServer(input: {
   const orderRole = requireRoles(["admin", "captain", "waiter"]);
   const orderMoveRole = requireRoles(["admin", "captain"]);
   const kitchenRole = requireRoles(["admin", "kitchen"]);
+  const requireManagerPinHeader = (request: { headers: Record<string, string | string[] | undefined> }): void => {
+    const rawPin = request.headers["x-manager-pin"];
+    const pin = typeof rawPin === "string" ? rawPin : "";
+    input.orderService.verifyManagerPinForSession(managerPinUnlockSchema.parse({ pin }).pin);
+  };
+  const isLocalRequest = (request: { ip?: string; socket?: { remoteAddress?: string } }): boolean => {
+    const address = request.ip || request.socket?.remoteAddress || "";
+    return address === "127.0.0.1" || address === "::1" || address === "::ffff:127.0.0.1" || address === "localhost";
+  };
   const publicBootstrapForRole = (bootstrap: Record<string, unknown>, role: UserRole): Record<string, unknown> => {
     if (role === "admin" || role === "captain") return bootstrap;
     const { ticketTemplate: _ticketTemplate, printJobs: _printJobs, syncStatus: _syncStatus, ...safeBootstrap } = bootstrap;
@@ -236,6 +248,18 @@ export function createHubServer(input: {
   };
 
   app.get("/health", async () => ({ ok: true }));
+  app.get("/admin/session/status", async () => ({ managerPinConfigured: input.orderService.isManagerPinConfigured() }));
+  app.post("/admin/session/unlock", async (request) => {
+    const body = managerPinUnlockSchema.parse(request.body);
+    input.orderService.verifyManagerPinForSession(body.pin);
+    const token = `hub_admin_${randomBytes(32).toString("base64url")}`;
+    input.authService.seedAdminDevice(token);
+    return { token, role: "admin" };
+  });
+  app.post("/admin/session/lock", { preHandler: adminOnly }, async () => {
+    input.authService.lockAdminDevice();
+    return { locked: true };
+  });
   app.post("/devices/pair/exchange", async (request) => {
     const attemptKey = request.ip || "unknown";
     assertPairingExchangeAllowed(attemptKey);
@@ -254,7 +278,9 @@ export function createHubServer(input: {
     return {
       ...publicBootstrapForRole(bootstrap, session.role),
       setup: {
-        printerOutputMode: input.orderService.getPrinterOutputMode()
+        printerOutputMode: input.orderService.getPrinterOutputMode(),
+        managerPinConfigured: input.orderService.isManagerPinConfigured(),
+        hubConnection: input.orderService.getHubConnectionSettings(false)
       }
     };
   });
@@ -397,15 +423,61 @@ export function createHubServer(input: {
     input.eventBus.publish({ type: "receipt_printer.updated", result });
     return result;
   });
-  app.put("/settings/manager-pin", { preHandler: adminOnly }, async (request) => {
+  app.put("/settings/manager-pin", async (request) => {
+    if (input.orderService.isManagerPinConfigured()) await adminOnly(request);
+    else if (!isLocalRequest(request)) throw new DomainError("Create the first Manager PIN from the hub PC.", 403);
     const result = input.orderService.setManagerPin(managerPinSchema.parse(request.body));
     input.eventBus.publish({ type: "manager_pin.updated", result });
     return result;
+  });
+  app.get("/settings/hub-connection", { preHandler: adminOnly }, async (request) => {
+    const query = request.query as { reveal?: string };
+    const reveal = query.reveal === "1" || query.reveal === "true";
+    if (reveal) requireManagerPinHeader(request);
+    return input.orderService.getHubConnectionSettings(reveal);
+  });
+  app.put("/settings/hub-connection", { preHandler: adminOnly }, async (request) => {
+    requireManagerPinHeader(request);
+    const result = input.orderService.updateHubConnectionSettings(hubConnectionSettingsSchema.parse(request.body));
+    input.eventBus.publish({ type: "hub_connection.updated", result });
+    return result;
+  });
+  app.post("/settings/hub-connection/test", { preHandler: adminOnly }, async (request) => {
+    requireManagerPinHeader(request);
+    const settings = input.orderService.getHubConnectionRuntimeSettings();
+    if (!settings.cloudUrl || !settings.installationId || !settings.syncSecret) {
+      return { status: "missing", message: "Cloud connection details are incomplete." };
+    }
+    try {
+      const response = await fetch(`${settings.cloudUrl}/pos/ingest-events`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-pos-sync-secret": settings.syncSecret,
+          "x-pos-installation-secret": settings.syncSecret,
+          "x-pos-installation-id": settings.installationId
+        },
+        body: JSON.stringify({ events: [] })
+      });
+      if (response.status === 401 || response.status === 403) return { status: "unauthorized", message: "Cloud rejected these connection details." };
+      if (!response.ok) return { status: "server_error", message: `Cloud returned HTTP ${response.status}.` };
+      return { status: "connected", message: "Cloud connection works." };
+    } catch (error) {
+      return { status: "server_error", message: error instanceof Error ? error.message : "Cloud connection test failed." };
+    }
   });
   app.get("/settings/ticket-template", { preHandler: captainOrAdmin }, async () => input.orderService.getTicketTemplate());
   app.put("/settings/ticket-template", { preHandler: adminOnly }, async (request) => {
     const result = input.orderService.updateTicketTemplate(ticketTemplateSchema.parse(request.body));
     input.eventBus.publish({ type: "ticket_template.updated", result });
+    return result;
+  });
+  app.get("/print-layouts", { preHandler: captainOrAdmin }, async () => input.orderService.getPrintLayouts());
+  app.put("/print-layouts/:scope", { preHandler: adminOnly }, async (request) => {
+    requireManagerPinHeader(request);
+    const params = request.params as { scope: string };
+    const result = input.orderService.updatePrintLayout(printLayoutSettingsSchema.parse({ ...(request.body as Record<string, unknown>), scope: params.scope }));
+    input.eventBus.publish({ type: "print_layout.updated", result });
     return result;
   });
   app.get("/devices", { preHandler: adminOnly }, async () => input.authService.listDevices());

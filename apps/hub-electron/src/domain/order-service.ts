@@ -14,6 +14,7 @@ import {
   type ManagerApprovalInput,
   type ManagerPinInput,
   type MarkNcBillInput,
+  type HubConnectionSettingsInput,
   type MoveOrderItemsInput,
   type MoveTableInput,
   type KotType,
@@ -24,6 +25,7 @@ import {
   type SettleBillInput,
   type SubmitOrderInput,
   type TicketTemplateInput,
+  type PrintLayoutSettingsInput,
   type UpdateAlcoholItemInput,
   type UpdateSaleGroupInput,
   type UpdateFloorInput,
@@ -469,6 +471,7 @@ export class OrderService {
         .prepare("SELECT name_snapshot, quantity_delta FROM kot_items WHERE kot_id = ?")
         .all(kotId) as Array<{ name_snapshot: string; quantity_delta: number }>;
 
+      const template = this.getPrintLayout("unit", kot.production_unit_id);
       const payload = renderKotTicket({
         sequence: kot.sequence,
         type: "reprint",
@@ -480,7 +483,16 @@ export class OrderService {
         items: items.map((item) => ({
           name: item.name_snapshot,
           quantityDelta: item.quantity_delta
-        }))
+        })),
+        lineWidthChars: template.lineWidthChars,
+        headerAlign: template.headerAlign,
+        footerAlign: template.footerAlign,
+        feedLines: template.feedLines,
+        showTable: template.showTable,
+        showCaptain: template.showCaptain,
+        showDateTime: template.showDateTime,
+        header: template.kotHeader,
+        footer: template.kotFooter
       });
 
       const printJobId = this.enqueuePrintJob({
@@ -624,14 +636,78 @@ export class OrderService {
     return { configured: true };
   }
 
-  getTicketTemplate(): TicketTemplateInput {
+  isManagerPinConfigured(): boolean {
+    return Boolean(this.getSetting("manager_pin_hash"));
+  }
+
+  verifyManagerPinForSession(pin: string): void {
+    const configuredHash = this.getSetting("manager_pin_hash");
+    if (!configuredHash) throw new DomainError("Create a Manager PIN before unlocking setup", 403);
+    const verification = this.verifyManagerPin(pin, configuredHash);
+    if (verification === "invalid") throw new DomainError("Manager PIN is incorrect", 403);
+    if (verification === "valid_legacy") this.upsertSetting("manager_pin_hash", this.hashManagerPin(pin));
+  }
+
+  getHubConnectionSettings(reveal = false): {
+    configured: boolean;
+    cloudUrl: string;
+    installationId: string;
+    syncSecret: string;
+    hubPublicUrl: string;
+  } {
+    const syncSecret = this.getSetting("hub_connection_sync_secret") ?? "";
     return {
-      billHeader: this.getSetting("ticket_bill_header") ?? "",
-      billFooter: this.getSetting("ticket_bill_footer") ?? "",
-      kotHeader: this.getSetting("ticket_kot_header") ?? "",
-      kotFooter: this.getSetting("ticket_kot_footer") ?? "",
-      restaurantName: this.getSetting("ticket_restaurant_name") ?? "",
-      taxRegistrationText: this.getSetting("ticket_tax_registration_text") ?? ""
+      configured: Boolean((this.getSetting("hub_connection_cloud_url") ?? "") && (this.getSetting("hub_connection_installation_id") ?? "") && syncSecret),
+      cloudUrl: this.getSetting("hub_connection_cloud_url") ?? "",
+      installationId: this.getSetting("hub_connection_installation_id") ?? "",
+      syncSecret: reveal && syncSecret ? syncSecret : syncSecret ? "••••••••••••" : "",
+      hubPublicUrl: this.getSetting("hub_connection_public_url") ?? ""
+    };
+  }
+
+  getHubConnectionRuntimeSettings(): HubConnectionSettingsInput {
+    return {
+      cloudUrl: this.getSetting("hub_connection_cloud_url") ?? "",
+      installationId: this.getSetting("hub_connection_installation_id") ?? "",
+      syncSecret: this.getSetting("hub_connection_sync_secret") ?? "",
+      hubPublicUrl: this.getSetting("hub_connection_public_url") ?? ""
+    };
+  }
+
+  updateHubConnectionSettings(input: HubConnectionSettingsInput): { configured: boolean } {
+    const existingSecret = this.getSetting("hub_connection_sync_secret") ?? "";
+    const nextSecret = input.syncSecret?.includes("•") ? existingSecret : (input.syncSecret ?? "");
+    this.upsertSetting("hub_connection_cloud_url", input.cloudUrl ?? "");
+    this.upsertSetting("hub_connection_installation_id", input.installationId ?? "");
+    this.upsertSetting("hub_connection_sync_secret", nextSecret);
+    this.upsertSetting("hub_connection_public_url", input.hubPublicUrl ?? "");
+    this.appendEvent("hub_connection.updated", "hub_setting", "hub_connection", {
+      cloudUrl: input.cloudUrl,
+      installationId: input.installationId,
+      hubPublicUrl: input.hubPublicUrl,
+      syncSecretConfigured: Boolean(input.syncSecret)
+    });
+    return { configured: this.getHubConnectionSettings(false).configured };
+  }
+
+  ensureHubConnectionSettings(input: HubConnectionSettingsInput): void {
+    if (!input.cloudUrl && !input.installationId && !input.syncSecret && !input.hubPublicUrl) return;
+    if (!this.getSetting("hub_connection_cloud_url") && input.cloudUrl) this.upsertSetting("hub_connection_cloud_url", input.cloudUrl);
+    if (!this.getSetting("hub_connection_installation_id") && input.installationId) this.upsertSetting("hub_connection_installation_id", input.installationId);
+    if (!this.getSetting("hub_connection_sync_secret") && input.syncSecret) this.upsertSetting("hub_connection_sync_secret", input.syncSecret);
+    if (!this.getSetting("hub_connection_public_url") && input.hubPublicUrl) this.upsertSetting("hub_connection_public_url", input.hubPublicUrl);
+  }
+
+  getTicketTemplate(): TicketTemplateInput {
+    const layout = this.getPrintLayout("default");
+    return {
+      billHeader: layout.billHeader,
+      billFooter: layout.billFooter,
+      kotHeader: layout.kotHeader,
+      kotFooter: layout.kotFooter,
+      restaurantName: layout.restaurantName,
+      taxRegistrationText: layout.taxRegistrationText,
+      lineWidthChars: layout.lineWidthChars
     };
   }
 
@@ -642,8 +718,47 @@ export class OrderService {
     this.upsertSetting("ticket_kot_footer", input.kotFooter ?? "");
     this.upsertSetting("ticket_restaurant_name", input.restaurantName ?? "");
     this.upsertSetting("ticket_tax_registration_text", input.taxRegistrationText ?? "");
+    this.upsertSetting("ticket_line_width_chars", String(input.lineWidthChars ?? 42));
+    this.upsertSetting("print_layout_default", JSON.stringify({ ...this.defaultPrintLayout("default"), ...input }));
     this.appendEvent("ticket_template.updated", "hub_setting", "ticket_template", input);
     return this.getTicketTemplate();
+  }
+
+  getPrintLayouts(): { default: PrintLayoutSettingsInput; receipt: PrintLayoutSettingsInput; units: Array<{ productionUnitId: string; name: string; layout: PrintLayoutSettingsInput }> } {
+    const units = (this.listProductionUnits() as Array<{ id: string; name: string }>).map((unit) => ({
+      productionUnitId: unit.id,
+      name: unit.name,
+      layout: this.getPrintLayout("unit", unit.id)
+    }));
+    return {
+      default: this.getPrintLayout("default"),
+      receipt: this.getPrintLayout("receipt"),
+      units
+    };
+  }
+
+  getPrintLayout(scope: PrintLayoutSettingsInput["scope"], productionUnitId?: string): PrintLayoutSettingsInput {
+    const key = this.printLayoutKey(scope, productionUnitId);
+    const stored = this.getSetting(key);
+    const fallback = this.defaultPrintLayout(scope, productionUnitId);
+    if (!stored) return fallback;
+    try {
+      return { ...fallback, ...(JSON.parse(stored) as Partial<PrintLayoutSettingsInput>), scope, productionUnitId };
+    } catch {
+      return fallback;
+    }
+  }
+
+  updatePrintLayout(input: PrintLayoutSettingsInput): PrintLayoutSettingsInput {
+    if (input.scope === "unit" && !input.productionUnitId) throw new DomainError("Choose a kitchen or counter for this layout");
+    if (input.scope === "unit" && input.productionUnitId) this.requireProductionUnit(input.productionUnitId);
+    const layout = { ...this.defaultPrintLayout(input.scope, input.productionUnitId), ...input };
+    this.upsertSetting(this.printLayoutKey(input.scope, input.productionUnitId), JSON.stringify(layout));
+    this.appendEvent("print_layout.updated", "hub_setting", this.printLayoutKey(input.scope, input.productionUnitId), {
+      scope: input.scope,
+      productionUnitId: input.productionUnitId ?? null
+    });
+    return layout;
   }
 
   generateBill(orderId: string): { billId: string; totalPaise: number } {
@@ -1525,7 +1640,7 @@ export class OrderService {
 
   enqueueTestBillPrint(requestedBy: string): { printJobId: string } {
     const receipt = this.getReceiptPrinter();
-    const template = this.getTicketTemplate();
+    const template = this.getPrintLayout("receipt");
     const printJobId = this.enqueuePrintJob({
       targetType: "BILL",
       targetId: "test-bill",
@@ -1544,6 +1659,16 @@ export class OrderService {
         createdAt: new Date().toISOString(),
         restaurantName: template.restaurantName,
         taxRegistrationText: template.taxRegistrationText,
+        lineWidthChars: template.lineWidthChars,
+        headerAlign: template.headerAlign,
+        footerAlign: template.footerAlign,
+        feedLines: template.feedLines,
+        showTable: template.showTable,
+        showDateTime: template.showDateTime,
+        showBillId: template.showBillId,
+        showTaxBreakup: template.showTaxBreakup,
+        showDiscountTip: template.showDiscountTip,
+        showNcReprintRevision: template.showNcReprintRevision,
         header: template.billHeader || "Printer test bill",
         footer: template.billFooter || "If you can read this, bill printing is connected."
       })
@@ -1562,7 +1687,7 @@ export class OrderService {
          LIMIT 1`
       )
       .get() as { id: string; name: string; printer_host: string | null; printer_port: number | null; printer_name: string | null } | undefined;
-    const template = this.getTicketTemplate();
+    const template = this.getPrintLayout(unit?.id ? "unit" : "default", unit?.id);
     const printJobId = this.enqueuePrintJob({
       targetType: "KOT",
       targetId: "test-kot",
@@ -1579,6 +1704,13 @@ export class OrderService {
         captainId: requestedBy,
         createdAt: new Date().toISOString(),
         items: [{ name: "Printer test item", quantityDelta: 1 }],
+        lineWidthChars: template.lineWidthChars,
+        headerAlign: template.headerAlign,
+        footerAlign: template.footerAlign,
+        feedLines: template.feedLines,
+        showTable: template.showTable,
+        showCaptain: template.showCaptain,
+        showDateTime: template.showDateTime,
         header: template.kotHeader || "Printer test kitchen ticket",
         footer: template.kotFooter || "If you can read this, KOT printing is connected."
       })
@@ -2296,6 +2428,9 @@ export class OrderService {
     ncReason?: string | null;
   }): BillTicket {
     const billableItems = this.getOrderItems(input.bill.order_id).filter((item) => item.quantity > 0 && item.status !== "cancelled");
+    const billPayments = this.db
+      .prepare("SELECT method, amount_paise FROM payments WHERE bill_id = ? ORDER BY created_at, id")
+      .all(input.bill.id) as Array<{ method: string; amount_paise: number }>;
     return {
       tableName: input.tableName,
       billId: input.bill.id,
@@ -2314,9 +2449,10 @@ export class OrderService {
       finalTotalPaise: input.finalTotalPaise ?? input.bill.final_total_paise,
       createdAt: input.createdAt,
       taxBreakdown: this.parseTaxBreakdown(input.bill.tax_breakdown_json),
+      payments: billPayments.map((payment) => ({ method: payment.method, amountPaise: payment.amount_paise })),
       revisionNumber: input.bill.revision_number,
       ncReason: input.ncReason ?? input.bill.nc_reason,
-      ...this.getTicketTemplate()
+      ...this.getPrintLayout("receipt")
     };
   }
 
@@ -3112,6 +3248,7 @@ export class OrderService {
         ticketItems.push({ name: item.name, quantityDelta: item.quantityDelta });
       }
 
+      const template = this.getPrintLayout("unit", productionUnitId);
       const payload = renderKotTicket({
         sequence,
         type,
@@ -3122,8 +3259,15 @@ export class OrderService {
         reason,
         items: ticketItems,
         ticketLabel,
-        header: this.getTicketTemplate().kotHeader,
-        footer: this.getTicketTemplate().kotFooter
+        lineWidthChars: template.lineWidthChars,
+        headerAlign: template.headerAlign,
+        footerAlign: template.footerAlign,
+        feedLines: template.feedLines,
+        showTable: template.showTable,
+        showCaptain: template.showCaptain,
+        showDateTime: template.showDateTime,
+        header: template.kotHeader,
+        footer: template.kotFooter
       });
 
       this.enqueuePrintJob({
@@ -3726,6 +3870,36 @@ export class OrderService {
   private getSetting(key: string): string | undefined {
     const row = this.orm.select({ value: hubSettings.value }).from(hubSettings).where(eq(hubSettings.key, key)).get();
     return row?.value;
+  }
+
+  private printLayoutKey(scope: PrintLayoutSettingsInput["scope"], productionUnitId?: string): string {
+    if (scope === "unit") return `print_layout_unit_${productionUnitId ?? ""}`;
+    return `print_layout_${scope}`;
+  }
+
+  private defaultPrintLayout(scope: PrintLayoutSettingsInput["scope"], productionUnitId?: string): PrintLayoutSettingsInput {
+    return {
+      scope,
+      productionUnitId,
+      billHeader: this.getSetting("ticket_bill_header") ?? "",
+      billFooter: this.getSetting("ticket_bill_footer") ?? "",
+      kotHeader: this.getSetting("ticket_kot_header") ?? "",
+      kotFooter: this.getSetting("ticket_kot_footer") ?? "",
+      restaurantName: this.getSetting("ticket_restaurant_name") ?? "",
+      taxRegistrationText: this.getSetting("ticket_tax_registration_text") ?? "",
+      lineWidthChars: Number(this.getSetting("ticket_line_width_chars") ?? 42),
+      headerAlign: "center",
+      footerAlign: "center",
+      feedLines: 3,
+      showTable: true,
+      showCaptain: true,
+      showDateTime: true,
+      showBillId: true,
+      showTaxBreakup: true,
+      showPaymentSplit: true,
+      showDiscountTip: true,
+      showNcReprintRevision: true
+    };
   }
 
   private readPrinterOutputMode(): PrinterOutputMode | undefined {

@@ -50,7 +50,7 @@ Responsibilities:
 - Serves the local hub React UI.
 - Stores local device tokens for offline authentication.
 - Creates pairing QR/manual codes for phones.
-- Manages floors, tables, kitchens/counters, dishes, sale/tax groups, ticket templates, manager PIN, printers, backups, and cloud sync.
+- Manages floors, tables, kitchens/counters, dishes, sale/tax groups, per-printer print layouts, manager PIN, printers, backups, and cloud sync.
 - Runs the service flow: table selection, order entry, KOT/BOT creation, billing, payment recording, NC bills, revisions, and automatic 6 AM IST business-day reporting.
 - Creates durable print jobs and retries failed jobs.
 - Writes an append-only local event log and sync outbox.
@@ -102,7 +102,7 @@ Responsibilities:
 - Google-only login through WorkOS AuthKit.
 - List/create restaurants.
 - Manage owner/admin/reporting memberships and invitations.
-- Create a hub connection for a restaurant. This generates `POS_INSTALLATION_ID` and `POS_SYNC_SECRET` and shows an env block for the hub PC.
+- Create a hub connection for a restaurant. This generates the hub connection ID and sync secret that are pasted into the hub UI.
 - Show hub installation health and recent synced events.
 - Queue advanced support commands for the hub.
 - Show cloud daily reports after the hub finalizes a 6 AM IST business day and syncs.
@@ -196,7 +196,7 @@ There are two auth systems because cloud auth and restaurant service have differ
 - Token hashes stored in SQLite table `local_devices`.
 - Works without internet.
 - Pairing codes are created by the hub and exchanged by phones.
-- The hub admin unlock token comes from `HUB_ADMIN_TOKEN`.
+- The hub setup session is unlocked with the local Manager PIN. Env admin tokens are developer/recovery fallback only.
 
 ## Hub Pairing Flow
 
@@ -248,7 +248,6 @@ Current local tables from `apps/hub-electron/src/db/drizzle-schema.ts`:
 - `event_log`
 - `sync_outbox`
 - `hub_settings`
-- `ticket_templates`
 - `local_devices`
 - `pairing_codes`
 - `idempotency_records`
@@ -629,7 +628,7 @@ Hub-to-cloud push:
 1. Local domain actions append events to `event_log`.
 2. Events to sync are inserted into `sync_outbox`.
 3. `ConvexSyncBridge.pushPending()` posts to Convex HTTP `/pos/ingest-events`.
-4. Convex authenticates with `POS_INSTALLATION_ID` and `POS_SYNC_SECRET`.
+4. Convex authenticates with the hub connection/installation ID and sync secret stored in local hub settings.
 5. Convex stores immutable `syncedEvents`.
 6. Daily report events upsert cloud report tables.
 7. Hub marks outbox rows synced or failed.
@@ -750,23 +749,44 @@ Cloud tables from `convex/schema.ts`:
 - `dailyReportItems`
 - `dailyReportGroups`
 
-## Local Environment Variables
+## Hub Local Settings And Environment
 
-Hub production config is loaded from environment variables and/or hub env files. See `docs/packaging/restaurant-handoff.md` for the full order.
+Normal restaurant setup is done inside the hub UI, not by editing `hub.env`.
 
-Important hub variables:
+Fresh hub setup:
+
+1. Create a Manager PIN on the hub PC itself. First PIN creation is blocked from other LAN devices.
+2. Unlock setup with that PIN.
+3. Save cloud connection values in **Setup → Hub Connection And Security**.
+4. Save the hub public LAN URL, for example `http://192.168.1.20:3737`.
+5. Use **Test cloud connection** before service.
+
+SQLite `hub_settings` stores:
+
+- cloud URL
+- hub connection/installation ID
+- sync secret
+- hub public URL
+- printer output mode
+- receipt printer config
+- per-printer print layouts
+- Manager PIN hash
+
+The Manager PIN is hashed; the raw PIN cannot be read back. It unlocks setup and approves sensitive actions.
+
+Environment variables and `hub.env` remain developer/recovery fallbacks only. See `docs/packaging/restaurant-handoff.md`.
+
+Core fallback variables:
 
 - `HUB_HOST`: usually `0.0.0.0` for LAN access.
 - `HUB_PORT`: default app port, commonly `3737`.
-- `HUB_PUBLIC_URL`: LAN URL phones should use, for example `http://192.168.1.20:3737`.
 - `HUB_DATABASE_PATH`: SQLite file path.
 - `HUB_BACKUP_DIR`: local backup folder.
-- `HUB_ADMIN_TOKEN`: long local admin unlock token.
-- `CONVEX_HTTP_URL`: Convex site HTTP URL for sync endpoints.
-- `POS_INSTALLATION_ID`: generated in cloud portal when connecting a hub.
-- `POS_SYNC_SECRET`: generated in cloud portal when connecting a hub.
+- Optional recovery only: `HUB_PUBLIC_URL`, `CONVEX_HTTP_URL`, `POS_INSTALLATION_ID`, `POS_SYNC_SECRET`.
 
 Printer output mode is changed in Hub → Setup → Printer Mode And Cash Counter. Fresh installs default to Test Mode; Live Mode sends real KOT/BOT/bill prints to configured printers. `HUB_PRINTER_DRY_RUN` may still be read as an old developer fallback on first start, but it is not the restaurant setup workflow.
+
+Print layouts are guided settings, not raw templates. There is a cash-counter bill layout and per kitchen/counter KOT/BOT layouts. Each layout can set width, header/footer, restaurant/tax text, common show/hide fields, feed lines, preview, and test print.
 
 Cloud/WorkOS envs are documented in `docs/workos-authkit-setup.md`.
 

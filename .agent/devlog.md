@@ -1,5 +1,12 @@
 # Devlog
 
+## 2026-05-15
+
+- Task: Fixed Android mobile header overlap with the system status bar.
+- Files added or changed: `apps/mobile/src/lib/safe-area.ts`, `apps/mobile/src/tests/safe-area.test.ts`, `apps/mobile/src/App.tsx`.
+- Important behavior: Android now reserves `StatusBar.currentHeight` at the app shell and QR scanner shell before rendering headers, while iOS keeps using its native safe-area handling.
+- Verification: mobile safe-area test and mobile typecheck passed.
+
 ## 2026-05-09
 
 - Task: Created initial offline-first POS monorepo and implemented the SQLite-backed local hub core.

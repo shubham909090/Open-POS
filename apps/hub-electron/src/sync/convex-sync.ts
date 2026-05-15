@@ -1,4 +1,5 @@
 import { and, asc, eq, inArray, lt, sql } from "drizzle-orm";
+import type { HubConnectionSettingsInput } from "@gaurav-pos/shared";
 import type { HubOrm } from "../db/database.js";
 import { cloudCommandFailures, eventLog, hubSettings, localDevices, menuItemVariants, menuItems, productionUnits, syncOutbox } from "../db/drizzle-schema.js";
 
@@ -32,7 +33,8 @@ export class ConvexSyncBridge {
     private readonly db: HubOrm,
     private readonly convexUrl: string | undefined,
     private readonly syncSecret: string | undefined,
-    private readonly installationId?: string
+    private readonly installationId?: string,
+    private readonly settingsProvider?: () => HubConnectionSettingsInput
   ) {}
 
   pendingEvents(limit = 100): OutboxRow[] {
@@ -56,17 +58,18 @@ export class ConvexSyncBridge {
 
   async pushPending(): Promise<{ pushed: number; skipped: boolean }> {
     const events = this.pendingEvents();
-    if (!this.convexUrl || !this.syncSecret || !this.installationId || events.length === 0) {
+    const config = this.resolveConfig();
+    if (!config.cloudUrl || !config.syncSecret || !config.installationId || events.length === 0) {
       return { pushed: 0, skipped: true };
     }
 
-    const response = await fetch(`${this.convexUrl}/pos/ingest-events`, {
+    const response = await fetch(`${config.cloudUrl}/pos/ingest-events`, {
       method: "POST",
       headers: {
         "content-type": "application/json",
-        "x-pos-sync-secret": this.syncSecret,
-        "x-pos-installation-secret": this.syncSecret,
-        ...(this.installationId ? { "x-pos-installation-id": this.installationId } : {})
+        "x-pos-sync-secret": config.syncSecret,
+        "x-pos-installation-secret": config.syncSecret,
+        "x-pos-installation-id": config.installationId
       },
       body: JSON.stringify({
         events: events.map((event) => ({
@@ -107,18 +110,19 @@ export class ConvexSyncBridge {
   }
 
   async pullCloudSnapshot(): Promise<{ applied: number; failed: number; skipped: boolean; cursor?: string }> {
-    if (!this.convexUrl || !this.syncSecret || !this.installationId) {
+    const config = this.resolveConfig();
+    if (!config.cloudUrl || !config.syncSecret || !config.installationId) {
       return { applied: 0, failed: 0, skipped: true };
     }
 
     const cursor = this.getSetting("cloud_snapshot_cursor");
-    const response = await fetch(`${this.convexUrl}/pos/pull-hub-snapshot`, {
+    const response = await fetch(`${config.cloudUrl}/pos/pull-hub-snapshot`, {
       method: "POST",
       headers: {
         "content-type": "application/json",
-        "x-pos-sync-secret": this.syncSecret,
-        "x-pos-installation-secret": this.syncSecret,
-        "x-pos-installation-id": this.installationId
+        "x-pos-sync-secret": config.syncSecret,
+        "x-pos-installation-secret": config.syncSecret,
+        "x-pos-installation-id": config.installationId
       },
       body: JSON.stringify({ cursor })
     });
@@ -301,6 +305,16 @@ export class ConvexSyncBridge {
 
   private getSetting(key: string): string | undefined {
     return this.db.select({ value: hubSettings.value }).from(hubSettings).where(eq(hubSettings.key, key)).get()?.value;
+  }
+
+  private resolveConfig(): HubConnectionSettingsInput {
+    const provided = this.settingsProvider?.();
+    return {
+      cloudUrl: provided?.cloudUrl || this.getSetting("hub_connection_cloud_url") || this.convexUrl || "",
+      installationId: provided?.installationId || this.getSetting("hub_connection_installation_id") || this.installationId || "",
+      syncSecret: provided?.syncSecret || this.getSetting("hub_connection_sync_secret") || this.syncSecret || "",
+      hubPublicUrl: provided?.hubPublicUrl || this.getSetting("hub_connection_public_url") || ""
+    };
   }
 
   private upsertSetting(key: string, value: string, db: LocalWriteDb = this.db): void {

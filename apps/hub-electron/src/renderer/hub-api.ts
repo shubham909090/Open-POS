@@ -100,14 +100,56 @@ export interface Bootstrap {
   saleGroups: SaleGroup[];
   menuItems: MenuItem[];
   menuPopularity?: Array<{ menuItemId: string; quantity: number }>;
-  ticketTemplate?: { billHeader: string; billFooter: string; kotHeader: string; kotFooter: string; restaurantName: string; taxRegistrationText: string };
+  ticketTemplate?: { billHeader: string; billFooter: string; kotHeader: string; kotFooter: string; restaurantName: string; taxRegistrationText: string; lineWidthChars: number };
+  printLayouts?: PrintLayouts;
   printJobs: PrintJob[];
   syncStatus: {
     counts?: Record<string, number>;
     lastEvent?: unknown;
     commandFailures?: Array<{ commandId: string; type: string; error: string; failedAt: string }>;
   };
-  setup?: { printerOutputMode: "test" | "live" };
+  setup?: {
+    printerOutputMode: "test" | "live";
+    managerPinConfigured?: boolean;
+    hubConnection?: HubConnectionSettings;
+  };
+}
+
+export interface HubConnectionSettings {
+  configured: boolean;
+  cloudUrl: string;
+  installationId: string;
+  syncSecret: string;
+  hubPublicUrl: string;
+}
+
+export interface PrintLayoutSettings {
+  scope: "default" | "receipt" | "unit";
+  productionUnitId?: string;
+  restaurantName: string;
+  taxRegistrationText: string;
+  billHeader: string;
+  billFooter: string;
+  kotHeader: string;
+  kotFooter: string;
+  lineWidthChars: number;
+  headerAlign: "left" | "center";
+  footerAlign: "left" | "center";
+  feedLines: number;
+  showTable: boolean;
+  showCaptain: boolean;
+  showDateTime: boolean;
+  showBillId: boolean;
+  showTaxBreakup: boolean;
+  showPaymentSplit: boolean;
+  showDiscountTip: boolean;
+  showNcReprintRevision: boolean;
+}
+
+export interface PrintLayouts {
+  default: PrintLayoutSettings;
+  receipt: PrintLayoutSettings;
+  units: Array<{ productionUnitId: string; name: string; layout: PrintLayoutSettings }>;
 }
 
 export interface OrderItem {
@@ -265,6 +307,11 @@ export function setAuthToken(token: string) {
   localStorage.setItem("deviceToken", authToken);
 }
 
+export function clearAuthToken() {
+  authToken = "";
+  localStorage.removeItem("deviceToken");
+}
+
 function idempotencyKey(prefix: string) {
   return `${prefix}-${Date.now()}-${crypto.randomUUID?.() ?? Math.random().toString(36).slice(2)}`;
 }
@@ -285,6 +332,9 @@ export async function apiFetch<T>(path: string, options: RequestInit & { idempot
 }
 
 export const hubApi = {
+  adminSessionStatus: () => apiFetch<{ managerPinConfigured: boolean }>("/admin/session/status"),
+  unlockAdminSession: (pin: string) => apiFetch<{ token: string; role: "admin" }>("/admin/session/unlock", { method: "POST", body: JSON.stringify({ pin }) }),
+  lockAdminSession: () => apiFetch<{ locked: boolean }>("/admin/session/lock", { method: "POST", body: JSON.stringify({}) }),
   bootstrap: () => apiFetch<Bootstrap>("/sync/bootstrap"),
   tableOrder: (tableId: string) => apiFetch<TableOrder | null>(`/tables/${tableId}/order`),
   currentBusinessDaySummary: () => apiFetch<CloseSummary>("/business-day/current-summary"),
@@ -315,8 +365,31 @@ export const hubApi = {
   deleteDish: (id: string) => apiFetch<{ id: string; deleted: boolean }>(`/menu-items/${id}`, { method: "DELETE" }),
   setManagerPin: (payload: { currentPin?: string; newPin: string; updatedBy: string }) =>
     apiFetch<{ configured: boolean }>("/settings/manager-pin", { method: "PUT", body: JSON.stringify(payload) }),
-  updateTicketTemplate: (payload: { billHeader?: string; billFooter?: string; kotHeader?: string; kotFooter?: string; restaurantName?: string; taxRegistrationText?: string }) =>
+  hubConnection: (managerPin?: string) =>
+    apiFetch<HubConnectionSettings>(`/settings/hub-connection${managerPin ? "?reveal=1" : ""}`, {
+      headers: managerPin ? { "x-manager-pin": managerPin } : undefined
+    }),
+  updateHubConnection: (payload: Omit<HubConnectionSettings, "configured">, managerPin: string) =>
+    apiFetch<{ configured: boolean }>("/settings/hub-connection", {
+      method: "PUT",
+      headers: { "x-manager-pin": managerPin },
+      body: JSON.stringify(payload)
+    }),
+  testHubConnection: (managerPin: string) =>
+    apiFetch<{ status: "missing" | "connected" | "unauthorized" | "server_error"; message: string }>("/settings/hub-connection/test", {
+      method: "POST",
+      headers: { "x-manager-pin": managerPin },
+      body: JSON.stringify({})
+    }),
+  updateTicketTemplate: (payload: { billHeader?: string; billFooter?: string; kotHeader?: string; kotFooter?: string; restaurantName?: string; taxRegistrationText?: string; lineWidthChars?: number }) =>
     apiFetch("/settings/ticket-template", { method: "PUT", body: JSON.stringify(payload) }),
+  printLayouts: () => apiFetch<PrintLayouts>("/print-layouts"),
+  updatePrintLayout: (scope: "default" | "receipt" | "unit", payload: PrintLayoutSettings, managerPin: string) =>
+    apiFetch<PrintLayoutSettings>(`/print-layouts/${scope}`, {
+      method: "PUT",
+      headers: { "x-manager-pin": managerPin },
+      body: JSON.stringify(payload)
+    }),
   updateSaleGroup: (id: string, payload: { defaultProductionUnitId?: string | null; taxComponents?: Array<{ name: string; rateBps: number }>; ticketLabel?: "KOT" | "BOT"; active?: boolean }) =>
     apiFetch<{ id: string }>(`/sale-groups/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
   systemPrinters: () => apiFetch<SystemPrinterInfo[]>("/system-printers"),

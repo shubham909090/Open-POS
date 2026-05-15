@@ -61,6 +61,21 @@ export class AuthService {
       .run();
   }
 
+  lockAdminDevice(): void {
+    const now = new Date().toISOString();
+    const throwawayHash = this.hash(`locked-${randomBytes(32).toString("base64url")}`);
+    this.db
+      .update(localDevices)
+      .set({
+        tokenHash: throwawayHash,
+        status: "revoked",
+        revokedAt: now,
+        lastSeenAt: now
+      })
+      .where(eq(localDevices.id, "device-local-admin"))
+      .run();
+  }
+
   authenticate(token: string | undefined): LocalDeviceSession {
     if (!token) throw new DomainError("Missing device token", 401);
     const tokenHash = this.hash(token);

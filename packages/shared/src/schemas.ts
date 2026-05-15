@@ -20,6 +20,10 @@ export const managerApprovalSchema = z.object({
   approvedBy: z.string().trim().min(1).max(120)
 });
 
+export const managerPinUnlockSchema = z.object({
+  pin: z.string().trim().min(4).max(32)
+});
+
 export const orderItemInputSchema = z.object({
   orderItemId: z.string().min(1).optional(),
   menuItemId: z.string().min(1).optional(),
@@ -233,7 +237,40 @@ export const ticketTemplateSchema = z.object({
   kotHeader: z.string().max(1_000).default(""),
   kotFooter: z.string().max(1_000).default(""),
   restaurantName: z.string().trim().max(160).default(""),
-  taxRegistrationText: z.string().trim().max(240).default("")
+  taxRegistrationText: z.string().trim().max(240).default(""),
+  lineWidthChars: z.number().int().min(32).max(64).default(42)
+});
+
+export const hubConnectionSettingsSchema = z.object({
+  cloudUrl: z.string().trim().max(400).optional().default(""),
+  installationId: z.string().trim().max(160).optional().default(""),
+  syncSecret: z.string().trim().max(400).optional().default(""),
+  hubPublicUrl: z.string().trim().max(400).optional().default("")
+});
+
+export const printLayoutScopeSchema = z.enum(["default", "receipt", "unit"]);
+
+export const printLayoutSettingsSchema = z.object({
+  scope: printLayoutScopeSchema,
+  productionUnitId: z.string().trim().min(1).optional(),
+  restaurantName: z.string().trim().max(160).default(""),
+  taxRegistrationText: z.string().trim().max(240).default(""),
+  billHeader: z.string().max(1_000).default(""),
+  billFooter: z.string().max(1_000).default(""),
+  kotHeader: z.string().max(1_000).default(""),
+  kotFooter: z.string().max(1_000).default(""),
+  lineWidthChars: z.number().int().min(32).max(64).default(42),
+  headerAlign: z.enum(["left", "center"]).default("center"),
+  footerAlign: z.enum(["left", "center"]).default("center"),
+  feedLines: z.number().int().min(1).max(8).default(3),
+  showTable: z.boolean().default(true),
+  showCaptain: z.boolean().default(true),
+  showDateTime: z.boolean().default(true),
+  showBillId: z.boolean().default(true),
+  showTaxBreakup: z.boolean().default(true),
+  showPaymentSplit: z.boolean().default(true),
+  showDiscountTip: z.boolean().default(true),
+  showNcReprintRevision: z.boolean().default(true)
 });
 
 export const reviseBillSchema = z.object({
@@ -312,6 +349,10 @@ export type UpdatePrinterOutputModeInput = z.infer<typeof updatePrinterOutputMod
 export type UpdateReceiptPrinterInput = z.infer<typeof updateReceiptPrinterSchema>;
 export type PrintActionInput = z.infer<typeof printActionSchema>;
 export type TicketTemplateInput = z.infer<typeof ticketTemplateSchema>;
+export type ManagerPinUnlockInput = z.infer<typeof managerPinUnlockSchema>;
+export type HubConnectionSettingsInput = z.infer<typeof hubConnectionSettingsSchema>;
+export type PrintLayoutScope = z.infer<typeof printLayoutScopeSchema>;
+export type PrintLayoutSettingsInput = z.infer<typeof printLayoutSettingsSchema>;
 export type ReviseBillInput = z.infer<typeof reviseBillSchema>;
 export type MarkNcBillInput = z.infer<typeof markNcBillSchema>;
 export type MoveTableInput = z.infer<typeof moveTableSchema>;

@@ -17,6 +17,13 @@ export interface KotTicket {
   reason?: string | null;
   header?: string;
   footer?: string;
+  lineWidthChars?: number;
+  headerAlign?: "left" | "center";
+  footerAlign?: "left" | "center";
+  feedLines?: number;
+  showTable?: boolean;
+  showCaptain?: boolean;
+  showDateTime?: boolean;
 }
 
 export interface BillTicket {
@@ -31,12 +38,24 @@ export interface BillTicket {
   finalTotalPaise?: number;
   createdAt: string;
   taxBreakdown?: Array<{ name: string; amountPaise: number }>;
+  payments?: Array<{ method: string; amountPaise: number }>;
   header?: string;
   footer?: string;
   restaurantName?: string;
   taxRegistrationText?: string;
   ncReason?: string | null;
   revisionNumber?: number;
+  lineWidthChars?: number;
+  headerAlign?: "left" | "center";
+  footerAlign?: "left" | "center";
+  feedLines?: number;
+  showTable?: boolean;
+  showDateTime?: boolean;
+  showBillId?: boolean;
+  showTaxBreakup?: boolean;
+  showPaymentSplit?: boolean;
+  showDiscountTip?: boolean;
+  showNcReprintRevision?: boolean;
 }
 
 export interface BillTicketItem {
@@ -47,35 +66,72 @@ export interface BillTicketItem {
   lineTotalPaise: number;
 }
 
-const TICKET_LINE_WIDTH = 32;
+const DEFAULT_TICKET_LINE_WIDTH = 42;
 
-function truncateTicketText(value: string, maxLength = TICKET_LINE_WIDTH): string {
+function ticketWidth(value?: number): number {
+  if (!value || !Number.isFinite(value)) return DEFAULT_TICKET_LINE_WIDTH;
+  return Math.max(32, Math.min(64, Math.floor(value)));
+}
+
+function separator(width: number): string {
+  return "-".repeat(width);
+}
+
+function truncateTicketText(value: string, maxLength: number): string {
   if (value.length <= maxLength) return value;
   if (maxLength <= 3) return value.slice(0, maxLength);
   return `${value.slice(0, maxLength - 3)}...`;
 }
 
-function renderBillItemLines(item: BillTicketItem): string[] {
+function centerTicketText(value: string, width: number): string[] {
+  return value
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const text = truncateTicketText(line, width);
+      const left = Math.max(0, Math.floor((width - text.length) / 2));
+      return `${" ".repeat(left)}${text}`;
+    });
+}
+
+function alignTicketText(value: string, width: number, align: "left" | "center" = "center"): string[] {
+  if (align === "left") {
+    return value
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => truncateTicketText(line, width));
+  }
+  return centerTicketText(value, width);
+}
+
+function ticketFeed(feedLines?: number): string {
+  return "\n".repeat(Math.max(1, Math.min(8, feedLines ?? 3)));
+}
+
+function renderBillItemLines(item: BillTicketItem, width: number): string[] {
   const name = item.variantName ? `${item.name} ${item.variantName}` : item.name;
   const detail = `${item.quantity} x ${formatInr(item.unitPricePaise)} = ${formatInr(item.lineTotalPaise)}`;
-  const compactAvailableNameLength = TICKET_LINE_WIDTH - detail.length - 2;
+  const compactAvailableNameLength = width - detail.length - 2;
 
   if (compactAvailableNameLength >= 8 && name.length <= compactAvailableNameLength) {
     return [`${name.padEnd(compactAvailableNameLength)}  ${detail}`];
   }
 
-  return [truncateTicketText(name), `  ${detail}`];
+  return [truncateTicketText(name, width), `  ${detail}`];
 }
 
 export function renderKotTicket(ticket: KotTicket): string {
+  const width = ticketWidth(ticket.lineWidthChars);
   const lines = [
-    ...(ticket.header ? [ticket.header, "-".repeat(32)] : []),
-    `${ticket.ticketLabel ?? "KOT"} #${ticket.sequence} ${ticket.type.toUpperCase()}`,
+    ...(ticket.header ? [...alignTicketText(ticket.header, width, ticket.headerAlign), separator(width)] : []),
+    ...centerTicketText(`${ticket.ticketLabel ?? "KOT"} #${ticket.sequence} ${ticket.type.toUpperCase()}`, width),
     `Station: ${ticket.productionUnitName}`,
-    `Table: ${ticket.tableName}`,
-    `Captain: ${ticket.captainId}`,
-    `Time: ${ticket.createdAt}`,
-    "-".repeat(32)
+    ...(ticket.showTable === false ? [] : [`Table: ${ticket.tableName}`]),
+    ...(ticket.showCaptain === false ? [] : [`Captain: ${ticket.captainId}`]),
+    ...(ticket.showDateTime === false ? [] : [`Time: ${ticket.createdAt}`]),
+    separator(width)
   ];
 
   for (const item of ticket.items) {
@@ -84,47 +140,60 @@ export function renderKotTicket(ticket: KotTicket): string {
   }
 
   if (ticket.reason) {
-    lines.push("-".repeat(32), `Reason: ${ticket.reason}`);
+    lines.push(separator(width), `Reason: ${ticket.reason}`);
   }
-  if (ticket.footer) lines.push("-".repeat(32), ticket.footer);
+  if (ticket.footer) lines.push(separator(width), ...alignTicketText(ticket.footer, width, ticket.footerAlign));
 
-  return `${lines.join("\n")}\n\n\n`;
+  return `${lines.join("\n")}${ticketFeed(ticket.feedLines)}`;
 }
 
 export function renderBillTicket(ticket: BillTicket): string {
+  const width = ticketWidth(ticket.lineWidthChars);
   const lines = [
-    ...(ticket.restaurantName ? [ticket.restaurantName] : []),
-    ...(ticket.header ? [ticket.header] : []),
-    `BILL ${ticket.billId}`,
-    ...(ticket.revisionNumber && ticket.revisionNumber > 1 ? [`Revision: ${ticket.revisionNumber}`] : []),
-    ...(ticket.ncReason ? ["NC / NON CUSTOMER"] : []),
-    `Table: ${ticket.tableName}`,
-    `Time: ${ticket.createdAt}`,
+    ...(ticket.restaurantName ? alignTicketText(ticket.restaurantName, width, ticket.headerAlign) : []),
+    ...(ticket.header ? alignTicketText(ticket.header, width, ticket.headerAlign) : []),
+    ...(ticket.showBillId === false ? [] : centerTicketText(`BILL ${ticket.billId}`, width)),
+    ...(ticket.showNcReprintRevision === false
+      ? []
+      : [
+          ...(ticket.revisionNumber && ticket.revisionNumber > 1 ? [`Revision: ${ticket.revisionNumber}`] : []),
+          ...(ticket.ncReason ? centerTicketText("NC / NON CUSTOMER", width) : [])
+        ]),
+    ...(ticket.showTable === false ? [] : [`Table: ${ticket.tableName}`]),
+    ...(ticket.showDateTime === false ? [] : [`Time: ${ticket.createdAt}`]),
     ...(ticket.taxRegistrationText ? [ticket.taxRegistrationText] : []),
-    "-".repeat(32),
+    separator(width),
     ...(ticket.items?.length
       ? [
           "Item  Qty  Rate  Amt",
-          "-".repeat(32),
-          ...ticket.items.flatMap((item) => renderBillItemLines(item)),
-          "-".repeat(32)
+          separator(width),
+          ...ticket.items.flatMap((item) => renderBillItemLines(item, width)),
+          separator(width)
         ]
       : []),
     `Subtotal: ${formatInr(ticket.subtotalPaise)}`,
     ...(ticket.taxBreakdown?.length
-      ? ticket.taxBreakdown.map((line) => `${line.name}: ${formatInr(line.amountPaise)}`)
+      ? ticket.showTaxBreakup === false
+        ? [`Tax: ${formatInr(ticket.taxPaise)}`]
+        : ticket.taxBreakdown.map((line) => `${line.name}: ${formatInr(line.amountPaise)}`)
       : [`Tax: ${formatInr(ticket.taxPaise)}`]),
     `Total: ${formatInr(ticket.totalPaise)}`
   ];
 
-  if (ticket.discountPaise) lines.push(`Discount: -${formatInr(ticket.discountPaise)}`);
-  if (ticket.tipPaise) lines.push(`Tip: ${formatInr(ticket.tipPaise)}`);
+  if (ticket.showDiscountTip !== false && ticket.discountPaise) lines.push(`Discount: -${formatInr(ticket.discountPaise)}`);
+  if (ticket.showDiscountTip !== false && ticket.tipPaise) lines.push(`Tip: ${formatInr(ticket.tipPaise)}`);
   if (ticket.finalTotalPaise && ticket.finalTotalPaise !== ticket.totalPaise) {
     lines.push(`Final: ${formatInr(ticket.finalTotalPaise)}`);
   }
-  if (ticket.ncReason) lines.push(`NC Reason: ${ticket.ncReason}`);
-  if (ticket.footer) lines.push("-".repeat(32), ticket.footer);
+  if (ticket.showPaymentSplit !== false && ticket.payments?.length) {
+    lines.push(
+      separator(width),
+      "Payments",
+      ...ticket.payments.map((payment) => `${payment.method.toUpperCase()}: ${formatInr(payment.amountPaise)}`)
+    );
+  }
+  if (ticket.showNcReprintRevision !== false && ticket.ncReason) lines.push(`NC Reason: ${ticket.ncReason}`);
+  if (ticket.footer) lines.push(separator(width), ...alignTicketText(ticket.footer, width, ticket.footerAlign));
 
-  lines.push("\n\n");
-  return lines.join("\n");
+  return `${lines.join("\n")}${ticketFeed(ticket.feedLines)}`;
 }

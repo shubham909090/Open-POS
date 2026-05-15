@@ -36,6 +36,33 @@ describe("ConvexSyncBridge", () => {
     database.close();
   });
 
+  it("uses cloud settings saved in SQLite without rebuilding the sync bridge", async () => {
+    const { database, orderService } = createTestHub();
+    orderService.updateHubConnectionSettings({
+      cloudUrl: "https://db-config.convex.site",
+      installationId: "install-from-db",
+      syncSecret: "secret-from-db",
+      hubPublicUrl: "http://192.168.1.20:3737"
+    });
+    orderService.createFloor({ name: "Terrace" });
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ inserted: 1 }), { status: 200 }));
+
+    const sync = new ConvexSyncBridge(database.orm, undefined, undefined);
+
+    await expect(sync.pushPending()).resolves.toEqual({ pushed: 2, skipped: false });
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "https://db-config.convex.site/pos/ingest-events",
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          "x-pos-installation-id": "install-from-db",
+          "x-pos-sync-secret": "secret-from-db"
+        })
+      })
+    );
+
+    database.close();
+  });
+
   it("marks pending events failed when HTTP push fails", async () => {
     const { database, orderService } = createTestHub();
     orderService.createFloor({ name: "Garden" });

@@ -11,9 +11,24 @@ Send two installable apps:
 
 The cloud portal is not installed on the restaurant computer. The owner opens it in a browser for hub connection setup and day reports.
 
-## Windows Hub Config File
+## Windows Hub Setup
 
-The packaged hub reads config from environment variables first, then from these files:
+For normal restaurant use, do **not** put cloud secrets or an admin password into `hub.env`.
+
+The installed hub now sets itself up from the app:
+
+1. Start **Gaurav POS Hub**.
+2. Create the first **Manager PIN** on the hub PC itself. First PIN creation is blocked from other LAN devices.
+3. Go to **Setup → Hub Connection And Security**.
+4. Paste the cloud connection values from the cloud portal.
+5. Enter the Manager PIN and save.
+6. Use **Test cloud connection** to confirm sync is working.
+
+The Manager PIN unlocks setup and approves sensitive restaurant actions like NC bills, bill reprints, revisions, cancellation, and alcohol stock adjustment.
+
+## Optional Recovery Config File
+
+The packaged hub still reads config from environment variables and these files for developer/recovery cases:
 
 1. Path from `HUB_CONFIG_FILE`
 2. Path from `GAURAV_POS_CONFIG`
@@ -22,7 +37,7 @@ The packaged hub reads config from environment variables first, then from these 
 5. `hub.env` beside the current launch folder
 6. `.env.local` for local development
 
-For a restaurant PC, use:
+If support needs a recovery config, use:
 
 ```text
 C:\ProgramData\Gaurav POS Hub\hub.env
@@ -35,18 +50,11 @@ Create the folder if it does not exist. Copy `apps/hub-electron/resources/hub.en
 ```env
 HUB_HOST=0.0.0.0
 HUB_PORT=3737
-HUB_PUBLIC_URL=http://192.168.1.20:3737
-
 HUB_DATABASE_PATH=C:\ProgramData\Gaurav POS Hub\data\hub.sqlite
 HUB_BACKUP_DIR=C:\ProgramData\Gaurav POS Hub\backups
-HUB_ADMIN_TOKEN=replace-with-a-long-random-password
-
-CONVEX_HTTP_URL=https://your-convex-site.convex.site
-POS_INSTALLATION_ID=paste-from-cloud-portal
-POS_SYNC_SECRET=paste-from-cloud-portal
 ```
 
-`HUB_PUBLIC_URL` must use the Windows PC LAN IP. Give that PC a fixed router DHCP reservation before pairing tablets.
+Cloud URL, hub connection ID, sync secret, and hub public LAN URL are saved inside the hub UI. Give the Windows PC a fixed router DHCP reservation before pairing tablets so the hub public URL does not keep changing.
 
 Printer output is controlled from the hub UI, not by env. A fresh hub starts in **Printer Test Mode**. In Hub → Setup → Printer Mode And Cash Counter, select printers, run test prints, then switch to **Live Mode** before service.
 
@@ -76,13 +84,12 @@ Building a Windows `.exe` from macOS may require Wine. If the command fails on M
 ## Install On Restaurant Windows PC
 
 1. Install the generated hub `.exe`.
-2. Create `C:\ProgramData\Gaurav POS Hub\hub.env`.
-3. Paste the cloud hub connection values from the cloud portal into `hub.env`.
-4. Set the PC LAN IP in `HUB_PUBLIC_URL`.
-5. Start **Gaurav POS Hub**.
-6. Unlock with `HUB_ADMIN_TOKEN`.
-7. Set up floors, tables, kitchens/counters, dishes, sale groups, manager PIN, and printers.
-8. Create pairing QR codes for tablets.
+2. Start **Gaurav POS Hub**.
+3. Create the Manager PIN.
+4. Paste the cloud hub connection values into **Setup → Hub Connection And Security**.
+5. Set the hub public URL to the PC LAN URL, for example `http://192.168.1.20:3737`.
+6. Set up floors, tables, kitchens/counters, dishes, sale groups, and printers.
+7. Create pairing QR codes for tablets.
 
 ## Build Android APK
 

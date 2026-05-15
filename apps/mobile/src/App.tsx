@@ -20,6 +20,7 @@ import { CameraView, useCameraPermissions } from "expo-camera";
 import { getTableDisplayState, rankMenuQuickPicks, searchMenuItems, tableDisplayLabel, type MenuQuickPick, type OrderItemInput, type SaleGroupKind } from "@gaurav-pos/shared";
 import { HubClient, type CurrentDaySummary, type HubBootstrap, type HubOrder } from "./lib/hub-client";
 import { clearDraft, getDeviceToken, getHubUrl, loadDraft, saveDraft, setDeviceToken, setHubUrl } from "./lib/draft-store";
+import { getAndroidStatusBarTopInset } from "./lib/safe-area";
 
 type ConnectionState = "checking" | "online" | "offline";
 type ViewMode = "tables" | "menu" | "ticket";
@@ -1819,8 +1820,10 @@ const palette = {
   redSoft: "#fff0ed"
 };
 
+const androidStatusBarTopInset = getAndroidStatusBarTopInset(Platform.OS, StatusBar.currentHeight);
+
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: palette.wash },
+  safe: { flex: 1, backgroundColor: palette.wash, paddingTop: androidStatusBarTopInset },
   keyboardShell: { flex: 1 },
   loadingShell: { flex: 1, alignItems: "center", justifyContent: "center", gap: 12 },
   loadingText: { color: palette.ink, fontWeight: "800" },
@@ -2265,7 +2268,7 @@ const styles = StyleSheet.create({
   },
   emptyCompact: { minHeight: 78, alignItems: "flex-start" },
   emptyTitle: { color: palette.ink, fontWeight: "900", fontSize: 15 },
-  scannerShell: { flex: 1, backgroundColor: "#11100e" },
+  scannerShell: { flex: 1, backgroundColor: "#11100e", paddingTop: androidStatusBarTopInset },
   scannerHeader: {
     padding: 16,
     backgroundColor: palette.paper,

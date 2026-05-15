@@ -80,7 +80,7 @@ function renderLockedHub(error) {
   state.backups = [];
   state.closeSummary = null;
   $("hubHealth").textContent = "Hub locked";
-  $("syncStatus").textContent = "Enter hub password";
+  $("syncStatus").textContent = "Enter Manager PIN";
   $("dayStatus").textContent = "Business day locked";
   renderOperationalStats();
   renderTables();
@@ -90,8 +90,8 @@ function renderLockedHub(error) {
   renderPrintJobs();
   renderSetupProgress();
   const message = error instanceof Error && error.message.includes("Invalid or revoked")
-    ? "Enter the current HUB_ADMIN_TOKEN from the hub env file."
-    : error?.message || "Enter the hub password to continue.";
+    ? "Unlock setup with the Manager PIN saved on this hub."
+    : error?.message || "Enter the Manager PIN to continue.";
   showToast(message, "error");
 }
 
@@ -149,8 +149,8 @@ function setupSteps() {
       label: "Unlock Hub",
       done: hasToken,
       required: true,
-      hint: hasToken ? "Hub unlocked" : "Enter the hub password",
-      missing: "Unlock the hub with the password from the hub PC env file."
+      hint: hasToken ? "Hub unlocked" : "Enter the Manager PIN",
+      missing: "Unlock setup with the Manager PIN."
     },
     {
       key: "day",

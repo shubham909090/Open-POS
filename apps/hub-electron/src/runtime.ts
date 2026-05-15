@@ -43,7 +43,19 @@ export async function startHub() {
   authService.seedAdminDevice(config.adminToken);
   const orderService = new OrderService(database.orm);
   orderService.ensurePrinterOutputMode(config.printerOutputModeDefault);
-  const syncBridge = new ConvexSyncBridge(database.orm, config.convexHttpUrl, config.posSyncSecret, config.installationId);
+  orderService.ensureHubConnectionSettings({
+    cloudUrl: config.convexHttpUrl ?? "",
+    installationId: config.installationId ?? "",
+    syncSecret: config.posSyncSecret ?? "",
+    hubPublicUrl: config.publicUrl ?? ""
+  });
+  const syncBridge = new ConvexSyncBridge(
+    database.orm,
+    config.convexHttpUrl,
+    config.posSyncSecret,
+    config.installationId,
+    () => orderService.getHubConnectionRuntimeSettings()
+  );
   const app = createHubServer({
     database,
     backupService,

@@ -4,10 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "dotenv -e ../../.env.local -- next build",
-    "dev": "dotenv -e ../../.env.local -- next dev",
-    "lint": "tsc --noEmit",
-    "typecheck": "tsc --noEmit"
+    "build": "pnpm --filter @gaurav-pos/shared build && dotenv -e ../../.env.local -- next build",
+    "dev": "pnpm --filter @gaurav-pos/shared build && dotenv -e ../../.env.local -- next dev",
+    "lint": "pnpm --filter @gaurav-pos/shared build && tsc --noEmit",
+    "typecheck": "pnpm --filter @gaurav-pos/shared build && tsc --noEmit"
   },
   "dependencies": {
     "@convex-dev/workos": "^0.0.1",

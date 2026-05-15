@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createHash } from "node:crypto";
 import { createHubServer, isRealtimeEventVisibleForRole } from "../api/server.js";
 import { BackupService } from "../db/backup-service.js";
@@ -26,6 +26,9 @@ function createTestServer() {
 }
 
 describe("Hub API auth and service flow", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
   it("requires a local device token for protected routes", async () => {
     const { app, database } = createTestServer();
 
@@ -39,6 +42,108 @@ describe("Hub API auth and service flow", () => {
     expect(unauthorized.statusCode).toBe(401);
     expect(authorized.statusCode).toBe(200);
     expect(authorized.json<{ setup: { printerOutputMode: "test" | "live" } }>().setup.printerOutputMode).toBe("test");
+
+    await app.close();
+    database.close();
+  });
+
+  it("lets a fresh hub create a Manager PIN and unlock setup without hub.env admin token", async () => {
+    const { app, database } = createTestServer();
+
+    const statusBefore = await app.inject({ method: "GET", url: "/admin/session/status" });
+    const remoteCreatePin = await app.inject({
+      method: "PUT",
+      url: "/settings/manager-pin",
+      remoteAddress: "192.168.1.44",
+      payload: { newPin: "9999", updatedBy: "remote" }
+    });
+    const createPin = await app.inject({
+      method: "PUT",
+      url: "/settings/manager-pin",
+      payload: { newPin: "4321", updatedBy: "owner" }
+    });
+    const unlock = await app.inject({
+      method: "POST",
+      url: "/admin/session/unlock",
+      payload: { pin: "4321" }
+    });
+    const token = unlock.json<{ token: string }>().token;
+    const bootstrap = await app.inject({
+      method: "GET",
+      url: "/sync/bootstrap",
+      headers: { "x-device-token": token }
+    });
+
+    expect(statusBefore.json()).toEqual({ managerPinConfigured: false });
+    expect(remoteCreatePin.statusCode).toBe(403);
+    expect(remoteCreatePin.json()).toEqual({ error: "Create the first Manager PIN from the hub PC." });
+    expect(createPin.statusCode).toBe(200);
+    expect(unlock.statusCode).toBe(200);
+    expect(token).toMatch(/^hub_admin_/);
+    expect(bootstrap.statusCode).toBe(200);
+    expect(bootstrap.json<{ setup: { managerPinConfigured: boolean } }>().setup.managerPinConfigured).toBe(true);
+
+    await app.close();
+    database.close();
+  });
+
+  it("locks the local admin session by invalidating the issued token", async () => {
+    const { app, database } = createTestServer();
+
+    await app.inject({
+      method: "PUT",
+      url: "/settings/manager-pin",
+      payload: { newPin: "4321", updatedBy: "owner" }
+    });
+    const unlock = await app.inject({
+      method: "POST",
+      url: "/admin/session/unlock",
+      payload: { pin: "4321" }
+    });
+    const token = unlock.json<{ token: string }>().token;
+    const beforeLock = await app.inject({ method: "GET", url: "/sync/bootstrap", headers: { "x-device-token": token } });
+    const lock = await app.inject({ method: "POST", url: "/admin/session/lock", headers: { "x-device-token": token }, payload: {} });
+    const afterLock = await app.inject({ method: "GET", url: "/sync/bootstrap", headers: { "x-device-token": token } });
+
+    expect(beforeLock.statusCode).toBe(200);
+    expect(lock.statusCode).toBe(200);
+    expect(afterLock.statusCode).toBe(401);
+
+    await app.close();
+    database.close();
+  });
+
+  it("saves masked hub cloud settings behind Manager PIN and tests cloud connectivity", async () => {
+    const { app, database } = createTestServer();
+    const headers = { "x-device-token": "test-admin-token", "x-manager-pin": "1234" };
+    await app.inject({
+      method: "PUT",
+      url: "/settings/manager-pin",
+      headers: { "x-device-token": "test-admin-token" },
+      payload: { newPin: "1234", updatedBy: "admin" }
+    });
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ inserted: 0 }), { status: 200 }));
+
+    const save = await app.inject({
+      method: "PUT",
+      url: "/settings/hub-connection",
+      headers,
+      payload: {
+        cloudUrl: "https://example.convex.site",
+        installationId: "install-main",
+        syncSecret: "secret-main",
+        hubPublicUrl: "http://192.168.1.20:3737"
+      }
+    });
+    const masked = await app.inject({ method: "GET", url: "/settings/hub-connection", headers: { "x-device-token": "test-admin-token" } });
+    const revealed = await app.inject({ method: "GET", url: "/settings/hub-connection?reveal=1", headers });
+    const test = await app.inject({ method: "POST", url: "/settings/hub-connection/test", headers, payload: {} });
+
+    expect(save.statusCode).toBe(200);
+    expect(masked.json()).toMatchObject({ configured: true, syncSecret: "••••••••••••" });
+    expect(revealed.json()).toMatchObject({ syncSecret: "secret-main" });
+    expect(test.json()).toMatchObject({ status: "connected" });
+    expect(fetchSpy).toHaveBeenCalledWith("https://example.convex.site/pos/ingest-events", expect.any(Object));
 
     await app.close();
     database.close();
@@ -552,6 +657,86 @@ describe("Hub API auth and service flow", () => {
     expect(testBill.statusCode).toBe(200);
     expect(testKot.statusCode).toBe(200);
     expect(database.db.prepare("SELECT COUNT(*) AS count FROM print_jobs WHERE target_id IN ('test-bill', 'test-kot') AND status = 'printed'").get()).toEqual({ count: 2 });
+
+    await app.close();
+    database.close();
+  });
+
+  it("applies cash-counter and kitchen-specific print layouts to test tickets", async () => {
+    const { app, database } = createTestServer();
+    const headers = { "x-device-token": "test-admin-token", "x-manager-pin": "1234" };
+    await app.inject({
+      method: "PUT",
+      url: "/settings/manager-pin",
+      headers: { "x-device-token": "test-admin-token" },
+      payload: { newPin: "1234", updatedBy: "admin" }
+    });
+
+    const receiptLayout = await app.inject({
+      method: "PUT",
+      url: "/print-layouts/receipt",
+      headers,
+      payload: {
+        scope: "receipt",
+        restaurantName: "Sky Bistro",
+        billHeader: "TAX INVOICE",
+        billFooter: "Thank you",
+        kotHeader: "",
+        kotFooter: "",
+        taxRegistrationText: "GSTIN TEST",
+        lineWidthChars: 32,
+        headerAlign: "left",
+        footerAlign: "center",
+        feedLines: 2,
+        showTable: false,
+        showCaptain: true,
+        showDateTime: true,
+        showBillId: true,
+        showTaxBreakup: true,
+        showPaymentSplit: true,
+        showDiscountTip: true,
+        showNcReprintRevision: true
+      }
+    });
+    const unitLayout = await app.inject({
+      method: "PUT",
+      url: "/print-layouts/unit",
+      headers,
+      payload: {
+        scope: "unit",
+        productionUnitId: "unit-bar",
+        restaurantName: "",
+        billHeader: "",
+        billFooter: "",
+        kotHeader: "HOT KITCHEN",
+        kotFooter: "Cook fast",
+        taxRegistrationText: "",
+        lineWidthChars: 32,
+        headerAlign: "left",
+        footerAlign: "left",
+        feedLines: 2,
+        showTable: true,
+        showCaptain: false,
+        showDateTime: false,
+        showBillId: true,
+        showTaxBreakup: true,
+        showPaymentSplit: true,
+        showDiscountTip: true,
+        showNcReprintRevision: true
+      }
+    });
+    await app.inject({ method: "POST", url: "/print-jobs/test-bill", headers: { "x-device-token": "test-admin-token" } });
+    await app.inject({ method: "POST", url: "/print-jobs/test-kot", headers: { "x-device-token": "test-admin-token" } });
+
+    const billPayload = database.db.prepare("SELECT payload FROM print_jobs WHERE target_id = 'test-bill' ORDER BY created_at DESC LIMIT 1").get() as { payload: string };
+    const kotPayload = database.db.prepare("SELECT payload FROM print_jobs WHERE target_id = 'test-kot' ORDER BY created_at DESC LIMIT 1").get() as { payload: string };
+    expect(receiptLayout.statusCode).toBe(200);
+    expect(unitLayout.statusCode).toBe(200);
+    expect(billPayload.payload).toContain("Sky Bistro");
+    expect(billPayload.payload).toContain("TAX INVOICE");
+    expect(billPayload.payload).not.toContain("Table: TEST");
+    expect(kotPayload.payload).toContain("HOT KITCHEN");
+    expect(kotPayload.payload).not.toContain("Captain:");
 
     await app.close();
     database.close();

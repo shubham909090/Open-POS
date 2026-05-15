@@ -2,15 +2,16 @@
 
 The hub now identifies itself to Convex with a restaurant installation id.
 
-These are **hub-local envs**. Do not set `POS_INSTALLATION_ID` or `POS_SYNC_SECRET` as Convex deployment environment variables. The cloud Owner Portal creates the installation record in Convex automatically, then the same values are pasted into the hub PC env.
+These are **hub-local settings**. Do not set `POS_INSTALLATION_ID` or `POS_SYNC_SECRET` as Convex deployment environment variables. The cloud Owner Portal creates the installation record in Convex automatically, then the same values are pasted into **Hub → Setup → Hub Connection And Security**.
 
-## Hub Envs
+## Hub Settings
 
-```bash
-CONVEX_HTTP_URL=<convex http url>
-POS_INSTALLATION_ID=<stable id for this restaurant hub>
-POS_SYNC_SECRET=<per-installation sync secret>
-```
+Save these in the hub UI:
+
+- Cloud URL
+- Hub connection / installation ID
+- Sync secret
+- Hub public LAN URL
 
 `POS_SYNC_SECRET` is sent as the installation secret. Cloud sync requires both `POS_INSTALLATION_ID` and `POS_SYNC_SECRET`; the cloud uses them to resolve the restaurant instead of trusting event payloads.
 
@@ -45,4 +46,4 @@ await convex.mutation(api.sync.registerInstallation, {
 });
 ```
 
-Then put the same `installationId` and `syncSecret` into the Windows hub env.
+Then put the same `installationId` and `syncSecret` into the hub UI. Env files are now developer/recovery fallback only.

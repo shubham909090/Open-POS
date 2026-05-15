@@ -346,10 +346,12 @@ The cloud admin UI currently supports creating restaurants, owner-only hub conne
 
 ## Hub Connection Identity
 
-Each physical restaurant hub should have:
+Each physical restaurant hub should have these values saved in the hub UI:
 
-- `POS_INSTALLATION_ID`
-- `POS_SYNC_SECRET`
+- hub connection / installation ID
+- sync secret
+- Convex cloud URL
+- hub public LAN URL
 
 Convex maps that internal hub id to a restaurant. This means the hub does not get to decide which restaurant it belongs to by sending a random restaurant id in each event.
 

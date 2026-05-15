@@ -32,7 +32,9 @@ export class LanEscposPrinterAdapter implements PrinterAdapter {
 
     const data = Buffer.concat([
       Buffer.from([0x1b, 0x40]),
+      Buffer.from([0x1b, 0x61, 0x00]),
       Buffer.from(target.payload, "utf8"),
+      Buffer.from([0x1b, 0x61, 0x00]),
       Buffer.from([0x1d, 0x56, 0x00])
     ]);
 
@@ -71,7 +73,32 @@ export class SystemPrinterAdapter implements PrinterAdapter {
         await this.execFileAsync("powershell.exe", [
           "-NoProfile",
           "-Command",
-          `Get-Content -Raw -LiteralPath ${JSON.stringify(file)} | Out-Printer -Name ${JSON.stringify(target.printerName)}`
+          [
+            "Add-Type -AssemblyName System.Drawing;",
+            "Add-Type -AssemblyName System.Windows.Forms;",
+            `$text = Get-Content -Raw -LiteralPath ${JSON.stringify(file)};`,
+            "$lines = $text -split \"`r?`n\";",
+            "$doc = New-Object System.Drawing.Printing.PrintDocument;",
+            `$doc.PrinterSettings.PrinterName = ${JSON.stringify(target.printerName)};`,
+            "$doc.PrintController = New-Object System.Drawing.Printing.StandardPrintController;",
+            "$doc.DefaultPageSettings.Margins = New-Object System.Drawing.Printing.Margins(0, 0, 0, 0);",
+            "$font = New-Object System.Drawing.Font('Consolas', 9);",
+            "$brush = [System.Drawing.Brushes]::Black;",
+            "$script:index = 0;",
+            "$doc.add_PrintPage({",
+            "  param($sender, $eventArgs)",
+            "  $x = 0;",
+            "  $y = 0;",
+            "  $lineHeight = [Math]::Ceiling($font.GetHeight($eventArgs.Graphics)) + 1;",
+            "  while ($script:index -lt $lines.Length -and ($y + $lineHeight) -lt $eventArgs.MarginBounds.Bottom) {",
+            "    $eventArgs.Graphics.DrawString($lines[$script:index], $font, $brush, $x, $y);",
+            "    $y += $lineHeight;",
+            "    $script:index += 1;",
+            "  }",
+            "  $eventArgs.HasMorePages = $script:index -lt $lines.Length;",
+            "});",
+            "$doc.Print();"
+          ].join(" ")
         ]);
       } else {
         await this.execFileAsync("lp", ["-d", target.printerName, file]);

@@ -20,8 +20,8 @@ import {
   Wine,
   X
 } from "lucide-react";
-import { FormEvent, type ReactNode, useEffect, useRef, useState } from "react";
-import { hubApi, setAuthToken, getAuthToken, type AlcoholCatalog, type AlcoholStockMovement, type AlcoholStorageRow, type Bootstrap, type Floor, type MenuItem, type MenuItemVariant, type ProductionUnit, type Table, type TableOrder } from "./hub-api.js";
+import { type ReactNode, useEffect, useRef, useState } from "react";
+import { clearAuthToken, hubApi, setAuthToken, type AlcoholCatalog, type AlcoholStockMovement, type AlcoholStorageRow, type Bootstrap, type Floor, type MenuItem, type MenuItemVariant, type PrintLayoutSettings, type ProductionUnit, type Table, type TableOrder } from "./hub-api.js";
 import { useHubStore, type HubView } from "./store.js";
 import "./styles.css";
 
@@ -57,23 +57,82 @@ export default function App() {
 }
 
 function HubShell() {
-  const [token, setToken] = useState(getAuthToken());
-  const [editingHubPassword, setEditingHubPassword] = useState(false);
-  const [showHubPassword, setShowHubPassword] = useState(false);
+  const [pin, setPin] = useState("");
+  const [newPin, setNewPin] = useState("");
   const [notice, setNotice] = useState<{ tone: "good" | "bad"; text: string } | null>(null);
   const view = useHubStore((state) => state.view);
   const setView = useHubStore((state) => state.setView);
+  const sessionStatus = useQuery({ queryKey: ["admin-session-status"], queryFn: hubApi.adminSessionStatus });
   const bootstrap = useQuery({ queryKey: ["bootstrap"], queryFn: hubApi.bootstrap });
   const hubUnlocked = Boolean(bootstrap.data && !bootstrap.error);
-  const showUnlockForm = editingHubPassword || !hubUnlocked;
+  const managerPinConfigured = bootstrap.data?.setup?.managerPinConfigured ?? sessionStatus.data?.managerPinConfigured ?? true;
+  const firstRunNeedsPin = sessionStatus.data?.managerPinConfigured === false && !hubUnlocked;
+  const createPin = useMutation({
+    mutationFn: () => hubApi.setManagerPin({ newPin, updatedBy: "admin" }),
+    onSuccess: async () => {
+      setNotice({ tone: "good", text: "Manager PIN created. Use it to unlock setup." });
+      setNewPin("");
+      await queryClient.invalidateQueries({ queryKey: ["admin-session-status"] });
+    },
+    onError: (error) => setNotice({ tone: "bad", text: messageOf(error) })
+  });
+  const unlock = useMutation({
+    mutationFn: () => hubApi.unlockAdminSession(pin),
+    onSuccess: async (result) => {
+      setAuthToken(result.token);
+      setPin("");
+      await queryClient.invalidateQueries();
+      setNotice({ tone: "good", text: "Setup unlocked." });
+    },
+    onError: (error) => setNotice({ tone: "bad", text: messageOf(error) })
+  });
 
-  function saveToken(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setAuthToken(token);
-    setEditingHubPassword(false);
-    setShowHubPassword(false);
-    void queryClient.invalidateQueries();
-    setNotice({ tone: "good", text: "Hub unlocked on this device." });
+  async function lockHub() {
+    try {
+      await hubApi.lockAdminSession();
+    } catch {
+      // Local lock should still clear this browser even if the old token is already invalid.
+    }
+    clearAuthToken();
+    await queryClient.invalidateQueries();
+    setNotice({ tone: "good", text: "Setup locked on this device." });
+  }
+
+  if (firstRunNeedsPin) {
+    return (
+      <main className="first-run-shell">
+        <section className="first-run-card">
+          <div className="first-run-mark">
+            <Settings size={28} />
+          </div>
+          <p className="eyebrow">First setup</p>
+          <h1>Create Manager PIN</h1>
+          <p>
+            This PIN unlocks setup on the hub PC and approves sensitive actions like bill reprints, NC bills,
+            cancellations, and printer layout changes.
+          </p>
+          {notice ? <div className={`notice ${notice.tone}`}>{notice.text}</div> : null}
+          <form className="first-run-form" onSubmit={(event) => { event.preventDefault(); createPin.mutate(); }}>
+            <label>
+              Manager PIN
+              <input
+                value={newPin}
+                onChange={(event) => setNewPin(event.target.value)}
+                type="password"
+                autoComplete="new-password"
+                autoFocus
+                placeholder="4 digits or more"
+              />
+            </label>
+            <button type="submit" disabled={newPin.length < 4 || createPin.isPending}>
+              <Save size={16} />
+              Create PIN
+            </button>
+          </form>
+          <span className="first-run-note">For safety, the first PIN can only be created from this hub PC.</span>
+        </section>
+      </main>
+    );
   }
 
   return (
@@ -92,37 +151,40 @@ function HubShell() {
           <NavButton icon={<Settings size={18} />} label="Advanced" view="advanced" active={view === "advanced"} onClick={setView} />
         </nav>
         <section className="unlock-card">
-          {showUnlockForm ? (
-            <form className="unlock-form" onSubmit={saveToken}>
+          {!managerPinConfigured ? (
+            <form className="unlock-form" onSubmit={(event) => { event.preventDefault(); createPin.mutate(); }}>
               <label>
-                Hub password
-                <div className="secret-field">
-                  <input value={token} onChange={(event) => setToken(event.target.value)} type={showHubPassword ? "text" : "password"} autoComplete="current-password" />
-                  <button type="button" className="secondary-button" onClick={() => setShowHubPassword((current) => !current)}>
-                    {showHubPassword ? "Hide" : "Show"}
-                  </button>
-                </div>
+                Create Manager PIN
+                <input value={newPin} onChange={(event) => setNewPin(event.target.value)} type="password" autoComplete="new-password" placeholder="4 digits or more" />
               </label>
               <div className="unlock-actions">
-                <button type="submit">
+                <button type="submit" disabled={newPin.length < 4 || createPin.isPending}>
                   <Save size={16} />
-                  Unlock
+                  Save PIN
                 </button>
-                {hubUnlocked ? (
-                  <button type="button" className="secondary-button" onClick={() => { setEditingHubPassword(false); setShowHubPassword(false); }}>
-                    Cancel
-                  </button>
-                ) : null}
+              </div>
+            </form>
+          ) : !hubUnlocked ? (
+            <form className="unlock-form" onSubmit={(event) => { event.preventDefault(); unlock.mutate(); }}>
+              <label>
+                Manager PIN
+                <input value={pin} onChange={(event) => setPin(event.target.value)} type="password" autoComplete="current-password" />
+              </label>
+              <div className="unlock-actions">
+                <button type="submit" disabled={pin.length < 4 || unlock.isPending}>
+                  <Save size={16} />
+                  Unlock setup
+                </button>
               </div>
             </form>
           ) : (
             <div className="unlock-status">
               <div>
-                <span>Hub access</span>
+                <span>Setup access</span>
                 <strong>Unlocked</strong>
               </div>
-              <button type="button" className="secondary-button" onClick={() => setEditingHubPassword(true)}>
-                Change
+              <button type="button" className="secondary-button" onClick={() => void lockHub()}>
+                Lock
               </button>
             </div>
           )}
@@ -200,6 +262,11 @@ function SetupView({ bootstrap, setNotice }: { bootstrap: Bootstrap; setNotice: 
   const [receiptPrinterName, setReceiptPrinterName] = useState("");
   const [receiptHost, setReceiptHost] = useState("");
   const [receiptPort, setReceiptPort] = useState("9100");
+  const [connectionPin, setConnectionPin] = useState("");
+  const [cloudUrl, setCloudUrl] = useState(bootstrap.setup?.hubConnection?.cloudUrl ?? "");
+  const [installationId, setInstallationId] = useState(bootstrap.setup?.hubConnection?.installationId ?? "");
+  const [syncSecret, setSyncSecret] = useState(bootstrap.setup?.hubConnection?.syncSecret ?? "");
+  const [hubPublicUrl, setHubPublicUrl] = useState(bootstrap.setup?.hubConnection?.hubPublicUrl ?? "");
   const firstFloorId = bootstrap.floors.find((floor) => floor.active)?.id ?? bootstrap.floors[0]?.id ?? "";
   const activeFloors = bootstrap.floors.filter((floor) => floor.active);
   const dishSaleGroups = bootstrap.saleGroups.filter((group) => group.active && group.kind !== "alcohol");
@@ -209,6 +276,7 @@ function SetupView({ bootstrap, setNotice }: { bootstrap: Bootstrap; setNotice: 
   const printerOutputMode = bootstrap.setup?.printerOutputMode ?? "test";
   const receiptPrinter = useQuery({ queryKey: ["receipt-printer"], queryFn: hubApi.receiptPrinter });
   const systemPrinters = useQuery({ queryKey: ["system-printers"], queryFn: hubApi.systemPrinters, enabled: false });
+  const printLayouts = useQuery({ queryKey: ["print-layouts"], queryFn: hubApi.printLayouts });
 
   useEffect(() => {
     if (!tableFloorId || !bootstrap.floors.some((floor) => floor.id === tableFloorId && floor.active)) {
@@ -228,6 +296,15 @@ function SetupView({ bootstrap, setNotice }: { bootstrap: Bootstrap; setNotice: 
     setReceiptHost(receiptPrinter.data.printerHost ?? "");
     setReceiptPort(String(receiptPrinter.data.printerPort ?? 9100));
   }, [receiptPrinter.data]);
+
+  useEffect(() => {
+    const connection = bootstrap.setup?.hubConnection;
+    if (!connection) return;
+    setCloudUrl(connection.cloudUrl);
+    setInstallationId(connection.installationId);
+    setSyncSecret(connection.syncSecret);
+    setHubPublicUrl(connection.hubPublicUrl);
+  }, [bootstrap.setup?.hubConnection]);
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ["bootstrap"] });
   const invalidatePrinter = async () => {
@@ -264,6 +341,30 @@ function SetupView({ bootstrap, setNotice }: { bootstrap: Bootstrap; setNotice: 
       await invalidatePrinter();
       setNotice({ tone: "good", text: "Cash counter printer saved." });
     },
+    onError: (error) => setNotice({ tone: "bad", text: messageOf(error) })
+  });
+  const revealHubConnection = useMutation({
+    mutationFn: () => hubApi.hubConnection(connectionPin),
+    onSuccess: (result) => {
+      setCloudUrl(result.cloudUrl);
+      setInstallationId(result.installationId);
+      setSyncSecret(result.syncSecret);
+      setHubPublicUrl(result.hubPublicUrl);
+      setNotice({ tone: "good", text: "Cloud connection details shown." });
+    },
+    onError: (error) => setNotice({ tone: "bad", text: messageOf(error) })
+  });
+  const saveHubConnection = useMutation({
+    mutationFn: () => hubApi.updateHubConnection({ cloudUrl, installationId, syncSecret, hubPublicUrl }, connectionPin),
+    onSuccess: async () => {
+      await invalidate();
+      setNotice({ tone: "good", text: "Cloud connection saved." });
+    },
+    onError: (error) => setNotice({ tone: "bad", text: messageOf(error) })
+  });
+  const testHubConnection = useMutation({
+    mutationFn: () => hubApi.testHubConnection(connectionPin),
+    onSuccess: (result) => setNotice({ tone: result.status === "connected" ? "good" : "bad", text: result.message }),
     onError: (error) => setNotice({ tone: "bad", text: messageOf(error) })
   });
   const testBillPrint = useMutation({
@@ -333,6 +434,37 @@ function SetupView({ bootstrap, setNotice }: { bootstrap: Bootstrap; setNotice: 
         </p>
       </SetupCard>
 
+      <SetupCard title="Hub Connection And Security" done={Boolean(bootstrap.setup?.hubConnection?.configured)} icon={<Settings size={20} />}>
+        <p className="plain-state">Paste the hub connection values from the cloud portal here. These fields are saved on this hub and hidden unless the Manager PIN is entered.</p>
+        <form className="template-form" onSubmit={(event) => { event.preventDefault(); saveHubConnection.mutate(); }}>
+          <label>
+            Manager PIN
+            <input value={connectionPin} onChange={(event) => setConnectionPin(event.target.value)} type="password" autoComplete="current-password" />
+          </label>
+          <label>
+            Cloud URL
+            <input value={cloudUrl} onChange={(event) => setCloudUrl(event.target.value)} placeholder="https://your-deployment.convex.site" />
+          </label>
+          <label>
+            Hub connection ID
+            <input value={installationId} onChange={(event) => setInstallationId(event.target.value)} />
+          </label>
+          <label>
+            Sync secret
+            <input value={syncSecret} onChange={(event) => setSyncSecret(event.target.value)} type="password" />
+          </label>
+          <label>
+            Hub public URL
+            <input value={hubPublicUrl} onChange={(event) => setHubPublicUrl(event.target.value)} placeholder="http://192.168.1.20:3737" />
+          </label>
+          <div className="action-strip">
+            <button type="submit" disabled={connectionPin.length < 4 || saveHubConnection.isPending}>Save connection</button>
+            <button type="button" className="secondary-button" onClick={() => revealHubConnection.mutate()} disabled={connectionPin.length < 4 || revealHubConnection.isPending}>Show saved details</button>
+            <button type="button" className="secondary-button" onClick={() => testHubConnection.mutate()} disabled={connectionPin.length < 4 || testHubConnection.isPending}>Test cloud connection</button>
+          </div>
+        </form>
+      </SetupCard>
+
       <SetupCard title="Printer Mode And Cash Counter" done={printerOutputMode === "test" || Boolean(receiptPrinter.data?.printerName || receiptPrinter.data?.printerHost)} icon={<Printer size={20} />}>
         <div className="printer-mode-card">
           <div className="segment-row">
@@ -392,6 +524,15 @@ function SetupView({ bootstrap, setNotice }: { bootstrap: Bootstrap; setNotice: 
             <ChefHat size={18} /> Print test kitchen ticket
           </button>
         </div>
+        <PrintLayoutEditor
+          layouts={printLayouts.data}
+          units={bootstrap.productionUnits}
+          setNotice={setNotice}
+          onSaved={async () => {
+            await printLayouts.refetch();
+            await invalidate();
+          }}
+        />
       </SetupCard>
 
       <SetupCard title="Floors And Tables" done={bootstrap.tables.some((table) => table.active)} icon={<Users size={20} />}>
@@ -1921,14 +2062,6 @@ function AdvancedView({ bootstrap, setNotice }: { bootstrap: Bootstrap; setNotic
   const queryClient = useQueryClient();
   const [newPin, setNewPin] = useState("");
   const [currentPin, setCurrentPin] = useState("");
-  const [template, setTemplate] = useState({
-    restaurantName: bootstrap.ticketTemplate?.restaurantName ?? "",
-    taxRegistrationText: bootstrap.ticketTemplate?.taxRegistrationText ?? "",
-    billHeader: bootstrap.ticketTemplate?.billHeader ?? "",
-    billFooter: bootstrap.ticketTemplate?.billFooter ?? "",
-    kotHeader: bootstrap.ticketTemplate?.kotHeader ?? "",
-    kotFooter: bootstrap.ticketTemplate?.kotFooter ?? ""
-  });
   const pullCloud = useMutation({
     mutationFn: hubApi.pullCloud,
     onSuccess: async (result) => {
@@ -1970,14 +2103,6 @@ function AdvancedView({ bootstrap, setNotice }: { bootstrap: Bootstrap; setNotic
     },
     onError: (error) => setNotice({ tone: "bad", text: messageOf(error) })
   });
-  const saveTemplate = useMutation({
-    mutationFn: () => hubApi.updateTicketTemplate(template),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["bootstrap"] });
-      setNotice({ tone: "good", text: "Bill and KOT text saved." });
-    },
-    onError: (error) => setNotice({ tone: "bad", text: messageOf(error) })
-  });
 
   return (
     <div className="advanced-layout">
@@ -2006,20 +2131,6 @@ function AdvancedView({ bootstrap, setNotice }: { bootstrap: Bootstrap; setNotic
             <SaleGroupRow key={group.id} group={group} units={bootstrap.productionUnits} setNotice={setNotice} onSaved={() => queryClient.invalidateQueries({ queryKey: ["bootstrap"] })} />
           ))}
         </div>
-      </section>
-      <section className="panel">
-        <div className="panel-title">
-          <h2>Bill and KOT text</h2>
-        </div>
-        <form className="template-form" onSubmit={(event) => { event.preventDefault(); saveTemplate.mutate(); }}>
-          {(["restaurantName", "taxRegistrationText", "billHeader", "billFooter", "kotHeader", "kotFooter"] as const).map((field) => (
-            <label key={field}>
-              {fieldLabel(field)}
-              <input value={template[field]} onChange={(event) => setTemplate((current) => ({ ...current, [field]: event.target.value }))} />
-            </label>
-          ))}
-          <button type="submit" disabled={saveTemplate.isPending}>Save print text</button>
-        </form>
       </section>
       <section className="panel">
         <div className="panel-title">
@@ -2069,6 +2180,157 @@ function AdvancedView({ bootstrap, setNotice }: { bootstrap: Bootstrap; setNotic
         </div>
       </section>
     </div>
+  );
+}
+
+function PrintLayoutEditor({
+  layouts,
+  units,
+  setNotice,
+  onSaved
+}: {
+  layouts?: { default: PrintLayoutSettings; receipt: PrintLayoutSettings; units: Array<{ productionUnitId: string; name: string; layout: PrintLayoutSettings }> };
+  units: ProductionUnit[];
+  setNotice: NoticeSetter;
+  onSaved: () => Promise<void>;
+}) {
+  const [scope, setScope] = useState<"receipt" | "unit">("receipt");
+  const [unitId, setUnitId] = useState("");
+  const [layoutPin, setLayoutPin] = useState("");
+  const selectedUnitId = unitId || units[0]?.id || "";
+  const selectedLayout =
+    scope === "receipt"
+      ? layouts?.receipt
+      : layouts?.units.find((entry) => entry.productionUnitId === selectedUnitId)?.layout;
+  const [draft, setDraft] = useState<PrintLayoutSettings | null>(selectedLayout ?? null);
+
+  useEffect(() => {
+    if (scope === "unit" && !unitId && units[0]?.id) setUnitId(units[0].id);
+  }, [scope, unitId, units]);
+
+  useEffect(() => {
+    if (selectedLayout) setDraft(selectedLayout);
+  }, [selectedLayout]);
+
+  const save = useMutation({
+    mutationFn: () => {
+      if (!draft) throw new Error("Print layout is still loading");
+      return hubApi.updatePrintLayout(scope, { ...draft, scope, productionUnitId: scope === "unit" ? selectedUnitId : undefined }, layoutPin);
+    },
+    onSuccess: async () => {
+      await onSaved();
+      setLayoutPin("");
+      setNotice({ tone: "good", text: "Print layout saved." });
+    },
+    onError: (error) => setNotice({ tone: "bad", text: messageOf(error) })
+  });
+
+  if (!draft) return <p className="plain-state">Loading print layout controls...</p>;
+
+  const update = <K extends keyof PrintLayoutSettings>(key: K, value: PrintLayoutSettings[K]) => {
+    setDraft((current) => current ? { ...current, [key]: value } : current);
+  };
+  const preview = [
+    draft.restaurantName,
+    draft.billHeader || draft.kotHeader,
+    scope === "receipt" && draft.showBillId ? "BILL TEST-BILL" : "KOT #1 NEW",
+    draft.showTable ? "Table: T1" : "",
+    draft.showDateTime ? "Time: 15 May 2026, 8:30 PM" : "",
+    "--------------------------------",
+    scope === "receipt" ? "Paneer Tikka  2 x ₹220.00 = ₹440.00" : "+2 Paneer Tikka",
+    scope === "receipt" ? `Subtotal: ${formatInr(44000)}` : "",
+    scope === "receipt" && draft.showTaxBreakup ? `CGST: ${formatInr(1100)}\nSGST: ${formatInr(1100)}` : "",
+    scope === "receipt" ? `Total: ${formatInr(46200)}` : "",
+    scope === "receipt" && draft.showPaymentSplit ? `Payments\nCASH: ${formatInr(30000)}\nUPI: ${formatInr(16200)}` : "",
+    draft.billFooter || draft.kotFooter
+  ].filter(Boolean).join("\n");
+
+  return (
+    <section className="sub-panel">
+      <div className="panel-title">
+        <div>
+          <h3>Customize print layout</h3>
+          <span>Cash counter and each kitchen/counter can have its own text layout.</span>
+        </div>
+      </div>
+      <div className="layout-editor">
+        <form className="template-form" onSubmit={(event) => { event.preventDefault(); save.mutate(); }}>
+          <label>
+            Layout for
+            <select value={scope} onChange={(event) => setScope(event.target.value as "receipt" | "unit")}>
+              <option value="receipt">Cash counter bill</option>
+              <option value="unit">Kitchen / counter ticket</option>
+            </select>
+          </label>
+          {scope === "unit" ? (
+            <label>
+              Kitchen / counter
+              <select value={selectedUnitId} onChange={(event) => setUnitId(event.target.value)}>
+                {units.map((unit) => <option key={unit.id} value={unit.id}>{unit.name}</option>)}
+              </select>
+            </label>
+          ) : null}
+          <label>
+            Manager PIN
+            <input value={layoutPin} onChange={(event) => setLayoutPin(event.target.value)} type="password" autoComplete="current-password" placeholder="Required to save layout" />
+          </label>
+          <label>
+            Paper width
+            <select value={draft.lineWidthChars} onChange={(event) => update("lineWidthChars", Number(event.target.value))}>
+              <option value={32}>58mm / narrow</option>
+              <option value={42}>80mm standard</option>
+              <option value={48}>80mm wide</option>
+            </select>
+          </label>
+          <label>
+            Header alignment
+            <select value={draft.headerAlign} onChange={(event) => update("headerAlign", event.target.value as "left" | "center")}>
+              <option value="center">Center</option>
+              <option value="left">Left</option>
+            </select>
+          </label>
+          <label>
+            Footer alignment
+            <select value={draft.footerAlign} onChange={(event) => update("footerAlign", event.target.value as "left" | "center")}>
+              <option value="center">Center</option>
+              <option value="left">Left</option>
+            </select>
+          </label>
+          <label>
+            Blank lines after print
+            <input type="number" min={1} max={8} value={draft.feedLines} onChange={(event) => update("feedLines", Number(event.target.value))} />
+          </label>
+          <label>
+            Restaurant name
+            <input value={draft.restaurantName} onChange={(event) => update("restaurantName", event.target.value)} />
+          </label>
+          <label>
+            Tax/GST/VAT line
+            <input value={draft.taxRegistrationText} onChange={(event) => update("taxRegistrationText", event.target.value)} />
+          </label>
+          <label>
+            Header text
+            <input value={scope === "receipt" ? draft.billHeader : draft.kotHeader} onChange={(event) => update(scope === "receipt" ? "billHeader" : "kotHeader", event.target.value)} />
+          </label>
+          <label>
+            Footer text
+            <input value={scope === "receipt" ? draft.billFooter : draft.kotFooter} onChange={(event) => update(scope === "receipt" ? "billFooter" : "kotFooter", event.target.value)} />
+          </label>
+          <div className="checkbox-grid">
+            <label><input type="checkbox" checked={draft.showTable} onChange={(event) => update("showTable", event.target.checked)} /> Table</label>
+            <label><input type="checkbox" checked={draft.showDateTime} onChange={(event) => update("showDateTime", event.target.checked)} /> Date/time</label>
+            <label><input type="checkbox" checked={draft.showTaxBreakup} onChange={(event) => update("showTaxBreakup", event.target.checked)} /> Tax breakup</label>
+            <label><input type="checkbox" checked={draft.showDiscountTip} onChange={(event) => update("showDiscountTip", event.target.checked)} /> Discount/tip</label>
+            <label><input type="checkbox" checked={draft.showPaymentSplit} onChange={(event) => update("showPaymentSplit", event.target.checked)} /> Payment split</label>
+            <label><input type="checkbox" checked={draft.showBillId} onChange={(event) => update("showBillId", event.target.checked)} /> Bill/KOT number</label>
+            <label><input type="checkbox" checked={draft.showCaptain} onChange={(event) => update("showCaptain", event.target.checked)} /> Captain on KOT</label>
+            <label><input type="checkbox" checked={draft.showNcReprintRevision} onChange={(event) => update("showNcReprintRevision", event.target.checked)} /> NC/reprint labels</label>
+          </div>
+          <button type="submit" disabled={layoutPin.length < 4 || save.isPending}>Save layout</button>
+        </form>
+        <pre className="print-preview">{preview}</pre>
+      </div>
+    </section>
   );
 }
 
@@ -2552,18 +2814,6 @@ function alcoholMovementDeltaText(movement: AlcoholStockMovement) {
 function signedStockPart(value: number, unit: string) {
   if (!value) return "";
   return `${value > 0 ? "+" : ""}${value} ${unit}`;
-}
-
-function fieldLabel(field: string) {
-  const labels: Record<string, string> = {
-    restaurantName: "Restaurant name",
-    taxRegistrationText: "GST / VAT line",
-    billHeader: "Bill header",
-    billFooter: "Bill footer",
-    kotHeader: "KOT/BOT header",
-    kotFooter: "KOT/BOT footer"
-  };
-  return labels[field] ?? field;
 }
 
 function messageOf(error: unknown) {

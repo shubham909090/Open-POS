@@ -72,6 +72,67 @@ label {
   font-weight: 700;
 }
 
+.first-run-shell {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.first-run-card {
+  width: min(520px, 100%);
+  display: grid;
+  gap: 16px;
+  padding: 32px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
+.first-run-mark {
+  width: 58px;
+  height: 58px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  background: #d9fbe8;
+  color: var(--accent-dark);
+}
+
+.first-run-card h1,
+.first-run-card p {
+  margin: 0;
+}
+
+.first-run-card h1 {
+  font-size: clamp(2rem, 5vw, 3rem);
+  line-height: 1.05;
+}
+
+.first-run-card p {
+  color: var(--muted);
+  font-size: 1.04rem;
+}
+
+.first-run-form {
+  display: grid;
+  gap: 12px;
+}
+
+.first-run-form button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.first-run-note {
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
 .hub-shell {
   min-height: 100vh;
   display: grid;
@@ -716,6 +777,55 @@ label {
   grid-column: 1 / -1;
 }
 
+.sub-panel {
+  display: grid;
+  gap: 14px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.layout-editor {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(260px, 0.8fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.print-preview {
+  margin: 0;
+  min-width: 0;
+  overflow: auto;
+  max-height: 420px;
+  padding: 14px;
+  border: 1px dashed #9fb5aa;
+  border-radius: 8px;
+  background: #fbfaf4;
+  color: var(--ink);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.45;
+  white-space: pre;
+}
+
+.checkbox-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.checkbox-grid label {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  min-height: 38px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
 .manager-approval {
   display: grid;
   gap: 10px;
@@ -1191,6 +1301,8 @@ label {
   .nav-stack,
   .setup-board,
   .inline-form,
+  .layout-editor,
+  .checkbox-grid,
   .printer-form,
   .dish-form,
   .open-item-form,

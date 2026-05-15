@@ -11,9 +11,21 @@ pnpm --filter @gaurav-pos/hub-electron package:win
 
 The NSIS installer is written to `apps/hub-electron/release`.
 
-## Runtime Envs
+## First Run
 
-For packaged installs, put these values in:
+For normal restaurant installs:
+
+1. Start `Gaurav POS Hub`.
+2. Create the Manager PIN on the hub PC itself. First PIN creation is blocked from other LAN devices.
+3. Open **Setup → Hub Connection And Security**.
+4. Paste the cloud URL, hub connection ID, sync secret, and hub public LAN URL.
+5. Test the cloud connection.
+
+The app stores these values in local SQLite settings. The raw Manager PIN is never stored.
+
+## Recovery Envs
+
+For developer/support fallback only, put values in:
 
 ```text
 C:\ProgramData\Gaurav POS Hub\hub.env
@@ -24,14 +36,11 @@ The app also reads `%APPDATA%\Gaurav POS Hub\hub.env`, `HUB_CONFIG_FILE`, or `GA
 ```bash
 HUB_HOST=0.0.0.0
 HUB_PORT=3737
-HUB_PUBLIC_URL=http://<windows-lan-ip>:3737
 HUB_DATABASE_PATH=C:\ProgramData\Gaurav POS Hub\data\hub.sqlite
 HUB_BACKUP_DIR=C:\ProgramData\Gaurav POS Hub\backups
-HUB_ADMIN_TOKEN=<long local admin token>
-CONVEX_HTTP_URL=<convex http url>
-POS_SYNC_SECRET=<sync secret>
-POS_INSTALLATION_ID=<restaurant installation id>
 ```
+
+Cloud sync values may still be read from env as a recovery fallback, but the production workflow is the Hub setup screen.
 
 Fresh installs start in **Printer Test Mode**. Change printing from Hub → Setup → Printer Mode And Cash Counter after printer tests pass.
 
