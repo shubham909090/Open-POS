@@ -209,7 +209,7 @@ This split is deliberate. Cloud auth can require internet. Restaurant service ca
 
 ## Device Pairing
 
-The admin creates a pairing code from the hub UI.
+The admin creates a pairing code from the hub UI after approving the action with the Manager PIN.
 
 The hub shows both:
 
@@ -220,9 +220,10 @@ The Android device can scan the QR code with the camera, paste the QR payload ma
 
 - admin
 - captain
-- captain
 - waiter
 - kitchen
+
+The phone never decides its own role. The role is stored on the one-time pairing code created by the Manager-PIN-approved hub screen.
 
 After pairing, the device can keep working on LAN even if internet is down.
 

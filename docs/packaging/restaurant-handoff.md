@@ -95,7 +95,7 @@ Building a Windows `.exe` from macOS may require Wine. If the command fails on M
 4. Paste the cloud hub connection values into **Setup → Hub Connection And Security**.
 5. Set the hub public URL to the PC LAN URL, for example `http://192.168.1.20:3737`.
 6. Set up floors, tables, kitchens/counters, dishes, sale groups, and printers.
-7. Create pairing QR codes for tablets.
+7. Create pairing QR codes for tablets. Each QR creation asks for the Manager PIN.
 
 ## Build Android APK
 
@@ -119,7 +119,7 @@ pnpm --filter @gaurav-pos/mobile android:aab
 1. Install the APK on each Android tablet.
 2. Connect tablet to the same restaurant Wi-Fi/LAN as the hub PC.
 3. Open the hub Setup screen.
-4. Create a pairing QR for that waiter/tablet.
+4. Create a pairing QR for that waiter/tablet and approve it with the Manager PIN.
 5. Open the Android app and scan the QR.
 6. The tablet stores its local device token. Staff should not type the hub admin password on tablets.
 

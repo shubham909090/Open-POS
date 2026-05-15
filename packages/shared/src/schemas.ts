@@ -303,7 +303,8 @@ export const moveOrderItemsSchema = z.object({
 export const createPairingCodeSchema = z.object({
   deviceName: z.string().trim().min(1).max(120),
   role: z.enum(["admin", "captain", "waiter", "kitchen"]),
-  expiresInMinutes: z.number().int().min(1).max(120).default(10)
+  expiresInMinutes: z.number().int().min(1).max(120).default(10),
+  managerApproval: managerApprovalSchema.optional()
 });
 
 export const exchangePairingCodeSchema = z.object({

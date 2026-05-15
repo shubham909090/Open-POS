@@ -4,6 +4,7 @@ import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createHubServer, isRealtimeEventVisibleForRole } from "../api/server.js";
+import type { FastifyInstance } from "fastify";
 import { BackupService } from "../db/backup-service.js";
 import { HubDatabase } from "../db/database.js";
 import { cloudCommandFailures, idempotencyRecords } from "../db/drizzle-schema.js";
@@ -53,6 +54,20 @@ function createFileBackedTestServer(root: string, options: { requestRestart?: ()
     requestRestart: options.requestRestart
   });
   return { app, database, databasePath };
+}
+
+const testManagerApproval = { pin: "1234", reason: "Pair device", approvedBy: "manager" };
+
+async function setTestManagerPin(app: FastifyInstance, pin = "1234") {
+  await app.inject({
+    method: "PUT",
+    url: "/settings/manager-pin",
+    payload: { newPin: pin, updatedBy: "owner" }
+  });
+}
+
+function pairingPayload(deviceName: string, role: "admin" | "captain" | "waiter" | "kitchen") {
+  return { deviceName, role, expiresInMinutes: 10, managerApproval: testManagerApproval };
 }
 
 describe("Hub API auth and service flow", () => {
@@ -217,12 +232,13 @@ describe("Hub API auth and service flow", () => {
   it("pairs a waiter device and enforces role permissions", async () => {
     const { app, database } = createTestServer();
     const adminHeaders = { "x-device-token": "test-admin-token" };
+    await setTestManagerPin(app);
 
     const pairingResponse = await app.inject({
       method: "POST",
       url: "/devices/pairing-codes",
       headers: adminHeaders,
-      payload: { deviceName: "Waiter phone", role: "waiter", expiresInMinutes: 10 }
+      payload: pairingPayload("Waiter phone", "waiter")
     });
     const pairing = pairingResponse.json<{
       code: string;
@@ -309,6 +325,42 @@ describe("Hub API auth and service flow", () => {
     expect(waiterBootstrap).not.toHaveProperty("syncStatus");
     expect(waiterBootstrap).not.toHaveProperty("printJobs");
     expect(waiterBootstrap).not.toHaveProperty("ticketTemplate");
+
+    await app.close();
+    database.close();
+  });
+
+  it("requires Manager PIN approval before creating device pairing QR codes", async () => {
+    const { app, database } = createTestServer();
+    const adminHeaders = { "x-device-token": "test-admin-token" };
+
+    await app.inject({
+      method: "PUT",
+      url: "/settings/manager-pin",
+      payload: { newPin: "4321", updatedBy: "owner" }
+    });
+
+    const withoutApproval = await app.inject({
+      method: "POST",
+      url: "/devices/pairing-codes",
+      headers: adminHeaders,
+      payload: { deviceName: "Waiter phone", role: "waiter", expiresInMinutes: 10 }
+    });
+    const withApproval = await app.inject({
+      method: "POST",
+      url: "/devices/pairing-codes",
+      headers: adminHeaders,
+      payload: {
+        deviceName: "Waiter phone",
+        role: "waiter",
+        expiresInMinutes: 10,
+        managerApproval: { pin: "4321", reason: "Pair captain phone", approvedBy: "owner" }
+      }
+    });
+
+    expect(withoutApproval.statusCode).toBe(403);
+    expect(withApproval.statusCode).toBe(200);
+    expect(withApproval.json<{ pairingPayload: { role: string } }>().pairingPayload.role).toBe("waiter");
 
     await app.close();
     database.close();
@@ -403,13 +455,14 @@ describe("Hub API auth and service flow", () => {
   it("lets captains shift any running table and selected items", async () => {
     const { app, database } = createTestServer();
     const adminHeaders = { "x-device-token": "test-admin-token" };
+    await setTestManagerPin(app);
 
     async function pair(role: "captain" | "waiter", name: string) {
       const pairingResponse = await app.inject({
         method: "POST",
         url: "/devices/pairing-codes",
         headers: adminHeaders,
-        payload: { deviceName: name, role, expiresInMinutes: 10 }
+        payload: pairingPayload(name, role)
       });
       const pairing = pairingResponse.json<{ code: string }>();
       const exchangeResponse = await app.inject({
@@ -482,11 +535,12 @@ describe("Hub API auth and service flow", () => {
   it("keeps billed-table movement admin-only", async () => {
     const { app, database } = createTestServer();
     const adminHeaders = { "x-device-token": "test-admin-token" };
+    await setTestManagerPin(app);
     const pairingResponse = await app.inject({
       method: "POST",
       url: "/devices/pairing-codes",
       headers: adminHeaders,
-      payload: { deviceName: "Captain Billing Move", role: "captain", expiresInMinutes: 10 }
+      payload: pairingPayload("Captain Billing Move", "captain")
     });
     const captainResponse = await app.inject({
       method: "POST",
@@ -532,12 +586,13 @@ describe("Hub API auth and service flow", () => {
   it("keeps kitchen devices limited to KDS actions instead of full order reads", async () => {
     const { app, database } = createTestServer();
     const adminHeaders = { "x-device-token": "test-admin-token" };
+    await setTestManagerPin(app);
 
     const pairingResponse = await app.inject({
       method: "POST",
       url: "/devices/pairing-codes",
       headers: adminHeaders,
-      payload: { deviceName: "Kitchen screen", role: "kitchen", expiresInMinutes: 10 }
+      payload: pairingPayload("Kitchen screen", "kitchen")
     });
     const pairing = pairingResponse.json<{ code: string }>();
     const exchangeResponse = await app.inject({
@@ -587,13 +642,14 @@ describe("Hub API auth and service flow", () => {
   it("delivers kitchen ready notifications once to the captain that owns the table", async () => {
     const { app, database } = createTestServer();
     const adminHeaders = { "x-device-token": "test-admin-token" };
+    await setTestManagerPin(app);
 
     async function pair(role: "captain" | "waiter" | "kitchen", name: string) {
       const pairingResponse = await app.inject({
         method: "POST",
         url: "/devices/pairing-codes",
         headers: adminHeaders,
-        payload: { deviceName: name, role, expiresInMinutes: 10 }
+        payload: pairingPayload(name, role)
       });
       const exchangeResponse = await app.inject({
         method: "POST",
@@ -668,11 +724,12 @@ describe("Hub API auth and service flow", () => {
   it("lets admins switch printer mode and queue test prints", async () => {
     const { app, database } = createTestServer();
     const adminHeaders = { "x-device-token": "test-admin-token" };
+    await setTestManagerPin(app);
     const pairingResponse = await app.inject({
       method: "POST",
       url: "/devices/pairing-codes",
       headers: adminHeaders,
-      payload: { deviceName: "Waiter phone", role: "waiter", expiresInMinutes: 10 }
+      payload: pairingPayload("Waiter phone", "waiter")
     });
     const waiter = await app.inject({
       method: "POST",
@@ -867,11 +924,12 @@ describe("Hub API auth and service flow", () => {
   it("allows captain stock edits with manager PIN and exposes alcohol movement reports", async () => {
     const { app, database } = createTestServer();
     const adminHeaders = { "x-device-token": "test-admin-token" };
+    await setTestManagerPin(app);
     const pairingResponse = await app.inject({
       method: "POST",
       url: "/devices/pairing-codes",
       headers: adminHeaders,
-      payload: { deviceName: "Captain tablet", role: "captain", expiresInMinutes: 10 }
+      payload: pairingPayload("Captain tablet", "captain")
     });
     const pairing = pairingResponse.json<{ code: string }>();
     const exchangeResponse = await app.inject({
@@ -935,11 +993,12 @@ describe("Hub API auth and service flow", () => {
   it("requires manager approval after first bill print and exposes current business-day summary after settlement", async () => {
     const { app, database } = createTestServer();
     const headers = { "x-device-token": "test-admin-token" };
+    await setTestManagerPin(app);
     const pairingResponse = await app.inject({
       method: "POST",
       url: "/devices/pairing-codes",
       headers,
-      payload: { deviceName: "Captain billing tablet", role: "captain", expiresInMinutes: 10 }
+      payload: pairingPayload("Captain billing tablet", "captain")
     });
     const pairing = pairingResponse.json<{ code: string }>();
     const exchangeResponse = await app.inject({

@@ -11,6 +11,7 @@ import {
   Pencil,
   Plus,
   Printer,
+  QrCode,
   ReceiptText,
   RefreshCw,
   Save,
@@ -25,7 +26,7 @@ import { Badge } from "./components/ui/badge.js";
 import { Button } from "./components/ui/button.js";
 import { Card, CardContent, CardHeader, CardTitle } from "./components/ui/card.js";
 import { Dialog } from "./components/ui/dialog.js";
-import { clearAuthToken, hubApi, setAuthToken, type AlcoholCatalog, type AlcoholStockMovement, type AlcoholStorageRow, type Bootstrap, type Floor, type MenuItem, type MenuItemVariant, type PrintLayoutSettings, type ProductionUnit, type Table, type TableOrder } from "./hub-api.js";
+import { clearAuthToken, hubApi, setAuthToken, type AlcoholCatalog, type AlcoholStockMovement, type AlcoholStorageRow, type BackupSummary, type Bootstrap, type Floor, type LocalDevice, type MenuItem, type MenuItemVariant, type PairingCodeResult, type PrintLayoutSettings, type ProductionUnit, type Role, type Table, type TableOrder } from "./hub-api.js";
 import { useHubStore, type HubView } from "./store.js";
 import "./styles/tokens.css";
 import "./styles/globals.css";
@@ -432,6 +433,7 @@ function SetupView({ bootstrap, setNotice, requestManagerApproval }: { bootstrap
   const receiptPrinter = useQuery({ queryKey: ["receipt-printer"], queryFn: hubApi.receiptPrinter });
   const systemPrinters = useQuery({ queryKey: ["system-printers"], queryFn: hubApi.systemPrinters, enabled: false });
   const printLayouts = useQuery({ queryKey: ["print-layouts"], queryFn: hubApi.printLayouts });
+  const devices = useQuery({ queryKey: ["devices"], queryFn: hubApi.devices });
 
   useEffect(() => {
     if (!tableFloorId || !bootstrap.floors.some((floor) => floor.id === tableFloorId && floor.active)) {
@@ -848,6 +850,17 @@ function SetupView({ bootstrap, setNotice, requestManagerApproval }: { bootstrap
           }))}
         />
       </SetupCard>
+
+      <DevicePairingCard
+        devices={devices.data ?? []}
+        loading={devices.isLoading}
+        setNotice={setNotice}
+        requestManagerApproval={requestManagerApproval}
+        onChanged={async () => {
+          await devices.refetch();
+          await invalidate();
+        }}
+      />
     </div>
   );
 }
@@ -2202,9 +2215,11 @@ function KitchenView({ bootstrap, setNotice }: { bootstrap: Bootstrap; setNotice
 }
 
 function ReportsView() {
+  const queryClient = useQueryClient();
   const currentSummary = useQuery({ queryKey: ["currentBusinessDaySummary"], queryFn: hubApi.currentBusinessDaySummary });
   const dailyReports = useQuery({ queryKey: ["dailyReports"], queryFn: hubApi.dailyReports });
   const alcoholStockMovements = useQuery({ queryKey: ["alcoholStockMovements"], queryFn: hubApi.alcoholStockMovements });
+  const backups = useQuery({ queryKey: ["backups"], queryFn: hubApi.backups });
   const summary = currentSummary.data;
 
   return (
@@ -2252,6 +2267,12 @@ function ReportsView() {
         </div>
       </section>
 
+      <BackupPanel
+        backups={backups.data ?? []}
+        loading={backups.isLoading}
+        onChanged={() => queryClient.invalidateQueries({ queryKey: ["backups"] })}
+      />
+
       <section className="panel reports-wide">
         <div className="panel-title">
           <h2>Alcohol stock movements</h2>
@@ -2274,6 +2295,80 @@ function ReportsView() {
         </div>
       </section>
     </div>
+  );
+}
+
+function BackupPanel({
+  backups,
+  loading,
+  onChanged
+}: {
+  backups: BackupSummary[];
+  loading: boolean;
+  onChanged: () => Promise<unknown>;
+}) {
+  const [label, setLabel] = useState("");
+  const [restoreFile, setRestoreFile] = useState<string | null>(null);
+  const createBackup = useMutation({
+    mutationFn: () => hubApi.createBackup(label.trim() || "manual"),
+    onSuccess: async () => {
+      setLabel("");
+      await onChanged();
+    }
+  });
+  const scheduleRestore = useMutation({
+    mutationFn: hubApi.scheduleRestore,
+    onSuccess: async () => {
+      setRestoreFile(null);
+      await onChanged();
+    }
+  });
+
+  return (
+    <section className="panel">
+      <div className="panel-title">
+        <h2>Local backups</h2>
+        <span>{backups.length} saved</span>
+      </div>
+      <form className="inline-form" onSubmit={(event) => { event.preventDefault(); createBackup.mutate(); }}>
+        <label>
+          Backup label
+          <input value={label} onChange={(event) => setLabel(event.target.value)} placeholder="before-menu-change" />
+        </label>
+        <button type="submit" disabled={createBackup.isPending}>
+          {createBackup.isPending ? "Creating..." : "Create backup"}
+        </button>
+      </form>
+      {createBackup.error ? <p className="plain-state bad">{messageOf(createBackup.error)}</p> : null}
+      {scheduleRestore.error ? <p className="plain-state bad">{messageOf(scheduleRestore.error)}</p> : null}
+      <div className="record-list">
+        {loading ? <p className="plain-state">Loading backups...</p> : null}
+        {!loading && backups.length === 0 ? (
+          <Empty title="No backups yet" text="Create a local backup before major setup changes or before testing a restore." />
+        ) : null}
+        {backups.map((backup) => (
+          <article key={backup.fileName} className="record-row">
+            <div>
+              <strong>{backup.fileName}</strong>
+              <span>{new Date(backup.createdAt).toLocaleString()} · {Math.ceil(backup.sizeBytes / 1024)} KB</span>
+            </div>
+            {restoreFile === backup.fileName ? (
+              <div className="row-actions">
+                <button type="button" className="secondary-button" onClick={() => setRestoreFile(null)}>Cancel</button>
+                <button type="button" className="danger-button" disabled={scheduleRestore.isPending} onClick={() => scheduleRestore.mutate(backup.fileName)}>
+                  Schedule restore
+                </button>
+              </div>
+            ) : (
+              <button type="button" className="danger-button" onClick={() => setRestoreFile(backup.fileName)}>
+                Restore
+              </button>
+            )}
+          </article>
+        ))}
+      </div>
+      {restoreFile ? <p className="warning-text">Restore is scheduled for the next hub restart. Use this only when you really want to roll the local DB back.</p> : null}
+    </section>
   );
 }
 
@@ -2646,6 +2741,104 @@ function SetupCard({ title, done, icon, children }: { title: string; done: boole
       </CardHeader>
       <CardContent className="setup-card-content">{children}</CardContent>
     </Card>
+  );
+}
+
+function DevicePairingCard({
+  devices,
+  loading,
+  setNotice,
+  requestManagerApproval,
+  onChanged
+}: {
+  devices: LocalDevice[];
+  loading: boolean;
+  setNotice: NoticeSetter;
+  requestManagerApproval: ManagerApprovalRequest;
+  onChanged: () => Promise<void>;
+}) {
+  const [deviceName, setDeviceName] = useState("");
+  const [role, setRole] = useState<Role>("waiter");
+  const [pairing, setPairing] = useState<PairingCodeResult | null>(null);
+  const activeDevices = devices.filter((device) => device.id !== "device-local-admin" && device.status !== "revoked");
+  const createPairing = useMutation({
+    mutationFn: async () => {
+      const managerApproval = await requestManagerApproval({
+        title: "Approve Device Pairing",
+        message: role === "captain"
+          ? "Captain phones can bill, settle payments, and shift running tables. Only create this QR when the phone is in front of you."
+          : "This creates a one-time QR code that lets a phone join this hub.",
+        defaultReason: `Pair ${deviceName.trim() || `${role} device`}`,
+        confirmLabel: "Create QR"
+      });
+      return hubApi.createPairingCode({ deviceName: deviceName.trim() || `${role} device`, role, expiresInMinutes: 10, managerApproval });
+    },
+    onSuccess: async (result) => {
+      setPairing(result);
+      setNotice({ tone: "good", text: "QR code created. Scan it from the phone app within 10 minutes." });
+      await onChanged();
+    },
+    onError: (error) => setNotice({ tone: "bad", text: messageOf(error) })
+  });
+  const revoke = useMutation({
+    mutationFn: hubApi.revokeDevice,
+    onSuccess: async () => {
+      setNotice({ tone: "good", text: "Device revoked." });
+      await onChanged();
+    },
+    onError: (error) => setNotice({ tone: "bad", text: messageOf(error) })
+  });
+
+  return (
+    <SetupCard title="Pair Phones And Devices" done={activeDevices.length > 0} icon={<QrCode size={20} />}>
+      <p className="plain-state">
+        Create a QR for each phone or kitchen screen. Open the Android app, choose pair by QR, and scan this code.
+      </p>
+      <form className="pairing-form" onSubmit={(event) => { event.preventDefault(); createPairing.mutate(); }}>
+        <label>
+          Device name
+          <input value={deviceName} onChange={(event) => setDeviceName(event.target.value)} placeholder="Waiter phone 1" />
+        </label>
+        <label>
+          Role
+          <select value={role} onChange={(event) => setRole(event.target.value as Role)}>
+            <option value="captain">Captain - orders, billing, shifting</option>
+            <option value="waiter">Waiter - take orders only</option>
+            <option value="kitchen">Kitchen - KDS screen</option>
+          </select>
+        </label>
+        <button type="submit" disabled={createPairing.isPending}>
+          {createPairing.isPending ? "Creating..." : "Create QR code"}
+        </button>
+      </form>
+      {pairing ? (
+        <section className="pairing-card">
+          <img src={pairing.qrDataUrl} alt="Device pairing QR code" />
+          <div>
+            <strong>Code {pairing.code}</strong>
+            <span>Expires {new Date(pairing.expiresAt).toLocaleTimeString()}</span>
+            <textarea readOnly value={pairing.pairingPayloadText} />
+          </div>
+        </section>
+      ) : null}
+      <div className="record-list">
+        {loading ? <p className="plain-state">Loading paired devices...</p> : null}
+        {!loading && activeDevices.length === 0 ? (
+          <Empty title="No phones paired yet" text="Create a QR code above, then scan it from the Android app." />
+        ) : null}
+        {activeDevices.map((device) => (
+          <article key={device.id} className="record-row">
+            <div>
+              <strong>{device.name}</strong>
+              <span>{device.role} · {device.status}{device.last_seen_at ? ` · seen ${new Date(device.last_seen_at).toLocaleString()}` : ""}</span>
+            </div>
+            <button type="button" className="danger-button" onClick={() => revoke.mutate(device.id)} disabled={revoke.isPending}>
+              Revoke
+            </button>
+          </article>
+        ))}
+      </div>
+    </SetupCard>
   );
 }
 

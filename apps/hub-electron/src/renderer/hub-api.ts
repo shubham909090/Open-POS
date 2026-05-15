@@ -1,5 +1,30 @@
 export type Role = "admin" | "captain" | "waiter" | "kitchen";
 
+export interface LocalDevice {
+  id: string;
+  name: string;
+  role: Role;
+  status: "active" | "revoked" | string;
+  created_at: string;
+  last_seen_at: string | null;
+  revoked_at: string | null;
+}
+
+export interface PairingCodeResult {
+  id: string;
+  code: string;
+  expiresAt: string;
+  qrDataUrl: string;
+  pairingPayloadText: string;
+}
+
+export interface BackupSummary {
+  fileName: string;
+  path: string;
+  sizeBytes: number;
+  createdAt: string;
+}
+
 export interface PosDay {
   id: string;
   business_date: string;
@@ -343,8 +368,17 @@ export const hubApi = {
   tableOrder: (tableId: string) => apiFetch<TableOrder | null>(`/tables/${tableId}/order`),
   currentBusinessDaySummary: () => apiFetch<CloseSummary>("/business-day/current-summary"),
   dailyReports: () => apiFetch<DailyReportRow[]>("/reports/daily"),
+  backups: () => apiFetch<BackupSummary[]>("/backups"),
+  createBackup: (label: string) => apiFetch<BackupSummary>("/backups", { method: "POST", body: JSON.stringify({ label }) }),
+  scheduleRestore: (fileName: string) =>
+    apiFetch<{ scheduled: true; restartRequired: true; backup: BackupSummary }>("/backups/restore", { method: "POST", body: JSON.stringify({ fileName }) }),
   alcoholStockMovements: () => apiFetch<AlcoholStockMovement[]>("/reports/alcohol-stock-movements?limit=100"),
   kds: (unitId: string) => apiFetch<KdsTicket[]>(`/kds/${unitId}`),
+  devices: () => apiFetch<LocalDevice[]>("/devices"),
+  createPairingCode: (payload: { deviceName: string; role: Role; expiresInMinutes: number; managerApproval?: { pin: string; reason: string; approvedBy: string } }) =>
+    apiFetch<PairingCodeResult>("/devices/pairing-codes", { method: "POST", body: JSON.stringify(payload) }),
+  revokeDevice: (id: string) =>
+    apiFetch<{ id: string }>(`/devices/${id}/revoke`, { method: "POST", body: JSON.stringify({ reason: "Revoked from hub setup" }) }),
   createFloor: (name: string) => apiFetch<{ id: string }>("/floors", { method: "POST", body: JSON.stringify({ name }) }),
   updateFloor: (id: string, payload: { name?: string; active?: boolean }) =>
     apiFetch<{ id: string }>(`/floors/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),

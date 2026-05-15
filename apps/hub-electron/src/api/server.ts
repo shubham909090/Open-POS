@@ -485,6 +485,8 @@ export function createHubServer(input: {
   app.get("/devices", { preHandler: adminOnly }, async () => input.authService.listDevices());
   app.post("/devices/pairing-codes", { preHandler: adminOnly }, async (request) => {
     const body = createPairingCodeSchema.parse(request.body);
+    if (!body.managerApproval) throw new DomainError("Manager PIN is required to create a device pairing QR", 403);
+    input.orderService.verifyManagerPinForSession(body.managerApproval.pin);
     const pairing = input.authService.createPairingCode(body);
     const host = request.headers.host ?? "localhost:3737";
     const protocol = request.protocol || "http";

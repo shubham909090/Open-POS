@@ -201,7 +201,7 @@ There are two auth systems because cloud auth and restaurant service have differ
 ## Hub Pairing Flow
 
 1. Admin unlocks the hub.
-2. Admin creates a pairing code for a device name and role.
+2. Admin opens **Pair Phones And Devices**, chooses a device name and role, then approves QR creation with the Manager PIN.
 3. Hub generates:
    - a six-digit/manual code,
    - a QR data URL,
@@ -212,7 +212,7 @@ There are two auth systems because cloud auth and restaurant service have differ
 6. Hub creates a `local_devices` row and returns the local token.
 7. Android stores token locally and uses it for all future LAN requests.
 
-Pairing codes expire and are one-time use.
+Pairing codes expire after 10 minutes and are one-time use. The phone cannot choose or upgrade its own role; the role comes from the Manager-PIN-approved hub QR.
 
 ## Local Database
 

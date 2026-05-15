@@ -1590,6 +1590,49 @@
   grid-template-columns: minmax(220px, 1.4fr) auto minmax(180px, 1fr) minmax(96px, 0.4fr) auto;
 }
 
+.pairing-form {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(240px, 1fr) auto;
+  align-items: end;
+  gap: 10px;
+}
+
+.pairing-card {
+  display: grid;
+  grid-template-columns: 180px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+  width: min(760px, 100%);
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.pairing-card img {
+  width: 180px;
+  height: 180px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.pairing-card strong,
+.pairing-card span {
+  display: block;
+}
+
+.pairing-card textarea {
+  width: 100%;
+  min-height: 90px;
+  margin-top: 10px;
+  resize: vertical;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  padding: 10px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+}
+
 .inline-form button,
 .dish-form button,
 .printer-form button,
@@ -1762,8 +1805,15 @@
 
   .layout-editor,
   .layout-editor .template-form,
-  .setup-card-content > .template-form {
+  .setup-card-content > .template-form,
+  .pairing-form,
+  .pairing-card {
     grid-template-columns: 1fr;
+  }
+
+  .pairing-card img {
+    width: 160px;
+    height: 160px;
   }
 
   .setup-card-content > .template-form > .action-strip {
