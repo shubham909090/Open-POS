@@ -371,6 +371,87 @@ describe("Hub API auth and service flow", () => {
     database.close();
   });
 
+  it("delivers kitchen ready notifications once to the captain that owns the table", async () => {
+    const { app, database } = createTestServer();
+    const adminHeaders = { "x-device-token": "test-admin-token" };
+
+    async function pair(role: "captain" | "waiter" | "kitchen", name: string) {
+      const pairingResponse = await app.inject({
+        method: "POST",
+        url: "/devices/pairing-codes",
+        headers: adminHeaders,
+        payload: { deviceName: name, role, expiresInMinutes: 10 }
+      });
+      const exchangeResponse = await app.inject({
+        method: "POST",
+        url: "/devices/pair/exchange",
+        payload: { code: pairingResponse.json<{ code: string }>().code, deviceName: name }
+      });
+      return exchangeResponse.json<{ token: string }>();
+    }
+
+    const captain = await pair("captain", "Captain Ready");
+    const waiter = await pair("waiter", "Waiter Ready");
+    const kitchen = await pair("kitchen", "Kitchen Ready");
+    await app.inject({
+      method: "POST",
+      url: "/orders/submit",
+      headers: { "x-device-token": captain.token },
+      payload: {
+        tableId: "table-t1",
+        pax: 2,
+        orderType: "dine_in",
+        items: [{ menuItemId: "item-dal-fry", quantity: 1 }]
+      }
+    });
+    const kdsResponse = await app.inject({
+      method: "GET",
+      url: "/kds/unit-kitchen",
+      headers: { "x-device-token": kitchen.token }
+    });
+    const [ticket] = kdsResponse.json<Array<{ id: string }>>();
+    if (!ticket) throw new Error("Expected a kitchen ticket for the submitted order");
+
+    const statusResponse = await app.inject({
+      method: "PATCH",
+      url: `/kot/${ticket.id}/status`,
+      headers: { "x-device-token": kitchen.token },
+      payload: { status: "ready" }
+    });
+    const waiterNotifications = await app.inject({
+      method: "GET",
+      url: "/notifications/ready",
+      headers: { "x-device-token": waiter.token }
+    });
+    const captainNotifications = await app.inject({
+      method: "GET",
+      url: "/notifications/ready",
+      headers: { "x-device-token": captain.token }
+    });
+    const captainNotificationsAgain = await app.inject({
+      method: "GET",
+      url: "/notifications/ready",
+      headers: { "x-device-token": captain.token }
+    });
+
+    expect(statusResponse.statusCode).toBe(200);
+    expect(waiterNotifications.statusCode).toBe(200);
+    expect(waiterNotifications.json()).toEqual([]);
+    expect(captainNotifications.statusCode).toBe(200);
+    expect(captainNotifications.json()).toEqual([
+      expect.objectContaining({
+        kotId: ticket.id,
+        tableName: "T1",
+        productionUnitName: "Kitchen",
+        items: [{ name: "Dal Fry", quantity: 1 }]
+      })
+    ]);
+    expect(captainNotificationsAgain.json()).toEqual([]);
+
+    await app.close();
+    database.close();
+  });
+
   it("lets admins switch printer mode and queue test prints", async () => {
     const { app, database } = createTestServer();
     const adminHeaders = { "x-device-token": "test-admin-token" };

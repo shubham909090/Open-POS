@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { calculateLineTotal, calculateTax, formatInr } from "../money.js";
 import { createMenuItemSchema, createPairingCodeSchema, submitOrderSchema, updateReceiptPrinterSchema } from "../schemas.js";
+import { getTableDisplayState, tableDisplayClass, tableDisplayLabel } from "../table-state.js";
 
 describe("shared money helpers", () => {
   it("calculates line totals, GST, and INR formatting", () => {
@@ -33,5 +34,17 @@ describe("shared command schemas", () => {
   it("requires a positive dish price", () => {
     expect(() => createMenuItemSchema.parse({ name: "Free Tea", pricePaise: 0 })).toThrow();
     expect(createMenuItemSchema.parse({ name: "Tea", pricePaise: 100 })).toMatchObject({ pricePaise: 100 });
+  });
+});
+
+describe("shared table display state", () => {
+  it("maps operational table states to stable UI labels and classes", () => {
+    expect(getTableDisplayState({ status: "free" })).toBe("free");
+    expect(getTableDisplayState({ status: "occupied" })).toBe("running");
+    expect(getTableDisplayState({ status: "billed" })).toBe("bill_printed");
+    expect(getTableDisplayState({ status: "attention" })).toBe("needs_attention");
+    expect(getTableDisplayState({ status: "occupied", active: false })).toBe("disabled");
+    expect(tableDisplayLabel("bill_printed")).toBe("Bill printed");
+    expect(tableDisplayClass("needs_attention")).toBe("needs-attention");
   });
 });

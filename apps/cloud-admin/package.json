@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "build": "dotenv -e ../../.env.local -- next build",
     "dev": "dotenv -e ../../.env.local -- next dev",
     "lint": "tsc --noEmit",
     "typecheck": "tsc --noEmit"

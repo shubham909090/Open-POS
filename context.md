@@ -69,7 +69,7 @@ Hub UI sections in the React renderer:
 
 Package: `apps/mobile`
 
-The mobile app is waiter/captain focused. It is not the billing/admin app.
+The mobile app is waiter/captain focused. It is not the setup/cloud-admin app.
 
 Responsibilities:
 
@@ -87,7 +87,8 @@ Responsibilities:
 - View running table order from the hub.
 - Captain-only: shift a full running table to another free table.
 - Captain-only: shift selected sent items to another table.
-- Waiter scope only: no billing, reports, manager settings, or cloud admin features.
+- Captain-only: generate bills, print/reprint through the hub printer, record cash/UPI/card/online/split payments, add discount/tip, mark NC with Manager PIN, and view the current business-day summary.
+- Waiter scope only: no billing, reports, movement, manager settings, or cloud admin features.
 - Poll ready notifications from the hub for kitchen/bar ready alerts.
 
 ### 3. Cloud Admin App
@@ -665,6 +666,7 @@ Routes currently registered:
 - `GET /sync/status`
 - `POST /sync/push`
 - `POST /sync/pull`
+- `POST /sync/requeue-failed`
 - `GET /floors`
 - `POST /floors`
 - `PATCH /floors/:id`
@@ -686,7 +688,14 @@ Routes currently registered:
 - `PATCH /menu-items/:id/active`
 - `DELETE /menu-items/:id`
 - `PATCH /menu-items/:id`
+- `GET /alcohol`
+- `GET /alcohol/storage`
+- `POST /alcohol/items`
+- `PATCH /alcohol/items/:id`
+- `POST /alcohol/stock/:id/adjust`
 - `GET /settings/receipt-printer`
+- `GET /settings/printer-mode`
+- `PUT /settings/printer-mode`
 - `GET /system-printers`
 - `PUT /settings/receipt-printer`
 - `PUT /settings/manager-pin`
@@ -704,6 +713,7 @@ Routes currently registered:
 - `GET /business-day/current-summary`
 - `GET /reports/daily`
 - `GET /reports/daily/:posDayId`
+- `GET /reports/alcohol-stock-movements`
 - `POST /orders/submit`
 - `POST /tables/move`
 - `POST /orders/items/move`
@@ -716,6 +726,8 @@ Routes currently registered:
 - `POST /bills/:orderId/generate`
 - `POST /bills/:billId/settle`
 - `POST /print-jobs/process`
+- `POST /print-jobs/test-bill`
+- `POST /print-jobs/test-kot`
 - `GET /print-jobs`
 - `POST /print-jobs/:id/retry`
 - `GET /backups`
@@ -774,7 +786,6 @@ These are not hallucinated features; they are current operational notes:
 
 - Real restaurant printer hardware must still be tested on Windows with actual installed/network printers.
 - Mobile ready alerts are polling-based, not native push notifications.
-- Cloud admin has a `dev` and `typecheck` script, but no package-level `build` script in `apps/cloud-admin/package.json`.
 - Hub is the live source of truth; cloud reports appear after the hub finalizes a 6 AM IST business day and syncs.
 - The system is not a payment gateway; UPI/card/online payments are manually recorded by captain.
 - Convex cloud is not used as the live order database.
@@ -787,6 +798,7 @@ These commands have passed after the latest fixes:
 - `pnpm test`
 - `pnpm typecheck`
 - `pnpm lint`
+- `pnpm --filter @gaurav-pos/cloud-admin build`
 - `pnpm --filter @gaurav-pos/hub-electron build`
 - `node --check apps/hub-electron/src/public/app.js`
 - `npx tsc --noEmit --project convex/tsconfig.json`

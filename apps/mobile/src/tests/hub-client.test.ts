@@ -142,4 +142,75 @@ describe("HubClient", () => {
       })
     );
   });
+
+  it("uses captain billing routes with idempotency keys and manager approval payloads", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response(JSON.stringify({ billId: "bill-1", totalPaise: 12100 }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ printJobId: "print-1" }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ printJobId: "print-2" }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ billId: "bill-1", revisionNumber: 2, totalPaise: 24200, kotIds: [] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ printJobId: "print-nc" }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ billId: "bill-1", status: "paid", remainingPaise: 0 }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ billCount: 1, finalSalesPaise: 24200 }), { status: 200 }));
+
+    const client = new HubClient("http://hub.local:3737", "captain-token");
+    const approval = { managerApproval: { pin: "1234", reason: "Customer copy", approvedBy: "Manager" } };
+
+    await client.generateBill("order-1", { idempotencyKey: "generate-once" });
+    await client.printBill("bill-1", { idempotencyKey: "print-once" });
+    await client.reprintBill("bill-1", approval, { idempotencyKey: "reprint-once" });
+    await client.reviseBill("bill-1", { ...approval, items: [{ menuItemId: "item-1", quantity: 2 }] }, { idempotencyKey: "revise-once" });
+    await client.markBillNc("bill-1", approval, { idempotencyKey: "nc-once" });
+    await client.settleBill(
+      "bill-1",
+      {
+        discountType: "amount",
+        discountValue: 0,
+        tipPaise: 0,
+        payments: [{ method: "upi", amountPaise: 24200, reference: "captain note" }]
+      },
+      { idempotencyKey: "settle-once" }
+    );
+    await client.currentBusinessDaySummary();
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "http://hub.local:3737/bills/order-1/generate",
+      expect.objectContaining({ method: "POST", headers: expect.objectContaining({ "Idempotency-Key": "generate-once" }) })
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "http://hub.local:3737/bills/bill-1/print",
+      expect.objectContaining({ method: "POST", headers: expect.objectContaining({ "Idempotency-Key": "print-once" }) })
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      "http://hub.local:3737/bills/bill-1/reprint",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({ "Idempotency-Key": "reprint-once" }),
+        body: JSON.stringify({ reason: "Customer copy", ...approval })
+      })
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      4,
+      "http://hub.local:3737/bills/bill-1/revise",
+      expect.objectContaining({ method: "POST", headers: expect.objectContaining({ "Idempotency-Key": "revise-once" }) })
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      5,
+      "http://hub.local:3737/bills/bill-1/nc",
+      expect.objectContaining({ method: "POST", headers: expect.objectContaining({ "Idempotency-Key": "nc-once" }) })
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      6,
+      "http://hub.local:3737/bills/bill-1/settle",
+      expect.objectContaining({ method: "POST", headers: expect.objectContaining({ "Idempotency-Key": "settle-once" }) })
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      7,
+      "http://hub.local:3737/business-day/current-summary",
+      expect.objectContaining({ headers: expect.objectContaining({ "x-device-token": "captain-token" }) })
+    );
+  });
 });

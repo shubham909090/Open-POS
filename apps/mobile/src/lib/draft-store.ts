@@ -17,7 +17,7 @@ export async function getHubUrl(): Promise<string> {
 }
 
 export async function setHubUrl(url: string): Promise<void> {
-  await AsyncStorage.setItem(HUB_URL_KEY, url.trim().replace(/\/$/, ""));
+  await AsyncStorage.setItem(HUB_URL_KEY, url.trim().replace(/\/+$/, ""));
 }
 
 export async function getDeviceToken(): Promise<string> {
