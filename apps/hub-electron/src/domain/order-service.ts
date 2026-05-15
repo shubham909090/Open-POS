@@ -68,7 +68,7 @@ import {
 } from "../db/drizzle-schema.js";
 import { DomainError } from "./errors.js";
 import { makeId } from "./ids.js";
-import { renderBillTicket, renderKotTicket, type KotTicketItem } from "./tickets.js";
+import { renderBillTicket, renderKotTicket, type BillTicket, type KotTicketItem } from "./tickets.js";
 import { currentBusinessDayWindow } from "./business-day.js";
 
 const DEFAULT_TAX_COMPONENTS = [
@@ -514,6 +514,7 @@ export class OrderService {
         .get(billId) as
         | {
             id: string;
+            order_id: string;
             table_name: string;
             subtotal_paise: number;
             tax_paise: number;
@@ -531,21 +532,13 @@ export class OrderService {
 
       if (!bill) throw new DomainError("Bill not found", 404);
 
-      const payload = `${renderBillTicket({
-        tableName: bill.table_name,
-        billId: bill.id,
-        subtotalPaise: bill.subtotal_paise,
-        taxPaise: bill.tax_paise,
-        totalPaise: bill.total_paise,
-        discountPaise: bill.discount_paise,
-        tipPaise: bill.tip_paise,
-        finalTotalPaise: bill.final_total_paise,
-        createdAt: new Date().toISOString(),
-        taxBreakdown: this.parseTaxBreakdown(bill.tax_breakdown_json),
-        revisionNumber: bill.revision_number,
-        ncReason: bill.nc_reason,
-        ...this.getTicketTemplate()
-      })}\nREPRINT\nReason: ${input.reason}\nRequested by: ${input.requestedBy}\n`;
+      const payload = `${renderBillTicket(
+        this.buildBillTicket({
+          bill,
+          tableName: bill.table_name,
+          createdAt: new Date().toISOString()
+        })
+      )}\nREPRINT\nReason: ${input.reason}\nRequested by: ${input.requestedBy}\n`;
 
       const printJobId = this.enqueuePrintJob({
         targetType: "BILL",
@@ -770,21 +763,16 @@ export class OrderService {
         this.deductAlcoholStockForPaidBill(billId, bill.order_id);
         this.orm.update(orders).set({ status: "paid", updatedAt: now }).where(eq(orders.id, bill.order_id)).run();
         this.freeTable(order.table_id);
-        const payload = renderBillTicket({
-          tableName: table.name,
-          billId,
-          subtotalPaise: bill.subtotal_paise,
-          taxPaise: bill.tax_paise,
-          totalPaise: bill.total_paise,
-          discountPaise,
-          tipPaise,
-          finalTotalPaise,
-          createdAt: now,
-          taxBreakdown: this.parseTaxBreakdown(bill.tax_breakdown_json),
-          revisionNumber: bill.revision_number,
-          ncReason: bill.nc_reason,
-          ...this.getTicketTemplate()
-        });
+        const payload = renderBillTicket(
+          this.buildBillTicket({
+            bill,
+            tableName: table.name,
+            createdAt: now,
+            discountPaise,
+            tipPaise,
+            finalTotalPaise
+          })
+        );
         this.enqueuePrintJob({
           targetType: "BILL",
           targetId: billId,
@@ -1548,6 +1536,7 @@ export class OrderService {
       payload: renderBillTicket({
         tableName: "TEST",
         billId: "TEST-BILL",
+        items: [{ name: "Test item", quantity: 1, unitPricePaise: 100, lineTotalPaise: 100 }],
         subtotalPaise: 100,
         taxPaise: 0,
         totalPaise: 100,
@@ -1738,21 +1727,14 @@ export class OrderService {
         targetId: billId,
         productionUnitId: null,
         ...this.getReceiptPrinter(),
-        payload: renderBillTicket({
-          tableName: table.name,
-          billId,
-          subtotalPaise: bill.subtotal_paise,
-          taxPaise: bill.tax_paise,
-          totalPaise: bill.total_paise,
-          discountPaise: bill.discount_paise,
-          tipPaise: bill.tip_paise,
-          finalTotalPaise: bill.final_total_paise,
-          createdAt: now,
-          taxBreakdown: this.parseTaxBreakdown(bill.tax_breakdown_json),
-          revisionNumber: bill.revision_number,
-          ncReason: input.managerApproval.reason,
-          ...this.getTicketTemplate()
-        })
+        payload: renderBillTicket(
+          this.buildBillTicket({
+            bill,
+            tableName: table.name,
+            createdAt: now,
+            ncReason: input.managerApproval.reason
+          })
+        )
       });
       this.appendEvent("bill.nc_marked", "bill", billId, { billId, reason: input.managerApproval.reason, printJobId });
       return { billId, printJobId };
@@ -1775,21 +1757,13 @@ export class OrderService {
         targetId: billId,
         productionUnitId: null,
         ...this.getReceiptPrinter(),
-        payload: renderBillTicket({
-          tableName: table.name,
-          billId,
-          subtotalPaise: bill.subtotal_paise,
-          taxPaise: bill.tax_paise,
-          totalPaise: bill.total_paise,
-          discountPaise: bill.discount_paise,
-          tipPaise: bill.tip_paise,
-          finalTotalPaise: bill.final_total_paise,
-          createdAt: now,
-          taxBreakdown: this.parseTaxBreakdown(bill.tax_breakdown_json),
-          revisionNumber: bill.revision_number,
-          ncReason: bill.nc_reason,
-          ...this.getTicketTemplate()
-        })
+        payload: renderBillTicket(
+          this.buildBillTicket({
+            bill,
+            tableName: table.name,
+            createdAt: now
+          })
+        )
       });
       this.orm.update(bills).set({ printCount: sql`${bills.printCount} + 1` }).where(eq(bills.id, billId)).run();
       this.appendEvent("bill.printed", "bill", billId, { billId, requestedBy, printJobId });
@@ -2297,6 +2271,53 @@ export class OrderService {
           isOpenItem: true
         };
       });
+  }
+
+  private buildBillTicket(input: {
+    bill: Pick<
+      BillRow,
+      | "id"
+      | "order_id"
+      | "subtotal_paise"
+      | "tax_paise"
+      | "total_paise"
+      | "discount_paise"
+      | "tip_paise"
+      | "final_total_paise"
+      | "tax_breakdown_json"
+      | "revision_number"
+      | "nc_reason"
+    >;
+    tableName: string;
+    createdAt: string;
+    discountPaise?: number;
+    tipPaise?: number;
+    finalTotalPaise?: number;
+    ncReason?: string | null;
+  }): BillTicket {
+    const billableItems = this.getOrderItems(input.bill.order_id).filter((item) => item.quantity > 0 && item.status !== "cancelled");
+    return {
+      tableName: input.tableName,
+      billId: input.bill.id,
+      items: billableItems.map((item) => ({
+        name: item.name_snapshot,
+        variantName: item.variant_name_snapshot || null,
+        quantity: item.quantity,
+        unitPricePaise: item.unit_price_paise,
+        lineTotalPaise: calculateLineTotal(item.unit_price_paise, item.quantity)
+      })),
+      subtotalPaise: input.bill.subtotal_paise,
+      taxPaise: input.bill.tax_paise,
+      totalPaise: input.bill.total_paise,
+      discountPaise: input.discountPaise ?? input.bill.discount_paise,
+      tipPaise: input.tipPaise ?? input.bill.tip_paise,
+      finalTotalPaise: input.finalTotalPaise ?? input.bill.final_total_paise,
+      createdAt: input.createdAt,
+      taxBreakdown: this.parseTaxBreakdown(input.bill.tax_breakdown_json),
+      revisionNumber: input.bill.revision_number,
+      ncReason: input.ncReason ?? input.bill.nc_reason,
+      ...this.getTicketTemplate()
+    };
   }
 
   private calculateBillTotals(items: OrderItemRow[]): BillTotals {

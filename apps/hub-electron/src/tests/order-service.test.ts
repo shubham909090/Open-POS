@@ -194,6 +194,66 @@ describe("OrderService KOT lifecycle", () => {
     database.close();
   });
 
+  it("prints itemized dish lines on the customer bill", () => {
+    const { database, orderService } = createTestHub();
+
+    const order = orderService.submitOrder({
+      tableId: "table-t1",
+      captainId: "waiter-1",
+      pax: 1,
+      orderType: "dine_in",
+      items: [{ menuItemId: "item-dal-fry", quantity: 2 }]
+    });
+    const bill = orderService.generateBill(order.orderId);
+
+    orderService.settleBill(bill.billId, {
+      method: "cash",
+      amountPaise: bill.totalPaise,
+      receivedBy: "captain-1"
+    });
+
+    const printJob = database.db.prepare("SELECT payload FROM print_jobs WHERE target_id = ? AND target_type = 'BILL'").get(bill.billId) as { payload: string };
+    expect(printJob.payload).toContain("Item");
+    expect(printJob.payload).toContain("Qty");
+    expect(printJob.payload).toContain("Rate");
+    expect(printJob.payload).toContain("Amt");
+    expect(printJob.payload).toContain("Dal Fry");
+    expect(printJob.payload).toContain("2");
+    expect(printJob.payload).toContain("₹180.00");
+    expect(printJob.payload).toContain("₹360.00");
+
+    database.close();
+  });
+
+  it("keeps itemized dish lines on manager-approved bill reprints", () => {
+    const { database, orderService } = createTestHub();
+    orderService.setManagerPin({ newPin: "1234", updatedBy: "admin" });
+    const order = orderService.submitOrder({
+      tableId: "table-t1",
+      captainId: "waiter-1",
+      pax: 1,
+      orderType: "dine_in",
+      items: [{ menuItemId: "item-dal-fry", quantity: 1 }]
+    });
+    const bill = orderService.generateBill(order.orderId);
+
+    orderService.printBill(bill.billId, "captain-1");
+    const reprint = orderService.reprintBill(bill.billId, {
+      requestedBy: "captain-1",
+      reason: "Customer copy",
+      managerApproval: { pin: "1234", reason: "Customer copy", approvedBy: "manager" }
+    });
+
+    const printJob = database.db.prepare("SELECT payload FROM print_jobs WHERE id = ?").get(reprint.printJobId) as { payload: string };
+    expect(printJob.payload).toContain("Item");
+    expect(printJob.payload).toContain("Dal Fry");
+    expect(printJob.payload).toContain("₹180.00");
+    expect(printJob.payload).toContain("REPRINT");
+    expect(printJob.payload).toContain("Reason: Customer copy");
+
+    database.close();
+  });
+
   it("supports manual split payments with discount and tip", () => {
     const { database, orderService } = createTestHub();
 
@@ -630,9 +690,16 @@ describe("OrderService KOT lifecycle", () => {
     expect(database.db.prepare("SELECT target_type FROM print_jobs ORDER BY created_at DESC LIMIT 1").get()).toEqual({ target_type: "BOT" });
     const bill = orderService.generateBill(order.orderId);
     expect(bill.totalPaise).toBe(22_000);
-    orderService.markBillNc(bill.billId, {
+    const ncBill = orderService.markBillNc(bill.billId, {
       managerApproval: { pin: "1234", reason: "Owner tasting", approvedBy: "manager" }
     });
+    const ncPrintJob = database.db.prepare("SELECT payload FROM print_jobs WHERE id = ?").get(ncBill.printJobId) as { payload: string };
+    expect(ncPrintJob.payload).toContain("Item");
+    expect(ncPrintJob.payload).toContain("Open Bar");
+    expect(ncPrintJob.payload).toContain("2");
+    expect(ncPrintJob.payload).toContain("₹100.00");
+    expect(ncPrintJob.payload).toContain("₹200.00");
+    expect(ncPrintJob.payload).toContain("NC Reason: Owner tasting");
 
     const summary = orderService.getCurrentBusinessDaySummary() as {
       finalSalesPaise: number;
@@ -764,6 +831,11 @@ describe("OrderService KOT lifecycle", () => {
       status: "active"
     });
     expect(database.db.prepare("SELECT COUNT(*) AS count FROM order_items WHERE order_id = ?").get(order.orderId)).toEqual({ count: 1 });
+    orderService.settleBill(bill.billId, { method: "cash", amountPaise: revised.totalPaise, receivedBy: "captain-1" });
+    const printJob = database.db.prepare("SELECT payload FROM print_jobs WHERE target_id = ? AND target_type = 'BILL'").get(bill.billId) as { payload: string };
+    expect(printJob.payload).toContain("Revision Price Dish");
+    expect(printJob.payload).toContain("₹100.00");
+    expect(printJob.payload).not.toContain("₹150.00");
 
     database.close();
   });

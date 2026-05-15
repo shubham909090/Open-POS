@@ -22,6 +22,7 @@ export interface KotTicket {
 export interface BillTicket {
   tableName: string;
   billId: string;
+  items?: BillTicketItem[];
   subtotalPaise: number;
   taxPaise: number;
   totalPaise: number;
@@ -36,6 +37,34 @@ export interface BillTicket {
   taxRegistrationText?: string;
   ncReason?: string | null;
   revisionNumber?: number;
+}
+
+export interface BillTicketItem {
+  name: string;
+  variantName?: string | null;
+  quantity: number;
+  unitPricePaise: number;
+  lineTotalPaise: number;
+}
+
+const TICKET_LINE_WIDTH = 32;
+
+function truncateTicketText(value: string, maxLength = TICKET_LINE_WIDTH): string {
+  if (value.length <= maxLength) return value;
+  if (maxLength <= 3) return value.slice(0, maxLength);
+  return `${value.slice(0, maxLength - 3)}...`;
+}
+
+function renderBillItemLines(item: BillTicketItem): string[] {
+  const name = item.variantName ? `${item.name} ${item.variantName}` : item.name;
+  const detail = `${item.quantity} x ${formatInr(item.unitPricePaise)} = ${formatInr(item.lineTotalPaise)}`;
+  const compactAvailableNameLength = TICKET_LINE_WIDTH - detail.length - 2;
+
+  if (compactAvailableNameLength >= 8 && name.length <= compactAvailableNameLength) {
+    return [`${name.padEnd(compactAvailableNameLength)}  ${detail}`];
+  }
+
+  return [truncateTicketText(name), `  ${detail}`];
 }
 
 export function renderKotTicket(ticket: KotTicket): string {
@@ -73,6 +102,14 @@ export function renderBillTicket(ticket: BillTicket): string {
     `Time: ${ticket.createdAt}`,
     ...(ticket.taxRegistrationText ? [ticket.taxRegistrationText] : []),
     "-".repeat(32),
+    ...(ticket.items?.length
+      ? [
+          "Item  Qty  Rate  Amt",
+          "-".repeat(32),
+          ...ticket.items.flatMap((item) => renderBillItemLines(item)),
+          "-".repeat(32)
+        ]
+      : []),
     `Subtotal: ${formatInr(ticket.subtotalPaise)}`,
     ...(ticket.taxBreakdown?.length
       ? ticket.taxBreakdown.map((line) => `${line.name}: ${formatInr(line.amountPaise)}`)
