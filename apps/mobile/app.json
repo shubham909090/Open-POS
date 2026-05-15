@@ -14,11 +14,11 @@
         {
           "cameraPermission": "Allow Gaurav POS to scan hub pairing QR codes."
         }
-      ]
+      ],
+      "./plugins/with-cleartext-traffic.cjs"
     ],
     "android": {
       "package": "com.gauravpos.mobile",
-      "usesCleartextTraffic": true,
       "permissions": [
         "android.permission.CAMERA",
         "android.permission.RECORD_AUDIO"

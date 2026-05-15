@@ -8,8 +8,8 @@
     "dev": "expo start",
     "android": "expo start --android",
     "android:prebuild": "expo prebuild --platform android",
-    "android:apk": "eas build --platform android --profile preview",
-    "android:aab": "eas build --platform android --profile production",
+    "android:apk": "pnpm dlx eas-cli@18.11.0 build --platform android --profile preview",
+    "android:aab": "pnpm dlx eas-cli@18.11.0 build --platform android --profile production",
     "lint": "tsc --noEmit",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
@@ -17,13 +17,14 @@
   "dependencies": {
     "@gaurav-pos/shared": "workspace:*",
     "@react-native-async-storage/async-storage": "^2.2.0",
-    "expo": "^55.0.23",
+    "expo": "^55.0.24",
     "expo-camera": "^55.0.18",
+    "expo-system-ui": "~55.0.18",
     "react": "^19.2.0",
     "react-native": "^0.83.6"
   },
   "devDependencies": {
-    "@types/react": "^19.2.14",
-    "eas-cli": "^18.11.0"
+    "@expo/config-plugins": "55.0.9",
+    "@types/react": "^19.2.14"
   }
 }
