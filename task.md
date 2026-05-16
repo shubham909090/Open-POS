@@ -253,3 +253,7 @@ Implement the full restaurant workflow pass from your brother’s notes in one d
 - “Regenerate bill” means create a revised bill after manager-approved changes, not merely reprint.
 - NC bills count item quantities but exclude money from sales/tax/payment totals.
 - Kitchen/bar ready status is marked from the KDS screens, then pushed to APK.
+
+
+
+

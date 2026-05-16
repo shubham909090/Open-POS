@@ -2,7 +2,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Animated,
   KeyboardAvoidingView,
+  LayoutAnimation,
   Modal,
   Platform,
   Pressable,
@@ -13,6 +15,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  UIManager,
   useWindowDimensions,
   View
 } from "react-native";
@@ -37,13 +40,18 @@ interface PairingPayload {
   expiresAt?: string;
 }
 
+if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
+
 export default function App() {
   const { width } = useWindowDimensions();
   const isWide = width >= 780;
   const contentWidth = Math.max(320, width - 32);
   const tablePanelWidth = isWide ? Math.min(360, Math.floor(contentWidth * 0.34)) : contentWidth;
   const tableColumns = tablePanelWidth >= 340 ? 2 : 1;
-  const tableTileWidth = Math.floor((tablePanelWidth - 28 - 10 * (tableColumns - 1)) / tableColumns);
+  const tableGridGap = 12;
+  const tableTileWidth = Math.floor((tablePanelWidth - 28 - tableGridGap * (tableColumns - 1)) / tableColumns);
 
   const [initializing, setInitializing] = useState(true);
   const [hubUrl, setHubUrlState] = useState("http://192.168.1.10:3737");
@@ -818,7 +826,7 @@ export default function App() {
   ) : (
     <>
       <ConnectionBanner message={message} savingDraft={savingDraft} />
-      <ModeTabs mode={mode} onModeChange={setMode} />
+      <ModeTabs mode={mode} onModeChange={setMode} newItemCount={items.reduce((total, item) => total + item.quantity, 0)} />
       {workArea}
     </>
   );
@@ -934,9 +942,27 @@ function AppHeader({
 }
 
 function StatusPill({ connection }: { connection: ConnectionState }) {
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    if (connection === "offline") {
+      const loop = Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, { toValue: 0.3, duration: 800, useNativeDriver: true }),
+          Animated.timing(pulseAnim, { toValue: 1, duration: 800, useNativeDriver: true })
+        ])
+      );
+      loop.start();
+      return () => loop.stop();
+    }
+    pulseAnim.setValue(1);
+  }, [connection, pulseAnim]);
   return (
     <View style={[styles.statusPill, styles[`status_${connection}`]]}>
-      {connection === "checking" ? <ActivityIndicator size="small" /> : <View style={[styles.dot, styles[connection]]} />}
+      {connection === "checking" ? (
+        <ActivityIndicator size="small" />
+      ) : (
+        <Animated.View style={[styles.dot, styles[connection], connection === "offline" ? { opacity: pulseAnim } : undefined]} />
+      )}
       <Text style={styles.statusText}>{connection === "online" ? "Online" : connection === "offline" ? "Offline" : "Checking"}</Text>
     </View>
   );
@@ -1092,7 +1118,7 @@ function ConnectionBanner({ message, savingDraft }: { message: string; savingDra
   );
 }
 
-function ModeTabs({ mode, onModeChange }: { mode: ViewMode; onModeChange: (mode: ViewMode) => void }) {
+function ModeTabs({ mode, onModeChange, newItemCount }: { mode: ViewMode; onModeChange: (mode: ViewMode) => void; newItemCount: number }) {
   return (
     <View style={styles.modeTabs}>
       {(["tables", "menu", "ticket"] as ViewMode[]).map((entry) => (
@@ -1100,6 +1126,11 @@ function ModeTabs({ mode, onModeChange }: { mode: ViewMode; onModeChange: (mode:
           <Text style={[styles.modeTabText, mode === entry && styles.modeTabTextActive]}>
             {entry === "tables" ? "Tables" : entry === "menu" ? "Menu" : "Check"}
           </Text>
+          {entry === "ticket" && newItemCount > 0 && mode !== "ticket" ? (
+            <View style={styles.modeBadge}>
+              <Text style={styles.modeBadgeText}>{newItemCount > 99 ? "99" : String(newItemCount)}</Text>
+            </View>
+          ) : null}
         </Pressable>
       ))}
     </View>
@@ -1216,43 +1247,49 @@ function KitchenScreen({
         <EmptyState title="No active tickets" text="New KOTs will appear here as soon as waiters send items." />
       ) : (
         <View style={styles.kotList}>
-          {tickets.map((ticket) => (
-            <View key={ticket.id} style={[styles.kotCard, ticket.status === "ready" && styles.kotCardReady]}>
-              <View style={styles.kotHeader}>
-                <View style={styles.flexText}>
-                  <Text style={styles.kotTable}>Table {ticket.table_name}</Text>
-                  <Text style={styles.muted}>KOT #{ticket.sequence}</Text>
-                </View>
-                <View style={[styles.kotStatusPill, ticket.status === "ready" && styles.kotStatusReady]}>
-                  <Text style={[styles.kotStatusText, ticket.status === "ready" && styles.kotStatusTextReady]}>{ticket.status}</Text>
-                </View>
-              </View>
-              <View style={styles.kotItems}>
-                {ticket.items.map((item, index) => (
-                  <View key={`${ticket.id}-${index}`} style={styles.kotItemRow}>
-                    <Text style={styles.kotQty}>{Math.abs(item.quantity_delta)}x</Text>
-                    <Text style={styles.kotItemName}>{item.name_snapshot}</Text>
+          {tickets.map((ticket) => {
+            const kotCardStatus = ticket.status === "ready" ? styles.kotCardReady
+              : ticket.status === "preparing" ? styles.kotCardPreparing
+              : ticket.status === "served" ? styles.kotCardServed
+              : undefined;
+            return (
+              <View key={ticket.id} style={[styles.kotCard, kotCardStatus]}>
+                <View style={styles.kotHeader}>
+                  <View style={styles.flexText}>
+                    <Text style={styles.kotTable}>Table {ticket.table_name}</Text>
+                    <Text style={styles.muted}>KOT #{ticket.sequence}</Text>
                   </View>
-                ))}
+                  <View style={[styles.kotStatusPill, ticket.status === "ready" && styles.kotStatusReady]}>
+                    <Text style={[styles.kotStatusText, ticket.status === "ready" && styles.kotStatusTextReady]}>{ticket.status.toUpperCase()}</Text>
+                  </View>
+                </View>
+                <View style={styles.kotItems}>
+                  {ticket.items.map((item, index) => (
+                    <View key={`${ticket.id}-${index}`} style={styles.kotItemRow}>
+                      <Text style={styles.kotQty}>{Math.abs(item.quantity_delta)}x</Text>
+                      <Text style={styles.kotItemName}>{item.name_snapshot}</Text>
+                    </View>
+                  ))}
+                </View>
+                <View style={styles.kotActions}>
+                  {ticket.status === "queued" ? (
+                    <Pressable style={[styles.secondaryButton, styles.kotActionButton, styles.kotStartButton, sending && styles.buttonDisabled]} disabled={sending} onPress={() => onStatusChange(ticket.id, "preparing")}>
+                      <Text style={styles.kotStartButtonText}>Start</Text>
+                    </Pressable>
+                  ) : null}
+                  {ticket.status !== "ready" ? (
+                    <Pressable style={[styles.primaryButton, styles.kotActionButton, sending && styles.buttonDisabled]} disabled={sending} onPress={() => onStatusChange(ticket.id, "ready")}>
+                      <Text style={styles.primaryButtonText}>Ready</Text>
+                    </Pressable>
+                  ) : (
+                    <Pressable style={[styles.primaryButton, styles.kotActionButton, sending && styles.buttonDisabled]} disabled={sending} onPress={() => onStatusChange(ticket.id, "served")}>
+                      <Text style={styles.primaryButtonText}>Served</Text>
+                    </Pressable>
+                  )}
+                </View>
               </View>
-              <View style={styles.kotActions}>
-                {ticket.status === "queued" ? (
-                  <Pressable style={[styles.secondaryButton, styles.kotActionButton, sending && styles.buttonDisabled]} disabled={sending} onPress={() => onStatusChange(ticket.id, "preparing")}>
-                    <Text style={styles.secondaryButtonText}>Start</Text>
-                  </Pressable>
-                ) : null}
-                {ticket.status !== "ready" ? (
-                  <Pressable style={[styles.primaryButton, styles.kotActionButton, sending && styles.buttonDisabled]} disabled={sending} onPress={() => onStatusChange(ticket.id, "ready")}>
-                    <Text style={styles.primaryButtonText}>Ready</Text>
-                  </Pressable>
-                ) : (
-                  <Pressable style={[styles.primaryButton, styles.kotActionButton, sending && styles.buttonDisabled]} disabled={sending} onPress={() => onStatusChange(ticket.id, "served")}>
-                    <Text style={styles.primaryButtonText}>Served</Text>
-                  </Pressable>
-                )}
-              </View>
-            </View>
-          ))}
+            );
+          })}
         </View>
       )}
     </View>
@@ -1419,15 +1456,52 @@ function MenuItemRow({
       <View style={activeVariants.length > 1 ? styles.variantStack : styles.menuPriceBlock}>
         {activeVariants.length === 0 ? (
           <Text style={styles.muted}>Unavailable</Text>
+        ) : activeVariants.length === 1 ? (
+          (() => { const v = activeVariants[0]!; return (
+          <View style={{ alignItems: "flex-end", gap: 6 }}>
+            <Text style={styles.price}>Rs {formatRupees(v.price_paise)}</Text>
+            <Pressable style={styles.addButton} onPress={() => onAddItem(menuItem.id, v.id || undefined)}>
+              <Text style={styles.addButtonText}>Add</Text>
+            </Pressable>
+          </View>); })()
         ) : (
           activeVariants.map((variant) => (
-            <Pressable key={variant.id || menuItem.id} style={activeVariants.length > 1 ? styles.variantChip : undefined} onPress={() => onAddItem(menuItem.id, variant.id || undefined)}>
+            <Pressable key={variant.id || menuItem.id} style={styles.variantChip} onPress={() => onAddItem(menuItem.id, variant.id || undefined)}>
               <Text style={styles.price}>{variant.kind === "default" ? "" : `${variant.label} `}Rs {formatRupees(variant.price_paise)}</Text>
-              <Text style={styles.addText}>Add</Text>
+              <Text style={styles.addIndicator}>+</Text>
             </Pressable>
           ))
         )}
       </View>
+    </View>
+  );
+}
+
+function CollapsibleSection({
+  title,
+  subtitle,
+  expanded,
+  onToggle,
+  accentColor,
+  children
+}: {
+  title: string;
+  subtitle?: string;
+  expanded: boolean;
+  onToggle: () => void;
+  accentColor?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <View style={[styles.collapsibleWrap, accentColor ? { borderLeftWidth: 4, borderLeftColor: accentColor } : undefined]}>
+      <Pressable style={[styles.collapsibleHeader, expanded && styles.collapsibleHeaderExpanded]} onPress={onToggle}>
+        <View style={styles.flexText}>
+          <Text style={styles.collapsibleTitle}>{title}</Text>
+          {subtitle ? <Text style={styles.muted}>{subtitle}</Text> : null}
+        </View>
+        <Text style={styles.collapsibleChevron}>{expanded ? "\u25BC" : "\u25B6"}</Text>
+      </Pressable>
+      {expanded ? <View style={styles.collapsibleBody}>{children}</View> : null}
     </View>
   );
 }
@@ -1505,6 +1579,15 @@ function TicketScreen({
   const shiftTargets = tables.filter((table) => table.id !== selectedTableId && getTableDisplayState(table) !== "disabled");
   const sentCount = sentItems.reduce((total, item) => total + item.quantity, 0);
   const newCount = items.reduce((total, item) => total + item.quantity, 0);
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(["new"]));
+  const toggleSection = (id: string) => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setExpandedSections((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
   return (
     <View style={styles.panel}>
       <View style={styles.cardHeader}>
@@ -1515,32 +1598,38 @@ function TicketScreen({
         <Text style={styles.totalText}>Rs {formatRupees(tableTotal)}</Text>
       </View>
 
-      <View style={styles.serviceStats}>
-        <View style={styles.serviceStat}>
-          <Text style={styles.inputLabel}>New</Text>
-          <Text style={styles.serviceStatValue}>{newCount}</Text>
-        </View>
-        <View style={styles.serviceStat}>
-          <Text style={styles.inputLabel}>Sent</Text>
-          <Text style={styles.serviceStatValue}>{sentCount}</Text>
-        </View>
-        <View style={styles.serviceStatWide}>
-          <Text style={styles.inputLabel}>Table Total</Text>
-          <Text style={styles.serviceStatValue}>Rs {formatRupees(tableTotal)}</Text>
-        </View>
+      <View style={styles.totalStrip}>
+        <Text style={styles.totalLabel}>New Rs {formatRupees(draftTotal)}</Text>
+        <Text style={styles.totalLabel}>Table Rs {formatRupees(tableTotal)}</Text>
       </View>
 
-      <View style={styles.formStack}>
-        <Text style={styles.smallMuted}>Device: {deviceName || "paired waiter phone"}</Text>
-        <UncontrolledInput
-          inputKey={`pax-${selectedTableName ?? "none"}`}
-          label="Pax"
-          defaultValue={pax}
-          onChangeText={onPaxChange}
-          keyboardType="number-pad"
-          returnKeyType="done"
-        />
-      </View>
+      <CollapsibleSection title="Service Stats" subtitle={`Pax / ${deviceName || "device"}`} expanded={expandedSections.has("stats")} onToggle={() => toggleSection("stats")}>
+        <View style={styles.serviceStats}>
+          <View style={styles.serviceStat}>
+            <Text style={styles.inputLabel}>New</Text>
+            <Text style={styles.serviceStatValue}>{newCount}</Text>
+          </View>
+          <View style={styles.serviceStat}>
+            <Text style={styles.inputLabel}>Sent</Text>
+            <Text style={styles.serviceStatValue}>{sentCount}</Text>
+          </View>
+          <View style={styles.serviceStatWide}>
+            <Text style={styles.inputLabel}>Table Total</Text>
+            <Text style={styles.serviceStatValue}>Rs {formatRupees(tableTotal)}</Text>
+          </View>
+        </View>
+        <View style={styles.formStack}>
+          <Text style={styles.smallMuted}>Device: {deviceName || "paired waiter phone"}</Text>
+          <UncontrolledInput
+            inputKey={`pax-${selectedTableName ?? "none"}`}
+            label="Pax"
+            defaultValue={pax}
+            onChangeText={onPaxChange}
+            keyboardType="number-pad"
+            returnKeyType="done"
+          />
+        </View>
+      </CollapsibleSection>
 
       <View style={styles.actionSection}>
         <View style={styles.sectionHeaderRow}>
@@ -1560,101 +1649,99 @@ function TicketScreen({
         </View>
       </View>
 
-      <Text style={styles.subhead}>New Items</Text>
-      {items.length === 0 ? (
-        <EmptyState title="No new dishes" text="Add dishes from the menu. Sent items stay below." compact />
-      ) : (
-        <View style={styles.ticketList}>
-          {items.map((item, index) => {
-            const menuItem = menuItems.find((entry) => entry.id === item.menuItemId);
-            const variant = findMenuVariant(menuItem, item.menuItemVariantId);
-            const lineName = `${menuItem?.name ?? item.menuItemId}${variant && variant.kind !== "default" ? ` ${variant.label}` : ""}`;
-            const unitPrice = variant?.price_paise ?? menuItem?.price_paise ?? 0;
-            return (
-              <View key={`${item.menuItemId}-${item.menuItemVariantId ?? "default"}-${index}`} style={styles.ticketLine}>
-                <View style={styles.ticketText}>
-                  <Text style={styles.ticketName} numberOfLines={2}>{lineName}</Text>
-                  <Text style={styles.muted}>Rs {formatRupees(unitPrice * item.quantity)}</Text>
-                </View>
-                <View style={styles.qtyControls}>
-                  <Pressable style={styles.qtyButton} onPress={() => onChangeQty(index, -1)}>
-                    <Text style={styles.qtyText}>-</Text>
-                  </Pressable>
-                  <Text style={styles.qtyValue}>{item.quantity}</Text>
-                  <Pressable style={styles.qtyButton} onPress={() => onChangeQty(index, 1)}>
-                    <Text style={styles.qtyText}>+</Text>
-                  </Pressable>
-                </View>
-              </View>
-            );
-          })}
-        </View>
-      )}
-
-      <Text style={styles.subhead}>Already Sent</Text>
-      {sentItems.length === 0 ? (
-        <Text style={styles.smallMuted}>Nothing has been sent for this table yet.</Text>
-      ) : (
-        <View style={styles.sentList}>
-          {sentItems.map((item) => (
-            <View key={item.id} style={styles.sentLine}>
-              <Text style={styles.sentName} numberOfLines={2}>{item.quantity} x {item.name_snapshot}</Text>
-              <Text style={styles.muted}>Rs {formatRupees(item.unit_price_paise * item.quantity)}</Text>
-            </View>
-          ))}
-          {canBill ? (
-            <View style={[styles.actionSection, styles.cancelPanel]}>
-              <View>
-                <Text style={styles.actionTitle}>Cancel Sent Item</Text>
-                <Text style={styles.actionMeta}>Manager PIN required. Cancellation ticket prints.</Text>
-              </View>
-              <TextInput
-                style={styles.input}
-                value={cancelPin}
-                onChangeText={setCancelPin}
-                secureTextEntry
-                keyboardType="number-pad"
-                placeholder="Manager PIN"
-              />
-              <TextInput
-                style={styles.input}
-                value={cancelReason}
-                onChangeText={setCancelReason}
-                placeholder="Cancellation reason"
-              />
-              {sentItems.map((item) => {
-                const quantityText = cancelQty[item.id] ?? "1";
-                const quantity = Math.min(item.quantity, Math.max(1, Number(quantityText.replace(/\D/g, "") || 1)));
-                return (
-                  <View key={`cancel-${item.id}`} style={styles.itemShiftRow}>
-                    <Text style={styles.sentName} numberOfLines={2}>{item.name_snapshot}</Text>
-                    <TextInput
-                      style={styles.shiftQtyInput}
-                      value={quantityText}
-                      onChangeText={(value) => setCancelQty((current) => ({ ...current, [item.id]: value.replace(/\D/g, "").slice(0, 3) }))}
-                      keyboardType="number-pad"
-                    />
-                    <Pressable
-                      style={[styles.dangerSmallButton, sending && styles.buttonDisabled]}
-                      disabled={sending}
-                      onPress={() => onCancelSentItem(item.id, quantity, cancelPin, cancelReason)}
-                    >
-                      <Text style={styles.dangerSmallButtonText}>Cancel</Text>
+      <CollapsibleSection title={`New Items (${newCount})`} subtitle={newCount > 0 ? `Rs ${formatRupees(draftTotal)}` : undefined} expanded={expandedSections.has("new")} onToggle={() => toggleSection("new")} accentColor={newCount > 0 ? palette.green : undefined}>
+        {items.length === 0 ? (
+          <EmptyState title="No new dishes" text="Add dishes from the menu. Sent items stay below." compact />
+        ) : (
+          <View style={styles.ticketList}>
+            {items.map((item, index) => {
+              const menuItem = menuItems.find((entry) => entry.id === item.menuItemId);
+              const variant = findMenuVariant(menuItem, item.menuItemVariantId);
+              const lineName = `${menuItem?.name ?? item.menuItemId}${variant && variant.kind !== "default" ? ` ${variant.label}` : ""}`;
+              const unitPrice = variant?.price_paise ?? menuItem?.price_paise ?? 0;
+              return (
+                <View key={`${item.menuItemId}-${item.menuItemVariantId ?? "default"}-${index}`} style={styles.ticketLine}>
+                  <View style={styles.ticketText}>
+                    <Text style={styles.ticketName} numberOfLines={2}>{lineName}</Text>
+                    <Text style={styles.muted}>Rs {formatRupees(unitPrice * item.quantity)}</Text>
+                  </View>
+                  <View style={styles.qtyControls}>
+                    <Pressable style={styles.qtyButton} onPress={() => onChangeQty(index, -1)}>
+                      <Text style={styles.qtyText}>-</Text>
+                    </Pressable>
+                    <Text style={styles.qtyValue}>{item.quantity}</Text>
+                    <Pressable style={styles.qtyButton} onPress={() => onChangeQty(index, 1)}>
+                      <Text style={styles.qtyText}>+</Text>
                     </Pressable>
                   </View>
-                );
-              })}
+                </View>
+              );
+            })}
+          </View>
+        )}
+      </CollapsibleSection>
+
+      <CollapsibleSection title={`Already Sent (${sentCount})`} subtitle={sentCount > 0 ? `Rs ${formatRupees(sentItems.reduce((t, i) => t + i.unit_price_paise * i.quantity, 0))}` : undefined} expanded={expandedSections.has("sent")} onToggle={() => toggleSection("sent")} accentColor={sentCount > 0 ? palette.amber : undefined}>
+        {sentItems.length === 0 ? (
+          <Text style={styles.smallMuted}>Nothing has been sent for this table yet.</Text>
+        ) : (
+          <View style={styles.sentList}>
+            {sentItems.map((item) => (
+              <View key={item.id} style={styles.sentLine}>
+                <Text style={styles.sentName} numberOfLines={2}>{item.quantity} x {item.name_snapshot}</Text>
+                <Text style={styles.muted}>Rs {formatRupees(item.unit_price_paise * item.quantity)}</Text>
+              </View>
+            ))}
+          </View>
+        )}
+        {canBill && sentItems.length > 0 ? (
+          <View style={[styles.actionSection, styles.cancelPanel]}>
+            <View>
+              <Text style={styles.actionTitle}>Cancel Sent Item</Text>
+              <Text style={styles.actionMeta}>Manager PIN required. Cancellation ticket prints.</Text>
             </View>
-          ) : null}
-        </View>
-      )}
+            <TextInput
+              style={styles.input}
+              value={cancelPin}
+              onChangeText={setCancelPin}
+              secureTextEntry
+              keyboardType="number-pad"
+              placeholder="Manager PIN"
+            />
+            <TextInput
+              style={styles.input}
+              value={cancelReason}
+              onChangeText={setCancelReason}
+              placeholder="Cancellation reason"
+            />
+            {sentItems.map((item) => {
+              const quantityText = cancelQty[item.id] ?? "1";
+              const quantity = Math.min(item.quantity, Math.max(1, Number(quantityText.replace(/\D/g, "") || 1)));
+              return (
+                <View key={`cancel-${item.id}`} style={styles.itemShiftRow}>
+                  <Text style={styles.sentName} numberOfLines={2}>{item.name_snapshot}</Text>
+                  <TextInput
+                    style={styles.shiftQtyInput}
+                    value={quantityText}
+                    onChangeText={(value) => setCancelQty((current) => ({ ...current, [item.id]: value.replace(/\D/g, "").slice(0, 3) }))}
+                    keyboardType="number-pad"
+                  />
+                  <Pressable
+                    style={[styles.dangerSmallButton, sending && styles.buttonDisabled]}
+                    disabled={sending}
+                    onPress={() => onCancelSentItem(item.id, quantity, cancelPin, cancelReason)}
+                  >
+                    <Text style={styles.dangerSmallButtonText}>Cancel</Text>
+                  </Pressable>
+                </View>
+              );
+            })}
+          </View>
+        ) : null}
+      </CollapsibleSection>
 
       {selectedTableId && sentItems.length > 0 && canShift ? (
-        <View style={styles.actionSection}>
-          <View>
-            <Text style={styles.actionTitle}>Shift Table Or Items</Text>
-            <Text style={styles.actionMeta}>Captain-only movement tools</Text>
-          </View>
+        <CollapsibleSection title="Shift Table Or Items" subtitle="Captain-only movement tools" expanded={expandedSections.has("shift")} onToggle={() => toggleSection("shift")} accentColor={palette.blueBill}>
           {shiftTargets.length === 0 ? (
             <Text style={styles.smallMuted}>No other active table is available for transfer.</Text>
           ) : (
@@ -1704,28 +1791,28 @@ function TicketScreen({
               })}
             </>
           )}
-        </View>
+        </CollapsibleSection>
       ) : selectedTableId && sentItems.length > 0 ? (
         <Text style={styles.smallMuted}>Only captain devices can shift tables or items.</Text>
       ) : null}
 
-      <View style={styles.totalStrip}>
-        <Text style={styles.totalLabel}>New Rs {formatRupees(draftTotal)}</Text>
-        <Text style={styles.totalLabel}>Table Rs {formatRupees(tableTotal)}</Text>
-      </View>
-      <CaptainBillingPanel
-        canBill={canBill}
-        currentOrder={currentOrder}
-        currentSummary={currentSummary}
-        hasNewItems={items.length > 0}
-        sending={sending}
-        onGenerateBill={onGenerateBill}
-        onPrintBill={onPrintBill}
-        onReprintBill={onReprintBill}
-        onMarkNc={onMarkNc}
-        onReviseBill={onReviseBill}
-        onSettleBill={onSettleBill}
-      />
+      {canBill ? (
+        <CollapsibleSection title="Captain Billing" subtitle="Bill, pay, print, NC, revise" expanded={expandedSections.has("billing")} onToggle={() => toggleSection("billing")} accentColor={palette.greenBold}>
+          <CaptainBillingPanel
+            canBill={canBill}
+            currentOrder={currentOrder}
+            currentSummary={currentSummary}
+            hasNewItems={items.length > 0}
+            sending={sending}
+            onGenerateBill={onGenerateBill}
+            onPrintBill={onPrintBill}
+            onReprintBill={onReprintBill}
+            onMarkNc={onMarkNc}
+            onReviseBill={onReviseBill}
+            onSettleBill={onSettleBill}
+          />
+        </CollapsibleSection>
+      ) : null}
     </View>
   );
 }
@@ -1815,7 +1902,7 @@ function CaptainBillingPanel({
   };
 
   return (
-    <View style={[styles.actionSection, styles.billingPanel]}>
+    <View style={{ gap: 12 }}>
       <View>
         <Text style={styles.actionTitle}>Captain Actions</Text>
         <Text style={styles.actionMeta}>Billing, print, payment, NC, reprint, and revise</Text>
@@ -1842,7 +1929,37 @@ function CaptainBillingPanel({
             <Text style={styles.sentName}>Bill {bill.revision_number ? `rev ${bill.revision_number}` : ""}</Text>
             <Text style={styles.muted}>Items Rs {formatRupees(bill.total_paise)}</Text>
             <Text style={styles.muted}>Already paid Rs {formatRupees(existingPaidPaise)}</Text>
-            <Text style={styles.totalText}>Balance Rs {formatRupees(balancePaise)}</Text>
+            <Text style={[styles.totalText, { fontSize: 20 }]}>Balance Rs {formatRupees(balancePaise)}</Text>
+          </View>
+
+          <View style={styles.buttonStack}>
+            <Pressable
+              style={[styles.primaryButton, styles.heroSendButton, !canPunch && styles.buttonDisabled]}
+              disabled={!canPunch}
+              onPress={() =>
+                onSettleBill({
+                  discountType,
+                  discountValue: discountType === "percent" ? rawDiscount : discountPaise,
+                  tipPaise,
+                  payments: (["cash", "upi", "card", "online"] as PaymentMethod[])
+                    .map((method) => ({ method, amountPaise: amountInputToPaise(paymentInputs[method]), reference: reference.trim() || undefined }))
+                    .filter((payment) => payment.amountPaise > 0)
+                })
+              }
+            >
+              <Text style={styles.primaryButtonText}>Punch Bill</Text>
+            </Pressable>
+            <Pressable style={[styles.secondaryButton, sending && styles.buttonDisabled]} disabled={sending} onPress={onPrintBill}>
+              <Text style={styles.secondaryButtonText}>Print Bill</Text>
+            </Pressable>
+          </View>
+
+          <View style={styles.quickPayGrid}>
+            {(["cash", "upi", "card", "online"] as PaymentMethod[]).map((method) => (
+              <Pressable key={method} style={styles.quickPayButton} onPress={() => fillFullPayment(method)}>
+                <Text style={styles.quickPayText}>Full {method.toUpperCase()}</Text>
+              </Pressable>
+            ))}
           </View>
 
           <View style={styles.segmentedRow}>
@@ -1857,14 +1974,6 @@ function CaptainBillingPanel({
           <View style={styles.paymentGrid}>
             <LabeledMoneyInput label="Discount" value={discountValue} onChange={setDiscountValue} />
             <LabeledMoneyInput label="Tip" value={tipValue} onChange={setTipValue} />
-          </View>
-
-          <View style={styles.quickPayGrid}>
-            {(["cash", "upi", "card", "online"] as PaymentMethod[]).map((method) => (
-              <Pressable key={method} style={styles.quickPayButton} onPress={() => fillFullPayment(method)}>
-                <Text style={styles.quickPayText}>Full {method.toUpperCase()}</Text>
-              </Pressable>
-            ))}
           </View>
 
           <View style={styles.paymentGrid}>
@@ -1888,27 +1997,6 @@ function CaptainBillingPanel({
           <Text style={[styles.smallMuted, remainingPaise < 0 && styles.dangerText]}>
             {remainingPaise === 0 ? "Payment covers the bill." : remainingPaise > 0 ? `Still pending Rs ${formatRupees(remainingPaise)}` : `Over by Rs ${formatRupees(Math.abs(remainingPaise))}`}
           </Text>
-          <View style={styles.buttonStack}>
-            <Pressable
-              style={[styles.primaryButton, !canPunch && styles.buttonDisabled]}
-              disabled={!canPunch}
-              onPress={() =>
-                onSettleBill({
-                  discountType,
-                  discountValue: discountType === "percent" ? rawDiscount : discountPaise,
-                  tipPaise,
-                  payments: (["cash", "upi", "card", "online"] as PaymentMethod[])
-                    .map((method) => ({ method, amountPaise: amountInputToPaise(paymentInputs[method]), reference: reference.trim() || undefined }))
-                    .filter((payment) => payment.amountPaise > 0)
-                })
-              }
-            >
-              <Text style={styles.primaryButtonText}>Punch Bill</Text>
-            </Pressable>
-            <Pressable style={[styles.secondaryButton, sending && styles.buttonDisabled]} disabled={sending} onPress={onPrintBill}>
-              <Text style={styles.secondaryButtonText}>Print Bill</Text>
-            </Pressable>
-          </View>
 
           <View style={styles.quickPayGrid}>
             <Pressable style={[styles.secondaryButton, approvalAction === "reprint" && styles.approvalActionActive, sending && styles.buttonDisabled]} disabled={sending} onPress={() => selectApprovalAction("reprint")}>
@@ -1985,16 +2073,25 @@ function LabeledMoneyInput({ label, value, onChange }: { label: string; value: s
 }
 
 function DraftBar({ count, total, onReview }: { count: number; total: number; onReview: () => void }) {
+  const slideAnim = useRef(new Animated.Value(100)).current;
+  useEffect(() => {
+    Animated.spring(slideAnim, { toValue: 0, useNativeDriver: true, tension: 60, friction: 9 }).start();
+  }, [slideAnim]);
   return (
-    <View style={styles.draftBar}>
-      <View>
-        <Text style={styles.draftBarTitle}>{count} new item{count === 1 ? "" : "s"}</Text>
-        <Text style={styles.draftBarMeta}>Rs {formatRupees(total)} ready to review</Text>
+    <Animated.View style={[styles.draftBar, { transform: [{ translateY: slideAnim }] }]}>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1 }}>
+        <View style={styles.draftBarBadge}>
+          <Text style={styles.draftBarBadgeText}>{count > 99 ? "99" : String(count)}</Text>
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.draftBarTitle}>{count} new item{count === 1 ? "" : "s"}</Text>
+          <Text style={styles.draftBarMeta}>Rs {formatRupees(total)} ready to review</Text>
+        </View>
       </View>
       <Pressable style={styles.draftBarButton} onPress={onReview}>
         <Text style={styles.draftBarButtonText}>Review</Text>
       </Pressable>
-    </View>
+    </Animated.View>
   );
 }
 
@@ -2125,17 +2222,24 @@ function formatRupees(paise: number) {
 }
 
 const palette = {
-  ink: "#191815",
-  muted: "#6f675d",
+  ink: "#15130f",
+  muted: "#78716a",
   paper: "#fffdf8",
-  wash: "#f2ecdf",
+  wash: "#f0ead9",
   line: "#d8cebd",
   green: "#14665d",
   greenSoft: "#e5f3ed",
+  greenBold: "#0d5248",
   amber: "#986022",
   amberSoft: "#fff0d6",
+  amberBold: "#7a4d18",
   red: "#a83a2f",
-  redSoft: "#fff0ed"
+  redSoft: "#fff0ed",
+  surfaceElevated: "#ffffff",
+  shadow: "rgba(21,19,15,0.08)",
+  shadowMedium: "rgba(21,19,15,0.14)",
+  blueBill: "#1c5faa",
+  blueBillSoft: "#e8f1fc"
 };
 
 const androidStatusBarTopInset = getAndroidStatusBarTopInset(Platform.OS, StatusBar.currentHeight);
@@ -2151,51 +2255,63 @@ const styles = StyleSheet.create({
   onboardingContent: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 34, gap: 12 },
   header: {
     paddingHorizontal: 16,
-    paddingTop: 10,
-    paddingBottom: 10,
+    paddingTop: 14,
+    paddingBottom: 12,
     backgroundColor: palette.paper,
-    borderBottomWidth: 1,
-    borderColor: palette.line,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    gap: 10
+    gap: 10,
+    zIndex: 10,
+    shadowColor: palette.shadow,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 8,
+    shadowOpacity: 1,
+    elevation: 4
   },
   headerText: { flex: 1, minWidth: 0 },
   headerActions: { alignItems: "flex-end", gap: 6 },
   flexText: { flex: 1, minWidth: 0 },
-  kicker: { color: palette.green, fontWeight: "800", fontSize: 11, textTransform: "uppercase", letterSpacing: 0 },
-  title: { fontSize: 22, fontWeight: "900", color: palette.ink, lineHeight: 27 },
-  heroTitle: { color: palette.ink, fontSize: 25, fontWeight: "900", lineHeight: 31 },
+  kicker: { color: palette.greenBold, fontWeight: "800", fontSize: 13, textTransform: "uppercase", letterSpacing: 0.4 },
+  title: { fontSize: 24, fontWeight: "900", color: palette.ink, lineHeight: 30 },
+  heroTitle: { color: palette.ink, fontSize: 28, fontWeight: "900", lineHeight: 34 },
   heroCopy: { color: palette.muted, fontSize: 14, lineHeight: 21 },
-  muted: { color: palette.muted, fontSize: 12, lineHeight: 17 },
-  smallMuted: { color: palette.muted, fontSize: 12, lineHeight: 18, paddingVertical: 4 },
+  muted: { color: palette.muted, fontSize: 12, fontWeight: "700", lineHeight: 18 },
+  smallMuted: { color: palette.muted, fontSize: 12, fontWeight: "700", lineHeight: 18, paddingVertical: 4 },
   heroPanel: {
-    borderRadius: 10,
+    borderRadius: 12,
     backgroundColor: palette.paper,
-    borderWidth: 1,
-    borderColor: palette.line,
-    padding: 16,
-    gap: 7
+    borderWidth: 0,
+    padding: 18,
+    gap: 7,
+    shadowColor: palette.shadow,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 8,
+    shadowOpacity: 1,
+    elevation: 3
   },
   stepCard: {
-    padding: 14,
+    padding: 18,
     gap: 12,
     backgroundColor: palette.paper,
-    borderWidth: 1,
-    borderColor: palette.line,
-    borderRadius: 10
+    borderWidth: 0,
+    borderRadius: 12,
+    shadowColor: palette.shadow,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 8,
+    shadowOpacity: 1,
+    elevation: 3
   },
   stepHeader: { flexDirection: "row", alignItems: "center", gap: 10 },
   stepCircle: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: palette.ink,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: palette.greenBold,
     alignItems: "center",
     justifyContent: "center"
   },
-  stepCircleText: { color: "#fffdfa", fontWeight: "900" },
+  stepCircleText: { color: "#fffdfa", fontWeight: "900", fontSize: 16 },
   banner: {
     borderWidth: 1,
     borderColor: palette.line,
@@ -2207,15 +2323,16 @@ const styles = StyleSheet.create({
   bannerWarning: { borderColor: "#e4c17d", backgroundColor: palette.amberSoft },
   bannerText: { color: palette.ink, fontWeight: "800", lineHeight: 20 },
   bannerMeta: { color: palette.green, fontSize: 12, fontWeight: "800" },
-  dot: { width: 10, height: 10, borderRadius: 5 },
+  dot: { width: 12, height: 12, borderRadius: 6 },
   online: { backgroundColor: palette.green },
   offline: { backgroundColor: palette.red },
   checking: { backgroundColor: palette.amber },
   statusPill: {
-    minHeight: 30,
+    minHeight: 34,
     borderRadius: 999,
     borderWidth: 1,
-    paddingHorizontal: 9,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
     flexDirection: "row",
     alignItems: "center",
     gap: 6
@@ -2223,18 +2340,18 @@ const styles = StyleSheet.create({
   status_online: { borderColor: "#a7cbc3", backgroundColor: palette.greenSoft },
   status_offline: { borderColor: "#e4b1a6", backgroundColor: palette.redSoft },
   status_checking: { borderColor: "#ead4a9", backgroundColor: palette.amberSoft },
-  statusText: { color: palette.ink, fontWeight: "800", fontSize: 11 },
+  statusText: { color: palette.ink, fontWeight: "800", fontSize: 13 },
   iconButton: {
-    minHeight: 32,
+    minHeight: 40,
     borderRadius: 8,
     borderWidth: 1,
     borderColor: palette.line,
-    paddingHorizontal: 10,
+    paddingHorizontal: 14,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: palette.paper
+    backgroundColor: palette.wash
   },
-  iconButtonText: { color: palette.ink, fontWeight: "800", fontSize: 11 },
+  iconButtonText: { color: palette.ink, fontWeight: "800", fontSize: 13 },
   cardHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10 },
   sectionTitle: { fontSize: 18, fontWeight: "900", color: palette.ink },
   serviceStats: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
@@ -2260,7 +2377,7 @@ const styles = StyleSheet.create({
   },
   serviceStatValue: { color: palette.ink, fontSize: 18, fontWeight: "900" },
   inputGroup: { gap: 5 },
-  inputLabel: { color: palette.muted, fontSize: 11, fontWeight: "800", textTransform: "uppercase", letterSpacing: 0 },
+  inputLabel: { color: palette.muted, fontSize: 13, fontWeight: "800", textTransform: "uppercase", letterSpacing: 0.2 },
   input: {
     minHeight: 48,
     borderWidth: 1,
@@ -2278,8 +2395,8 @@ const styles = StyleSheet.create({
   },
   buttonStack: { gap: 8 },
   primaryButton: {
-    minHeight: 48,
-    borderRadius: 9,
+    minHeight: 52,
+    borderRadius: 10,
     backgroundColor: palette.ink,
     alignItems: "center",
     justifyContent: "center",
@@ -2287,8 +2404,8 @@ const styles = StyleSheet.create({
   },
   primaryButtonText: { color: "#fffdfa", fontWeight: "900" },
   secondaryButton: {
-    minHeight: 48,
-    borderRadius: 9,
+    minHeight: 52,
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: palette.ink,
     alignItems: "center",
@@ -2300,27 +2417,40 @@ const styles = StyleSheet.create({
   approvalActionActive: { backgroundColor: "#efe7d8", borderColor: palette.green },
   approvalDangerActive: { backgroundColor: "#9b2116" },
   scanButton: {
-    minHeight: 62,
-    borderRadius: 10,
+    minHeight: 68,
+    borderRadius: 14,
     backgroundColor: palette.green,
     alignItems: "center",
     justifyContent: "center",
     gap: 3
   },
-  scanButtonText: { color: "#fffdfa", fontSize: 17, fontWeight: "900" },
+  scanButtonText: { color: "#fffdfa", fontSize: 19, fontWeight: "900" },
   scanButtonMeta: { color: "#d6f1e9", fontSize: 12, fontWeight: "800" },
   modeTabs: {
     flexDirection: "row",
-    padding: 4,
-    borderRadius: 10,
+    padding: 5,
+    borderRadius: 12,
     backgroundColor: "#e6ded0",
     borderWidth: 1,
     borderColor: palette.line
   },
-  modeTab: { flex: 1, minHeight: 42, alignItems: "center", justifyContent: "center", borderRadius: 8 },
-  modeTabActive: { backgroundColor: palette.ink },
-  modeTabText: { color: palette.ink, fontWeight: "900" },
+  modeTab: { flex: 1, minHeight: 50, alignItems: "center", justifyContent: "center", borderRadius: 9, position: "relative" as const },
+  modeTabActive: { backgroundColor: palette.ink, shadowColor: "rgba(0,0,0,0.15)", shadowOffset: { width: 0, height: 1 }, shadowRadius: 3, elevation: 2 },
+  modeTabText: { color: palette.ink, fontWeight: "900", fontSize: 15 },
   modeTabTextActive: { color: "#fffdfa" },
+  modeBadge: {
+    position: "absolute" as const,
+    top: -2,
+    right: -2,
+    minWidth: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: palette.green,
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
+    paddingHorizontal: 4
+  },
+  modeBadgeText: { color: "#fffdfa", fontSize: 11, fontWeight: "900" },
   workArea: { gap: 12 },
   workAreaMenuOnly: { flex: 1 },
   workAreaWide: { flexDirection: "row", alignItems: "flex-start" },
@@ -2334,68 +2464,82 @@ const styles = StyleSheet.create({
   },
   menuPanel: { flex: 1 },
   virtualMenuPanel: { padding: 0, overflow: "hidden" },
-  tableGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
+  tableGrid: { flexDirection: "row", flexWrap: "wrap", gap: 12 },
   tableTile: {
-    minHeight: 82,
-    padding: 12,
-    borderWidth: 2,
-    borderColor: "#a8cdbf",
-    borderRadius: 10,
-    backgroundColor: "#f5fff9",
-    justifyContent: "space-between"
+    minHeight: 100,
+    padding: 14,
+    borderWidth: 0,
+    borderLeftWidth: 5,
+    borderColor: palette.green,
+    borderRadius: 12,
+    backgroundColor: palette.surfaceElevated,
+    justifyContent: "space-between",
+    shadowColor: palette.shadow,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 6,
+    shadowOpacity: 1,
+    elevation: 3
   },
-  busyTable: { borderColor: "#d08a4d", backgroundColor: palette.amberSoft },
-  billedTable: { borderColor: "#78a6dd", backgroundColor: "#eef6ff" },
-  selectedTable: { borderColor: palette.green, backgroundColor: palette.greenSoft },
-  tableName: { fontSize: 21, fontWeight: "900", color: palette.ink },
-  tableStatus: { color: palette.green, fontWeight: "900", fontSize: 12 },
-  tableStatusBusy: { color: palette.amber },
-  tableStatusBilled: { color: "#2867b2" },
+  busyTable: { borderColor: palette.amberBold, backgroundColor: palette.amberSoft },
+  billedTable: { borderColor: palette.blueBill, backgroundColor: palette.blueBillSoft },
+  selectedTable: { borderColor: palette.greenBold, backgroundColor: palette.greenSoft, shadowRadius: 10, elevation: 5 },
+  tableName: { fontSize: 24, fontWeight: "900", color: palette.ink },
+  tableStatus: { color: palette.green, fontWeight: "900", fontSize: 14 },
+  tableStatusBusy: { color: palette.amberBold },
+  tableStatusBilled: { color: palette.blueBill },
   kitchenPanel: { gap: 14 },
   kotList: { gap: 10 },
   kotCard: {
-    borderWidth: 1,
-    borderColor: "#e5dccd",
+    borderWidth: 0,
+    borderLeftWidth: 4,
+    borderColor: palette.amber,
     borderRadius: 12,
-    backgroundColor: "#fffaf1",
-    padding: 12,
-    gap: 12
+    backgroundColor: palette.amberSoft,
+    padding: 16,
+    gap: 12,
+    shadowColor: palette.shadow,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 8,
+    shadowOpacity: 1,
+    elevation: 3
   },
-  kotCardReady: { borderColor: "#a7cbc3", backgroundColor: palette.greenSoft },
+  kotCardPreparing: { borderColor: palette.green, backgroundColor: palette.greenSoft },
+  kotCardReady: { borderColor: palette.greenBold, backgroundColor: "#c8eadc" },
+  kotCardServed: { borderColor: palette.line, backgroundColor: "#f5f2ec", opacity: 0.7 },
   kotHeader: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: 10 },
-  kotTable: { color: palette.ink, fontSize: 22, fontWeight: "900", lineHeight: 27 },
+  kotTable: { color: palette.ink, fontSize: 26, fontWeight: "900", lineHeight: 32 },
   kotStatusPill: {
-    minHeight: 30,
+    minHeight: 34,
     borderRadius: 999,
     borderWidth: 1,
     borderColor: "#d8cdbb",
     backgroundColor: palette.paper,
-    paddingHorizontal: 10,
+    paddingHorizontal: 12,
     alignItems: "center",
     justifyContent: "center"
   },
-  kotStatusReady: { borderColor: "#a7cbc3", backgroundColor: "#fff" },
-  kotStatusText: { color: palette.muted, fontSize: 11, fontWeight: "900", textTransform: "uppercase" },
-  kotStatusTextReady: { color: palette.green },
+  kotStatusReady: { borderColor: palette.greenBold, backgroundColor: palette.greenSoft },
+  kotStatusText: { color: palette.muted, fontSize: 13, fontWeight: "900", textTransform: "uppercase" },
+  kotStatusTextReady: { color: palette.greenBold },
   kotItems: { gap: 8 },
   kotItemRow: {
-    minHeight: 42,
-    borderRadius: 9,
-    backgroundColor: "#fffdfa",
+    minHeight: 48,
+    borderRadius: 10,
+    backgroundColor: "rgba(255,255,255,0.7)",
     borderWidth: 1,
-    borderColor: "#ece2d4",
-    paddingHorizontal: 10,
+    borderColor: "rgba(0,0,0,0.06)",
+    paddingHorizontal: 12,
     flexDirection: "row",
     alignItems: "center",
     gap: 10
   },
-  kotQty: { minWidth: 34, color: palette.green, fontSize: 16, fontWeight: "900" },
-  kotItemName: { flex: 1, color: palette.ink, fontSize: 16, fontWeight: "800", lineHeight: 20 },
+  kotQty: { minWidth: 36, color: palette.greenBold, fontSize: 20, fontWeight: "900" },
+  kotItemName: { flex: 1, color: palette.ink, fontSize: 18, fontWeight: "800", lineHeight: 22 },
   kotActions: { flexDirection: "row", gap: 8 },
-  kotActionButton: { flex: 1 },
+  kotActionButton: { flex: 1, minHeight: 54 },
   shiftGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   shiftButton: {
-    minHeight: 42,
+    minHeight: 48,
     minWidth: 76,
     paddingHorizontal: 14,
     borderRadius: 10,
@@ -2418,11 +2562,11 @@ const styles = StyleSheet.create({
     gap: 10
   },
   sectionHeaderRow: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: 10 },
-  actionTitle: { color: palette.ink, fontSize: 16, fontWeight: "900", lineHeight: 20 },
+  actionTitle: { color: palette.ink, fontSize: 17, fontWeight: "900", lineHeight: 22 },
   actionMeta: { color: palette.muted, fontSize: 12, fontWeight: "700", lineHeight: 17 },
   actionAmount: { color: palette.green, fontSize: 16, fontWeight: "900" },
   sendButtonRow: { flexDirection: "row", gap: 8 },
-  heroSendButton: { minHeight: 58 },
+  heroSendButton: { minHeight: 62 },
   itemShiftRow: {
     minHeight: 52,
     borderWidth: 1,
@@ -2451,7 +2595,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff3ef"
   },
   dangerSmallButton: {
-    minHeight: 42,
+    minHeight: 48,
     paddingHorizontal: 14,
     borderRadius: 10,
     borderWidth: 1,
@@ -2464,51 +2608,69 @@ const styles = StyleSheet.create({
   totalText: { color: palette.green, fontSize: 19, fontWeight: "900" },
   filterChips: { gap: 8, paddingVertical: 2, paddingRight: 8 },
   filterChip: {
-    minHeight: 36,
+    minHeight: 42,
     borderRadius: 999,
     borderWidth: 1,
     borderColor: "#d8cdbb",
-    paddingHorizontal: 12,
+    paddingHorizontal: 16,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: palette.paper
   },
   filterChipActive: { backgroundColor: palette.ink, borderColor: palette.ink },
-  filterChipText: { color: palette.ink, fontWeight: "900", fontSize: 12 },
+  filterChipText: { color: palette.ink, fontWeight: "900", fontSize: 13 },
   filterChipTextActive: { color: "#fffdfa" },
   virtualMenuList: { padding: 14, gap: 12, paddingBottom: 118 },
   menuSection: { gap: 8 },
-  menuSectionHeader: { paddingTop: 4, paddingBottom: 2, backgroundColor: palette.paper },
+  menuSectionHeader: { paddingTop: 12, paddingBottom: 6, borderBottomWidth: 2, borderBottomColor: palette.line, backgroundColor: palette.paper },
   menuList: { gap: 8 },
   menuItem: {
-    minHeight: 72,
-    padding: 12,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "#e5dccd",
-    backgroundColor: "#fbf6eb",
+    minHeight: 78,
+    padding: 14,
+    borderRadius: 12,
+    borderWidth: 0,
+    backgroundColor: palette.surfaceElevated,
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    gap: 10
+    gap: 10,
+    shadowColor: palette.shadow,
+    shadowOffset: { width: 0, height: 1 },
+    shadowRadius: 4,
+    shadowOpacity: 1,
+    elevation: 2
   },
   menuText: { flex: 1, minWidth: 0 },
-  menuName: { fontSize: 16, fontWeight: "900", color: palette.ink, lineHeight: 20 },
-  menuPriceBlock: { alignItems: "flex-end", gap: 4 },
-  variantStack: { minWidth: 124, gap: 6, alignItems: "stretch" },
+  menuName: { fontSize: 16, fontWeight: "900", color: palette.ink, lineHeight: 20, marginBottom: 2 },
+  menuPriceBlock: { alignItems: "flex-end", gap: 6 },
+  variantStack: { minWidth: 132, gap: 6, alignItems: "stretch" },
   variantChip: {
+    minHeight: 44,
     borderWidth: 1,
     borderColor: "#d8cdbb",
-    borderRadius: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-    alignItems: "flex-end",
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     backgroundColor: "#fffaf0"
   },
-  price: { color: palette.green, fontWeight: "900" },
-  addText: { color: palette.ink, fontSize: 12, fontWeight: "900" },
+  price: { color: palette.greenBold, fontWeight: "900", fontSize: 17 },
+  addButton: {
+    minHeight: 36,
+    minWidth: 52,
+    borderRadius: 8,
+    backgroundColor: palette.ink,
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
+    paddingHorizontal: 12
+  },
+  addButtonText: { color: "#fffdfa", fontSize: 13, fontWeight: "900" },
+  addIndicator: { color: palette.greenBold, fontSize: 18, fontWeight: "900" },
+  addText: { color: palette.ink, fontSize: 14, fontWeight: "900" },
   formStack: { gap: 9 },
-  subhead: { color: palette.ink, fontWeight: "900", fontSize: 13, textTransform: "uppercase", letterSpacing: 0 },
+  subhead: { color: palette.ink, fontWeight: "900", fontSize: 14, textTransform: "uppercase", letterSpacing: 0.2, marginBottom: 4 },
   ticketList: { gap: 8 },
   ticketLine: {
     minHeight: 74,
@@ -2526,9 +2688,9 @@ const styles = StyleSheet.create({
   ticketName: { color: palette.ink, fontWeight: "900", fontSize: 15, lineHeight: 19 },
   qtyControls: { flexDirection: "row", alignItems: "center", gap: 8 },
   qtyButton: {
-    width: 42,
-    height: 42,
-    borderRadius: 9,
+    width: 48,
+    height: 48,
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: "#cfc4b2",
     alignItems: "center",
@@ -2551,7 +2713,9 @@ const styles = StyleSheet.create({
   totalStrip: {
     borderRadius: 10,
     backgroundColor: palette.greenSoft,
-    padding: 10,
+    borderWidth: 2,
+    borderColor: palette.green,
+    padding: 14,
     flexDirection: "row",
     justifyContent: "space-between",
     flexWrap: "wrap",
@@ -2559,7 +2723,7 @@ const styles = StyleSheet.create({
   },
   totalLabel: { color: palette.green, fontWeight: "900" },
   billingPanel: {
-    borderColor: "#b9d4cc",
+    borderColor: palette.greenBold,
     backgroundColor: "#f3fbf6",
     gap: 12
   },
@@ -2569,7 +2733,7 @@ const styles = StyleSheet.create({
     gap: 8
   },
   summaryBox: {
-    minWidth: 128,
+    minWidth: 140,
     flex: 1,
     borderRadius: 10,
     borderWidth: 1,
@@ -2578,7 +2742,7 @@ const styles = StyleSheet.create({
     padding: 10,
     gap: 3
   },
-  summaryValue: { color: palette.ink, fontWeight: "900", fontSize: 15 },
+  summaryValue: { color: palette.ink, fontWeight: "900", fontSize: 17 },
   billTotals: {
     borderRadius: 10,
     borderWidth: 1,
@@ -2594,7 +2758,7 @@ const styles = StyleSheet.create({
     borderColor: "#d8cdbb",
     overflow: "hidden"
   },
-  segmentButton: { flex: 1, minHeight: 42, alignItems: "center", justifyContent: "center", backgroundColor: palette.paper },
+  segmentButton: { flex: 1, minHeight: 48, alignItems: "center", justifyContent: "center", backgroundColor: palette.paper },
   segmentButtonActive: { backgroundColor: palette.ink },
   segmentText: { color: palette.ink, fontWeight: "900" },
   segmentTextActive: { color: "#fffdfa" },
@@ -2610,10 +2774,10 @@ const styles = StyleSheet.create({
     gap: 8
   },
   quickPayButton: {
-    minHeight: 44,
+    minHeight: 50,
     minWidth: 112,
     flexGrow: 1,
-    borderRadius: 9,
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: palette.green,
     backgroundColor: palette.greenSoft,
@@ -2621,7 +2785,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     paddingHorizontal: 10
   },
-  quickPayText: { color: palette.green, fontWeight: "900", fontSize: 12 },
+  quickPayText: { color: palette.greenBold, fontWeight: "900", fontSize: 14 },
   managerBox: {
     borderRadius: 10,
     borderWidth: 1,
@@ -2631,8 +2795,8 @@ const styles = StyleSheet.create({
     gap: 9
   },
   dangerButton: {
-    minHeight: 48,
-    borderRadius: 9,
+    minHeight: 52,
+    borderRadius: 10,
     backgroundColor: palette.red,
     alignItems: "center",
     justifyContent: "center",
@@ -2641,34 +2805,48 @@ const styles = StyleSheet.create({
   },
   dangerButtonText: { color: "#fffdfa", fontWeight: "900" },
   dangerText: { color: palette.red, fontWeight: "900" },
-  sendButton: { flex: 1, minHeight: 54 },
+  sendButton: { flex: 1, minHeight: 58 },
   buttonDisabled: { opacity: 0.45 },
   draftBar: {
     position: "absolute",
     left: 16,
     right: 16,
     bottom: Platform.OS === "android" ? 14 : 24,
-    minHeight: 68,
-    borderRadius: 14,
+    minHeight: 74,
+    borderRadius: 16,
     backgroundColor: palette.ink,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    gap: 12
+    gap: 12,
+    shadowColor: "rgba(0,0,0,0.25)",
+    shadowOffset: { width: 0, height: -4 },
+    shadowRadius: 16,
+    shadowOpacity: 1,
+    elevation: 8
   },
-  draftBarTitle: { color: "#fffdfa", fontWeight: "900", fontSize: 15 },
+  draftBarBadge: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: palette.green,
+    alignItems: "center" as const,
+    justifyContent: "center" as const
+  },
+  draftBarBadgeText: { color: "#fffdfa", fontSize: 13, fontWeight: "900" },
+  draftBarTitle: { color: "#fffdfa", fontWeight: "900", fontSize: 17 },
   draftBarMeta: { color: "#dfd7c7", fontSize: 12, fontWeight: "700", marginTop: 2 },
   draftBarButton: {
-    minHeight: 44,
-    borderRadius: 10,
+    minHeight: 50,
+    borderRadius: 12,
     backgroundColor: "#fffdfa",
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 18
+    paddingHorizontal: 22
   },
-  draftBarButtonText: { color: palette.ink, fontWeight: "900" },
+  draftBarButtonText: { color: palette.ink, fontWeight: "900", fontSize: 15 },
   empty: {
     minHeight: 120,
     borderRadius: 10,
@@ -2691,5 +2869,35 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     gap: 12
   },
-  camera: { flex: 1 }
+  camera: { flex: 1 },
+  collapsibleWrap: {
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: palette.line,
+    backgroundColor: palette.paper,
+    overflow: "hidden" as const
+  },
+  collapsibleHeader: {
+    minHeight: 56,
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    justifyContent: "space-between" as const,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    backgroundColor: palette.paper,
+    gap: 10
+  },
+  collapsibleHeaderExpanded: {
+    borderBottomWidth: 1,
+    borderBottomColor: palette.line
+  },
+  collapsibleTitle: { color: palette.ink, fontSize: 16, fontWeight: "900" },
+  collapsibleChevron: { color: palette.muted, fontSize: 16, fontWeight: "900" },
+  collapsibleBody: { padding: 14, gap: 10 },
+  kotStartButton: {
+    backgroundColor: palette.amberSoft,
+    borderWidth: 1,
+    borderColor: palette.amber
+  },
+  kotStartButtonText: { color: palette.amberBold, fontWeight: "900" }
 });
