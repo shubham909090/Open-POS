@@ -1,6 +1,6 @@
 import { formatInr, searchMenuItems } from "@gaurav-pos/shared";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { hubApi, type MenuItem, type TableOrder } from "../../hub-api.js";
 import { menuItemVariantOptions, messageOf, type NoticeSetter } from "../../lib/format.js";
 import type { ManagerApproval, ManagerApprovalRequest } from "../../hooks/use-manager-approval.js";
@@ -94,6 +94,7 @@ export function BillingPanel({
     },
     onError: (error) => setNotice({ tone: "bad", text: messageOf(error) })
   });
+  const canPunchBill = Boolean(bill && !settle.isPending && newPaid > 0 && remaining === 0 && overpaid === 0);
   const printBill = useMutation({
     mutationFn: () => {
       if (!bill) throw new Error("Generate the bill first.");
@@ -166,6 +167,30 @@ export function BillingPanel({
   function fillFull(method: keyof typeof payments) {
     setPayments({ cash: "0", upi: "0", card: "0", online: "0", [method]: String(Math.max(0, finalTotal - existingPaid) / 100) });
   }
+
+  function fillRemaining(method: keyof typeof payments) {
+    const otherTotal = (Object.entries(payments) as Array<[keyof typeof payments, string]>)
+      .filter(([key]) => key !== method)
+      .reduce((total, [, value]) => total + Math.round(Number(value || 0) * 100), 0);
+    const rest = Math.max(0, finalTotal - existingPaid - otherTotal);
+    setPayments((current) => ({ ...current, [method]: String(rest / 100) }));
+  }
+
+  const paymentEntries = (["cash", "upi", "card", "online"] as const)
+    .map((method) => ({ method, paise: Math.round(Number(payments[method] || 0) * 100) }))
+    .filter((entry) => entry.paise > 0);
+
+  useEffect(() => {
+    if (!canPunchBill) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+      if (event.key !== "F8") return;
+      event.preventDefault();
+      settle.mutate();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [canPunchBill, settle]);
 
   function openRevisionEditor() {
     const rows = (tableOrder?.items ?? [])
@@ -270,7 +295,10 @@ export function BillingPanel({
         {(["cash", "upi", "card", "online"] as const).map((method) => (
           <label key={method}>
             {method.toUpperCase()}
-            <input value={payments[method]} onChange={(event) => setPayments((current) => ({ ...current, [method]: event.target.value }))} inputMode="decimal" />
+            <span className="payment-input-row">
+              <input value={payments[method]} onChange={(event) => setPayments((current) => ({ ...current, [method]: event.target.value }))} inputMode="decimal" />
+              <button type="button" className="fill-rest-btn" onClick={() => fillRemaining(method)} disabled={remaining <= 0} aria-label={`Fill remaining into ${method}`}>Rest</button>
+            </span>
           </label>
         ))}
       </div>
@@ -278,8 +306,14 @@ export function BillingPanel({
         Payment note
         <input value={reference} onChange={(event) => setReference(event.target.value)} placeholder="UPI ref, card slip, or captain note" />
       </label>
-      <button type="button" className="punch-button" disabled={settle.isPending || newPaid <= 0 || remaining > 0 || overpaid > 0} onClick={() => settle.mutate()}>
-        {settle.isPending ? "Punching..." : `Punch bill · ${remaining > 0 ? `${formatInr(remaining)} left` : "paid"}`}
+      {paymentEntries.length > 1 ? (
+        <div className="split-summary" aria-label="Split payment breakdown">
+          Split: {paymentEntries.map((entry) => `${entry.method.toUpperCase()} ${formatInr(entry.paise)}`).join(" + ")}
+        </div>
+      ) : null}
+      <button type="button" className="punch-button" disabled={!canPunchBill} onClick={() => settle.mutate()}>
+        <span>{settle.isPending ? "Punching..." : `Punch bill · ${remaining > 0 ? `${formatInr(remaining)} left` : "paid"}`}</span>
+        <kbd>F8</kbd>
       </button>
       {overpaid > 0 ? <p className="text-sm text-muted">Payment is {formatInr(overpaid)} more than the balance.</p> : null}
       <div className="flex flex-wrap gap-2">
