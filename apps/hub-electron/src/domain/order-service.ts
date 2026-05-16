@@ -1579,7 +1579,7 @@ export class OrderService {
   }
 
   listReadyNotifications(actor: DeviceActor): unknown[] {
-    if (actor.role !== "captain") return [];
+    if (actor.role !== "captain" && actor.role !== "waiter") return [];
     const rows = this.orm
       .select()
       .from(readyNotifications)
@@ -3292,7 +3292,7 @@ export class OrderService {
         status: "open",
         pax: input.pax,
         captainId: input.captainId,
-        captainDeviceId: actor?.role === "captain" ? actor.id : null,
+        captainDeviceId: actor && ["captain", "waiter"].includes(actor.role) ? actor.id : null,
         createdByDeviceId: actor?.id ?? null,
         createdByRole: actor?.role ?? null,
         createdAt: now,

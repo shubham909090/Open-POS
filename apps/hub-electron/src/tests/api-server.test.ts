@@ -639,7 +639,7 @@ describe("Hub API auth and service flow", () => {
     database.close();
   });
 
-  it("delivers kitchen ready notifications once to the captain that owns the table", async () => {
+  it("delivers kitchen ready notifications once to the order-taking device that owns the table", async () => {
     const { app, database } = createTestServer();
     const adminHeaders = { "x-device-token": "test-admin-token" };
     await setTestManagerPin(app);
@@ -665,7 +665,7 @@ describe("Hub API auth and service flow", () => {
     await app.inject({
       method: "POST",
       url: "/orders/submit",
-      headers: { "x-device-token": captain.token },
+      headers: { "x-device-token": waiter.token },
       payload: {
         tableId: "table-t1",
         pax: 2,
@@ -687,15 +687,20 @@ describe("Hub API auth and service flow", () => {
       headers: { "x-device-token": kitchen.token },
       payload: { status: "ready" }
     });
+    const captainNotifications = await app.inject({
+      method: "GET",
+      url: "/notifications/ready",
+      headers: { "x-device-token": captain.token }
+    });
     const waiterNotifications = await app.inject({
       method: "GET",
       url: "/notifications/ready",
       headers: { "x-device-token": waiter.token }
     });
-    const captainNotifications = await app.inject({
+    const waiterNotificationsAgain = await app.inject({
       method: "GET",
       url: "/notifications/ready",
-      headers: { "x-device-token": captain.token }
+      headers: { "x-device-token": waiter.token }
     });
     const captainNotificationsAgain = await app.inject({
       method: "GET",
@@ -705,9 +710,9 @@ describe("Hub API auth and service flow", () => {
 
     expect(statusResponse.statusCode).toBe(200);
     expect(waiterNotifications.statusCode).toBe(200);
-    expect(waiterNotifications.json()).toEqual([]);
     expect(captainNotifications.statusCode).toBe(200);
-    expect(captainNotifications.json()).toEqual([
+    expect(captainNotifications.json()).toEqual([]);
+    expect(waiterNotifications.json()).toEqual([
       expect.objectContaining({
         kotId: ticket.id,
         tableName: "T1",
@@ -715,6 +720,7 @@ describe("Hub API auth and service flow", () => {
         items: [{ name: "Dal Fry", quantity: 1 }]
       })
     ]);
+    expect(waiterNotificationsAgain.json()).toEqual([]);
     expect(captainNotificationsAgain.json()).toEqual([]);
 
     await app.close();
