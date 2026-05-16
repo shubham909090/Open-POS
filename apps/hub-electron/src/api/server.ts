@@ -4,10 +4,12 @@ import { and, eq } from "drizzle-orm";
 import Fastify from "fastify";
 import { createHash, randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
+import { networkInterfaces } from "node:os";
 import { fileURLToPath } from "node:url";
 import QRCode from "qrcode";
 import {
   cancelOrderSchema,
+  cancelOrderItemsSchema,
   adjustAlcoholStockSchema,
   createAlcoholItemSchema,
   createBackupSchema,
@@ -67,6 +69,101 @@ export function isRealtimeEventVisibleForRole(event: unknown, role: UserRole): b
   return false;
 }
 
+export function resolvePairingHubUrl(input: {
+  savedPublicUrl?: string;
+  configuredPublicUrl?: string;
+  requestProtocol?: string;
+  requestHost?: string;
+  fallbackLanAddress?: string;
+}): string {
+  const savedPublicUrl = normalizeHubUrlCandidate(input.savedPublicUrl);
+  if (savedPublicUrl) return savedPublicUrl;
+  const configuredPublicUrl = normalizeHubUrlCandidate(input.configuredPublicUrl);
+  if (configuredPublicUrl) return configuredPublicUrl;
+
+  const protocol = input.requestProtocol || "http";
+  const requestHost = (input.requestHost || "localhost:3737").trim();
+  if (!isLocalHost(requestHost)) return `${protocol}://${requestHost}`;
+
+  const fallbackLanAddress = input.fallbackLanAddress?.trim();
+  if (fallbackLanAddress) {
+    const port = getPortFromHost(requestHost);
+    return `${protocol}://${fallbackLanAddress}${port ? `:${port}` : ""}`;
+  }
+
+  return `${protocol}://${requestHost}`;
+}
+
+function normalizeHubUrlCandidate(value?: string): string | null {
+  const trimmed = value?.trim().replace(/\/+$/, "") ?? "";
+  if (!trimmed) return null;
+  return /^https?:\/\//i.test(trimmed) ? trimmed : `http://${trimmed}`;
+}
+
+function isLocalHost(host: string): boolean {
+  const hostname = getHostname(host).toLowerCase();
+  return hostname === "localhost" || hostname === "0.0.0.0" || hostname === "::1" || hostname.startsWith("127.");
+}
+
+function getHostname(host: string): string {
+  if (host.startsWith("[")) return host.slice(1, host.indexOf("]"));
+  return host.split(":")[0] ?? host;
+}
+
+function getPortFromHost(host: string): string | null {
+  if (host.startsWith("[")) {
+    const match = host.match(/\]:(\d+)$/);
+    return match?.[1] ?? null;
+  }
+  const parts = host.split(":");
+  return parts.length > 1 ? (parts.at(-1) ?? null) : null;
+}
+
+function detectLanIpv4Address(): string | undefined {
+  return selectPairingLanAddress(networkInterfaces());
+}
+
+export function selectPairingLanAddress(
+  interfaces: Record<string, Array<{ address: string; family: string | number; internal: boolean }> | undefined>
+): string | undefined {
+  const candidates: Array<{ address: string; score: number; index: number }> = [];
+  let index = 0;
+  for (const [name, addresses] of Object.entries(interfaces)) {
+    for (const address of addresses ?? []) {
+      if ((address.family === "IPv4" || address.family === 4) && !address.internal) {
+        candidates.push({ address: address.address, score: scoreLanAddressCandidate(name, address.address), index });
+        index += 1;
+      }
+    }
+  }
+  candidates.sort((left, right) => right.score - left.score || left.index - right.index);
+  return candidates[0]?.address;
+}
+
+function scoreLanAddressCandidate(interfaceName: string, address: string): number {
+  const name = interfaceName.toLowerCase();
+  let score = isPrivateIpv4Address(address) ? 100 : 10;
+  if (address.startsWith("192.168.")) score += 30;
+  else if (address.startsWith("10.")) score += 25;
+  else if (isPrivate172Address(address)) score += 20;
+  if (/\b(wi-?fi|wlan|wireless|ethernet|local area connection|en\d+|eth\d+)\b/i.test(interfaceName)) score += 50;
+  if (/virtual|vmware|vbox|docker|wsl|hyper-v|vethernet|tailscale|zerotier|hamachi|vpn|wireguard|tun|tap|loopback|bridge/.test(name)) score -= 100;
+  return score;
+}
+
+function isPrivateIpv4Address(address: string): boolean {
+  const parts = address.split(".").map((part) => Number(part));
+  const [a, b] = parts;
+  if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) return false;
+  return a === 10 || isPrivate172Address(address) || (a === 192 && b === 168);
+}
+
+function isPrivate172Address(address: string): boolean {
+  const parts = address.split(".").map((part) => Number(part));
+  const [a, b] = parts;
+  return parts.length === 4 && a === 172 && b !== undefined && b >= 16 && b <= 31;
+}
+
 export function createHubServer(input: {
   database: HubDatabase;
   backupService: BackupService;
@@ -79,6 +176,17 @@ export function createHubServer(input: {
   requestRestart?: () => void;
 }) {
   const app = Fastify({ logger: true });
+
+  async function processCreatedPrintJobs(printJobIds: string[] = []) {
+    const totals = { printed: 0, failed: 0, skipped: 0 };
+    for (const printJobId of printJobIds) {
+      const result = await input.printJobService.processOne(printJobId);
+      totals.printed += result.printed;
+      totals.failed += result.failed;
+      totals.skipped += result.skipped ? 1 : 0;
+    }
+    return totals;
+  }
 
   app.register(websocket);
   const staticRootCandidates = [
@@ -501,9 +609,13 @@ export function createHubServer(input: {
     if (!body.managerApproval) throw new DomainError("Manager PIN is required to create a device pairing QR", 403);
     input.orderService.verifyManagerPinForSession(body.managerApproval.pin);
     const pairing = input.authService.createPairingCode(body);
-    const host = request.headers.host ?? "localhost:3737";
-    const protocol = request.protocol || "http";
-    const hubUrl = input.publicUrl ?? `${protocol}://${host}`;
+    const hubUrl = resolvePairingHubUrl({
+      savedPublicUrl: input.orderService.getHubConnectionRuntimeSettings().hubPublicUrl,
+      configuredPublicUrl: input.publicUrl,
+      requestProtocol: request.protocol || "http",
+      requestHost: request.headers.host ?? "localhost:3737",
+      fallbackLanAddress: detectLanIpv4Address()
+    });
     const payload = {
       kind: "gaurav-pos-pairing",
       version: 1,
@@ -576,20 +688,23 @@ export function createHubServer(input: {
     const { result, replayed } = await withIdempotency(request, "orders.submit", () =>
       input.orderService.submitOrder(submitOrderSchema.parse(request.body), getSession(request))
     );
-    if (!replayed) input.eventBus.publish({ type: "order.submitted", result });
-    return result;
+    const processed = replayed ? undefined : await processCreatedPrintJobs(result.printJobIds);
+    if (!replayed) input.eventBus.publish({ type: "order.submitted", result: { ...result, processed } });
+    return { ...result, ...(processed ? { processed } : {}) };
   });
 
   app.post("/tables/move", { preHandler: orderMoveRole }, async (request) => {
     const result = input.orderService.moveTable(moveTableSchema.parse(request.body), getSession(request));
-    input.eventBus.publish({ type: "table.shifted", result });
-    return result;
+    const processed = await processCreatedPrintJobs(result.printJobIds);
+    input.eventBus.publish({ type: "table.shifted", result: { ...result, processed } });
+    return { ...result, processed };
   });
 
   app.post("/orders/items/move", { preHandler: orderMoveRole }, async (request) => {
     const result = input.orderService.moveOrderItems(moveOrderItemsSchema.parse(request.body), getSession(request));
-    input.eventBus.publish({ type: "order_items.shifted", result });
-    return result;
+    const processed = await processCreatedPrintJobs(result.printJobIds);
+    input.eventBus.publish({ type: "order_items.shifted", result: { ...result, processed } });
+    return { ...result, processed };
   });
 
   app.post("/orders/:id/cancel", { preHandler: captainOrAdmin }, async (request) => {
@@ -599,8 +714,21 @@ export function createHubServer(input: {
       params.id,
       cancelOrderSchema.parse({ ...(request.body as Record<string, unknown>), requestedBy: session.name })
     );
-    input.eventBus.publish({ type: "order.cancelled", result });
-    return result;
+    const processed = await processCreatedPrintJobs(result.printJobIds);
+    input.eventBus.publish({ type: "order.cancelled", result: { ...result, processed } });
+    return { ...result, processed };
+  });
+
+  app.post("/orders/:id/items/cancel", { preHandler: captainOrAdmin }, async (request) => {
+    const params = request.params as { id: string };
+    const session = getSession(request);
+    const result = input.orderService.cancelOrderItems(
+      params.id,
+      cancelOrderItemsSchema.parse({ ...(request.body as Record<string, unknown>), requestedBy: session.name })
+    );
+    const processed = await processCreatedPrintJobs(result.printJobIds);
+    input.eventBus.publish({ type: "order_items.cancelled", result: { ...result, processed } });
+    return { ...result, processed };
   });
 
   app.post("/kot/:id/reprint", { preHandler: captainOrAdmin }, async (request) => {
@@ -612,8 +740,9 @@ export function createHubServer(input: {
         reprintKotSchema.parse({ ...(request.body as Record<string, unknown>), requestedBy: session.name })
       )
     );
-    if (!replayed) input.eventBus.publish({ type: "kot.reprinted", result });
-    return result;
+    const processed = replayed ? undefined : await processCreatedPrintJobs([result.printJobId]);
+    if (!replayed) input.eventBus.publish({ type: "kot.reprinted", result: { ...result, processed } });
+    return { ...result, ...(processed ? { processed } : {}) };
   });
 
   app.post("/bills/:billId/reprint", { preHandler: captainOrAdmin }, async (request) => {
@@ -625,8 +754,9 @@ export function createHubServer(input: {
         reprintKotSchema.parse({ ...(request.body as Record<string, unknown>), requestedBy: session.name })
       )
     );
-    if (!replayed) input.eventBus.publish({ type: "bill.reprinted", result });
-    return result;
+    const processed = replayed ? undefined : await processCreatedPrintJobs([result.printJobId]);
+    if (!replayed) input.eventBus.publish({ type: "bill.reprinted", result: { ...result, processed } });
+    return { ...result, ...(processed ? { processed } : {}) };
   });
 
   app.post("/bills/:billId/print", { preHandler: captainOrAdmin }, async (request) => {
@@ -635,8 +765,9 @@ export function createHubServer(input: {
     const { result, replayed } = await withIdempotency(request, `bills.print.${params.billId}`, () =>
       input.orderService.printBill(params.billId, session.name)
     );
-    if (!replayed) input.eventBus.publish({ type: "bill.printed", result });
-    return result;
+    const processed = replayed ? undefined : await processCreatedPrintJobs([result.printJobId]);
+    if (!replayed) input.eventBus.publish({ type: "bill.printed", result: { ...result, processed } });
+    return { ...result, ...(processed ? { processed } : {}) };
   });
 
   app.post("/bills/:billId/revise", { preHandler: captainOrAdmin }, async (request) => {
@@ -644,8 +775,9 @@ export function createHubServer(input: {
     const { result, replayed } = await withIdempotency(request, `bills.revise.${params.billId}`, () =>
       input.orderService.reviseBill(params.billId, reviseBillSchema.parse(request.body))
     );
-    if (!replayed) input.eventBus.publish({ type: "bill.revised", result });
-    return result;
+    const processed = replayed ? undefined : await processCreatedPrintJobs(result.printJobIds);
+    if (!replayed) input.eventBus.publish({ type: "bill.revised", result: { ...result, processed } });
+    return { ...result, ...(processed ? { processed } : {}) };
   });
 
   app.post("/bills/:billId/nc", { preHandler: captainOrAdmin }, async (request) => {
@@ -653,8 +785,9 @@ export function createHubServer(input: {
     const { result, replayed } = await withIdempotency(request, `bills.nc.${params.billId}`, () =>
       input.orderService.markBillNc(params.billId, markNcBillSchema.parse(request.body))
     );
-    if (!replayed) input.eventBus.publish({ type: "bill.nc_marked", result });
-    return result;
+    const processed = replayed ? undefined : await processCreatedPrintJobs([result.printJobId]);
+    if (!replayed) input.eventBus.publish({ type: "bill.nc_marked", result: { ...result, processed } });
+    return { ...result, ...(processed ? { processed } : {}) };
   });
 
   app.post("/bills/:orderId/generate", { preHandler: captainOrAdmin }, async (request) => {

@@ -42,6 +42,7 @@ export function TableWorkspace({
   const [transferMode, setTransferMode] = useState<"table" | "items">("items");
   const [transferOpen, setTransferOpen] = useState(false);
   const [shiftQuantities, setShiftQuantities] = useState<Record<string, string>>({});
+  const [cancelQuantities, setCancelQuantities] = useState<Record<string, string>>({});
   const operationKeys = useOperationKeys();
   const draft = tableId ? Object.values(drafts[tableId] ?? {}) : [];
   const tableOrder = useQuery({
@@ -58,6 +59,10 @@ export function TableWorkspace({
   const setTransferQuantity = (itemId: string, value: number, max: number) => {
     const next = Math.min(max, Math.max(0, Math.trunc(value || 0)));
     setShiftQuantities((current) => ({ ...current, [itemId]: next ? String(next) : "" }));
+  };
+  const setCancelQuantity = (itemId: string, value: number, max: number) => {
+    const next = Math.min(max, Math.max(1, Math.trunc(value || 1)));
+    setCancelQuantities((current) => ({ ...current, [itemId]: String(next) }));
   };
 
   const refreshTable = async () => {
@@ -162,6 +167,20 @@ export function TableWorkspace({
       if (targetId) selectTable(targetId);
       setOrderPanel("sent");
       setNotice({ tone: "good", text: "Selected quantities transferred. Source and target checks were refreshed." });
+    },
+    onError: (error) => setNotice({ tone: "bad", text: messageOf(error) })
+  });
+  const cancelItems = useMutation({
+    mutationFn: ({ orderItemId, quantity, approval }: { orderItemId: string; quantity: number; approval: ManagerApproval }) => {
+      const orderId = data?.order?.id;
+      if (!orderId) throw new Error("No active order to cancel from.");
+      return hubApi.cancelItems(orderId, { managerApproval: approval, items: [{ orderItemId, quantity }] });
+    },
+    onSuccess: async () => {
+      setCancelQuantities({});
+      await refreshTable();
+      setOrderPanel("sent");
+      setNotice({ tone: "good", text: "Item cancelled and cancellation ticket sent." });
     },
     onError: (error) => setNotice({ tone: "bad", text: messageOf(error) })
   });
@@ -279,7 +298,41 @@ export function TableWorkspace({
               title: item.name_snapshot,
               meta: `${formatInr(item.unit_price_paise)} each · ${item.production_unit_name ?? "No kitchen assigned"}`,
               quantity: item.quantity,
-              amount: item.unit_price_paise * item.quantity
+              amount: item.unit_price_paise * item.quantity,
+              action: (() => {
+                const quantity = Math.min(item.quantity, Math.max(1, Number(cancelQuantities[item.id] ?? 1)));
+                return (
+                  <div className="sent-item-cancel">
+                    <div className="transfer-qty-control compact" aria-label={`Cancel quantity for ${item.name_snapshot}`}>
+                      <button type="button" onClick={() => setCancelQuantity(item.id, quantity - 1, item.quantity)} disabled={quantity <= 1}>-</button>
+                      <input
+                        value={String(quantity)}
+                        onChange={(event) => setCancelQuantity(item.id, Number(event.target.value.replace(/\D/g, "")), item.quantity)}
+                        inputMode="numeric"
+                        aria-label={`Cancel quantity, max ${item.quantity}`}
+                      />
+                      <button type="button" onClick={() => setCancelQuantity(item.id, quantity + 1, item.quantity)} disabled={quantity >= item.quantity}>+</button>
+                    </div>
+                    <button
+                      type="button"
+                      className="danger-outline-button"
+                      disabled={cancelItems.isPending}
+                      onClick={async () => {
+                        const approval = await requestManagerApproval({
+                          title: "Cancel sent item",
+                          defaultReason: `${item.name_snapshot} cancelled`,
+                          message: `Cancel ${quantity} x ${item.name_snapshot}. A cancellation KOT/BOT will print.`,
+                          confirmLabel: cancelItems.isPending ? "Cancelling..." : "Cancel item",
+                          danger: true
+                        }).catch(() => null);
+                        if (approval) cancelItems.mutate({ orderItemId: item.id, quantity, approval });
+                      }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                );
+              })()
             }))}
           />
           {data?.order ? (

@@ -1164,12 +1164,75 @@
   gap: 8px;
 }
 
+.qty-cluster b {
+  min-width: 42px;
+  text-align: right;
+  font-size: 1rem;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.qty-readonly {
+  min-width: 54px;
+  justify-content: flex-end;
+  color: var(--ink);
+}
+
+.qty-readonly b {
+  display: inline-flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 2px;
+  min-width: 48px;
+  font-size: 1.2rem;
+  font-weight: 900;
+}
+
+.qty-readonly span {
+  color: var(--muted);
+  font-size: 0.88rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
 .qty-cluster button {
   width: 34px;
   min-height: 34px;
   padding: 0;
   background: #e8eee8;
   color: var(--ink);
+}
+
+.line-row-action {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.sent-item-cancel {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.transfer-qty-control.compact {
+  width: auto;
+}
+
+.transfer-qty-control.compact input {
+  width: 48px;
+}
+
+.danger-outline-button {
+  min-height: 38px;
+  border: 1px solid var(--danger);
+  background: var(--danger-soft);
+  color: var(--danger);
+  border-radius: 8px;
+  padding: 0 14px;
+  font-weight: 900;
 }
 
 .danger-link {

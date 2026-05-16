@@ -97,6 +97,13 @@ describe("OrderService KOT lifecycle", () => {
       { type: "modified", count: 2 },
       { type: "new", count: 2 }
     ]);
+    const sequences = database.db.prepare("SELECT production_unit_id, type, sequence FROM kots ORDER BY production_unit_id, created_at").all();
+    expect(sequences).toEqual([
+      { production_unit_id: "unit-bar", type: "new", sequence: 2 },
+      { production_unit_id: "unit-bar", type: "modified", sequence: 2 },
+      { production_unit_id: "unit-kitchen", type: "new", sequence: 1 },
+      { production_unit_id: "unit-kitchen", type: "modified", sequence: 1 }
+    ]);
     const currentOrder = orderService.getOrder(result.orderId) as {
       items: Array<{ menu_item_id: string; quantity: number }>;
     };
@@ -197,13 +204,58 @@ describe("OrderService KOT lifecycle", () => {
     });
 
     expect(cancelled.kotIds).toHaveLength(1);
-    expect(database.db.prepare("SELECT type FROM kots ORDER BY sequence DESC LIMIT 1").get()).toEqual({
+    const cancelledKotId = cancelled.kotIds[0];
+    if (!cancelledKotId) {
+      throw new Error("Expected cancellation KOT");
+    }
+    expect(database.db.prepare("SELECT type FROM kots WHERE id = ?").get(cancelledKotId)).toEqual({
       type: "cancelled"
     });
     expect(database.db.prepare("SELECT status, current_order_id FROM restaurant_tables WHERE id = 'table-t1'").get()).toEqual({
       status: "free",
       current_order_id: null
     });
+
+    database.close();
+  });
+
+  it("cancels selected sent item quantities with manager approval and reuses the original KOT number", () => {
+    const { database, orderService } = createTestHub();
+
+    const order = orderService.submitOrder({
+      tableId: "table-t1",
+      captainId: "waiter-1",
+      pax: 1,
+      orderType: "dine_in",
+      items: [{ menuItemId: "item-paneer-tikka", quantity: 3 }]
+    });
+    const firstKot = database.db.prepare("SELECT sequence FROM kots WHERE order_id = ?").get(order.orderId) as { sequence: number };
+    const item = database.db.prepare("SELECT id FROM order_items WHERE order_id = ?").get(order.orderId) as { id: string };
+    orderService.setManagerPin({ newPin: "1234", updatedBy: "admin" });
+
+    const cancelled = orderService.cancelOrderItems(order.orderId, {
+      reason: "Guest changed mind",
+      requestedBy: "captain-1",
+      managerApproval: { pin: "1234", reason: "Guest changed mind", approvedBy: "manager" },
+      items: [{ orderItemId: item.id, quantity: 1 }]
+    });
+
+    expect(cancelled.kotIds).toHaveLength(1);
+    expect(cancelled.printJobIds).toHaveLength(1);
+    expect(database.db.prepare("SELECT quantity, status FROM order_items WHERE id = ?").get(item.id)).toEqual({ quantity: 2, status: "active" });
+    expect(database.db.prepare("SELECT type, sequence, reason FROM kots ORDER BY created_at DESC LIMIT 1").get()).toEqual({
+      type: "partial_cancel",
+      sequence: firstKot.sequence,
+      reason: "Guest changed mind"
+    });
+    const cancellationPrintJobId = cancelled.printJobIds[0];
+    if (!cancellationPrintJobId) {
+      throw new Error("Expected cancellation print job");
+    }
+    const printJob = database.db.prepare("SELECT payload FROM print_jobs WHERE id = ?").get(cancellationPrintJobId) as { payload: string };
+    expect(printJob.payload).toContain("CANCELLED");
+    expect(printJob.payload).toContain("Guest changed mind");
+    expect(printJob.payload).toContain("-1 x Paneer Tikka");
 
     database.close();
   });
@@ -259,8 +311,9 @@ describe("OrderService KOT lifecycle", () => {
     expect(printJob.payload).toContain("Amt");
     expect(printJob.payload).toContain("Dal Fry");
     expect(printJob.payload).toContain("2");
-    expect(printJob.payload).toContain("₹180.00");
-    expect(printJob.payload).toContain("₹360.00");
+    expect(printJob.payload).toContain("180.00");
+    expect(printJob.payload).toContain("360.00");
+    expect(printJob.payload).not.toContain("₹");
 
     database.close();
   });
@@ -287,7 +340,8 @@ describe("OrderService KOT lifecycle", () => {
     const printJob = database.db.prepare("SELECT payload FROM print_jobs WHERE id = ?").get(reprint.printJobId) as { payload: string };
     expect(printJob.payload).toContain("Item");
     expect(printJob.payload).toContain("Dal Fry");
-    expect(printJob.payload).toContain("₹180.00");
+    expect(printJob.payload).toContain("180.00");
+    expect(printJob.payload).not.toContain("₹");
     expect(printJob.payload).toContain("REPRINT");
     expect(printJob.payload).toContain("Reason: Customer copy");
 
@@ -737,8 +791,9 @@ describe("OrderService KOT lifecycle", () => {
     expect(ncPrintJob.payload).toContain("Item");
     expect(ncPrintJob.payload).toContain("Open Bar");
     expect(ncPrintJob.payload).toContain("2");
-    expect(ncPrintJob.payload).toContain("₹100.00");
-    expect(ncPrintJob.payload).toContain("₹200.00");
+    expect(ncPrintJob.payload).toContain("100.00");
+    expect(ncPrintJob.payload).toContain("200.00");
+    expect(ncPrintJob.payload).not.toContain("₹");
     expect(ncPrintJob.payload).toContain("NC Reason: Owner tasting");
 
     const summary = orderService.getCurrentBusinessDaySummary() as {
@@ -873,9 +928,11 @@ describe("OrderService KOT lifecycle", () => {
     expect(database.db.prepare("SELECT COUNT(*) AS count FROM order_items WHERE order_id = ?").get(order.orderId)).toEqual({ count: 1 });
     orderService.settleBill(bill.billId, { method: "cash", amountPaise: revised.totalPaise, receivedBy: "captain-1" });
     const printJob = database.db.prepare("SELECT payload FROM print_jobs WHERE target_id = ? AND target_type = 'BILL'").get(bill.billId) as { payload: string };
-    expect(printJob.payload).toContain("Revision Price Dish");
-    expect(printJob.payload).toContain("₹100.00");
-    expect(printJob.payload).not.toContain("₹150.00");
+    expect(printJob.payload).toContain("Revision Price");
+    expect(printJob.payload).toContain("Dish");
+    expect(printJob.payload).toContain("100.00");
+    expect(printJob.payload).not.toContain("150.00");
+    expect(printJob.payload).not.toContain("₹");
 
     database.close();
   });
@@ -1680,6 +1737,7 @@ describe("OrderService KOT lifecycle", () => {
 
     expect(movement.sourceKotIds).toHaveLength(1);
     expect(movement.targetKotIds).toHaveLength(1);
+    expect(movement.printJobIds).toHaveLength(2);
     expect(database.db.prepare("SELECT status, current_order_id FROM restaurant_tables WHERE id = 'table-t2'").get()).toMatchObject({
       status: "occupied"
     });
@@ -1693,6 +1751,11 @@ describe("OrderService KOT lifecycle", () => {
         .get(movement.toOrderId)
     ).toEqual({ count: 1 });
     expect(database.db.prepare("SELECT COUNT(*) AS count FROM print_jobs WHERE target_type = 'KOT'").get()).toEqual({ count: 3 });
+    const shiftKots = database.db.prepare("SELECT type, sequence FROM kots WHERE id IN (?, ?) ORDER BY created_at").all(...movement.sourceKotIds, ...movement.targetKotIds);
+    expect(shiftKots).toEqual([
+      { type: "table_shifted", sequence: 1 },
+      { type: "table_shifted", sequence: 1 }
+    ]);
 
     database.close();
   });

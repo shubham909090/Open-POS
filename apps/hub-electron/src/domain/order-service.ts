@@ -4,6 +4,7 @@ import {
   type TaxComponentAmount,
   type AdjustAlcoholStockInput,
   type CancelOrderInput,
+  type CancelOrderItemsInput,
   type CreateAlcoholItemInput,
   type CreateSaleGroupInput,
   type CreateFloorInput,
@@ -341,6 +342,11 @@ interface AlcoholRecipeSnapshotIngredient {
   mlPerUnit: number;
 }
 
+interface TicketCreationResult {
+  kotIds: string[];
+  printJobIds: string[];
+}
+
 export class OrderService {
   constructor(private readonly orm: HubOrm) {}
 
@@ -348,7 +354,7 @@ export class OrderService {
     return this.orm.$client;
   }
 
-  submitOrder(input: SubmitOrderInput, actor?: DeviceActor): { orderId: string; kotIds: string[] } {
+  submitOrder(input: SubmitOrderInput, actor?: DeviceActor): { orderId: string; kotIds: string[]; printJobIds: string[] } {
     const run = this.db.transaction(() => {
       this.finalizeCompletedBusinessDays();
       const posDay = this.ensureCurrentBusinessDay();
@@ -367,7 +373,7 @@ export class OrderService {
         ...previousItems.map((item) => item.menu_item_id).filter((id): id is string => Boolean(id))
       ]);
       const changes = this.applyOrderItemDiff(order.id, normalizedItems, previousItems, menuById, now);
-      const kotIds = this.createKotsForChanges(order, table, changes, now, isNewOrder, false);
+      const tickets = this.createKotsForChanges(order, table, changes, now, isNewOrder, false);
 
       this.orm
         .update(orders)
@@ -388,10 +394,11 @@ export class OrderService {
       this.appendEvent("order.submitted", "order", order.id, {
         orderId: order.id,
         tableId: table.id,
-        kotIds
+        kotIds: tickets.kotIds,
+        printJobIds: tickets.printJobIds
       });
 
-      return { orderId: order.id, kotIds };
+      return { orderId: order.id, kotIds: tickets.kotIds, printJobIds: tickets.printJobIds };
     });
 
     const result = run();
@@ -399,7 +406,7 @@ export class OrderService {
     return result;
   }
 
-  cancelOrder(orderId: string, input: CancelOrderInput): { kotIds: string[] } {
+  cancelOrder(orderId: string, input: CancelOrderInput): { orderId: string; kotIds: string[]; printJobIds: string[] } {
     const run = this.db.transaction(() => {
       const reason = input.reason;
       const requestedBy = input.requestedBy;
@@ -429,7 +436,7 @@ export class OrderService {
         }];
       });
 
-      const kotIds = this.createKotsForChanges(order, table, changes, now, false, true, reason);
+      const tickets = this.createKotsForChanges(order, table, changes, now, false, true, reason);
 
       this.orm.update(orders).set({ status: "cancelled", updatedAt: now }).where(eq(orders.id, order.id)).run();
       this.orm
@@ -438,9 +445,60 @@ export class OrderService {
         .where(eq(orderItems.orderId, order.id))
         .run();
       this.freeTable(table.id);
-      this.appendEvent("order.cancelled", "order", order.id, { orderId, reason, requestedBy, kotIds });
+      this.appendEvent("order.cancelled", "order", order.id, { orderId, reason, requestedBy, kotIds: tickets.kotIds, printJobIds: tickets.printJobIds });
 
-      return { kotIds };
+      return { orderId, kotIds: tickets.kotIds, printJobIds: tickets.printJobIds };
+    });
+
+    const result = run();
+    this.finalizeCompletedBusinessDays();
+    return result;
+  }
+
+  cancelOrderItems(orderId: string, input: CancelOrderItemsInput): { orderId: string; kotIds: string[]; printJobIds: string[] } {
+    const run = this.db.transaction(() => {
+      const requestedBy = input.requestedBy;
+      this.verifyManagerApproval(input.managerApproval, "order_item.cancel", "order", orderId, requestedBy);
+      const order = this.requireEditableOrder(orderId);
+      if (order.id !== orderId) throw new DomainError("Order not found", 404);
+      const table = this.requireTable(order.table_id);
+      const now = new Date().toISOString();
+      const changes: KotItemChange[] = [];
+
+      for (const requested of input.items) {
+        const item = this.getOrderItemById(requested.orderItemId);
+        if (!item || item.order_id !== order.id || item.status === "cancelled" || item.quantity <= 0) {
+          throw new DomainError("Cannot cancel an item that is not active on this order");
+        }
+        if (requested.quantity > item.quantity) throw new DomainError("Cannot cancel more items than the order has");
+        const change = this.kotChangeFromOrderItem(item, -requested.quantity);
+        if (change) changes.push(change);
+        const remaining = item.quantity - requested.quantity;
+        this.orm
+          .update(orderItems)
+          .set({ quantity: remaining, status: remaining === 0 ? "cancelled" : "active", updatedAt: now })
+          .where(eq(orderItems.id, item.id))
+          .run();
+      }
+
+      const remainingItems = this.getOrderItems(order.id).filter((item) => item.quantity > 0 && item.status !== "cancelled");
+      if (remainingItems.length === 0) {
+        this.orm.update(orders).set({ status: "cancelled", updatedAt: now }).where(eq(orders.id, order.id)).run();
+        this.freeTable(table.id);
+      } else {
+        this.orm.update(orders).set({ updatedAt: now }).where(eq(orders.id, order.id)).run();
+      }
+
+      const tickets = this.createKotsForChanges(order, table, changes, now, false, false, input.managerApproval.reason);
+      this.appendEvent("order_items.cancelled", "order", order.id, {
+        orderId,
+        reason: input.managerApproval.reason,
+        requestedBy,
+        items: input.items,
+        kotIds: tickets.kotIds,
+        printJobIds: tickets.printJobIds
+      });
+      return { orderId, kotIds: tickets.kotIds, printJobIds: tickets.printJobIds };
     });
 
     const result = run();
@@ -1885,7 +1943,7 @@ export class OrderService {
     };
   }
 
-  reviseBill(billId: string, input: ReviseBillInput): { billId: string; revisionNumber: number; totalPaise: number; kotIds: string[] } {
+  reviseBill(billId: string, input: ReviseBillInput): { billId: string; revisionNumber: number; totalPaise: number; kotIds: string[]; printJobIds: string[] } {
     const run = this.db.transaction(() => {
       this.verifyManagerApproval(input.managerApproval, "bill.revise", "bill", billId, input.managerApproval.approvedBy);
       const bill = this.getBillById(billId);
@@ -1905,7 +1963,7 @@ export class OrderService {
         ...previousItems.map((item) => item.menu_item_id).filter((id): id is string => Boolean(id))
       ]);
       const changes = this.applyOrderItemDiff(order.id, normalizedItems, previousItems, menuById, now, true);
-      const kotIds = this.createKotsForChanges(order, table, changes, now, false, false, input.managerApproval.reason);
+      const tickets = this.createKotsForChanges(order, table, changes, now, false, false, input.managerApproval.reason);
       const totals = this.calculateBillTotals(this.getOrderItems(order.id).filter((item) => item.quantity > 0));
       const finalTotalPaise = Math.max(0, totals.totalPaise - bill.discount_paise + bill.tip_paise);
       const revisionNumber = (bill.revision_number ?? 1) + 1;
@@ -1930,8 +1988,14 @@ export class OrderService {
         tipPaise: bill.tip_paise,
         finalTotalPaise
       });
-      this.appendEvent("bill.revised", "bill", billId, { billId, revisionNumber, totalPaise: totals.totalPaise, kotIds });
-      return { billId, revisionNumber, totalPaise: totals.totalPaise, kotIds };
+      this.appendEvent("bill.revised", "bill", billId, {
+        billId,
+        revisionNumber,
+        totalPaise: totals.totalPaise,
+        kotIds: tickets.kotIds,
+        printJobIds: tickets.printJobIds
+      });
+      return { billId, revisionNumber, totalPaise: totals.totalPaise, kotIds: tickets.kotIds, printJobIds: tickets.printJobIds };
     });
     return run();
   }
@@ -2014,7 +2078,7 @@ export class OrderService {
     return run();
   }
 
-  moveTable(input: MoveTableInput, actor: DeviceActor): { fromTableId: string; toTableId: string; orderId: string; kotIds: string[] } {
+  moveTable(input: MoveTableInput, actor: DeviceActor): { fromTableId: string; toTableId: string; orderId: string; kotIds: string[]; printJobIds: string[] } {
     const targetPreview = this.requireTable(input.toTableId);
     if (targetPreview.current_order_id) {
       const fromTable = this.requireTable(input.fromTableId);
@@ -2038,7 +2102,8 @@ export class OrderService {
         fromTableId: input.fromTableId,
         toTableId: input.toTableId,
         orderId: movement.toOrderId,
-        kotIds: [...movement.sourceKotIds, ...movement.targetKotIds]
+        kotIds: [...movement.sourceKotIds, ...movement.targetKotIds],
+        printJobIds: movement.printJobIds
       };
     }
 
@@ -2057,7 +2122,7 @@ export class OrderService {
         .set({ status: order.status === "billed" ? "billed" : "occupied", currentOrderId: order.id, occupiedAt: now })
         .where(eq(restaurantTables.id, toTable.id))
         .run();
-      const kotIds = this.createKotsForChanges(
+      const tickets = this.createKotsForChanges(
         order,
         { ...toTable, current_order_id: order.id, status: order.status === "billed" ? "billed" : "occupied" },
         this.getOrderItems(order.id)
@@ -2067,7 +2132,8 @@ export class OrderService {
         now,
         false,
         false,
-        `Table shifted from ${fromTable.name} to ${toTable.name}: ${input.reason}`
+        `Table shifted from ${fromTable.name} to ${toTable.name}: ${input.reason}`,
+        "table_shifted"
       );
       const movementId = makeId("move");
       this.orm
@@ -2083,13 +2149,21 @@ export class OrderService {
           createdAt: now
         })
         .run();
-      this.appendEvent("table.shifted", "order", order.id, { ...input, movedBy: actor.name, movedByDeviceId: actor.id, orderId: order.id, movementId, kotIds });
-      return { fromTableId: fromTable.id, toTableId: toTable.id, orderId: order.id, kotIds };
+      this.appendEvent("table.shifted", "order", order.id, {
+        ...input,
+        movedBy: actor.name,
+        movedByDeviceId: actor.id,
+        orderId: order.id,
+        movementId,
+        kotIds: tickets.kotIds,
+        printJobIds: tickets.printJobIds
+      });
+      return { fromTableId: fromTable.id, toTableId: toTable.id, orderId: order.id, kotIds: tickets.kotIds, printJobIds: tickets.printJobIds };
     });
     return run();
   }
 
-  moveOrderItems(input: MoveOrderItemsInput, actor: DeviceActor): { fromOrderId: string; toOrderId: string; movementId: string; sourceKotIds: string[]; targetKotIds: string[] } {
+  moveOrderItems(input: MoveOrderItemsInput, actor: DeviceActor): { fromOrderId: string; toOrderId: string; movementId: string; sourceKotIds: string[]; targetKotIds: string[]; printJobIds: string[] } {
     const run = this.db.transaction(() => {
       const fromTable = this.requireTable(input.fromTableId);
       const toTable = this.requireTable(input.toTableId);
@@ -2097,10 +2171,11 @@ export class OrderService {
       const fromOrder = this.requireEditableOrder(fromTable.current_order_id);
       this.assertCanMoveOrder(fromOrder, actor, "items");
       const now = new Date().toISOString();
+      const targetHadRunningOrder = Boolean(toTable.current_order_id);
       const toOrder = toTable.current_order_id
         ? this.requireEditableOrder(toTable.current_order_id)
         : this.createOrder({ tableId: toTable.id, captainId: actor.name, pax: 1, orderType: "dine_in" }, fromOrder.pos_day_id, now, actor);
-      if (toTable.current_order_id) this.assertCanMoveOrder(toOrder, actor, "items");
+      if (targetHadRunningOrder) this.assertCanMoveOrder(toOrder, actor, "items");
       const movementPayload: Array<{ orderItemId: string; quantity: number; name: string }> = [];
       const sourceChanges: KotItemChange[] = [];
       const targetChanges: KotItemChange[] = [];
@@ -2170,23 +2245,26 @@ export class OrderService {
         .set({ status: "occupied", currentOrderId: toOrder.id, occupiedAt: sql`COALESCE(${restaurantTables.occupiedAt}, ${now})` })
         .where(eq(restaurantTables.id, toTable.id))
         .run();
-      const sourceKotIds = this.createKotsForChanges(
+      const sourceTickets = this.createKotsForChanges(
         fromOrder,
         fromTable,
         sourceChanges,
         now,
         false,
         false,
-        `Items shifted to ${toTable.name}: ${input.reason}`
+        `Items shifted to ${toTable.name}: ${input.reason}`,
+        "table_shifted"
       );
-      const targetKotIds = this.createKotsForChanges(
+      const targetTickets = this.createKotsForChanges(
         toOrder,
         { ...toTable, current_order_id: toOrder.id, status: "occupied" },
         targetChanges,
         now,
         false,
         false,
-        `Items shifted from ${fromTable.name}: ${input.reason}`
+        `Items shifted from ${fromTable.name}: ${input.reason}`,
+        "table_shifted",
+        targetHadRunningOrder ? toOrder.id : fromOrder.id
       );
 
       const movementId = makeId("move");
@@ -2210,10 +2288,18 @@ export class OrderService {
         movedByDeviceId: actor.id,
         toOrderId: toOrder.id,
         movementId,
-        sourceKotIds,
-        targetKotIds
+        sourceKotIds: sourceTickets.kotIds,
+        targetKotIds: targetTickets.kotIds,
+        printJobIds: [...sourceTickets.printJobIds, ...targetTickets.printJobIds]
       });
-      return { fromOrderId: fromOrder.id, toOrderId: toOrder.id, movementId, sourceKotIds, targetKotIds };
+      return {
+        fromOrderId: fromOrder.id,
+        toOrderId: toOrder.id,
+        movementId,
+        sourceKotIds: sourceTickets.kotIds,
+        targetKotIds: targetTickets.kotIds,
+        printJobIds: [...sourceTickets.printJobIds, ...targetTickets.printJobIds]
+      };
     });
     return run();
   }
@@ -3505,32 +3591,35 @@ export class OrderService {
     now: string,
     isNewOrder: boolean,
     forceCancelled: boolean,
-    reason?: string
-  ): string[] {
+    reason?: string,
+    typeOverride?: KotType,
+    sequenceOrderId?: string
+  ): TicketCreationResult {
     const meaningfulChanges = changes.filter((change) => change.quantityDelta !== 0 && change.productionUnitId);
-    if (meaningfulChanges.length === 0) return [];
+    if (meaningfulChanges.length === 0) return { kotIds: [], printJobIds: [] };
 
     const grouped = new Map<string, KotItemChange[]>();
     for (const change of meaningfulChanges) {
-      const type: KotType = forceCancelled
+      const type: KotType = typeOverride ?? (forceCancelled
         ? "cancelled"
         : change.quantityDelta > 0 && isNewOrder
           ? "new"
           : change.quantityDelta > 0
             ? "modified"
-            : "partial_cancel";
+            : "partial_cancel");
       const key = `${change.productionUnitId}:${type}:${change.ticketLabel}`;
       grouped.set(key, [...(grouped.get(key) ?? []), change]);
     }
 
     const kotIds: string[] = [];
+    const printJobIds: string[] = [];
     for (const [key, items] of grouped) {
       const [productionUnitId, type, ticketLabel] = key.split(":") as [string, KotType, "KOT" | "BOT"];
       const firstItem = items[0];
       if (!firstItem) continue;
 
       const kotId = makeId("kot");
-      const sequence = this.nextKotSequence();
+      const sequence = this.sequenceForKotGroup(sequenceOrderId ?? order.id, productionUnitId, ticketLabel);
       this.orm
         .insert(kots)
         .values({
@@ -3584,7 +3673,7 @@ export class OrderService {
         footer: template.kotFooter
       });
 
-      this.enqueuePrintJob({
+      const printJobId = this.enqueuePrintJob({
         targetType: ticketLabel,
         targetId: kotId,
         productionUnitId,
@@ -3593,17 +3682,19 @@ export class OrderService {
         printerName: firstItem.printerName,
         payload
       });
+      printJobIds.push(printJobId);
 
       this.appendEvent("kot.created", "kot", kotId, {
         orderId: order.id,
         productionUnitId,
         type,
-        sequence
+        sequence,
+        ticketLabel
       });
       kotIds.push(kotId);
     }
 
-    return kotIds;
+    return { kotIds, printJobIds };
   }
 
   private enqueuePrintJob(input: {
@@ -4171,6 +4262,22 @@ export class OrderService {
   private nextKotSequence(): number {
     const row = this.orm.select({ current: max(kots.sequence) }).from(kots).get();
     return (row?.current ?? 0) + 1;
+  }
+
+  private sequenceForKotGroup(orderId: string, productionUnitId: string, ticketLabel: "KOT" | "BOT"): number {
+    const existing = this.db
+      .prepare(
+        `SELECT k.sequence
+         FROM kots k
+         JOIN print_jobs pj ON pj.target_id = k.id
+         WHERE k.order_id = ?
+           AND k.production_unit_id = ?
+           AND pj.target_type = ?
+         ORDER BY k.created_at ASC, k.sequence ASC
+         LIMIT 1`
+      )
+      .get(orderId, productionUnitId, ticketLabel) as { sequence: number } | undefined;
+    return existing?.sequence ?? this.nextKotSequence();
   }
 
   private freeTable(tableId: string): void {

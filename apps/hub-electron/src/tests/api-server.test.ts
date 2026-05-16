@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createHubServer, isRealtimeEventVisibleForRole } from "../api/server.js";
+import { createHubServer, isRealtimeEventVisibleForRole, resolvePairingHubUrl, selectPairingLanAddress } from "../api/server.js";
 import type { FastifyInstance } from "fastify";
 import { BackupService } from "../db/backup-service.js";
 import { HubDatabase } from "../db/database.js";
@@ -12,11 +12,12 @@ import { AuthService } from "../domain/auth-service.js";
 import { EventBus } from "../domain/event-bus.js";
 import { OrderService } from "../domain/order-service.js";
 import { DryRunPrinterAdapter } from "../printing/escpos.js";
+import type { PrintTarget } from "../printing/escpos.js";
 import { PrintJobService } from "../printing/print-job-service.js";
 import { ConvexSyncBridge } from "../sync/convex-sync.js";
 import { createTestHub } from "./helpers.js";
 
-function createTestServer(options: { requestRestart?: () => void } = {}) {
+function createTestServer(options: { publicUrl?: string; requestRestart?: () => void } = {}) {
   const hub = createTestHub();
   const printJobService = new PrintJobService(hub.database.orm, new DryRunPrinterAdapter());
   const app = createHubServer({
@@ -27,6 +28,7 @@ function createTestServer(options: { requestRestart?: () => void } = {}) {
     printJobService,
     syncBridge: new ConvexSyncBridge(hub.database.orm, undefined, undefined),
     eventBus: new EventBus<unknown>(),
+    publicUrl: options.publicUrl,
     requestRestart: options.requestRestart
   });
 
@@ -56,7 +58,28 @@ function createFileBackedTestServer(root: string, options: { requestRestart?: ()
   return { app, database, databasePath };
 }
 
+function createFailingPrintTestServer() {
+  const hub = createTestHub();
+  const printJobService = new PrintJobService(hub.database.orm, new DryRunPrinterAdapter(), new FailingPrinterAdapter());
+  const app = createHubServer({
+    database: hub.database,
+    backupService: new BackupService(hub.database, ":memory:", "./data/test-backups"),
+    authService: hub.authService,
+    orderService: hub.orderService,
+    printJobService,
+    syncBridge: new ConvexSyncBridge(hub.database.orm, undefined, undefined),
+    eventBus: new EventBus<unknown>()
+  });
+  return { ...hub, app };
+}
+
 const testManagerApproval = { pin: "1234", reason: "Pair device", approvedBy: "manager" };
+
+class FailingPrinterAdapter {
+  async print(_payload: PrintTarget): Promise<void> {
+    throw new Error("printer offline");
+  }
+}
 
 async function setTestManagerPin(app: FastifyInstance, pin = "1234") {
   await app.inject({
@@ -73,6 +96,59 @@ function pairingPayload(deviceName: string, role: "admin" | "captain" | "waiter"
 describe("Hub API auth and service flow", () => {
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it("uses saved hub public URL in pairing QR payloads instead of localhost", async () => {
+    const { app, database } = createTestServer();
+    const headers = { "x-device-token": "test-admin-token", "x-manager-pin": "1234" };
+    await setTestManagerPin(app);
+    await app.inject({
+      method: "PUT",
+      url: "/settings/hub-connection",
+      headers,
+      payload: {
+        cloudUrl: "https://example.convex.site",
+        installationId: "install-main",
+        syncSecret: "secret-main",
+        hubPublicUrl: "http://192.168.1.20:3737"
+      }
+    });
+
+    const pairingResponse = await app.inject({
+      method: "POST",
+      url: "/devices/pairing-codes",
+      headers: { "x-device-token": "test-admin-token", host: "127.0.0.1:3737" },
+      payload: pairingPayload("Waiter phone", "waiter")
+    });
+    const pairing = pairingResponse.json<{ pairingPayload: { hubUrl: string }; pairingPayloadText: string }>();
+
+    expect(pairing.pairingPayload.hubUrl).toBe("http://192.168.1.20:3737");
+    expect(JSON.parse(pairing.pairingPayloadText).hubUrl).toBe("http://192.168.1.20:3737");
+
+    await app.close();
+    database.close();
+  });
+
+  it("falls back to detected LAN IPv4 when pairing requests arrive through localhost", () => {
+    expect(
+      resolvePairingHubUrl({
+        savedPublicUrl: "",
+        configuredPublicUrl: "",
+        requestProtocol: "http",
+        requestHost: "127.0.0.1:3737",
+        fallbackLanAddress: "192.168.1.34"
+      })
+    ).toBe("http://192.168.1.34:3737");
+  });
+
+  it("prefers physical LAN interfaces over virtual adapters for QR fallback", () => {
+    expect(
+      selectPairingLanAddress({
+        "vEthernet (Default Switch)": [{ address: "172.24.96.1", family: "IPv4", internal: false }],
+        "Docker Desktop": [{ address: "192.168.65.1", family: "IPv4", internal: false }],
+        "Wi-Fi": [{ address: "192.168.1.34", family: "IPv4", internal: false }]
+      })
+    ).toBe("192.168.1.34");
   });
   it("requires a local device token for protected routes", async () => {
     const { app, database } = createTestServer();
@@ -308,7 +384,7 @@ describe("Hub API auth and service flow", () => {
       code: pairing.code,
       role: "waiter"
     });
-    expect(JSON.parse(pairing.pairingPayloadText).hubUrl).toContain("localhost");
+    expect(JSON.parse(pairing.pairingPayloadText).hubUrl).toBe(pairing.pairingPayload.hubUrl);
     expect(exchangeResponse.statusCode).toBe(200);
     expect(meResponse.json()).toMatchObject({ name: "Waiter phone", role: "waiter" });
     expect(orderResponse.statusCode).toBe(200);
@@ -918,7 +994,7 @@ describe("Hub API auth and service flow", () => {
     });
 
     expect(billResponse.statusCode).toBe(200);
-    expect(printResponse.json()).toEqual({ printed: 2, failed: 0 });
+    expect(printResponse.json()).toEqual({ printed: 1, failed: 0 });
     expect(database.db.prepare("SELECT status FROM print_jobs WHERE target_id = ?").get(bill.billId)).toEqual({
       status: "printed"
     });
@@ -1225,9 +1301,66 @@ describe("Hub API auth and service flow", () => {
     const first = await app.inject({ method: "POST", url: "/orders/submit", headers, payload });
     const second = await app.inject({ method: "POST", url: "/orders/submit", headers, payload });
 
-    expect(second.json()).toEqual(first.json());
+    expect(first.json()).toMatchObject({ processed: { printed: 1, failed: 0 } });
+    expect(second.json()).toMatchObject({ orderId: first.json<{ orderId: string }>().orderId, kotIds: first.json<{ kotIds: string[] }>().kotIds });
+    expect(second.json()).not.toHaveProperty("processed");
     expect(database.db.prepare("SELECT COUNT(*) AS count FROM orders").get()).toEqual({ count: 1 });
     expect(database.db.prepare("SELECT COUNT(*) AS count FROM kots").get()).toEqual({ count: 1 });
+
+    await app.close();
+    database.close();
+  });
+
+  it("prints newly submitted KOT jobs immediately from the submit action", async () => {
+    const { app, database } = createTestServer();
+    const headers = { "x-device-token": "test-admin-token" };
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/orders/submit",
+      headers,
+      payload: {
+        tableId: "table-t1",
+        captainId: "waiter-1",
+        pax: 1,
+        orderType: "dine_in",
+        items: [{ menuItemId: "item-dal-fry", quantity: 1 }]
+      }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ processed: { printed: 1, failed: 0 } });
+    expect(database.db.prepare("SELECT status, attempts FROM print_jobs LIMIT 1").get()).toEqual({ status: "printed", attempts: 1 });
+
+    await app.close();
+    database.close();
+  });
+
+  it("keeps the order when immediate printing fails and leaves the job retryable", async () => {
+    const { app, database } = createFailingPrintTestServer();
+    const headers = { "x-device-token": "test-admin-token" };
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/orders/submit",
+      headers,
+      payload: {
+        tableId: "table-t1",
+        captainId: "waiter-1",
+        pax: 1,
+        orderType: "dine_in",
+        items: [{ menuItemId: "item-dal-fry", quantity: 1 }]
+      }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ processed: { printed: 0, failed: 1 } });
+    expect(database.db.prepare("SELECT COUNT(*) AS count FROM orders").get()).toEqual({ count: 1 });
+    expect(database.db.prepare("SELECT status, attempts, last_error FROM print_jobs LIMIT 1").get()).toEqual({
+      status: "failed",
+      attempts: 1,
+      last_error: "printer offline"
+    });
 
     await app.close();
     database.close();

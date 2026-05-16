@@ -1,4 +1,5 @@
 import { formatInr } from "@gaurav-pos/shared";
+import type { ReactNode } from "react";
 import { EmptyState } from "../ui/empty-state.js";
 
 export function LineItems({
@@ -14,6 +15,7 @@ export function LineItems({
     amount: number;
     onMinus?: () => void;
     onPlus?: () => void;
+    action?: ReactNode;
   }>;
   emptyTitle: string;
   emptyText: string;
@@ -29,13 +31,13 @@ export function LineItems({
             <strong>{row.title}</strong>
             <span>{row.meta}</span>
           </div>
-          <div className="qty-cluster">
+          <div className={row.onMinus || row.onPlus ? "qty-cluster" : "qty-cluster qty-readonly"}>
             {row.onMinus ? (
               <button type="button" onClick={row.onMinus}>
                 -
               </button>
             ) : null}
-            <b>{row.quantity}</b>
+            <b>{row.quantity}<span aria-hidden="true"> x</span></b>
             {row.onPlus ? (
               <button type="button" onClick={row.onPlus}>
                 +
@@ -43,6 +45,7 @@ export function LineItems({
             ) : null}
           </div>
           <strong>{formatInr(row.amount)}</strong>
+          {row.action ? <div className="line-row-action">{row.action}</div> : null}
         </article>
       ))}
     </div>

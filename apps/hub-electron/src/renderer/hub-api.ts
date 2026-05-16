@@ -112,6 +112,12 @@ export interface PrintJob {
   created_at: string;
 }
 
+export interface PrintProcessSummary {
+  printed: number;
+  failed: number;
+  skipped?: number;
+}
+
 export interface SystemPrinterInfo {
   name: string;
   displayName: string;
@@ -525,7 +531,7 @@ export const hubApi = {
     },
     idempotencyKey?: string
   ) =>
-    apiFetch<{ orderId: string; kotIds: string[] }>("/orders/submit", {
+    apiFetch<{ orderId: string; kotIds: string[]; printJobIds?: string[]; processed?: PrintProcessSummary }>("/orders/submit", {
       method: "POST",
       idempotent: "orders-submit",
       idempotencyKey,
@@ -550,7 +556,7 @@ export const hubApi = {
       body: JSON.stringify(payload)
     }),
   printBill: (billId: string, idempotencyKey?: string) =>
-    apiFetch<{ printJobId: string }>(`/bills/${billId}/print`, { method: "POST", idempotent: "bill-print", idempotencyKey, body: JSON.stringify({}) }),
+    apiFetch<{ printJobId: string; processed?: PrintProcessSummary }>(`/bills/${billId}/print`, { method: "POST", idempotent: "bill-print", idempotencyKey, body: JSON.stringify({}) }),
   reviseBill: (
     billId: string,
     payload: ManagerApprovalPayload & {
@@ -561,25 +567,30 @@ export const hubApi = {
     },
     idempotencyKey?: string
   ) =>
-    apiFetch<{ billId: string; revisionNumber: number; totalPaise: number; kotIds: string[] }>(`/bills/${billId}/revise`, {
+    apiFetch<{ billId: string; revisionNumber: number; totalPaise: number; kotIds: string[]; printJobIds?: string[]; processed?: PrintProcessSummary }>(`/bills/${billId}/revise`, {
       method: "POST",
       idempotent: "bill-revise",
       idempotencyKey,
       body: JSON.stringify(payload)
     }),
   reprintBill: (billId: string, payload: ManagerApprovalPayload, idempotencyKey?: string) =>
-    apiFetch<{ printJobId: string }>(`/bills/${billId}/reprint`, { method: "POST", idempotent: "bill-reprint", idempotencyKey, body: JSON.stringify({ reason: payload.managerApproval.reason, ...payload }) }),
+    apiFetch<{ printJobId: string; processed?: PrintProcessSummary }>(`/bills/${billId}/reprint`, { method: "POST", idempotent: "bill-reprint", idempotencyKey, body: JSON.stringify({ reason: payload.managerApproval.reason, ...payload }) }),
   markBillNc: (billId: string, payload: ManagerApprovalPayload, idempotencyKey?: string) =>
-    apiFetch<{ printJobId: string }>(`/bills/${billId}/nc`, { method: "POST", idempotent: "bill-nc", idempotencyKey, body: JSON.stringify(payload) }),
+    apiFetch<{ printJobId: string; processed?: PrintProcessSummary }>(`/bills/${billId}/nc`, { method: "POST", idempotent: "bill-nc", idempotencyKey, body: JSON.stringify(payload) }),
   cancelOrder: (orderId: string, payload: ManagerApprovalPayload) =>
-    apiFetch<{ orderId: string }>(`/orders/${orderId}/cancel`, {
+    apiFetch<{ orderId: string; kotIds?: string[]; printJobIds?: string[]; processed?: PrintProcessSummary }>(`/orders/${orderId}/cancel`, {
+      method: "POST",
+      body: JSON.stringify({ reason: payload.managerApproval.reason, ...payload })
+    }),
+  cancelItems: (orderId: string, payload: ManagerApprovalPayload & { items: Array<{ orderItemId: string; quantity: number }> }) =>
+    apiFetch<{ orderId: string; kotIds: string[]; printJobIds?: string[]; processed?: PrintProcessSummary }>(`/orders/${orderId}/items/cancel`, {
       method: "POST",
       body: JSON.stringify({ reason: payload.managerApproval.reason, ...payload })
     }),
   moveTable: (payload: { fromTableId: string; toTableId: string; reason: string }) =>
-    apiFetch<{ orderId: string; kotIds: string[] }>("/tables/move", { method: "POST", body: JSON.stringify(payload) }),
+    apiFetch<{ orderId: string; kotIds: string[]; printJobIds?: string[]; processed?: PrintProcessSummary }>("/tables/move", { method: "POST", body: JSON.stringify(payload) }),
   moveItems: (payload: { fromTableId: string; toTableId: string; reason: string; items: Array<{ orderItemId: string; quantity: number }> }) =>
-    apiFetch<{ fromOrderId: string; toOrderId: string; sourceKotIds: string[]; targetKotIds: string[] }>("/orders/items/move", { method: "POST", body: JSON.stringify(payload) }),
+    apiFetch<{ fromOrderId: string; toOrderId: string; sourceKotIds: string[]; targetKotIds: string[]; printJobIds?: string[]; processed?: PrintProcessSummary }>("/orders/items/move", { method: "POST", body: JSON.stringify(payload) }),
   alcohol: () => apiFetch<AlcoholCatalog>("/alcohol"),
   importAlcoholCsv: (type: "plain_liquor" | "prepared_product", csv: string) =>
     apiFetch<CsvImportResult>("/alcohol/items/import-csv", { method: "POST", body: JSON.stringify({ type, csv }) }),

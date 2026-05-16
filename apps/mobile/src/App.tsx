@@ -18,7 +18,7 @@ import {
 } from "react-native";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { getTableDisplayState, rankMenuQuickPicks, searchMenuItems, tableDisplayLabel, type MenuQuickPick, type OrderItemInput, type SaleGroupKind } from "@gaurav-pos/shared";
-import { HubClient, type CurrentDaySummary, type HubBootstrap, type HubOrder, type KdsTicket } from "./lib/hub-client";
+import { getLocalOnlyHubUrlMessage, getPairingFailureAlert, HubClient, type CurrentDaySummary, type HubBootstrap, type HubOrder, type KdsTicket } from "./lib/hub-client";
 import { clearDraft, getDeviceToken, getHubUrl, loadDraft, saveDraft, setDeviceToken, setHubUrl } from "./lib/draft-store";
 import { getAndroidStatusBarTopInset } from "./lib/safe-area";
 
@@ -379,6 +379,35 @@ export default function App() {
     }
   }
 
+  async function cancelSentItem(orderItemId: string, quantity: number, pin: string, reason: string) {
+    if (!currentOrder?.order || !selectedTableId) {
+      setMessage("Choose a running table before cancelling an item.");
+      return;
+    }
+    if (connection !== "online") {
+      setMessage("Reconnect to the hub before cancelling sent items.");
+      return;
+    }
+    if (!pin.trim() || reason.trim().length < 3) {
+      setMessage("Manager PIN and a clear reason are required.");
+      return;
+    }
+    try {
+      setSending(true);
+      await client.cancelItems(currentOrder.order.id, {
+        managerApproval: { pin: pin.trim(), reason: reason.trim(), approvedBy: deviceName || "captain" },
+        items: [{ orderItemId, quantity }]
+      });
+      await refresh(false);
+      await loadTableOrder(selectedTableId);
+      setMessage("Item cancelled. Cancellation ticket was sent to the counter.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not cancel item.");
+    } finally {
+      setSending(false);
+    }
+  }
+
   async function generateBillForSelectedTable() {
     if (!currentOrder?.order || !selectedTableId) {
       setMessage("Send items first, then generate the bill.");
@@ -584,6 +613,11 @@ export default function App() {
       Alert.alert("Pairing code needed", "Scan the hub QR, paste the QR payload, or type the six-digit code.");
       return;
     }
+    const localOnlyMessage = getLocalOnlyHubUrlMessage(pairHubUrl);
+    if (localOnlyMessage) {
+      Alert.alert("Pairing URL needs hub IP", localOnlyMessage);
+      return;
+    }
     try {
       const pairClient = new HubClient(pairHubUrl, deviceTokenDraft.trim());
       const result = await pairClient.exchangePairingCode({
@@ -604,7 +638,8 @@ export default function App() {
       setMessage(`${result.deviceName} is paired and ready.`);
       Alert.alert("Device paired", `${result.deviceName} is ready as ${result.role}.`);
     } catch (error) {
-      Alert.alert("Pairing failed", error instanceof Error ? error.message : "Try a fresh code from the hub.");
+      const alert = getPairingFailureAlert(pairHubUrl, error);
+      Alert.alert(alert.title, alert.message);
     }
   }
 
@@ -638,8 +673,13 @@ export default function App() {
   }
 
   async function pairDeviceFromPayload(payload: PairingPayload) {
+    const pairHubUrl = normaliseHubUrl(payload.hubUrl);
+    const localOnlyMessage = getLocalOnlyHubUrlMessage(pairHubUrl);
+    if (localOnlyMessage) {
+      Alert.alert("Pairing URL needs hub IP", localOnlyMessage);
+      return;
+    }
     try {
-      const pairHubUrl = normaliseHubUrl(payload.hubUrl);
       const pairClient = new HubClient(pairHubUrl, deviceTokenDraft.trim());
       const result = await pairClient.exchangePairingCode({
         code: payload.code,
@@ -659,7 +699,8 @@ export default function App() {
       setMessage(`${result.deviceName} is paired and ready.`);
       Alert.alert("Device paired", `${result.deviceName} is ready as ${result.role}.`);
     } catch (error) {
-      Alert.alert("Pairing failed", error instanceof Error ? error.message : "Try a fresh code from the hub.");
+      const alert = getPairingFailureAlert(pairHubUrl, error);
+      Alert.alert(alert.title, alert.message);
     }
   }
 
@@ -730,6 +771,7 @@ export default function App() {
           onChangeQty={changeQty}
           onShiftTable={(tableId) => void shiftTable(tableId)}
           onShiftItem={(orderItemId, quantity, toTableId) => void shiftItem(orderItemId, quantity, toTableId)}
+          onCancelSentItem={(orderItemId, quantity, pin, reason) => void cancelSentItem(orderItemId, quantity, pin, reason)}
           onGenerateBill={() => void generateBillForSelectedTable()}
           onPrintBill={() => void printSelectedBill()}
           onReprintBill={(pin, reason) => void reprintSelectedBill(pin, reason)}
@@ -1393,6 +1435,7 @@ function TicketScreen({
   onChangeQty,
   onShiftTable,
   onShiftItem,
+  onCancelSentItem,
   onGenerateBill,
   onPrintBill,
   onReprintBill,
@@ -1421,6 +1464,7 @@ function TicketScreen({
   onChangeQty: (index: number, delta: number) => void;
   onShiftTable: (tableId: string) => void;
   onShiftItem: (orderItemId: string, quantity: number, toTableId: string) => void;
+  onCancelSentItem: (orderItemId: string, quantity: number, pin: string, reason: string) => void;
   onGenerateBill: () => void;
   onPrintBill: () => void;
   onReprintBill: (pin: string, reason: string) => void;
@@ -1436,6 +1480,9 @@ function TicketScreen({
 }) {
   const [itemShiftTargetId, setItemShiftTargetId] = useState("");
   const [itemShiftQty, setItemShiftQty] = useState<Record<string, string>>({});
+  const [cancelQty, setCancelQty] = useState<Record<string, string>>({});
+  const [cancelPin, setCancelPin] = useState("");
+  const [cancelReason, setCancelReason] = useState("Item cancelled");
   const canSubmit = Boolean(selectedTableName && items.length > 0 && !sending);
   const shiftTargets = tables.filter((table) => table.id !== selectedTableId && getTableDisplayState(table) !== "disabled");
   return (
@@ -1502,6 +1549,47 @@ function TicketScreen({
               <Text style={styles.muted}>Rs {formatRupees(item.unit_price_paise * item.quantity)}</Text>
             </View>
           ))}
+          {canBill ? (
+            <View style={styles.cancelPanel}>
+              <Text style={styles.smallMuted}>Cancel a sent item</Text>
+              <TextInput
+                style={styles.input}
+                value={cancelPin}
+                onChangeText={setCancelPin}
+                secureTextEntry
+                keyboardType="number-pad"
+                placeholder="Manager PIN"
+              />
+              <TextInput
+                style={styles.input}
+                value={cancelReason}
+                onChangeText={setCancelReason}
+                placeholder="Cancellation reason"
+              />
+              {sentItems.map((item) => {
+                const quantityText = cancelQty[item.id] ?? "1";
+                const quantity = Math.min(item.quantity, Math.max(1, Number(quantityText.replace(/\D/g, "") || 1)));
+                return (
+                  <View key={`cancel-${item.id}`} style={styles.itemShiftRow}>
+                    <Text style={styles.sentName} numberOfLines={2}>{item.name_snapshot}</Text>
+                    <TextInput
+                      style={styles.shiftQtyInput}
+                      value={quantityText}
+                      onChangeText={(value) => setCancelQty((current) => ({ ...current, [item.id]: value.replace(/\D/g, "").slice(0, 3) }))}
+                      keyboardType="number-pad"
+                    />
+                    <Pressable
+                      style={[styles.dangerSmallButton, sending && styles.buttonDisabled]}
+                      disabled={sending}
+                      onPress={() => onCancelSentItem(item.id, quantity, cancelPin, cancelReason)}
+                    >
+                      <Text style={styles.dangerSmallButtonText}>Cancel</Text>
+                    </Pressable>
+                  </View>
+                );
+              })}
+            </View>
+          ) : null}
         </View>
       )}
 
@@ -2236,6 +2324,25 @@ const styles = StyleSheet.create({
     fontWeight: "900",
     backgroundColor: palette.paper
   },
+  cancelPanel: {
+    gap: 8,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: "#f0b8ad",
+    borderRadius: 10,
+    backgroundColor: "#fff3ef"
+  },
+  dangerSmallButton: {
+    minHeight: 42,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: palette.red,
+    backgroundColor: "#fff0ed",
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  dangerSmallButtonText: { color: palette.red, fontWeight: "900" },
   totalText: { color: palette.green, fontSize: 19, fontWeight: "900" },
   filterChips: { gap: 8, paddingVertical: 2, paddingRight: 8 },
   filterChip: {

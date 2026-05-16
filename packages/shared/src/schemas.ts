@@ -74,6 +74,16 @@ export const cancelOrderSchema = z.object({
   managerApproval: managerApprovalSchema.optional()
 });
 
+export const cancelOrderItemsSchema = z.object({
+  reason: z.string().trim().min(3).max(500).default("Item cancelled"),
+  requestedBy: z.string().trim().min(1).max(120).default("captain"),
+  managerApproval: managerApprovalSchema,
+  items: z.array(z.object({
+    orderItemId: z.string().min(1),
+    quantity: z.number().int().min(1)
+  })).min(1)
+});
+
 export const managerPinSchema = z.object({
   currentPin: z.string().trim().min(4).max(32).optional(),
   newPin: z.string().trim().min(4).max(32),
@@ -342,6 +352,7 @@ export type SubmitOrderInput = z.infer<typeof submitOrderSchema>;
 export type SettleBillInput = z.input<typeof settleBillSchema>;
 export type ReprintKotInput = z.infer<typeof reprintKotSchema>;
 export type CancelOrderInput = z.infer<typeof cancelOrderSchema>;
+export type CancelOrderItemsInput = z.infer<typeof cancelOrderItemsSchema>;
 export type ManagerApprovalInput = z.infer<typeof managerApprovalSchema>;
 export type ManagerPinInput = z.infer<typeof managerPinSchema>;
 export type CreateSaleGroupInput = z.input<typeof createSaleGroupSchema>;

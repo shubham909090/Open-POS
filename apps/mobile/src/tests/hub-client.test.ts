@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { HubClient } from "../lib/hub-client";
+import { HubClient, getLocalOnlyHubUrlMessage, getPairingFailureAlert, HubHttpError } from "../lib/hub-client";
 
 describe("HubClient", () => {
   afterEach(() => {
@@ -52,6 +52,22 @@ describe("HubClient", () => {
       "http://hub.local:3737/devices/pair/exchange",
       expect.objectContaining({ method: "POST" })
     );
+  });
+
+  it("explains local-only pairing URLs before Android tries to connect to itself", () => {
+    expect(getLocalOnlyHubUrlMessage("http://127.0.0.1:3737")).toContain("http://127.0.0.1:3737");
+    expect(getLocalOnlyHubUrlMessage("http://localhost:3737")).toContain("localhost");
+    expect(getLocalOnlyHubUrlMessage("http://[::1]:3737")).toContain("[::1]");
+    expect(getLocalOnlyHubUrlMessage("http://192.168.1.20:3737")).toBeNull();
+  });
+
+  it("keeps server-side pairing errors distinct from network reachability errors", () => {
+    const expired = getPairingFailureAlert("http://192.168.1.20:3737", new HubHttpError("Pairing code has expired", 401));
+    const network = getPairingFailureAlert("http://192.168.1.20:3737", new TypeError("Network request failed"));
+
+    expect(expired).toEqual({ title: "Pairing failed", message: "Pairing code has expired" });
+    expect(network.title).toBe("Hub not reachable");
+    expect(network.message).toContain("http://192.168.1.20:3737");
   });
 
   it("sends an idempotency key with order submissions", async () => {
