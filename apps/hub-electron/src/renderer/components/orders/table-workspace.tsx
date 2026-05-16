@@ -10,7 +10,21 @@ import { EmptyState } from "../ui/empty-state.js";
 import { LineItems } from "./line-items.js";
 import { BillingPanel } from "./billing-panel.js";
 
-export function TableWorkspace({ tableId, tableName, bootstrap, setNotice, requestManagerApproval }: { tableId: string | null; tableName: string; bootstrap: Bootstrap; setNotice: NoticeSetter; requestManagerApproval: ManagerApprovalRequest }) {
+export function TableWorkspace({
+  tableId,
+  tableName,
+  bootstrap,
+  setNotice,
+  requestManagerApproval,
+  onClose
+}: {
+  tableId: string | null;
+  tableName: string;
+  bootstrap: Bootstrap;
+  setNotice: NoticeSetter;
+  requestManagerApproval: ManagerApprovalRequest;
+  onClose?: () => void;
+}) {
   const queryClient = useQueryClient();
   const orderPanel = useHubStore((state) => state.orderPanel);
   const setOrderPanel = useHubStore((state) => state.setOrderPanel);
@@ -167,7 +181,14 @@ export function TableWorkspace({ tableId, tableName, bootstrap, setNotice, reque
           <span>Selected table</span>
           <h2>{tableName}</h2>
         </div>
-        <div className="total-chip">{formatInr(draftTotal + sentTotal)}</div>
+        <div className="ticket-header-actions">
+          <div className="total-chip">{formatInr(draftTotal + sentTotal)}</div>
+          {onClose ? (
+            <button type="button" className="quiet-button" onClick={onClose}>
+              Close
+            </button>
+          ) : null}
+        </div>
       </div>
       <div className="segmented">
         <button type="button" className={orderPanel === "new" ? "active" : ""} onClick={() => setOrderPanel("new")}>New order</button>
@@ -272,7 +293,7 @@ export function TableWorkspace({ tableId, tableName, bootstrap, setNotice, reque
                 <div>
                   <strong>Transfer table or items</strong>
                 </div>
-                <button type="button">{transferOpen ? "Hide" : "Open"}</button>
+                <span>{transferOpen ? "Hide" : "Open"}</span>
               </button>
               {transferOpen ? (
                 <>

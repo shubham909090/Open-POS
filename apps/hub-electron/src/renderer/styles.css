@@ -532,13 +532,20 @@
 
 .orders-grid {
   display: grid;
-  grid-template-columns: minmax(180px, 220px) minmax(280px, 1fr) minmax(0, 470px);
   gap: 16px;
   align-items: start;
 }
 
 .orders-grid > * {
   min-width: 0;
+}
+
+.order-workspace-grid {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(360px, 1fr) minmax(360px, 470px);
+  gap: 16px;
+  align-items: start;
 }
 
 .panel-title {
@@ -572,6 +579,7 @@
 
 .table-list {
   display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
   gap: 10px;
 }
 
@@ -588,7 +596,7 @@
 }
 
 .hub-shell .table-tile {
-  min-height: 118px;
+  min-height: 112px;
   display: grid;
   gap: 8px;
   align-content: stretch;
@@ -799,6 +807,24 @@
   justify-content: space-between;
   align-items: start;
   gap: 12px;
+}
+
+.ticket-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.quiet-button {
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--ink);
+  font-size: 0.88rem;
 }
 
 .ticket-header span {
@@ -1653,6 +1679,7 @@
   }
 
   .orders-grid,
+  .order-workspace-grid,
   .alcohol-layout,
   .reports-layout {
     grid-template-columns: 1fr;

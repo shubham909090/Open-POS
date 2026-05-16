@@ -24,19 +24,23 @@ export class DryRunPrinterAdapter implements PrinterAdapter {
   }
 }
 
+export function renderEscposPayload(payload: string): Buffer {
+  return Buffer.concat([
+    Buffer.from([0x1b, 0x40]),
+    Buffer.from([0x1b, 0x61, 0x00]),
+    Buffer.from(payload, "utf8"),
+    Buffer.from([0x1b, 0x61, 0x00]),
+    Buffer.from([0x1d, 0x56, 0x00])
+  ]);
+}
+
 export class LanEscposPrinterAdapter implements PrinterAdapter {
   async print(target: PrintTarget): Promise<void> {
     if (!target.printerHost || !target.printerPort) {
       throw new Error("No network printer configured for print job");
     }
 
-    const data = Buffer.concat([
-      Buffer.from([0x1b, 0x40]),
-      Buffer.from([0x1b, 0x61, 0x00]),
-      Buffer.from(target.payload, "utf8"),
-      Buffer.from([0x1b, 0x61, 0x00]),
-      Buffer.from([0x1d, 0x56, 0x00])
-    ]);
+    const data = renderEscposPayload(target.payload);
 
     await new Promise<void>((resolve, reject) => {
       const socket = net.createConnection({ host: target.printerHost!, port: target.printerPort!, timeout: 5_000 }, () => {
@@ -82,7 +86,7 @@ export class SystemPrinterAdapter implements PrinterAdapter {
             `$doc.PrinterSettings.PrinterName = ${JSON.stringify(target.printerName)};`,
             "$doc.PrintController = New-Object System.Drawing.Printing.StandardPrintController;",
             "$doc.DefaultPageSettings.Margins = New-Object System.Drawing.Printing.Margins(0, 0, 0, 0);",
-            "$font = New-Object System.Drawing.Font('Consolas', 9);",
+            "$font = [System.Drawing.Font]::new('Consolas', 9, [System.Drawing.FontStyle]::Bold);",
             "$brush = [System.Drawing.Brushes]::Black;",
             "$script:index = 0;",
             "$doc.add_PrintPage({",

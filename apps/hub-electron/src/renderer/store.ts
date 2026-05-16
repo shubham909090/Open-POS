@@ -27,6 +27,7 @@ interface HubUiState {
   drafts: Record<string, Record<string, DraftItem>>;
   setView: (view: HubView) => void;
   selectTable: (tableId: string) => void;
+  clearSelectedTable: () => void;
   setOrderPanel: (panel: OrderPanel) => void;
   setMenuSearch: (value: string) => void;
   setSelectedKdsUnitId: (unitId: string | null) => void;
@@ -46,6 +47,7 @@ export const useHubStore = create<HubUiState>((set) => ({
   drafts: {},
   setView: (view) => set({ view }),
   selectTable: (tableId) => set({ selectedTableId: tableId, orderPanel: "new" }),
+  clearSelectedTable: () => set({ selectedTableId: null, orderPanel: "new" }),
   setOrderPanel: (orderPanel) => set({ orderPanel }),
   setMenuSearch: (menuSearch) => set({ menuSearch }),
   setSelectedKdsUnitId: (selectedKdsUnitId) => set({ selectedKdsUnitId }),

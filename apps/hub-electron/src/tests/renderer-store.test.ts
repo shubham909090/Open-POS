@@ -53,4 +53,14 @@ describe("hub UI draft store", () => {
     expect(useHubStore.getState().menuSearch).toBe("panr");
     expect(useHubStore.getState().recentMenuItemIds).toEqual(["dish-1"]);
   });
+
+  it("lets operators return Take Orders to the clean tables-only state", () => {
+    useHubStore.getState().selectTable("table-1");
+    useHubStore.getState().setOrderPanel("bill");
+
+    useHubStore.getState().clearSelectedTable();
+
+    expect(useHubStore.getState().selectedTableId).toBeNull();
+    expect(useHubStore.getState().orderPanel).toBe("new");
+  });
 });

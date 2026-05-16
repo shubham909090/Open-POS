@@ -1,5 +1,5 @@
 import { formatInr, getTableDisplayState, rankMenuQuickPicks, searchMenuItems, tableDisplayClass, tableDisplayLabel, type SaleGroupKind } from "@gaurav-pos/shared";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { NoticeSetter } from "../../lib/format.js";
 import type { ManagerApprovalRequest } from "../../hooks/use-manager-approval.js";
 import type { Bootstrap } from "../../hub-api.js";
@@ -11,6 +11,7 @@ import { TableWorkspace } from "./table-workspace.js";
 export function OrdersView({ bootstrap, setNotice, requestManagerApproval }: { bootstrap: Bootstrap; setNotice: NoticeSetter; requestManagerApproval: ManagerApprovalRequest }) {
   const selectedTableId = useHubStore((state) => state.selectedTableId);
   const selectTable = useHubStore((state) => state.selectTable);
+  const clearSelectedTable = useHubStore((state) => state.clearSelectedTable);
   const setOrderPanel = useHubStore((state) => state.setOrderPanel);
   const search = useHubStore((state) => state.menuSearch);
   const setSearch = useHubStore((state) => state.setMenuSearch);
@@ -18,11 +19,8 @@ export function OrdersView({ bootstrap, setNotice, requestManagerApproval }: { b
   const addDraftItem = useHubStore((state) => state.addDraftItem);
   const [saleGroupFilter, setSaleGroupFilter] = useState<SaleGroupKind | "all">("all");
   const [unitFilter, setUnitFilter] = useState("");
-  const selectedTable = bootstrap.tables.find((table) => table.id === selectedTableId) ?? bootstrap.tables.find((table) => table.active) ?? null;
-
-  useEffect(() => {
-    if (!selectedTableId && selectedTable) selectTable(selectedTable.id);
-  }, [selectedTableId, selectedTable, selectTable]);
+  const activeTables = bootstrap.tables.filter((table) => table.active);
+  const selectedTable = activeTables.find((table) => table.id === selectedTableId) ?? null;
 
   const hasSearch = search.trim().length > 0;
   const searchFilters = {
@@ -40,15 +38,15 @@ export function OrdersView({ bootstrap, setNotice, requestManagerApproval }: { b
   };
 
   return (
-    <div className="orders-grid">
+    <div className={selectedTable ? "orders-grid has-selection" : "orders-grid tables-only"}>
       <section className="table-map panel">
         <div className="panel-title">
           <h2>Tables</h2>
-          <span>{bootstrap.tables.filter((table) => table.active).length} active</span>
+          <span>{activeTables.length} active</span>
         </div>
         <div className="floor-table-list">
           {bootstrap.floors.filter((floor) => floor.active).map((floor) => {
-            const floorTables = bootstrap.tables.filter((table) => table.active && table.floor_id === floor.id);
+            const floorTables = activeTables.filter((table) => table.floor_id === floor.id);
             if (!floorTables.length) return null;
             return (
               <div className="floor-group" key={floor.id}>
@@ -90,30 +88,31 @@ export function OrdersView({ bootstrap, setNotice, requestManagerApproval }: { b
               </div>
             );
           })}
+          {!activeTables.length ? <EmptyState title="Add a table first" description="Setup needs at least one active table before orders can start." /> : null}
         </div>
       </section>
 
-      <section className="menu-browser panel">
-        <div className="panel-title">
-          <h2>Menu</h2>
-          <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search dish" />
-        </div>
-        <div className="menu-filter-row" aria-label="Menu filters">
-          <button type="button" className={saleGroupFilter === "all" ? "active" : ""} onClick={() => setSaleGroupFilter("all")}>All</button>
-          {saleGroupKinds.map(([kind, label]) => (
-            <button key={kind} type="button" className={saleGroupFilter === kind ? "active" : ""} onClick={() => setSaleGroupFilter(kind as SaleGroupKind)}>
-              {label}
-            </button>
-          ))}
-          <select value={unitFilter} onChange={(event) => setUnitFilter(event.target.value)} aria-label="Kitchen or counter filter">
-            <option value="">All kitchens</option>
-            {bootstrap.productionUnits.filter((unit) => unit.active).map((unit) => (
-              <option key={unit.id} value={unit.id}>{unit.name}</option>
-            ))}
-          </select>
-        </div>
-        {selectedTable ? (
-          <>
+      {selectedTable ? (
+        <div className="order-workspace-grid">
+          <section className="menu-browser panel">
+            <div className="panel-title">
+              <h2>Menu</h2>
+              <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search dish" />
+            </div>
+            <div className="menu-filter-row" aria-label="Menu filters">
+              <button type="button" className={saleGroupFilter === "all" ? "active" : ""} onClick={() => setSaleGroupFilter("all")}>All</button>
+              {saleGroupKinds.map(([kind, label]) => (
+                <button key={kind} type="button" className={saleGroupFilter === kind ? "active" : ""} onClick={() => setSaleGroupFilter(kind as SaleGroupKind)}>
+                  {label}
+                </button>
+              ))}
+              <select value={unitFilter} onChange={(event) => setUnitFilter(event.target.value)} aria-label="Kitchen or counter filter">
+                <option value="">All kitchens</option>
+                {bootstrap.productionUnits.filter((unit) => unit.active).map((unit) => (
+                  <option key={unit.id} value={unit.id}>{unit.name}</option>
+                ))}
+              </select>
+            </div>
             {quickPicks.some((pick) => pick.section === "recent") ? (
               <MenuResultSection
                 title="Recent"
@@ -137,13 +136,18 @@ export function OrdersView({ bootstrap, setNotice, requestManagerApproval }: { b
               onAdd={addDraftItem}
               emptyText={hasSearch ? "No dishes found. Check spelling or clear filters." : "No dishes found. Add active dishes in setup."}
             />
-          </>
-        ) : (
-          <EmptyState title="Add a table first" description="Setup needs at least one active table before orders can start." />
-        )}
-      </section>
+          </section>
 
-      <TableWorkspace tableId={selectedTable?.id ?? null} tableName={selectedTable?.name ?? ""} bootstrap={bootstrap} setNotice={setNotice} requestManagerApproval={requestManagerApproval} />
+          <TableWorkspace
+            tableId={selectedTable.id}
+            tableName={selectedTable.name}
+            bootstrap={bootstrap}
+            setNotice={setNotice}
+            requestManagerApproval={requestManagerApproval}
+            onClose={clearSelectedTable}
+          />
+        </div>
+      ) : null}
     </div>
   );
 }
