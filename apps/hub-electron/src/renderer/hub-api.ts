@@ -521,9 +521,10 @@ export const hubApi = {
     apiFetch<{ mode: "test" | "live" }>("/settings/printer-mode", { method: "PUT", body: JSON.stringify({ mode }) }),
   submitOrder: (
     payload: {
-      tableId: string;
-      pax: number;
-      items: Array<
+	      tableId: string;
+	      pax: number;
+	      printMode?: "kot" | "kot_print";
+	      items: Array<
         | { menuItemId: string; quantity: number }
         | { menuItemId: string; menuItemVariantId: string; quantity: number }
         | { openName: string; openPricePaise: number; saleGroupId: string; productionUnitId?: string | null; quantity: number }

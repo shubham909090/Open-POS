@@ -20,6 +20,9 @@ describe("shared command schemas", () => {
     });
 
     expect(input.orderType).toBe("dine_in");
+    expect(input.printMode).toBe("kot_print");
+    expect(submitOrderSchema.parse({ ...input, printMode: "kot" }).printMode).toBe("kot");
+    expect(() => submitOrderSchema.parse({ ...input, printMode: "paperless" })).toThrow();
   });
 
   it("validates printer mode and rejects invalid pairing inputs", () => {

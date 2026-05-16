@@ -1,5 +1,5 @@
-import { QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { QueryClient, QueryClientProvider, useMutation, useQuery } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
 import {
   BadgeIndianRupee,
   ChefHat,
@@ -15,8 +15,9 @@ import { Badge } from "./components/ui/badge.js";
 import { Dialog } from "./components/ui/dialog.js";
 import { Input } from "./components/ui/input.js";
 import { Notice } from "./components/ui/notice.js";
-import { clearAuthToken, hubApi, setAuthToken, type Bootstrap } from "./hub-api.js";
+import { clearAuthToken, getAuthToken, hubApi, setAuthToken, type Bootstrap } from "./hub-api.js";
 import { useHubStore, type HubView } from "./store.js";
+import { connectHubRealtime, getRealtimeInvalidationKeys } from "./realtime.js";
 import { useManagerApproval, ManagerApprovalModal, type ManagerApprovalRequest } from "./hooks/use-manager-approval.js";
 import { type NoticeSetter, messageOf } from "./lib/format.js";
 
@@ -71,6 +72,18 @@ function HubShell() {
   const hubUnlocked = Boolean(bootstrap.data && !bootstrap.error);
   const managerPinConfigured = bootstrap.data?.setup?.managerPinConfigured ?? sessionStatus.data?.managerPinConfigured ?? true;
   const firstRunNeedsPin = sessionStatus.data?.managerPinConfigured === false;
+
+  useEffect(() => {
+    if (!hubUnlocked) return;
+    return connectHubRealtime({
+      token: getAuthToken(),
+      onEvent: (event) => {
+        for (const queryKey of getRealtimeInvalidationKeys(event)) {
+          void queryClient.invalidateQueries({ queryKey });
+        }
+      }
+    });
+  }, [hubUnlocked]);
 
   const createPin = useMutation({
     mutationFn: () => hubApi.setManagerPin({ newPin, updatedBy: "admin" }),

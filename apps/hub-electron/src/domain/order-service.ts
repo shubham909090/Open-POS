@@ -373,7 +373,7 @@ export class OrderService {
         ...previousItems.map((item) => item.menu_item_id).filter((id): id is string => Boolean(id))
       ]);
       const changes = this.applyOrderItemDiff(order.id, normalizedItems, previousItems, menuById, now);
-      const tickets = this.createKotsForChanges(order, table, changes, now, isNewOrder, false);
+      const tickets = this.createKotsForChanges(order, table, changes, now, isNewOrder, false, undefined, undefined, undefined, (input.printMode ?? "kot_print") !== "kot");
 
       this.orm
         .update(orders)
@@ -2680,7 +2680,7 @@ export class OrderService {
   }
 
   private calculateBillTotals(items: OrderItemRow[]): BillTotals {
-    const taxByName = new Map<string, number>();
+    const taxByName = new Map<string, TaxComponentAmount>();
     let subtotalPaise = 0;
     let taxPaise = 0;
     for (const item of items) {
@@ -2690,8 +2690,11 @@ export class OrderService {
       const itemTax = components.reduce((total, component) => total + component.amountPaise, 0);
       taxPaise += itemTax;
       for (const component of components) {
-        const key = `${item.sale_group_name_snapshot} ${component.name}`.trim();
-        taxByName.set(key, (taxByName.get(key) ?? 0) + component.amountPaise);
+        const name = `${item.sale_group_name_snapshot} ${component.name}`.trim();
+        const key = `${name}:${component.rateBps}`;
+        const current = taxByName.get(key) ?? { name, rateBps: component.rateBps, amountPaise: 0 };
+        current.amountPaise += component.amountPaise;
+        taxByName.set(key, current);
       }
       this.orm.update(orderItems).set({ taxPaise: itemTax }).where(eq(orderItems.id, item.id)).run();
     }
@@ -2699,7 +2702,7 @@ export class OrderService {
       subtotalPaise,
       taxPaise,
       totalPaise: subtotalPaise + taxPaise,
-      taxBreakdown: [...taxByName.entries()].map(([name, amountPaise]) => ({ name, rateBps: 0, amountPaise }))
+      taxBreakdown: [...taxByName.values()]
     };
   }
 
@@ -2820,7 +2823,7 @@ export class OrderService {
       openLargeMl: stock.open_large_ml + delta.openLargeMl,
       sealedSmall: stock.sealed_small_count + delta.sealedSmall
     };
-    this.writeAlcoholStock(menuItemId, next.sealedLarge, next.openLargeMl, next.sealedSmall);
+    this.writeAlcoholStock(menuItemId, next.sealedLarge, next.openLargeMl, next.sealedSmall, true);
     this.recordAlcoholMovement({
       menuItemId,
       sourceType: "bill_settlement",
@@ -2836,10 +2839,6 @@ export class OrderService {
 
   private consumeAlcoholLargeMl(menuItemId: string, billId: string, ml: number): void {
     const stock = this.requireAlcoholStock(menuItemId);
-    const totalAvailableMl = stock.sealed_large_count * stock.large_bottle_ml + stock.open_large_ml;
-    if (ml > totalAvailableMl) {
-      throw new DomainError("Not enough alcohol stock for settlement");
-    }
 
     let sealedLarge = stock.sealed_large_count;
     let openLargeMl = stock.open_large_ml;
@@ -2858,7 +2857,7 @@ export class OrderService {
         remaining = 0;
       }
     }
-    this.writeAlcoholStock(menuItemId, sealedLarge, openLargeMl, stock.sealed_small_count);
+    this.writeAlcoholStock(menuItemId, sealedLarge, openLargeMl, stock.sealed_small_count, true);
     this.recordAlcoholMovement({
       menuItemId,
       sourceType: "bill_settlement",
@@ -3294,8 +3293,8 @@ export class OrderService {
     return row;
   }
 
-  private writeAlcoholStock(menuItemId: string, sealedLarge: number, openLargeMl: number, sealedSmall: number): void {
-    if (sealedLarge < 0 || openLargeMl < 0 || sealedSmall < 0) {
+  private writeAlcoholStock(menuItemId: string, sealedLarge: number, openLargeMl: number, sealedSmall: number, allowNegative = false): void {
+    if (!allowNegative && (sealedLarge < 0 || openLargeMl < 0 || sealedSmall < 0)) {
       throw new DomainError("Alcohol stock cannot go below zero");
     }
 
@@ -3593,7 +3592,8 @@ export class OrderService {
     forceCancelled: boolean,
     reason?: string,
     typeOverride?: KotType,
-    sequenceOrderId?: string
+    sequenceOrderId?: string,
+    printTickets = true
   ): TicketCreationResult {
     const meaningfulChanges = changes.filter((change) => change.quantityDelta !== 0 && change.productionUnitId);
     if (meaningfulChanges.length === 0) return { kotIds: [], printJobIds: [] };
@@ -3673,16 +3673,18 @@ export class OrderService {
         footer: template.kotFooter
       });
 
-      const printJobId = this.enqueuePrintJob({
-        targetType: ticketLabel,
-        targetId: kotId,
-        productionUnitId,
-        printerHost: firstItem.printerHost,
-        printerPort: firstItem.printerPort,
-        printerName: firstItem.printerName,
-        payload
-      });
-      printJobIds.push(printJobId);
+      if (printTickets) {
+        const printJobId = this.enqueuePrintJob({
+          targetType: ticketLabel,
+          targetId: kotId,
+          productionUnitId,
+          printerHost: firstItem.printerHost,
+          printerPort: firstItem.printerPort,
+          printerName: firstItem.printerName,
+          payload
+        });
+        printJobIds.push(printJobId);
+      }
 
       this.appendEvent("kot.created", "kot", kotId, {
         orderId: order.id,

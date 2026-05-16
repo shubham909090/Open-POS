@@ -35,7 +35,7 @@ export interface BillTicket {
   tipPaise?: number;
   finalTotalPaise?: number;
   createdAt: string;
-  taxBreakdown?: Array<{ name: string; amountPaise: number }>;
+  taxBreakdown?: Array<{ name: string; rateBps?: number; amountPaise: number }>;
   payments?: Array<{ method: string; amountPaise: number }>;
   header?: string;
   footer?: string;
@@ -164,6 +164,17 @@ function renderMoneyLine(label: string, valuePaise: number, width: number): stri
   return `${truncateTicketText(label, Math.max(8, width - amount.length - 1)).padEnd(Math.max(0, width - amount.length))}${amount}`;
 }
 
+function formatRateBps(rateBps?: number): string | null {
+  if (!rateBps || !Number.isFinite(rateBps)) return null;
+  return (rateBps / 100).toFixed(2).replace(/\.?0+$/, "");
+}
+
+function renderTaxLine(label: string, valuePaise: number, width: number, rateBps?: number): string {
+  const rate = formatRateBps(rateBps);
+  const suffix = `${rate ? ` @ ${rate}%` : ""}: ${money(valuePaise)}`;
+  return `${truncateTicketText(label, Math.max(3, width - suffix.length))}${suffix}`;
+}
+
 function kotTitle(type: string): string {
   switch (type) {
     case "partial_cancel":
@@ -182,13 +193,27 @@ function kotTitle(type: string): string {
   }
 }
 
+function compactShiftReason(reason: string): string {
+  const normalized = reason.trim();
+  const tableMove = normalized.match(/Table shifted from\s+([^:]+?)\s+to\s+([^:]+?)(?::|$)/i);
+  const [, sourceTable, targetTable] = tableMove ?? [];
+  if (sourceTable && targetTable) return `${sourceTable.trim()} -> ${targetTable.trim()}`;
+  const from = normalized.match(/(?:Items shifted from|from)\s+([^:]+?)(?:\s+because|:|$)/i);
+  const [, sourceItemsTable] = from ?? [];
+  if (sourceItemsTable) return `From ${sourceItemsTable.trim()}`;
+  const to = normalized.match(/(?:Items shifted to|to)\s+([^:]+?)(?:\s+because|:|$)/i);
+  const [, targetItemsTable] = to ?? [];
+  if (targetItemsTable) return `To ${targetItemsTable.trim()}`;
+  return truncateTicketText(normalized, 18);
+}
+
 export function renderKotTicket(ticket: KotTicket): string {
   const width = ticketWidth(ticket.lineWidthChars);
   const title = kotTitle(ticket.type);
   const lines = [
     ...(ticket.header ? [...alignTicketText(ticket.header, width, ticket.headerAlign), separator(width)] : []),
     ...centerTicketText(`${ticket.ticketLabel ?? "KOT"} #${ticket.sequence} ${title}`, width),
-    ...(ticket.reason ? [...centerTicketText(ticket.reason, width), separator(width)] : []),
+    ...(ticket.reason ? [...centerTicketText(ticket.type === "table_shifted" ? compactShiftReason(ticket.reason) : ticket.reason, width), separator(width)] : []),
     `Station: ${ticket.productionUnitName}`,
     ...(ticket.showTable === false ? [] : [`Table: ${ticket.tableName}`]),
     ...(ticket.showCaptain === false ? [] : [`Captain: ${ticket.captainId}`]),
@@ -232,9 +257,9 @@ export function renderBillTicket(ticket: BillTicket): string {
     renderMoneyLine("Subtotal", ticket.subtotalPaise, width),
     ...(ticket.taxBreakdown?.length
       ? ticket.showTaxBreakup === false
-        ? [renderMoneyLine("Tax", ticket.taxPaise, width)]
-        : ticket.taxBreakdown.map((line) => renderMoneyLine(line.name, line.amountPaise, width))
-      : [renderMoneyLine("Tax", ticket.taxPaise, width)]),
+        ? [renderTaxLine("Tax", ticket.taxPaise, width)]
+        : ticket.taxBreakdown.map((line) => renderTaxLine(line.name, line.amountPaise, width, line.rateBps))
+      : [renderTaxLine("Tax", ticket.taxPaise, width)]),
     renderMoneyLine("Total", ticket.totalPaise, width)
   ];
 

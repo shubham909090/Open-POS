@@ -1,6 +1,6 @@
 import { formatInr, searchMenuItems } from "@gaurav-pos/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { hubApi, type Bootstrap, type MenuItem } from "../../hub-api.js";
 import { messageOf, type NoticeSetter } from "../../lib/format.js";
 import type { ManagerApproval, ManagerApprovalRequest } from "../../hooks/use-manager-approval.js";
@@ -9,6 +9,8 @@ import { useHubStore } from "../../store.js";
 import { EmptyState } from "../ui/empty-state.js";
 import { LineItems } from "./line-items.js";
 import { BillingPanel } from "./billing-panel.js";
+
+type PrintMode = "kot" | "kot_print";
 
 export function TableWorkspace({
   tableId,
@@ -71,11 +73,12 @@ export function TableWorkspace({
   };
 
   const submitOrder = useMutation({
-    mutationFn: () => {
-      if (!tableId || draft.length === 0) throw new Error("Add at least one new dish before sending to kitchen.");
+    mutationFn: (printMode: PrintMode) => {
+      if (!tableId || draft.length === 0) throw new Error("Add at least one new dish before sending KOT.");
       const payload = {
         tableId,
         pax: Number(guests || 1),
+        printMode,
         items: draft.map((item) =>
           item.openName
             ? {
@@ -90,14 +93,39 @@ export function TableWorkspace({
       };
       return hubApi.submitOrder(payload, operationKeys.keyFor("orders-submit", payload));
     },
-    onSuccess: async () => {
+    onSuccess: async (_result, printMode) => {
       if (tableId) clearDraft(tableId);
       await refreshTable();
       setOrderPanel("sent");
-      setNotice({ tone: "good", text: "Sent to kitchen. New item list is clear now." });
+      setNotice({
+        tone: "good",
+        text: printMode === "kot" ? "KOT saved. New item list is clear now." : "Print and KOT sent. New item list is clear now."
+      });
     },
     onError: (error) => setNotice({ tone: "bad", text: messageOf(error) })
   });
+  const canSendDraft = orderPanel === "new" && Boolean(tableId) && draft.length > 0 && !submitOrder.isPending;
+  const sendDraft = (printMode: PrintMode) => {
+    if (!canSendDraft) return;
+    submitOrder.mutate(printMode);
+  };
+
+  useEffect(() => {
+    if (!canSendDraft) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+      if (event.key === "F3") {
+        event.preventDefault();
+        submitOrder.mutate("kot");
+      }
+      if (event.key === "F6") {
+        event.preventDefault();
+        submitOrder.mutate("kot_print");
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [canSendDraft, submitOrder]);
 
   const generateBill = useMutation({
     mutationFn: () => {
@@ -222,9 +250,16 @@ export function TableWorkspace({
               Guests
               <input value={guests} onChange={(event) => setGuests(event.target.value)} inputMode="numeric" />
             </label>
-            <button type="button" disabled={draft.length === 0 || submitOrder.isPending} onClick={() => submitOrder.mutate()}>
-              {submitOrder.isPending ? "Sending..." : "Send to kitchen"}
-            </button>
+            <div className="send-action-row">
+              <button type="button" aria-label="KOT F3" disabled={!canSendDraft} onClick={() => sendDraft("kot")}>
+                <span>KOT</span>
+                <kbd>F3</kbd>
+              </button>
+              <button type="button" aria-label="Print and KOT F6" disabled={!canSendDraft} onClick={() => sendDraft("kot_print")}>
+                <span>{submitOrder.isPending ? "Sending..." : "Print and KOT"}</span>
+                <kbd>F6</kbd>
+              </button>
+            </div>
           </div>
           <form
             className="open-item-form"

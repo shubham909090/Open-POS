@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { renderEscposPayload } from "../printing/escpos.js";
+import { buildWindowsSystemPrintCommand, renderEscposPayload } from "../printing/escpos.js";
 
 describe("ESC/POS print payload", () => {
   it("keeps LAN printer payload compatible with raw thermal printers before cutting", () => {
@@ -14,5 +14,13 @@ describe("ESC/POS print payload", () => {
       0x1b, 0x61, 0x00,
       0x1d, 0x56, 0x00
     ]);
+  });
+
+  it("uses larger regular text for Windows system ticket printing", () => {
+    const command = buildWindowsSystemPrintCommand("C:\\temp\\ticket.txt", "Cash Printer").join(" ");
+
+    expect(command).toContain("Consolas");
+    expect(command).toContain(", 11, [System.Drawing.FontStyle]::Regular");
+    expect(command).not.toContain("FontStyle]::Bold");
   });
 });

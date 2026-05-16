@@ -1158,6 +1158,37 @@
   background: var(--accent-dark);
 }
 
+.send-action-row {
+  display: grid;
+  grid-template-columns: minmax(92px, 0.8fr) minmax(150px, 1.2fr);
+  gap: 8px;
+}
+
+.guest-row .send-action-row button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  width: 100%;
+  white-space: nowrap;
+}
+
+.guest-row .send-action-row button:first-child {
+  background: #215f54;
+}
+
+.send-action-row kbd {
+  min-width: 28px;
+  border-radius: 6px;
+  background: rgb(255 255 255 / 0.18);
+  padding: 2px 6px;
+  color: inherit;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
 .qty-cluster {
   display: inline-flex;
   align-items: center;

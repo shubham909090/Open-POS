@@ -108,6 +108,11 @@ export interface KdsTicket {
   items: Array<{ name_snapshot: string; quantity_delta: number }>;
 }
 
+export interface HubRealtimeEvent {
+  type?: string;
+  result?: unknown;
+}
+
 export class HubClient {
   constructor(
     private readonly baseUrl: string,
@@ -181,6 +186,42 @@ export class HubClient {
       method: "PATCH",
       body: JSON.stringify({ status })
     });
+  }
+
+  subscribeRealtime(onEvent: (event: HubRealtimeEvent) => void): () => void {
+    if (!this.deviceToken || typeof WebSocket === "undefined") return () => {};
+    let closed = false;
+    let retry: ReturnType<typeof setTimeout> | null = null;
+    let socket: WebSocket | null = null;
+
+    const open = () => {
+      let realtimeUrl: string;
+      try {
+        realtimeUrl = buildRealtimeUrl(this.baseUrl, this.deviceToken);
+      } catch {
+        return;
+      }
+      socket = new WebSocket(realtimeUrl);
+      socket.onmessage = (message) => {
+        try {
+          onEvent(JSON.parse(String(message.data)) as HubRealtimeEvent);
+        } catch {
+          // The polling refresh path still keeps the phone truthful.
+        }
+      };
+      socket.onclose = () => {
+        if (!closed) retry = setTimeout(open, 1500);
+      };
+      socket.onerror = () => socket?.close();
+    };
+
+    open();
+
+    return () => {
+      closed = true;
+      if (retry) clearTimeout(retry);
+      socket?.close();
+    };
   }
 
   async generateBill(orderId: string, options: RequestOptions = {}): Promise<{ billId: string; totalPaise: number }> {
@@ -279,6 +320,14 @@ export class HubClient {
 
     return response.json() as Promise<T>;
   }
+}
+
+export function buildRealtimeUrl(hubUrl: string, token: string): string {
+  const parsed = new URL(hubUrl);
+  parsed.protocol = parsed.protocol === "https:" ? "wss:" : "ws:";
+  parsed.pathname = "/realtime";
+  parsed.search = `?token=${encodeURIComponent(token)}`;
+  return parsed.toString();
 }
 
 export class HubHttpError extends Error {

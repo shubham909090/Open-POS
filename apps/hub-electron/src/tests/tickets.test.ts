@@ -53,6 +53,28 @@ describe("ticket rendering", () => {
     expect(payload).toContain("440.00");
   });
 
+  it("keeps tax breakup names and values visible on narrow physical paper", () => {
+    const payload = renderBillTicket({
+      tableName: "T1",
+      billId: "BILL-1",
+      createdAt: "2026-05-15T00:00:00.000Z",
+      subtotalPaise: 30000,
+      taxPaise: 1500,
+      totalPaise: 31500,
+      lineWidthChars: 42,
+      taxBreakdown: [
+        { name: "Food CGST", rateBps: 250, amountPaise: 750 },
+        { name: "Food SGST", rateBps: 250, amountPaise: 750 }
+      ]
+    });
+    const firstVisibleColumns = payload
+      .split("\n")
+      .filter((line) => line.includes("CGST") || line.includes("SGST"))
+      .map((line) => line.slice(0, 32));
+
+    expect(firstVisibleColumns).toEqual(["Food CGST @ 2.5%: 7.50", "Food SGST @ 2.5%: 7.50"]);
+  });
+
   it("can show or hide payment split lines", () => {
     const visible = renderBillTicket({
       tableName: "T1",
@@ -86,7 +108,7 @@ describe("ticket rendering", () => {
     expect(hidden).not.toContain("CASH");
   });
 
-  it("prints operational KOT headings with readable time and top context", () => {
+  it("prints operational KOT headings with readable time and compact shift context", () => {
     const payload = renderKotTicket({
       sequence: 4,
       type: "table_shifted",
@@ -95,13 +117,14 @@ describe("ticket rendering", () => {
       ticketLabel: "BOT",
       captainId: "Local Admin",
       createdAt: "2026-07-12T07:00:00.000Z",
-      reason: "Items shifted from T1",
+      reason: "Items shifted from T1 because guest moved outside after a long service handoff",
       items: [{ name: "Whisky 30 ml", quantityDelta: 2 }],
       lineWidthChars: 42
     });
 
     expect(payload).toContain("BOT #4 TABLE SHIFTED");
-    expect(payload).toContain("Items shifted from T1");
+    expect(payload).toContain("From T1");
+    expect(payload).not.toContain("because guest moved outside");
     expect(payload).toContain("Station: Bar");
     expect(payload).toContain("Table: T2");
     expect(payload).toContain("Time:");

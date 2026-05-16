@@ -64,9 +64,35 @@ import type { ConvexSyncBridge } from "../sync/convex-sync.js";
 export function isRealtimeEventVisibleForRole(event: unknown, role: UserRole): boolean {
   if (role === "admin" || role === "captain") return true;
   const type = typeof event === "object" && event !== null && "type" in event ? String((event as { type?: unknown }).type ?? "") : "";
-  if (role === "kitchen") return type.startsWith("kot.");
-  if (role === "waiter") return ["order.submitted", "table.shifted", "order_items.shifted", "kot.status_changed"].includes(type);
+  const kdsChangingEvents = ["order.submitted", "order.cancelled", "order_items.cancelled", "table.shifted", "order_items.shifted"];
+  if (role === "kitchen") return type.startsWith("kot.") || kdsChangingEvents.includes(type);
+  if (role === "waiter") {
+    return [
+      "order.submitted",
+      "order.cancelled",
+      "order_items.cancelled",
+      "table.shifted",
+      "order_items.shifted",
+      "kot.status_changed",
+      "bill.generated",
+      "bill.printed",
+      "bill.reprinted",
+      "bill.revised",
+      "bill.settled",
+      "bill.nc_marked"
+    ].includes(type);
+  }
   return false;
+}
+
+export function realtimeEventForRole(event: unknown, role: UserRole): unknown | null {
+  if (!isRealtimeEventVisibleForRole(event, role)) return null;
+  if (event === null || typeof event !== "object" || !("type" in event)) return event;
+  const type = String((event as { type?: unknown }).type ?? "");
+  if (role === "kitchen" && !type.startsWith("kot.")) return { type, result: { kdsChanged: true } };
+  if (role !== "waiter") return event;
+  if (type.startsWith("bill.")) return { type, result: { tableStatusChanged: true } };
+  return event;
 }
 
 export function resolvePairingHubUrl(input: {
@@ -654,19 +680,22 @@ export function createHubServer(input: {
   });
   app.get("/notifications/ready", { preHandler: orderRole }, async (request) => input.orderService.listReadyNotifications(getSession(request)));
 
-  app.get("/realtime", { websocket: true }, (socket, request) => {
-    let session: LocalDeviceSession;
-    try {
-      session = input.authService.authenticate(getToken(request));
-    } catch {
-      socket.close();
-      return;
-    }
-    const unsubscribe = input.eventBus.subscribe((event) => {
-      if (!isRealtimeEventVisibleForRole(event, session.role)) return;
-      socket.send(JSON.stringify(event));
+  app.after(() => {
+    app.get("/realtime", { websocket: true }, (socket, request) => {
+      let session: LocalDeviceSession;
+      try {
+        session = input.authService.authenticate(getToken(request));
+      } catch {
+        socket.close();
+        return;
+      }
+      const unsubscribe = input.eventBus.subscribe((event) => {
+        const visibleEvent = realtimeEventForRole(event, session.role);
+        if (!visibleEvent) return;
+        socket.send(JSON.stringify(visibleEvent));
+      });
+      socket.on("close", unsubscribe);
     });
-    socket.on("close", unsubscribe);
   });
 
   app.get("/business-day/current-summary", { preHandler: captainOrAdmin }, async () => input.orderService.getCurrentBusinessDaySummary());

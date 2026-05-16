@@ -8,6 +8,7 @@ const customIdSchema = z
 
 export const saleGroupKindSchema = z.enum(["food", "alcohol", "beverage", "other"]);
 export const ticketLabelSchema = z.enum(["KOT", "BOT"]);
+export const orderPrintModeSchema = z.enum(["kot", "kot_print"]);
 
 export const taxComponentSchema = z.object({
   name: z.string().trim().min(1).max(40),
@@ -42,6 +43,7 @@ export const submitOrderSchema = z.object({
   captainId: z.string().min(1).optional(),
   pax: z.number().int().min(1).max(99).default(1),
   orderType: z.enum(["dine_in", "takeaway"]).default("dine_in"),
+  printMode: orderPrintModeSchema.default("kot_print"),
   items: z.array(orderItemInputSchema).min(1)
 });
 
@@ -348,7 +350,8 @@ export const fullResetSchema = z.object({
   includeBackups: z.boolean().default(false)
 }).refine((value) => value.confirmationText === "RESET HUB", "Type RESET HUB to confirm");
 
-export type SubmitOrderInput = z.infer<typeof submitOrderSchema>;
+type ParsedSubmitOrderInput = z.infer<typeof submitOrderSchema>;
+export type SubmitOrderInput = Omit<ParsedSubmitOrderInput, "printMode"> & { printMode?: ParsedSubmitOrderInput["printMode"] };
 export type SettleBillInput = z.input<typeof settleBillSchema>;
 export type ReprintKotInput = z.infer<typeof reprintKotSchema>;
 export type CancelOrderInput = z.infer<typeof cancelOrderSchema>;

@@ -139,6 +139,35 @@ describe("OrderService KOT lifecycle", () => {
     database.close();
   });
 
+  it("stores generated bill tax breakup with readable names, rates, and amounts", () => {
+    const { database, orderService } = createTestHub();
+    const order = orderService.submitOrder({
+      tableId: "table-t1",
+      captainId: "waiter-1",
+      pax: 1,
+      orderType: "dine_in",
+      items: [{ menuItemId: "item-dal-fry", quantity: 1 }]
+    });
+
+    const bill = orderService.generateBill(order.orderId);
+    const row = database.db.prepare("SELECT subtotal_paise, tax_paise, total_paise, tax_breakdown_json FROM bills WHERE id = ?").get(bill.billId) as {
+      subtotal_paise: number;
+      tax_paise: number;
+      total_paise: number;
+      tax_breakdown_json: string;
+    };
+
+    expect(row.subtotal_paise).toBe(18_000);
+    expect(row.tax_paise).toBe(900);
+    expect(row.total_paise).toBe(18_900);
+    expect(JSON.parse(row.tax_breakdown_json)).toEqual([
+      { name: "Food CGST", rateBps: 250, amountPaise: 450 },
+      { name: "Food SGST", rateBps: 250, amountPaise: 450 }
+    ]);
+
+    database.close();
+  });
+
   it("hides KDS tickets when the kitchen screen is disabled for a counter", () => {
     const { database, orderService } = createTestHub();
     orderService.updateProductionUnit("unit-kitchen", { kdsEnabled: false });
@@ -151,6 +180,26 @@ describe("OrderService KOT lifecycle", () => {
     });
 
     expect(orderService.listKds("unit-kitchen")).toEqual([]);
+
+    database.close();
+  });
+
+  it("can save KOTs for kitchen screens without creating printer jobs", () => {
+    const { database, orderService } = createTestHub();
+
+    const result = orderService.submitOrder({
+      tableId: "table-t1",
+      captainId: "waiter-1",
+      pax: 2,
+      orderType: "dine_in",
+      printMode: "kot",
+      items: [{ menuItemId: "item-dal-fry", quantity: 1 }]
+    });
+
+    expect(result.kotIds).toHaveLength(1);
+    expect(result.printJobIds).toEqual([]);
+    expect(orderService.listKds("unit-kitchen")).toHaveLength(1);
+    expect(database.db.prepare("SELECT COUNT(*) AS count FROM print_jobs").get()).toEqual({ count: 0 });
 
     database.close();
   });
@@ -985,7 +1034,7 @@ describe("OrderService KOT lifecycle", () => {
     database.close();
   });
 
-  it("blocks alcohol settlement that would make stock negative", () => {
+  it("allows alcohol settlement to make stock negative so billing is never blocked", () => {
     const { database, orderService } = createTestHub();
     const vodka = orderService.createAlcoholItem({
       type: "plain_liquor",
@@ -1031,23 +1080,22 @@ describe("OrderService KOT lifecycle", () => {
       pax: 1,
       orderType: "dine_in",
       items: [
-        { menuItemId: cocktail.id, quantity: 2 },
+        { menuItemId: cocktail.id, quantity: 30 },
         { menuItemId: rum.id, menuItemVariantId: rumLarge.id, quantity: 1 }
       ]
     });
     const bill = orderService.generateBill(order.orderId);
-    expect(() =>
-      orderService.settleBill(bill.billId, { method: "cash", amountPaise: bill.totalPaise, receivedBy: "captain-1" })
-    ).toThrow("Alcohol stock cannot go below zero");
+    const settlement = orderService.settleBill(bill.billId, { method: "cash", amountPaise: bill.totalPaise, receivedBy: "captain-1" });
 
+    expect(settlement.status).toBe("paid");
     expect(database.db.prepare("SELECT sealed_large_count, open_large_ml FROM alcohol_stock_levels WHERE menu_item_id = ?").get(vodka.id)).toEqual({
-      sealed_large_count: 1,
-      open_large_ml: 0
+      sealed_large_count: 0,
+      open_large_ml: -150
     });
     expect(database.db.prepare("SELECT sealed_large_count FROM alcohol_stock_levels WHERE menu_item_id = ?").get(rum.id)).toEqual({
-      sealed_large_count: 0
+      sealed_large_count: -1
     });
-    expect(database.db.prepare("SELECT COUNT(*) AS count FROM alcohol_stock_movements WHERE source_id = ?").get(bill.billId)).toEqual({ count: 0 });
+    expect(database.db.prepare("SELECT COUNT(*) AS count FROM alcohol_stock_movements WHERE source_id = ?").get(bill.billId)).toEqual({ count: 2 });
 
     database.close();
   });

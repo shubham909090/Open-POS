@@ -20,6 +20,7 @@ describe("hub renderer API", () => {
       {
         tableId: "table-1",
         pax: 2,
+        printMode: "kot",
         items: [{ menuItemId: "item-1", quantity: 1 }]
       },
       "hub-submit-action-1"
@@ -27,6 +28,7 @@ describe("hub renderer API", () => {
 
     const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
     const headers = init.headers as Headers;
+    expect(JSON.parse(String(init.body))).toMatchObject({ printMode: "kot" });
     expect(headers.get("idempotency-key")).toBe("hub-submit-action-1");
     expect(headers.get("authorization")).toBe("Bearer captain-token");
   });

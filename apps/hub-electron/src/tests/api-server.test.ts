@@ -1,9 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createHash } from "node:crypto";
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createHubServer, isRealtimeEventVisibleForRole, resolvePairingHubUrl, selectPairingLanAddress } from "../api/server.js";
+import WebSocket from "ws";
+import { createHubServer, isRealtimeEventVisibleForRole, realtimeEventForRole, resolvePairingHubUrl, selectPairingLanAddress } from "../api/server.js";
 import type { FastifyInstance } from "fastify";
 import { BackupService } from "../db/backup-service.js";
 import { HubDatabase } from "../db/database.js";
@@ -86,6 +88,113 @@ async function setTestManagerPin(app: FastifyInstance, pin = "1234") {
     method: "PUT",
     url: "/settings/manager-pin",
     payload: { newPin: pin, updatedBy: "owner" }
+  });
+}
+
+async function pairTestDevice(app: FastifyInstance, role: "admin" | "captain" | "waiter" | "kitchen", name: string) {
+  const pairingResponse = await app.inject({
+    method: "POST",
+    url: "/devices/pairing-codes",
+    headers: { "x-device-token": "test-admin-token" },
+    payload: pairingPayload(name, role)
+  });
+  const pairing = pairingResponse.json<{ code: string }>();
+  const exchangeResponse = await app.inject({
+    method: "POST",
+    url: "/devices/pair/exchange",
+    payload: { code: pairing.code, deviceName: name }
+  });
+  return exchangeResponse.json<{ token: string }>();
+}
+
+async function listenForWebSockets(app: FastifyInstance): Promise<string> {
+  await app.listen({ host: "127.0.0.1", port: 0 });
+  const address = app.server.address() as AddressInfo | null;
+  if (!address) throw new Error("Expected test server to listen on a TCP port");
+  return `ws://127.0.0.1:${address.port}`;
+}
+
+function waitForSocketOpen(socket: WebSocket): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("Timed out waiting for websocket open")), 1_000);
+    socket.once("open", () => {
+      clearTimeout(timer);
+      resolve();
+    });
+    socket.once("error", (error) => {
+      clearTimeout(timer);
+      reject(error);
+    });
+  });
+}
+
+function waitForSocketClose(socket: WebSocket): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("Timed out waiting for websocket close")), 1_000);
+    socket.once("close", () => {
+      clearTimeout(timer);
+      resolve();
+    });
+    socket.once("error", (error) => {
+      clearTimeout(timer);
+      reject(error);
+    });
+  });
+}
+
+function waitForSocketMessage<T>(
+  socket: WebSocket,
+  predicate: (message: T) => boolean = () => true,
+  timeoutMs = 1_500
+): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const onMessage = (data: WebSocket.RawData) => {
+      const message = JSON.parse(String(data)) as T;
+      if (!predicate(message)) return;
+      cleanup();
+      resolve(message);
+    };
+    const onError = (error: Error) => {
+      cleanup();
+      reject(error);
+    };
+    const cleanup = () => {
+      clearTimeout(timer);
+      socket.off("message", onMessage);
+      socket.off("error", onError);
+    };
+    const timer = setTimeout(() => {
+      cleanup();
+      reject(new Error("Timed out waiting for websocket message"));
+    }, timeoutMs);
+    socket.on("message", onMessage);
+    socket.on("error", onError);
+  });
+}
+
+function expectNoSocketMessage<T>(socket: WebSocket, predicate: (message: T) => boolean, timeoutMs = 200): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const onMessage = (data: WebSocket.RawData) => {
+      const message = JSON.parse(String(data)) as T;
+      if (!predicate(message)) return;
+      cleanup();
+      reject(new Error(`Received unexpected websocket message: ${String(data)}`));
+    };
+    const onError = (error: Error) => {
+      cleanup();
+      reject(error);
+    };
+    const cleanup = () => {
+      clearTimeout(timer);
+      socket.off("message", onMessage);
+      socket.off("error", onError);
+    };
+    const timer = setTimeout(() => {
+      cleanup();
+      resolve();
+    }, timeoutMs);
+    socket.on("message", onMessage);
+    socket.on("error", onError);
   });
 }
 
@@ -520,12 +629,216 @@ describe("Hub API auth and service flow", () => {
     database.close();
   });
 
+  it("submits KOT-only orders without processing kitchen print jobs", async () => {
+    const { app, database } = createTestServer();
+    const headers = { "x-device-token": "test-admin-token" };
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/orders/submit",
+      headers,
+      payload: {
+        tableId: "table-t1",
+        pax: 2,
+        orderType: "dine_in",
+        printMode: "kot",
+        items: [{ menuItemId: "item-dal-fry", quantity: 1 }]
+      }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json<{ kotIds: string[]; printJobIds: string[]; processed: { printed: number; failed: number; skipped: number } }>()).toMatchObject({
+      kotIds: expect.any(Array),
+      printJobIds: [],
+      processed: { printed: 0, failed: 0, skipped: 0 }
+    });
+    expect(database.db.prepare("SELECT COUNT(*) AS count FROM kots").get()).toEqual({ count: 1 });
+    expect(database.db.prepare("SELECT COUNT(*) AS count FROM print_jobs").get()).toEqual({ count: 0 });
+
+    await app.close();
+    database.close();
+  });
+
   it("filters realtime event visibility by device role", () => {
     expect(isRealtimeEventVisibleForRole({ type: "bill.settled" }, "captain")).toBe(true);
-    expect(isRealtimeEventVisibleForRole({ type: "bill.settled" }, "waiter")).toBe(false);
+    expect(isRealtimeEventVisibleForRole({ type: "bill.settled" }, "waiter")).toBe(true);
+    expect(realtimeEventForRole({ type: "bill.settled", result: { paidPaise: 1000 } }, "waiter")).toEqual({
+      type: "bill.settled",
+      result: { tableStatusChanged: true }
+    });
     expect(isRealtimeEventVisibleForRole({ type: "receipt_printer.updated" }, "kitchen")).toBe(false);
     expect(isRealtimeEventVisibleForRole({ type: "kot.status_changed" }, "kitchen")).toBe(true);
+    expect(realtimeEventForRole({ type: "order.submitted", result: { orderId: "order-1", kotIds: ["kot-1"] } }, "kitchen")).toEqual({
+      type: "order.submitted",
+      result: { kdsChanged: true }
+    });
+    expect(isRealtimeEventVisibleForRole({ type: "order_items.cancelled" }, "kitchen")).toBe(true);
     expect(isRealtimeEventVisibleForRole({ type: "table.shifted" }, "waiter")).toBe(true);
+    expect(isRealtimeEventVisibleForRole({ type: "order.cancelled" }, "waiter")).toBe(true);
+    expect(isRealtimeEventVisibleForRole({ type: "order_items.cancelled" }, "waiter")).toBe(true);
+  });
+
+  it("streams role-filtered realtime messages over real websocket connections", async () => {
+    const { app, database } = createTestServer();
+    await setTestManagerPin(app);
+    const kitchen = await pairTestDevice(app, "kitchen", "Kitchen socket");
+    const waiter = await pairTestDevice(app, "waiter", "Waiter socket");
+    const websocketBaseUrl = await listenForWebSockets(app);
+    const kitchenSocket = new WebSocket(`${websocketBaseUrl}/realtime?token=${encodeURIComponent(kitchen.token)}`);
+    const waiterSocket = new WebSocket(`${websocketBaseUrl}/realtime?token=${encodeURIComponent(waiter.token)}`);
+
+    try {
+      await Promise.all([waitForSocketOpen(kitchenSocket), waitForSocketOpen(waiterSocket)]);
+      const kitchenSubmitted = waitForSocketMessage<{ type: string; result: Record<string, unknown> }>(
+        kitchenSocket,
+        (message) => message.type === "order.submitted"
+      );
+      const orderResponse = await app.inject({
+        method: "POST",
+        url: "/orders/submit",
+        headers: { "x-device-token": "test-admin-token" },
+        payload: {
+          tableId: "table-t1",
+          captainId: "waiter-1",
+          pax: 2,
+          orderType: "dine_in",
+          printMode: "kot",
+          items: [{ menuItemId: "item-dal-fry", quantity: 1 }]
+        }
+      });
+      const order = orderResponse.json<{ orderId: string }>();
+
+      expect(await kitchenSubmitted).toEqual({ type: "order.submitted", result: { kdsChanged: true } });
+
+      const waiterCancelled = waitForSocketMessage<{ type: string; result: Record<string, unknown> }>(
+        waiterSocket,
+        (message) => message.type === "order.cancelled"
+      );
+      const kitchenCancelled = waitForSocketMessage<{ type: string; result: Record<string, unknown> }>(
+        kitchenSocket,
+        (message) => message.type === "order.cancelled"
+      );
+      const cancelResponse = await app.inject({
+        method: "POST",
+        url: `/orders/${order.orderId}/cancel`,
+        headers: { "x-device-token": "test-admin-token" },
+        payload: { reason: "Void order", managerApproval: { ...testManagerApproval, reason: "Cancel order" } }
+      });
+      expect(cancelResponse.statusCode).toBe(200);
+
+      const [kitchenCancelEvent, waiterCancelEvent] = await Promise.all([kitchenCancelled, waiterCancelled]);
+      expect(kitchenCancelEvent).toEqual({ type: "order.cancelled", result: { kdsChanged: true } });
+      expect(waiterCancelEvent).toMatchObject({ type: "order.cancelled", result: { orderId: order.orderId } });
+    } finally {
+      kitchenSocket.terminate();
+      waiterSocket.terminate();
+      await app.close();
+      database.close();
+    }
+  });
+
+  it("accepts realtime auth through websocket subprotocol tokens", async () => {
+    const { app, database } = createTestServer();
+    await setTestManagerPin(app);
+    const kitchen = await pairTestDevice(app, "kitchen", "Kitchen protocol socket");
+    const websocketBaseUrl = await listenForWebSockets(app);
+    const kitchenSocket = new WebSocket(`${websocketBaseUrl}/realtime`, [`pos-token.${kitchen.token}`]);
+
+    try {
+      await waitForSocketOpen(kitchenSocket);
+      const submitted = waitForSocketMessage<{ type: string; result: Record<string, unknown> }>(
+        kitchenSocket,
+        (message) => message.type === "order.submitted"
+      );
+      const orderResponse = await app.inject({
+        method: "POST",
+        url: "/orders/submit",
+        headers: { "x-device-token": "test-admin-token" },
+        payload: {
+          tableId: "table-t1",
+          pax: 2,
+          orderType: "dine_in",
+          printMode: "kot",
+          items: [{ menuItemId: "item-dal-fry", quantity: 1 }]
+        }
+      });
+
+      expect(orderResponse.statusCode).toBe(200);
+      expect(await submitted).toEqual({ type: "order.submitted", result: { kdsChanged: true } });
+    } finally {
+      kitchenSocket.terminate();
+      await app.close();
+      database.close();
+    }
+  });
+
+  it("closes realtime sockets with invalid device tokens", async () => {
+    const { app, database } = createTestServer();
+    const websocketBaseUrl = await listenForWebSockets(app);
+    const socket = new WebSocket(`${websocketBaseUrl}/realtime?token=not-a-real-token`);
+
+    try {
+      await waitForSocketOpen(socket);
+      await waitForSocketClose(socket);
+      expect(socket.readyState).toBe(WebSocket.CLOSED);
+    } finally {
+      socket.terminate();
+      await app.close();
+      database.close();
+    }
+  });
+
+  it("does not leak bill realtime events to kitchen sockets", async () => {
+    const { app, database } = createTestServer();
+    await setTestManagerPin(app);
+    const kitchen = await pairTestDevice(app, "kitchen", "Kitchen no bill socket");
+    const waiter = await pairTestDevice(app, "waiter", "Waiter bill socket");
+    const websocketBaseUrl = await listenForWebSockets(app);
+    const kitchenSocket = new WebSocket(`${websocketBaseUrl}/realtime?token=${encodeURIComponent(kitchen.token)}`);
+    const waiterSocket = new WebSocket(`${websocketBaseUrl}/realtime?token=${encodeURIComponent(waiter.token)}`);
+
+    try {
+      await Promise.all([waitForSocketOpen(kitchenSocket), waitForSocketOpen(waiterSocket)]);
+      const submitted = waitForSocketMessage<{ type: string; result: Record<string, unknown> }>(
+        kitchenSocket,
+        (message) => message.type === "order.submitted"
+      );
+      const orderResponse = await app.inject({
+        method: "POST",
+        url: "/orders/submit",
+        headers: { "x-device-token": "test-admin-token" },
+        payload: {
+          tableId: "table-t1",
+          captainId: "waiter-1",
+          pax: 2,
+          orderType: "dine_in",
+          printMode: "kot",
+          items: [{ menuItemId: "item-dal-fry", quantity: 1 }]
+        }
+      });
+      const order = orderResponse.json<{ orderId: string }>();
+      await submitted;
+
+      const waiterBill = waitForSocketMessage<{ type: string; result: Record<string, unknown> }>(
+        waiterSocket,
+        (message) => message.type === "bill.generated"
+      );
+      const kitchenBillLeak = expectNoSocketMessage<{ type: string }>(kitchenSocket, (message) => message.type === "bill.generated");
+      const billResponse = await app.inject({
+        method: "POST",
+        url: `/bills/${order.orderId}/generate`,
+        headers: { "x-device-token": "test-admin-token" }
+      });
+
+      expect(billResponse.statusCode).toBe(200);
+      expect(await waiterBill).toEqual({ type: "bill.generated", result: { tableStatusChanged: true } });
+      await kitchenBillLeak;
+    } finally {
+      kitchenSocket.terminate();
+      waiterSocket.terminate();
+      await app.close();
+      database.close();
+    }
   });
 
   it("lets captains shift any running table and selected items", async () => {
@@ -995,9 +1308,10 @@ describe("Hub API auth and service flow", () => {
 
     expect(billResponse.statusCode).toBe(200);
     expect(printResponse.json()).toEqual({ printed: 1, failed: 0 });
-    expect(database.db.prepare("SELECT status FROM print_jobs WHERE target_id = ?").get(bill.billId)).toEqual({
-      status: "printed"
-    });
+    const printJob = database.db.prepare("SELECT status, payload FROM print_jobs WHERE target_id = ?").get(bill.billId) as { status: string; payload: string };
+    expect(printJob.status).toBe("printed");
+    expect(printJob.payload).toContain("Food CGST @ 2.5%: 4.50");
+    expect(printJob.payload).toContain("Food SGST @ 2.5%: 4.50");
 
     await app.close();
     database.close();

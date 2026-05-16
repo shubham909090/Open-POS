@@ -1,9 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { HubClient, getLocalOnlyHubUrlMessage, getPairingFailureAlert, HubHttpError } from "../lib/hub-client";
+import { HubClient, buildRealtimeUrl, getLocalOnlyHubUrlMessage, getPairingFailureAlert, HubHttpError } from "../lib/hub-client";
 
 describe("HubClient", () => {
   afterEach(() => {
+    vi.useRealTimers();
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it("sends the local device token to protected hub routes", async () => {
@@ -35,6 +37,78 @@ describe("HubClient", () => {
         headers: expect.objectContaining({ "x-device-token": "device-token" })
       })
     );
+  });
+
+  it("builds authenticated realtime websocket URLs from the hub URL", () => {
+    expect(buildRealtimeUrl("http://192.168.1.20:3737", "device token")).toBe(
+      "ws://192.168.1.20:3737/realtime?token=device%20token"
+    );
+    expect(buildRealtimeUrl("https://pos.example.test/hub/", "secret")).toBe(
+      "wss://pos.example.test/realtime?token=secret"
+    );
+  });
+
+  it("ignores malformed saved realtime URLs instead of crashing the app", () => {
+    vi.stubGlobal(
+      "WebSocket",
+      class {
+        close() {}
+      }
+    );
+    const client = new HubClient("not a valid url", "device-token");
+
+    expect(() => client.subscribeRealtime(vi.fn())).not.toThrow();
+  });
+
+  it("subscribes to realtime events, ignores bad frames, reconnects, and cleans up", async () => {
+    vi.useFakeTimers();
+    class MockWebSocket {
+      static instances: MockWebSocket[] = [];
+      onmessage: ((message: { data: string }) => void) | null = null;
+      onclose: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      closed = false;
+
+      constructor(readonly url: string) {
+        MockWebSocket.instances.push(this);
+      }
+
+      close() {
+        this.closed = true;
+        this.onclose?.();
+      }
+
+      emitMessage(data: string) {
+        this.onmessage?.({ data });
+      }
+
+      emitClose() {
+        this.onclose?.();
+      }
+    }
+    vi.stubGlobal("WebSocket", MockWebSocket);
+    const onEvent = vi.fn();
+    const client = new HubClient("http://hub.local:3737", "device-token");
+
+    const unsubscribe = client.subscribeRealtime(onEvent);
+    expect(MockWebSocket.instances[0]?.url).toBe("ws://hub.local:3737/realtime?token=device-token");
+
+    MockWebSocket.instances[0]?.emitMessage(JSON.stringify({ type: "order.submitted" }));
+    MockWebSocket.instances[0]?.emitMessage("{not-json");
+    expect(onEvent).toHaveBeenCalledTimes(1);
+    expect(onEvent).toHaveBeenCalledWith({ type: "order.submitted" });
+
+    MockWebSocket.instances[0]?.emitClose();
+    await vi.advanceTimersByTimeAsync(1_499);
+    expect(MockWebSocket.instances).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(MockWebSocket.instances).toHaveLength(2);
+
+    unsubscribe();
+    MockWebSocket.instances[1]?.emitClose();
+    await vi.advanceTimersByTimeAsync(1_500);
+    expect(MockWebSocket.instances).toHaveLength(2);
+    expect(MockWebSocket.instances[1]?.closed).toBe(true);
   });
 
   it("exchanges pairing codes through the public pairing endpoint", async () => {
@@ -81,6 +155,7 @@ describe("HubClient", () => {
       captainId: "Captain",
       pax: 2,
       orderType: "dine_in",
+      printMode: "kot",
       items: [{ menuItemId: "item-1", quantity: 1 }]
     });
 
@@ -91,7 +166,8 @@ describe("HubClient", () => {
         headers: expect.objectContaining({
           "x-device-token": "captain-token",
           "Idempotency-Key": expect.stringMatching(/^mobile-order-/)
-        })
+        }),
+        body: expect.stringContaining('"printMode":"kot"')
       })
     );
   });

@@ -34,6 +34,39 @@ export function renderEscposPayload(payload: string): Buffer {
   ]);
 }
 
+export function buildWindowsSystemPrintCommand(file: string, printerName: string): string[] {
+  return [
+    "-NoProfile",
+    "-Command",
+    [
+      "Add-Type -AssemblyName System.Drawing;",
+      "Add-Type -AssemblyName System.Windows.Forms;",
+      `$text = Get-Content -Raw -LiteralPath ${JSON.stringify(file)};`,
+      "$lines = $text -split \"`r?`n\";",
+      "$doc = New-Object System.Drawing.Printing.PrintDocument;",
+      `$doc.PrinterSettings.PrinterName = ${JSON.stringify(printerName)};`,
+      "$doc.PrintController = New-Object System.Drawing.Printing.StandardPrintController;",
+      "$doc.DefaultPageSettings.Margins = New-Object System.Drawing.Printing.Margins(0, 0, 0, 0);",
+      "$font = [System.Drawing.Font]::new('Consolas', 11, [System.Drawing.FontStyle]::Regular);",
+      "$brush = [System.Drawing.Brushes]::Black;",
+      "$script:index = 0;",
+      "$doc.add_PrintPage({",
+      "  param($sender, $eventArgs)",
+      "  $x = 0;",
+      "  $y = 0;",
+      "  $lineHeight = [Math]::Ceiling($font.GetHeight($eventArgs.Graphics)) + 1;",
+      "  while ($script:index -lt $lines.Length -and ($y + $lineHeight) -lt $eventArgs.MarginBounds.Bottom) {",
+      "    $eventArgs.Graphics.DrawString($lines[$script:index], $font, $brush, $x, $y);",
+      "    $y += $lineHeight;",
+      "    $script:index += 1;",
+      "  }",
+      "  $eventArgs.HasMorePages = $script:index -lt $lines.Length;",
+      "});",
+      "$doc.Print();"
+    ].join(" ")
+  ];
+}
+
 export class LanEscposPrinterAdapter implements PrinterAdapter {
   async print(target: PrintTarget): Promise<void> {
     if (!target.printerHost || !target.printerPort) {
@@ -74,36 +107,7 @@ export class SystemPrinterAdapter implements PrinterAdapter {
     try {
       await writeFile(file, target.payload, "utf8");
       if (process.platform === "win32") {
-        await this.execFileAsync("powershell.exe", [
-          "-NoProfile",
-          "-Command",
-          [
-            "Add-Type -AssemblyName System.Drawing;",
-            "Add-Type -AssemblyName System.Windows.Forms;",
-            `$text = Get-Content -Raw -LiteralPath ${JSON.stringify(file)};`,
-            "$lines = $text -split \"`r?`n\";",
-            "$doc = New-Object System.Drawing.Printing.PrintDocument;",
-            `$doc.PrinterSettings.PrinterName = ${JSON.stringify(target.printerName)};`,
-            "$doc.PrintController = New-Object System.Drawing.Printing.StandardPrintController;",
-            "$doc.DefaultPageSettings.Margins = New-Object System.Drawing.Printing.Margins(0, 0, 0, 0);",
-            "$font = [System.Drawing.Font]::new('Consolas', 9, [System.Drawing.FontStyle]::Bold);",
-            "$brush = [System.Drawing.Brushes]::Black;",
-            "$script:index = 0;",
-            "$doc.add_PrintPage({",
-            "  param($sender, $eventArgs)",
-            "  $x = 0;",
-            "  $y = 0;",
-            "  $lineHeight = [Math]::Ceiling($font.GetHeight($eventArgs.Graphics)) + 1;",
-            "  while ($script:index -lt $lines.Length -and ($y + $lineHeight) -lt $eventArgs.MarginBounds.Bottom) {",
-            "    $eventArgs.Graphics.DrawString($lines[$script:index], $font, $brush, $x, $y);",
-            "    $y += $lineHeight;",
-            "    $script:index += 1;",
-            "  }",
-            "  $eventArgs.HasMorePages = $script:index -lt $lines.Length;",
-            "});",
-            "$doc.Print();"
-          ].join(" ")
-        ]);
+        await this.execFileAsync("powershell.exe", buildWindowsSystemPrintCommand(file, target.printerName));
       } else {
         await this.execFileAsync("lp", ["-d", target.printerName, file]);
       }

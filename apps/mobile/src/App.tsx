@@ -25,6 +25,7 @@ import { getAndroidStatusBarTopInset } from "./lib/safe-area";
 type ConnectionState = "checking" | "online" | "offline";
 type ViewMode = "tables" | "menu" | "ticket";
 type PaymentMethod = "cash" | "upi" | "card" | "online";
+type PrintMode = "kot" | "kot_print";
 
 interface PairingPayload {
   kind: "gaurav-pos-pairing";
@@ -145,6 +146,22 @@ export default function App() {
     const interval = setInterval(() => void refresh(false), 8_000);
     return () => clearInterval(interval);
   }, [client, initializing, kitchenUnitId, selectedTableId]);
+
+  useEffect(() => {
+    if (initializing || !deviceToken) return;
+    let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+    const unsubscribe = client.subscribeRealtime(() => {
+      if (refreshTimer) return;
+      refreshTimer = setTimeout(() => {
+        refreshTimer = null;
+        void refresh(false);
+      }, 150);
+    });
+    return () => {
+      if (refreshTimer) clearTimeout(refreshTimer);
+      unsubscribe();
+    };
+  }, [client, deviceToken, initializing, kitchenUnitId, selectedTableId]);
 
   async function refresh(showSpinner = true) {
     if (showSpinner) setLoading(true);
@@ -272,16 +289,16 @@ export default function App() {
       .join("\n");
   }
 
-  function confirmSendKot(): Promise<boolean> {
+  function confirmSendKot(printMode: PrintMode): Promise<boolean> {
     return new Promise((resolve) => {
-      Alert.alert("Send new items?", orderSummary(), [
+      Alert.alert(printMode === "kot" ? "Save KOT?" : "Print and KOT?", orderSummary(), [
         { text: "Review", style: "cancel", onPress: () => resolve(false) },
-        { text: "Send", onPress: () => resolve(true) }
+        { text: printMode === "kot" ? "KOT" : "Print and KOT", onPress: () => resolve(true) }
       ]);
     });
   }
 
-  async function submitOrder() {
+  async function submitOrder(printMode: PrintMode) {
     if (sending) return;
     if (!selectedTableId) {
       setMessage("Choose a table first.");
@@ -298,7 +315,7 @@ export default function App() {
       Alert.alert("Draft saved", "Reconnect to the hub to send these items.");
       return;
     }
-    if (!(await confirmSendKot())) return;
+    if (!(await confirmSendKot(printMode))) return;
 
     try {
       setSending(true);
@@ -306,9 +323,10 @@ export default function App() {
         tableId: selectedTableId,
         pax: normalisePax(pax),
         orderType: "dine_in" as const,
+        printMode,
         items
       };
-      const scope = { tableId: selectedTableId, items, pax: normalisePax(pax) };
+      const scope = { tableId: selectedTableId, items, pax: normalisePax(pax), printMode };
       await client.submitOrder(input, { idempotencyKey: operationKey("mobile-order", scope) });
       clearOperationKey("mobile-order", scope);
       await clearDraft(selectedTableId);
@@ -316,7 +334,7 @@ export default function App() {
       await refresh(false);
       await loadTableOrder(selectedTableId);
       setMode("ticket");
-      setMessage("Sent. New items are cleared; sent items stay on the table check.");
+      setMessage(printMode === "kot" ? "KOT saved. New items are cleared; sent items stay on the table check." : "Print and KOT sent. New items are cleared; sent items stay on the table check.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not send order.");
     } finally {
@@ -778,7 +796,7 @@ export default function App() {
           onMarkNc={(pin, reason) => void markSelectedBillNc(pin, reason)}
           onReviseBill={(pin, reason) => void reviseSelectedBill(pin, reason)}
           onSettleBill={(input) => void settleSelectedBill(input)}
-          onSubmit={() => void submitOrder()}
+          onSubmit={(printMode) => void submitOrder(printMode)}
         />
       )}
     </View>
@@ -1080,7 +1098,7 @@ function ModeTabs({ mode, onModeChange }: { mode: ViewMode; onModeChange: (mode:
       {(["tables", "menu", "ticket"] as ViewMode[]).map((entry) => (
         <Pressable key={entry} style={[styles.modeTab, mode === entry && styles.modeTabActive]} onPress={() => onModeChange(entry)}>
           <Text style={[styles.modeTabText, mode === entry && styles.modeTabTextActive]}>
-            {entry === "tables" ? "Tables" : entry === "menu" ? "Menu" : "Review"}
+            {entry === "tables" ? "Tables" : entry === "menu" ? "Menu" : "Check"}
           </Text>
         </Pressable>
       ))}
@@ -1476,7 +1494,7 @@ function TicketScreen({
     tipPaise: number;
     payments: Array<{ method: PaymentMethod; amountPaise: number; reference?: string }>;
   }) => void;
-  onSubmit: () => void;
+  onSubmit: (printMode: PrintMode) => void;
 }) {
   const [itemShiftTargetId, setItemShiftTargetId] = useState("");
   const [itemShiftQty, setItemShiftQty] = useState<Record<string, string>>({});
@@ -1485,14 +1503,31 @@ function TicketScreen({
   const [cancelReason, setCancelReason] = useState("Item cancelled");
   const canSubmit = Boolean(selectedTableName && items.length > 0 && !sending);
   const shiftTargets = tables.filter((table) => table.id !== selectedTableId && getTableDisplayState(table) !== "disabled");
+  const sentCount = sentItems.reduce((total, item) => total + item.quantity, 0);
+  const newCount = items.reduce((total, item) => total + item.quantity, 0);
   return (
     <View style={styles.panel}>
       <View style={styles.cardHeader}>
         <View style={styles.flexText}>
-          <Text style={styles.sectionTitle}>Review</Text>
-          <Text style={styles.muted}>{selectedTableName ? `Table ${selectedTableName}` : "No table selected"}</Text>
+          <Text style={styles.sectionTitle}>Table Check</Text>
+          <Text style={styles.muted}>{selectedTableName ? `Table ${selectedTableName}` : "Choose table before sending"}</Text>
         </View>
         <Text style={styles.totalText}>Rs {formatRupees(tableTotal)}</Text>
+      </View>
+
+      <View style={styles.serviceStats}>
+        <View style={styles.serviceStat}>
+          <Text style={styles.inputLabel}>New</Text>
+          <Text style={styles.serviceStatValue}>{newCount}</Text>
+        </View>
+        <View style={styles.serviceStat}>
+          <Text style={styles.inputLabel}>Sent</Text>
+          <Text style={styles.serviceStatValue}>{sentCount}</Text>
+        </View>
+        <View style={styles.serviceStatWide}>
+          <Text style={styles.inputLabel}>Table Total</Text>
+          <Text style={styles.serviceStatValue}>Rs {formatRupees(tableTotal)}</Text>
+        </View>
       </View>
 
       <View style={styles.formStack}>
@@ -1505,6 +1540,24 @@ function TicketScreen({
           keyboardType="number-pad"
           returnKeyType="done"
         />
+      </View>
+
+      <View style={styles.actionSection}>
+        <View style={styles.sectionHeaderRow}>
+          <View>
+            <Text style={styles.actionTitle}>Send Order</Text>
+            <Text style={styles.actionMeta}>{items.length ? `${newCount} new item${newCount === 1 ? "" : "s"} ready` : "Add dishes from Menu"}</Text>
+          </View>
+          <Text style={styles.actionAmount}>Rs {formatRupees(draftTotal)}</Text>
+        </View>
+        <View style={styles.sendButtonRow}>
+          <Pressable style={[styles.secondaryButton, styles.sendButton, !canSubmit && styles.buttonDisabled]} onPress={() => onSubmit("kot")} disabled={!canSubmit}>
+            <Text style={styles.secondaryButtonText}>{sending ? "Saving..." : "KOT"}</Text>
+          </Pressable>
+          <Pressable style={[styles.primaryButton, styles.sendButton, !canSubmit && styles.buttonDisabled]} onPress={() => onSubmit("kot_print")} disabled={!canSubmit}>
+            <Text style={styles.primaryButtonText}>{sending ? "Sending..." : connection === "online" ? "Print and KOT" : "Save Draft"}</Text>
+          </Pressable>
+        </View>
       </View>
 
       <Text style={styles.subhead}>New Items</Text>
@@ -1550,8 +1603,11 @@ function TicketScreen({
             </View>
           ))}
           {canBill ? (
-            <View style={styles.cancelPanel}>
-              <Text style={styles.smallMuted}>Cancel a sent item</Text>
+            <View style={[styles.actionSection, styles.cancelPanel]}>
+              <View>
+                <Text style={styles.actionTitle}>Cancel Sent Item</Text>
+                <Text style={styles.actionMeta}>Manager PIN required. Cancellation ticket prints.</Text>
+              </View>
               <TextInput
                 style={styles.input}
                 value={cancelPin}
@@ -1594,8 +1650,11 @@ function TicketScreen({
       )}
 
       {selectedTableId && sentItems.length > 0 && canShift ? (
-        <>
-          <Text style={styles.subhead}>Shift Table Or Items</Text>
+        <View style={styles.actionSection}>
+          <View>
+            <Text style={styles.actionTitle}>Shift Table Or Items</Text>
+            <Text style={styles.actionMeta}>Captain-only movement tools</Text>
+          </View>
           {shiftTargets.length === 0 ? (
             <Text style={styles.smallMuted}>No other active table is available for transfer.</Text>
           ) : (
@@ -1645,7 +1704,7 @@ function TicketScreen({
               })}
             </>
           )}
-        </>
+        </View>
       ) : selectedTableId && sentItems.length > 0 ? (
         <Text style={styles.smallMuted}>Only captain devices can shift tables or items.</Text>
       ) : null}
@@ -1654,10 +1713,6 @@ function TicketScreen({
         <Text style={styles.totalLabel}>New Rs {formatRupees(draftTotal)}</Text>
         <Text style={styles.totalLabel}>Table Rs {formatRupees(tableTotal)}</Text>
       </View>
-      <Pressable style={[styles.primaryButton, styles.sendButton, !canSubmit && styles.buttonDisabled]} onPress={onSubmit} disabled={!canSubmit}>
-        <Text style={styles.primaryButtonText}>{sending ? "Sending..." : connection === "online" ? "Send New Items" : "Save Draft"}</Text>
-      </Pressable>
-
       <CaptainBillingPanel
         canBill={canBill}
         currentOrder={currentOrder}
@@ -1714,6 +1769,7 @@ function CaptainBillingPanel({
   const [paymentInputs, setPaymentInputs] = useState<Record<PaymentMethod, string>>({ cash: "0", upi: "0", card: "0", online: "0" });
   const [managerPin, setManagerPin] = useState("");
   const [managerReason, setManagerReason] = useState("");
+  const [approvalAction, setApprovalAction] = useState<"reprint" | "nc" | "revise" | null>(null);
 
   useEffect(() => {
     if (!bill) return;
@@ -1721,6 +1777,9 @@ function CaptainBillingPanel({
     setDiscountValue(paiseToRupeeInput(bill.discount_paise ?? 0));
     setTipValue(paiseToRupeeInput(bill.tip_paise ?? 0));
     setPaymentInputs({ cash: "0", upi: "0", card: "0", online: "0" });
+    setApprovalAction(null);
+    setManagerPin("");
+    setManagerReason("");
   }, [bill?.id]);
 
   if (!canBill) return null;
@@ -1739,6 +1798,7 @@ function CaptainBillingPanel({
   const remainingPaise = balancePaise - newPaymentPaise;
   const canPunch = Boolean(bill && newPaymentPaise > 0 && remainingPaise === 0 && !sending);
   const hasApproval = managerPin.trim().length > 0 && managerReason.trim().length > 0;
+  const approvalTitle = approvalAction === "reprint" ? "Reprint Bill" : approvalAction === "nc" ? "NC Bill" : "Revise Bill";
 
   const fillFullPayment = (method: PaymentMethod) => {
     setPaymentInputs({
@@ -1748,10 +1808,18 @@ function CaptainBillingPanel({
       online: method === "online" ? paiseToRupeeInput(balancePaise) : "0"
     });
   };
+  const selectApprovalAction = (action: "reprint" | "nc" | "revise") => {
+    setApprovalAction(approvalAction === action ? null : action);
+    setManagerPin("");
+    setManagerReason("");
+  };
 
   return (
-    <View style={styles.billingPanel}>
-      <Text style={styles.subhead}>Captain Billing</Text>
+    <View style={[styles.actionSection, styles.billingPanel]}>
+      <View>
+        <Text style={styles.actionTitle}>Captain Actions</Text>
+        <Text style={styles.actionMeta}>Billing, print, payment, NC, reprint, and revise</Text>
+      </View>
 
       {currentSummary ? (
         <View style={styles.summaryGrid}>
@@ -1765,8 +1833,8 @@ function CaptainBillingPanel({
       {!currentOrder?.order ? (
         <Text style={styles.smallMuted}>Send items for this table before billing.</Text>
       ) : !bill ? (
-        <Pressable style={[styles.primaryButton, sending && styles.buttonDisabled]} disabled={sending} onPress={onGenerateBill}>
-          <Text style={styles.primaryButtonText}>{sending ? "Working..." : "Generate Bill"}</Text>
+        <Pressable style={[styles.primaryButton, styles.heroSendButton, sending && styles.buttonDisabled]} disabled={sending} onPress={onGenerateBill}>
+          <Text style={styles.primaryButtonText}>{sending ? "Working..." : "Generate Bill For Table"}</Text>
         </Pressable>
       ) : (
         <>
@@ -1842,35 +1910,50 @@ function CaptainBillingPanel({
             </Pressable>
           </View>
 
-          <View style={styles.managerBox}>
-            <Text style={styles.subhead}>Manager Approval</Text>
-            <UncontrolledInput
-              inputKey={`manager-pin-${bill.id}`}
-              label="Manager PIN"
-              defaultValue=""
-              secureTextEntry
-              keyboardType="number-pad"
-              onChangeText={setManagerPin}
-            />
-            <UncontrolledInput
-              inputKey={`manager-reason-${bill.id}`}
-              label="Reason"
-              defaultValue=""
-              onChangeText={setManagerReason}
-              placeholder="Required for NC, reprint, revise"
-            />
-            <View style={styles.quickPayGrid}>
-              <Pressable style={[styles.secondaryButton, (!hasApproval || sending) && styles.buttonDisabled]} disabled={!hasApproval || sending} onPress={() => onReprintBill(managerPin, managerReason)}>
-                <Text style={styles.secondaryButtonText}>Reprint</Text>
-              </Pressable>
-              <Pressable style={[styles.dangerButton, (!hasApproval || sending) && styles.buttonDisabled]} disabled={!hasApproval || sending} onPress={() => onMarkNc(managerPin, managerReason)}>
-                <Text style={styles.dangerButtonText}>NC Bill</Text>
-              </Pressable>
-              <Pressable style={[styles.secondaryButton, (!hasApproval || !hasNewItems || sending) && styles.buttonDisabled]} disabled={!hasApproval || !hasNewItems || sending} onPress={() => onReviseBill(managerPin, managerReason)}>
-                <Text style={styles.secondaryButtonText}>Revise</Text>
+          <View style={styles.quickPayGrid}>
+            <Pressable style={[styles.secondaryButton, approvalAction === "reprint" && styles.approvalActionActive, sending && styles.buttonDisabled]} disabled={sending} onPress={() => selectApprovalAction("reprint")}>
+              <Text style={styles.secondaryButtonText}>Reprint</Text>
+            </Pressable>
+            <Pressable style={[styles.dangerButton, approvalAction === "nc" && styles.approvalDangerActive, sending && styles.buttonDisabled]} disabled={sending} onPress={() => selectApprovalAction("nc")}>
+              <Text style={styles.dangerButtonText}>NC Bill</Text>
+            </Pressable>
+            <Pressable style={[styles.secondaryButton, approvalAction === "revise" && styles.approvalActionActive, (!hasNewItems || sending) && styles.buttonDisabled]} disabled={!hasNewItems || sending} onPress={() => selectApprovalAction("revise")}>
+              <Text style={styles.secondaryButtonText}>Revise</Text>
+            </Pressable>
+          </View>
+
+          {approvalAction ? (
+            <View style={styles.managerBox}>
+              <Text style={styles.subhead}>{approvalTitle}</Text>
+              <Text style={styles.smallMuted}>Manager PIN and reason required.</Text>
+              <UncontrolledInput
+                inputKey={`manager-pin-${bill.id}-${approvalAction}`}
+                label="Manager PIN"
+                defaultValue=""
+                secureTextEntry
+                keyboardType="number-pad"
+                onChangeText={setManagerPin}
+              />
+              <UncontrolledInput
+                inputKey={`manager-reason-${bill.id}-${approvalAction}`}
+                label="Reason"
+                defaultValue=""
+                onChangeText={setManagerReason}
+                placeholder={`Reason for ${approvalTitle.toLowerCase()}`}
+              />
+              <Pressable
+                style={[approvalAction === "nc" ? styles.dangerButton : styles.primaryButton, (!hasApproval || sending) && styles.buttonDisabled]}
+                disabled={!hasApproval || sending}
+                onPress={() => {
+                  if (approvalAction === "reprint") onReprintBill(managerPin, managerReason);
+                  if (approvalAction === "nc") onMarkNc(managerPin, managerReason);
+                  if (approvalAction === "revise") onReviseBill(managerPin, managerReason);
+                }}
+              >
+                <Text style={approvalAction === "nc" ? styles.dangerButtonText : styles.primaryButtonText}>{approvalTitle}</Text>
               </Pressable>
             </View>
-          </View>
+          ) : null}
         </>
       )}
     </View>
@@ -2154,6 +2237,28 @@ const styles = StyleSheet.create({
   iconButtonText: { color: palette.ink, fontWeight: "800", fontSize: 11 },
   cardHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10 },
   sectionTitle: { fontSize: 18, fontWeight: "900", color: palette.ink },
+  serviceStats: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  serviceStat: {
+    minWidth: 86,
+    flexGrow: 1,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#d6caba",
+    backgroundColor: "#fffaf1",
+    padding: 10,
+    gap: 4
+  },
+  serviceStatWide: {
+    minWidth: 142,
+    flexGrow: 2,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#a7cbc3",
+    backgroundColor: palette.greenSoft,
+    padding: 10,
+    gap: 4
+  },
+  serviceStatValue: { color: palette.ink, fontSize: 18, fontWeight: "900" },
   inputGroup: { gap: 5 },
   inputLabel: { color: palette.muted, fontSize: 11, fontWeight: "800", textTransform: "uppercase", letterSpacing: 0 },
   input: {
@@ -2192,6 +2297,8 @@ const styles = StyleSheet.create({
     backgroundColor: palette.paper
   },
   secondaryButtonText: { color: palette.ink, fontWeight: "900" },
+  approvalActionActive: { backgroundColor: "#efe7d8", borderColor: palette.green },
+  approvalDangerActive: { backgroundColor: "#9b2116" },
   scanButton: {
     minHeight: 62,
     borderRadius: 10,
@@ -2302,6 +2409,20 @@ const styles = StyleSheet.create({
   shiftButtonText: { color: "#1b4d84", fontWeight: "900" },
   shiftButtonMeta: { color: "#4f6f93", fontWeight: "800", fontSize: 11 },
   fieldBlock: { gap: 8 },
+  actionSection: {
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#d8cdbb",
+    backgroundColor: "#fbf6eb",
+    padding: 12,
+    gap: 10
+  },
+  sectionHeaderRow: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: 10 },
+  actionTitle: { color: palette.ink, fontSize: 16, fontWeight: "900", lineHeight: 20 },
+  actionMeta: { color: palette.muted, fontSize: 12, fontWeight: "700", lineHeight: 17 },
+  actionAmount: { color: palette.green, fontSize: 16, fontWeight: "900" },
+  sendButtonRow: { flexDirection: "row", gap: 8 },
+  heroSendButton: { minHeight: 58 },
   itemShiftRow: {
     minHeight: 52,
     borderWidth: 1,
@@ -2326,10 +2447,7 @@ const styles = StyleSheet.create({
   },
   cancelPanel: {
     gap: 8,
-    padding: 10,
-    borderWidth: 1,
     borderColor: "#f0b8ad",
-    borderRadius: 10,
     backgroundColor: "#fff3ef"
   },
   dangerSmallButton: {
@@ -2441,9 +2559,8 @@ const styles = StyleSheet.create({
   },
   totalLabel: { color: palette.green, fontWeight: "900" },
   billingPanel: {
-    borderTopWidth: 1,
-    borderColor: "#ece2d4",
-    paddingTop: 12,
+    borderColor: "#b9d4cc",
+    backgroundColor: "#f3fbf6",
     gap: 12
   },
   summaryGrid: {
@@ -2524,7 +2641,7 @@ const styles = StyleSheet.create({
   },
   dangerButtonText: { color: "#fffdfa", fontWeight: "900" },
   dangerText: { color: palette.red, fontWeight: "900" },
-  sendButton: { minHeight: 54 },
+  sendButton: { flex: 1, minHeight: 54 },
   buttonDisabled: { opacity: 0.45 },
   draftBar: {
     position: "absolute",
