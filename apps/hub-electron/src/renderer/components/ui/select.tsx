@@ -22,7 +22,7 @@ export function Select({
     <SelectPrimitive.Root value={value} onValueChange={onValueChange}>
       <SelectPrimitive.Trigger
         className={cn(
-          "flex h-9 w-full min-w-0 items-center justify-between gap-2 rounded-md border border-line-strong bg-panel px-3 text-left text-sm text-ink shadow-sm outline-none focus:border-accent focus:ring-2 focus:ring-accent/20",
+          "flex h-10 w-full min-w-0 items-center justify-between gap-2 rounded-md border border-line bg-panel px-3 text-left text-sm text-ink shadow-sm outline-none focus:border-accent focus:ring-2 focus:ring-accent",
           className
         )}
       >

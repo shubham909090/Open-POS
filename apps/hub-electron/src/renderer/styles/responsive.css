@@ -1,0 +1,62 @@
+@media (max-width: 1180px) {
+  .hub-shell {
+    @apply grid-cols-1;
+  }
+
+  .side-rail {
+    @apply sticky top-0 z-10 grid-cols-[auto_minmax(0,1fr)_auto] items-center;
+  }
+
+  .side-rail nav {
+    @apply grid grid-cols-6 gap-1;
+  }
+
+  .orders-grid.has-selection,
+  .order-modal-layout.menu-open,
+  .reports-layout .report-detail-grid,
+  .order-workspace-grid.menu-open,
+  .order-workspace-grid.menu-collapsed,
+  .sale-group-row,
+  .sale-group-form,
+  .manager-pin-form {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  .side-rail,
+  .topbar,
+  .panel-title,
+  .saved-settings-card,
+  .pairing-card,
+  .csv-import-grid,
+  .layout-editor {
+    grid-template-columns: 1fr;
+  }
+
+  .topbar,
+  .panel-title {
+    @apply items-start;
+  }
+
+  .order-modal-backdrop {
+    @apply p-2;
+  }
+
+  .order-modal-card {
+    max-height: calc(100vh - 1rem);
+    @apply p-3;
+  }
+
+  .order-modal-header {
+    @apply grid;
+  }
+
+  .order-modal-actions {
+    @apply justify-start;
+  }
+
+  .side-rail nav {
+    @apply grid-cols-2;
+  }
+}

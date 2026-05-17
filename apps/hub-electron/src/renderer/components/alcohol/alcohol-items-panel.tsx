@@ -1,5 +1,5 @@
 import { useMutation } from "@tanstack/react-query";
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { formatInr } from "@gaurav-pos/shared";
 import { Pencil, Plus, X } from "lucide-react";
 import { hubApi, type AlcoholCatalog, type Bootstrap, type CsvImportResult } from "../../hub-api.js";
@@ -423,15 +423,24 @@ export function AlcoholItemsPanel({
           <h2>Alcohol Catalog</h2>
           <span>{catalog.items.length} items</span>
         </div>
-        <div className="alcohol-item-list">
+        <div className="report-table-wrap alcohol-catalog-wrap">
+          <table className="data-table alcohol-catalog-table">
+            <thead>
+              <tr>
+                <th>Item</th>
+                <th>Type</th>
+                <th>Stock / recipe</th>
+                <th>Menu prices</th>
+                <th aria-label="Actions" />
+              </tr>
+            </thead>
+            <tbody>
           {catalog.items.map((item) => (
-            <article
-              key={item.id}
-              className="stock-row alcohol-catalog-row"
-            >
-              <div>
-                <strong>{item.name}</strong>
-                <span>
+            <Fragment key={item.id}>
+              <tr>
+                <td className="strong-cell">{item.name}</td>
+                <td>{item.type === "plain_liquor" ? "Plain liquor" : "Prepared product"}</td>
+                <td className="wrap-cell">
                   {item.type === "plain_liquor"
                     ? `${item.large_bottle_ml} ml / ${item.small_bottle_ml} ml`
                     : item.recipeIngredients
@@ -440,10 +449,9 @@ export function AlcoholItemsPanel({
                             `${entry.ml_per_unit} ml ${entry.liquor_name}`,
                         )
                         .join(", ") || "No liquor recipe"}
-                </span>
-              </div>
-              <div className="catalog-row-actions">
-                <div className="variant-price-list">
+                </td>
+                <td>
+                  <div className="variant-price-list">
                   {(item.variants ?? [])
                     .filter((variant) => Boolean(variant.active))
                     .map((variant) => (
@@ -451,37 +459,46 @@ export function AlcoholItemsPanel({
                         {variant.label} {formatInr(variant.price_paise)}
                       </span>
                     ))}
-                </div>
-                <button
-                  type="button"
-                  className="secondary-inline"
-                  onClick={() =>
-                    setEditingId((current) =>
-                      current === item.id ? null : item.id,
-                    )
-                  }
-                >
-                  <Pencil size={14} />
-                  Edit
-                </button>
-              </div>
+                  </div>
+                </td>
+                <td className="action-cell">
+                  <button
+                    type="button"
+                    className="secondary-inline compact"
+                    onClick={() =>
+                      setEditingId((current) =>
+                        current === item.id ? null : item.id,
+                      )
+                    }
+                  >
+                    <Pencil size={14} />
+                    Edit
+                  </button>
+                </td>
+              </tr>
               {editingId === item.id ? (
-                <AlcoholEditForm
-                  item={item}
-                  plainLiquors={plainLiquors}
-                  units={bootstrap.productionUnits.filter(
-                    (unit) => unit.active,
-                  )}
-                  onCancel={() => setEditingId(null)}
-                  onSaved={async () => {
-                    setEditingId(null);
-                    await invalidate();
-                  }}
-                  setNotice={setNotice}
-                />
+                <tr>
+                  <td colSpan={5} className="report-table-detail alcohol-edit-cell">
+                    <AlcoholEditForm
+                      item={item}
+                      plainLiquors={plainLiquors}
+                      units={bootstrap.productionUnits.filter(
+                        (unit) => unit.active,
+                      )}
+                      onCancel={() => setEditingId(null)}
+                      onSaved={async () => {
+                        setEditingId(null);
+                        await invalidate();
+                      }}
+                      setNotice={setNotice}
+                    />
+                  </td>
+                </tr>
               ) : null}
-            </article>
+            </Fragment>
           ))}
+            </tbody>
+          </table>
         </div>
       </section>
     </div>

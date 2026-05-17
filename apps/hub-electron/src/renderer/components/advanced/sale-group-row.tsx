@@ -48,15 +48,15 @@ export function SaleGroupRow({
   }
 
   return (
-    <article className="record-row">
-      <div>
+    <article className="record-row sale-group-row">
+      <div className="record-row-main">
         <strong>{group.name}</strong>
         <span>
-          {group.kind} · {ticketLabel} · tax/report category
+          {group.kind} category · prints {ticketLabel}
         </span>
       </div>
       <form
-        className="row-edit-form"
+        className="sale-group-form"
         onSubmit={(event) => {
           event.preventDefault();
           setSaving(true);
@@ -96,7 +96,7 @@ export function SaleGroupRow({
           />
         </label>
         <button type="submit" disabled={saving}>
-          Save
+          {saving ? "Saving..." : "Save"}
         </button>
       </form>
     </article>

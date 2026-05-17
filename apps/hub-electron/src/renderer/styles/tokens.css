@@ -3,26 +3,26 @@
   --radius: 8px;
 
   /* Canonical palette — synced with packages/shared/src/design-tokens.ts */
-  --ink: #191815;
-  --muted: #6b6560;
-  --paper: #f5f5ef;
-  --panel: #fffdf7;
-  --wash: #f0ead9;
-  --line: #d8cebd;
-  --line-strong: #a8a298;
+  --ink: #18181b;
+  --muted: #71717a;
+  --paper: #fafafa;
+  --panel: #ffffff;
+  --wash: #f4f4f5;
+  --line: #d4d4d8;
+  --line-strong: #a1a1aa;
   --accent: #0f766e;
   --accent-dark: #134e4a;
   --accent-soft: #e5f3ed;
-  --danger: #a83a2f;
-  --danger-soft: #fff0ed;
-  --warning: #986022;
-  --warning-soft: #fff0d6;
+  --danger: #b91c1c;
+  --danger-soft: #fef2f2;
+  --warning: #b45309;
+  --warning-soft: #fffbeb;
   --blue: #1d4ed8;
   --blue-soft: #eff6ff;
-  --sidebar: #0c211b;
+  --sidebar: #18181b;
 
-  --shadow: 0 12px 30px rgba(25, 24, 21, 0.08);
-  --shadow-lg: 0 18px 50px rgba(25, 24, 21, 0.1);
+  --shadow: 0 12px 30px rgba(24, 24, 27, 0.08);
+  --shadow-lg: 0 18px 50px rgba(24, 24, 27, 0.1);
 
   font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-size: 15px;

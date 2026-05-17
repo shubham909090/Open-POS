@@ -9,11 +9,12 @@ import { useHubStore } from "../../store.js";
 import { EmptyState } from "../ui/empty-state.js";
 import { LineItems } from "./line-items.js";
 import { BillingPanel } from "./billing-panel.js";
+import { SentOrderPanel } from "./sent-order-panel.js";
 import { CategoryBadge, getMenuActionVariants, MenuItemActionGroup } from "./menu-card.js";
 
 type PrintMode = "kot" | "kot_print";
-type SaveMode = "save" | "save_print";
-type StateItem = {
+export type SaveMode = "save" | "save_print";
+export type StateItem = {
   key: string;
   orderItemId?: string;
   menuItemId?: string;
@@ -46,6 +47,7 @@ export function TableWorkspace({
   const setOrderPanel = useHubStore((state) => state.setOrderPanel);
   const selectTable = useHubStore((state) => state.selectTable);
   const drafts = useHubStore((state) => state.drafts);
+  const addDraftItem = useHubStore((state) => state.addDraftItem);
   const addOpenDraftItem = useHubStore((state) => state.addOpenDraftItem);
   const changeDraftQty = useHubStore((state) => state.changeDraftQty);
   const clearDraft = useHubStore((state) => state.clearDraft);
@@ -60,6 +62,7 @@ export function TableWorkspace({
   const [shiftQuantities, setShiftQuantities] = useState<Record<string, string>>({});
   const [orderStateItems, setOrderStateItems] = useState<StateItem[]>([]);
   const [orderStateSearch, setOrderStateSearch] = useState("");
+  const [draftSearch, setDraftSearch] = useState("");
   const operationKeys = useOperationKeys();
   const draft = tableId ? Object.values(drafts[tableId] ?? {}) : [];
   const tableOrder = useQuery({
@@ -99,6 +102,7 @@ export function TableWorkspace({
   const sentTotal = sentItems.reduce((total, item) => total + item.unit_price_paise * item.quantity, 0);
   const editableTotal = orderStateItems.reduce((total, item) => total + item.pricePaise * item.quantity, 0);
   const orderStateMatches = searchMenuItems(bootstrap.menuItems, orderStateSearch, {}).slice(0, 8);
+  const draftMatches = searchMenuItems(bootstrap.menuItems, draftSearch, {}).slice(0, 8);
   const setTransferQuantity = (itemId: string, value: number, max: number) => {
     const next = Math.min(max, Math.max(0, Math.trunc(value || 0)));
     setShiftQuantities((current) => ({ ...current, [itemId]: next ? String(next) : "" }));
@@ -250,7 +254,14 @@ export function TableWorkspace({
   }, [data?.order?.id, sentItemsSignature]);
 
   const changeStateQty = (key: string, delta: number) => {
-    setOrderStateItems((current) => current.map((item) => item.key === key ? { ...item, quantity: Math.max(0, item.quantity + delta) } : item));
+    setOrderStateItems((current) =>
+      current.flatMap((item) => {
+        if (item.key !== key) return [item];
+        const quantity = Math.max(0, item.quantity + delta);
+        if (quantity === 0 && !item.orderItemId) return [];
+        return [{ ...item, quantity }];
+      })
+    );
   };
 
   const addStateMenuItem = (menuItem: MenuItem, variantId?: string) => {
@@ -375,6 +386,55 @@ export function TableWorkspace({
               </button>
             </div>
           </div>
+          <section className="state-editor draft-menu-search">
+            <div className="state-editor-head">
+              <div className="state-editor-total">
+                <small>New order</small>
+                <strong>{formatInr(draftTotal)}</strong>
+              </div>
+              <span className="state-editor-status">{draft.length} {draft.length === 1 ? "item" : "items"}</span>
+            </div>
+            <div className="state-search">
+              <label className="state-search-field">
+                <span>Add dish</span>
+                <input
+                  value={draftSearch}
+                  onChange={(event) => setDraftSearch(event.target.value)}
+                  placeholder="Search menu item"
+                />
+              </label>
+              {draftSearch.trim() ? (
+                <div className="state-search-results">
+                  {draftMatches.map((item) => {
+                    const variants = getMenuActionVariants(item);
+                    return (
+                      <div
+                        key={item.id}
+                        className={`state-search-row menu-card compact-menu-card category-${item.sale_group_kind ?? "other"}`}
+                      >
+                        <CategoryBadge kind={item.sale_group_kind} className="state-search-icon" />
+                        <div className="menu-card-main">
+                          <strong>{item.name}</strong>
+                          <span>{item.sale_group_name ?? item.production_unit_name ?? "Menu item"}</span>
+                        </div>
+                        <footer>
+                          <MenuItemActionGroup
+                            itemName={item.name}
+                            variants={variants}
+                            onAdd={(variantId) => {
+                              addDraftItem(tableId, item, variantId);
+                              setDraftSearch("");
+                            }}
+                            className="state-search-actions"
+                          />
+                        </footer>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : null}
+            </div>
+          </section>
           <form
             className="open-item-form"
             onSubmit={(event) => {
@@ -437,159 +497,48 @@ export function TableWorkspace({
         </div>
       ) : null}
 
-	      {orderPanel === "sent" ? (
-	        <div className="ticket-section">
-	          {data?.order ? (
-	            <section className="state-editor">
-	              <div className="state-editor-head">
-	                <div>
-	                  <span>{formatInr(editableTotal)} current edited total</span>
-	                </div>
-	                {hasOrderStateChanges ? (
-	                  <div className="state-editor-actions">
-	                    <button type="button" className="secondary-button" disabled={saveOrderState.isPending} onClick={() => void requestOrderStateSave("save")}>
-	                      {saveOrderState.isPending ? "Saving..." : "Save"}
-	                    </button>
-	                    <button type="button" disabled={saveOrderState.isPending} onClick={() => void requestOrderStateSave("save_print")}>
-	                      {saveOrderState.isPending ? "Sending..." : "Save and print"}
-	                    </button>
-	                  </div>
-	                ) : (
-	                  <span className="state-editor-status">Saved</span>
-	                )}
-	              </div>
-	              <div className="state-search">
-	                <input value={orderStateSearch} onChange={(event) => setOrderStateSearch(event.target.value)} placeholder="Search item to add" />
-	                {orderStateSearch.trim() ? (
-	                  <div className="state-search-results">
-	                    {orderStateMatches.map((item) => {
-	                      const variants = getMenuActionVariants(item);
-	                      return (
-	                        <div key={item.id} className={`state-search-row menu-card compact-menu-card category-${item.sale_group_kind ?? "other"}`}>
-	                          <CategoryBadge kind={item.sale_group_kind} className="state-search-icon" />
-	                          <span>{item.name}</span>
-	                          <MenuItemActionGroup itemName={item.name} variants={variants} onAdd={(variantId) => addStateMenuItem(item, variantId)} className="state-search-actions" />
-	                        </div>
-	                      );
-	                    })}
-	                  </div>
-	                ) : null}
-	              </div>
-	            </section>
-	          ) : null}
-	          <LineItems
-	            emptyTitle="Nothing sent yet"
-	            emptyText="Use the search above to add items to this table."
-	            rows={orderStateItems.map((item) => ({
-	              id: item.key,
-	              title: item.name,
-	              meta: `${formatInr(item.pricePaise)} each`,
-	              quantity: item.quantity,
-	              amount: item.pricePaise * item.quantity,
-	              onMinus: () => changeStateQty(item.key, -1),
-	              onPlus: () => changeStateQty(item.key, 1)
-	            }))}
-	          />
-          {data?.order ? (
-            <section className="shift-panel transfer-panel">
-              <button
-                type="button"
-                className="transfer-panel-toggle"
-                onClick={() => setTransferOpen((current) => !current)}
-                aria-expanded={transferOpen}
-              >
-                <div>
-                  <strong>Transfer table or items</strong>
-                </div>
-                <span>{transferOpen ? "Hide" : "Open"}</span>
-              </button>
-              {transferOpen ? (
-                <>
-                  <div className="transfer-panel-head">
-                    <div className="transfer-mode-toggle" role="group" aria-label="Transfer mode">
-                      <button type="button" className={transferMode === "items" ? "active" : ""} onClick={() => setTransferMode("items")}>
-                        Items
-                      </button>
-                      <button type="button" className={transferMode === "table" ? "active" : ""} onClick={() => setTransferMode("table")}>
-                        Full table
-                      </button>
-                    </div>
-                  </div>
-                  <label>
-                    Target table
-                    <select value={shiftTargetTableId} onChange={(event) => setShiftTargetTableId(event.target.value)}>
-                      <option value="">Choose active table</option>
-                      {shiftTargets.map((table) => <option key={table.id} value={table.id}>{table.name}</option>)}
-                    </select>
-                  </label>
-                  {selectedShiftTarget ? (
-                    <p className="text-sm text-muted">
-                      Target is {selectedShiftTarget.status === "free" ? "free" : `${selectedShiftTarget.status}. Items will be added to its running check.`}
-                    </p>
-                  ) : null}
-                  {transferMode === "items" ? (
-                    <div className="transfer-item-list">
-                      {sentItems.map((item) => {
-                        const quantity = Math.min(item.quantity, Math.max(0, Number(shiftQuantities[item.id] ?? 0)));
-                        return (
-                          <div key={item.id} className="transfer-item-row">
-                            <div>
-                              <strong>{item.name_snapshot}</strong>
-                              <span>{item.quantity} available · {formatInr(item.unit_price_paise)} each</span>
-                            </div>
-                            <div className="transfer-qty-control" aria-label={`Transfer quantity for ${item.name_snapshot}`}>
-                              <button type="button" onClick={() => setTransferQuantity(item.id, quantity - 1, item.quantity)} disabled={quantity <= 0}>-</button>
-                              <input
-                                value={quantity ? String(quantity) : ""}
-                                onChange={(event) => setTransferQuantity(item.id, Number(event.target.value.replace(/\D/g, "")), item.quantity)}
-                                onBlur={() => setTransferQuantity(item.id, quantity, item.quantity)}
-                                inputMode="numeric"
-                                placeholder="0"
-                                aria-label={`Quantity, max ${item.quantity}`}
-                              />
-                              <button type="button" onClick={() => setTransferQuantity(item.id, quantity + 1, item.quantity)} disabled={quantity >= item.quantity}>+</button>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <p className="warning-text">This moves every sent item from {tableName} to the target table and frees {tableName}.</p>
-                  )}
-                  <button
-                    type="button"
-                    className="secondary-button"
-                    disabled={!shiftTargetTableId || shiftTable.isPending || shiftItems.isPending}
-                    onClick={() => {
-                      if (transferMode === "table") shiftTable.mutate();
-                      else shiftItems.mutate();
-                    }}
-                  >
-                    {shiftTable.isPending || shiftItems.isPending ? "Transferring..." : transferMode === "table" ? "Transfer full table" : "Transfer selected quantities"}
-                  </button>
-                </>
-              ) : null}
-            </section>
-          ) : null}
-          {data?.order ? (
-            <button
-              type="button"
-              className="danger-link"
-              disabled={cancelOrder.isPending}
-              onClick={async () => {
-                const approval = await requestManagerApproval({
-                  title: "Cancel running order",
-                  defaultReason: "Order cancelled",
-                  confirmLabel: cancelOrder.isPending ? "Cancelling..." : "Cancel order",
-                  danger: true
-                }).catch(() => null);
-                if (approval) cancelOrder.mutate(approval);
-              }}
-            >
-              {cancelOrder.isPending ? "Cancelling..." : "Cancel order"}
-            </button>
-          ) : null}
-        </div>
+      {orderPanel === "sent" ? (
+        <SentOrderPanel
+          data={data}
+          orderStateItems={orderStateItems}
+          orderStateSearch={orderStateSearch}
+          setOrderStateSearch={setOrderStateSearch}
+          orderStateMatches={orderStateMatches}
+          editableTotal={editableTotal}
+          hasOrderStateChanges={hasOrderStateChanges}
+          saveOrderStatePending={saveOrderState.isPending}
+          requestOrderStateSave={(saveMode) => void requestOrderStateSave(saveMode)}
+          addStateMenuItem={addStateMenuItem}
+          changeStateQty={changeStateQty}
+          transferOpen={transferOpen}
+          setTransferOpen={setTransferOpen}
+          transferMode={transferMode}
+          setTransferMode={setTransferMode}
+          shiftTargetTableId={shiftTargetTableId}
+          setShiftTargetTableId={setShiftTargetTableId}
+          shiftTargets={shiftTargets}
+          selectedShiftTarget={selectedShiftTarget}
+          sentItems={sentItems}
+          shiftQuantities={shiftQuantities}
+          setTransferQuantity={setTransferQuantity}
+          tableName={tableName}
+          shiftTablePending={shiftTable.isPending}
+          shiftItemsPending={shiftItems.isPending}
+          onTransfer={() => {
+            if (transferMode === "table") shiftTable.mutate();
+            else shiftItems.mutate();
+          }}
+          cancelOrderPending={cancelOrder.isPending}
+          onCancelOrder={async () => {
+            const approval = await requestManagerApproval({
+              title: "Cancel running order",
+              defaultReason: "Order cancelled",
+              confirmLabel: cancelOrder.isPending ? "Cancelling..." : "Cancel order",
+              danger: true,
+            }).catch(() => null);
+            if (approval) cancelOrder.mutate(approval);
+          }}
+        />
       ) : null}
 
       {orderPanel === "bill" ? (

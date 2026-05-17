@@ -262,3 +262,134 @@
 - Hub daily close: close now freezes a `daily_report.finalized` snapshot with cash reconciliation, bill totals, payment split, bill summaries, and item summaries; stores it locally in SQLite; queues it through `event_log`/`sync_outbox`; and tries cloud sync after close without blocking offline close.
 - Cloud reporting: Convex now materializes finalized report events into `dailyReports`, `dailyReportBills`, and `dailyReportItems`; read queries allow owner/admin/reporting users to view daily reports and details. The Owner Portal now has a real Reports tab with sales, payments, cash variance, bill rows, and item rows.
 - Verification: `pnpm typecheck`, `pnpm test`, `pnpm --filter @gaurav-pos/hub-electron build`, `pnpm --filter @gaurav-pos/cloud-admin exec dotenv -e ../../.env.local -- next build`, and a temp-DB hub smoke path (setup -> order -> bill -> close -> local report) passed.
+
+## 2026-05-17
+
+- Task: Reworked the frontend styling foundation to reduce custom CSS and move toward shadcn/Tailwind defaults.
+- Hub renderer: replaced the oversized hand-written renderer stylesheet with a compact Tailwind utility-based stylesheet that keeps existing semantic class hooks while using theme tokens, restrained controls, tighter panels, and fewer decorative rules.
+- Hub cleanup: removed the obsolete `src/public` static fallback and `scripts/copy-public.mjs`; Fastify now serves the Vite-built `dist/public` renderer only, eliminating the duplicate legacy HTML/JS/CSS shell.
+- Hub modularity: moved alcohol edit variant/inventory helpers into `components/alcohol/alcohol-edit-model.ts`, leaving `alcohol-edit-form.tsx` focused on form state/rendering.
+- Cloud admin: added Tailwind/PostCSS configuration and rewrote global styling into Tailwind base/components/utilities with shadcn-compatible CSS variables and simpler app/portal component classes.
+- Cloud admin polish: added `src/app/icon.svg` so the production shell no longer 404s the favicon in browser checks.
+- Cloud admin modularity: split the owner portal route into `components/cloud-dashboard.tsx`, `components/cloud-admin-sections.tsx`, `components/cloud-admin-widgets.tsx`, and small `lib/cloud-*` helpers/types so `src/app/page.tsx` is just the auth shell.
+- Mobile: added NativeWind/Tailwind plumbing for Expo, imported the global NativeWind stylesheet, split the large React Native palette/style block out of `App.tsx` into `src/styles/app-styles.ts`, moved reusable mobile formatting/pairing helpers into `src/lib/mobile-format.ts` with coverage in `src/tests/mobile-format.test.ts`, and split mobile UI into `components/app-shell.tsx`, `table-screen.tsx`, `menu-screen.tsx`, `ticket-screen.tsx`, `billing-panel.tsx`, and related screen files.
+- Hub modularity follow-up: split setup catalog/business-day cards, sent-order transfer/editor panel, and responsive CSS into focused files; `setup-view.tsx`, `table-workspace.tsx`, and hub `styles.css` are now under 500 lines.
+- Mobile follow-up: moved device pairing, manual connection, and QR scanner state into `src/hooks/use-device-pairing.ts`, keeping `App.tsx` below the prior danger zone while preserving the camera pairing feature.
+- Verification: `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm --filter @gaurav-pos/hub-electron typecheck`, `pnpm --filter @gaurav-pos/mobile typecheck`, `pnpm --filter @gaurav-pos/hub-electron build`, `pnpm --filter @gaurav-pos/cloud-admin build`, `git diff --check`, and a Playwright smoke check of `http://localhost:3000` passed. Hub production build reports only the existing >500 kB chunk warning. The Playwright console still shows expected WorkOS cross-origin noise when auth prefetch touches the external sign-in endpoint.
+
+## 2026-05-17
+
+- Task: Tightened hub and phone primitive UI after rendered review showed inconsistent inputs, buttons, collapsible headings, and nav hover states.
+- Hub UI: added shadcn-like base styling for raw `button`, `input`, `select`, `textarea`, `details`, and `summary` elements; aligned local Button/Input/Select/Textarea/Checkbox primitives to the same 40px control baseline; fixed setup card title/summary spacing; switched hub nav back to stable `.nav-button` classes so active hover keeps contrast.
+- Mobile UI: replaced the beige-heavy palette with a neutral shadcn-style palette, standardized core button/input/card radii and heights, reduced oversized CTA treatment, improved collapsible control consistency, and added Expo web dependencies so the phone UI can be opened in a browser for visual review.
+- Mobile tooling: fixed NativeWind Metro ESM import and aligned `react-native-reanimated` / `react-native-safe-area-context` to Expo SDK 55 expected versions.
+- Verification: Playwright screenshots captured hub first-run, hub setup, hub take-orders, and mobile onboarding screens under `.agent/screenshots`; `pnpm --filter @gaurav-pos/hub-electron typecheck`, `pnpm --filter @gaurav-pos/mobile typecheck`, `pnpm --filter @gaurav-pos/mobile test`, `pnpm --filter @gaurav-pos/hub-electron build`, `pnpm --filter @gaurav-pos/mobile exec expo export --platform web --output-dir dist-web-check`, `pnpm lint`, and `git diff --check` passed. Hub build still reports the existing >500 kB chunk warning.
+
+## 2026-05-17
+
+- Task: Continued the full hub/phone UI audit with populated runtime states instead of only empty screens.
+- Hub UI: removed the duplicate inline sale-group row implementation, kept a single `SaleGroupRow`, and added focused component CSS for sale/tax rows, ticket headers, segmented controls, guest/send rows, compact menu cards, and manager PIN layout.
+- Hub Orders: selecting a table now opens the menu by default, chooses the first sale group that actually has active dishes, and renders menu category icons/buttons inside stable shadcn-style rows instead of collapsed or unstyled fragments.
+- Hub remaining pages: tightened Alcohol add-item grouping, Kitchen ticket cards/actions, and Reports payment/category rows after screenshots of Alcohol, Kitchen, and Reports exposed lingering default-looking layout.
+- Design tokens: moved hub, shared, cloud, and mobile palettes to a neutral shadcn-like palette and removed remaining ad hoc placeholder/inline color usage outside token declarations and category tone helpers.
+- Phone verification: paired a temporary waiter device against a seeded local hub using manager PIN 1234 and checked phone Tables, Menu, and Check screens in Expo web with the real hub data path.
+- Verification: `pnpm --filter @gaurav-pos/hub-electron typecheck`, `pnpm --filter @gaurav-pos/mobile typecheck`, `pnpm --filter @gaurav-pos/mobile test`, `pnpm --filter @gaurav-pos/hub-electron build`, `pnpm --filter @gaurav-pos/mobile exec expo export --platform web --output-dir dist-web-check`, `pnpm lint`, and `git diff --check` passed. Local screenshots captured hub Setup, Orders, Advanced, phone onboarding, and paired phone Tables/Menu/Check under `.agent/screenshots`. Hub build still reports only the existing >500 kB chunk warning.
+
+## 2026-05-17
+
+- Task: Addressed the follow-up Take Orders and QR pairing UI complaints from rendered review.
+- Hub Orders: changed Take Orders to a tables-first screen. Selecting a table now opens a dialog-style order workspace; the menu starts closed and is available through `Open menu`, keeping the table actions primary.
+- Hub visual polish: strengthened table state color coding with stable left accents/count pills, made order menu filters single-line inside the modal, and fixed QR role cards so inactive roles are dark text on white while the active role is white text on dark.
+- Build output: replaced the failing object-form chunk config with Vite/Rolldown-compatible function `manualChunks`, splitting React, TanStack Query, and UI libraries. The previous `>500 kB` hub bundle warning is gone.
+- Verification: `pnpm --filter @gaurav-pos/hub-electron typecheck`, `pnpm --filter @gaurav-pos/hub-electron build`, `pnpm lint`, and `git diff --check` passed. Seeded local hub screenshots captured tables-first Orders, selected-table modal with menu closed/open, and QR role card contrast under `.agent/screenshots`.
+
+## 2026-05-17
+
+- Task: Continued the populated UI walkthrough for the remaining hub/mobile complaints.
+- Hub CSS order: moved component and responsive stylesheet loading after the main hub stylesheet so responsive overrides win predictably.
+- Hub Orders: fixed the class mismatch between shared table states and CSS (`bill-printed` / `needs-attention`), so billed tables now render with the intended blue state instead of falling back to neutral gray.
+- Hub Reports/Kitchen: flattened the current-day report detail area into ledger-style sections instead of nested card stacks, and changed kitchen ticket action buttons to status-colored affordances for preparing/ready/served instead of three identical black buttons.
+- Mobile: narrow phone table cards now use full-width stacked tiles instead of calculating two columns that rendered as one narrow column with dead space. Verified the paired mobile web preview against a seeded local hub with running, billed, and free table states.
+- Verification: `pnpm --filter @gaurav-pos/hub-electron typecheck`, `pnpm --filter @gaurav-pos/hub-electron build`, `pnpm --filter @gaurav-pos/mobile typecheck`, `pnpm --filter @gaurav-pos/mobile test`, mobile web export, `pnpm lint`, and `git diff --check` passed. Screenshots captured hub table colors, flattened reports, kitchen status buttons, and mobile full-width table cards under `.agent/screenshots`.
+
+## 2026-05-17
+
+- Task: Finished the seeded hub click-through pass for order modification, reports, kitchen, pairing, and support controls.
+- Hub click-through: seeded a fresh local hub with running, billed, paid, and free table states, then drove Take Orders, sent-item editing, transfer controls, billed-table revision with manager PIN approval, reports, kitchen status actions, setup pairing QR creation, and advanced support tools through Chrome CDP.
+- Hub polish: added a hub favicon link and `/favicon.ico` fallback, framed the topbar refresh icon so it reads as a button, added dialog descriptions for Radix accessibility warnings, and supplied autocomplete/username hints for manager PIN and hub sync secret forms.
+- Verification: corrected CDP audit passed all interaction steps; a fresh built-bundle load had no console/network events, the favicon resolved, and the topbar refresh button computed as white with a visible border. `pnpm --filter @gaurav-pos/hub-electron typecheck`, `pnpm --filter @gaurav-pos/hub-electron build`, `pnpm --filter @gaurav-pos/mobile typecheck`, `pnpm --filter @gaurav-pos/mobile test`, mobile web export, `pnpm lint`, and `git diff --check` passed. Hub build remains split under the previous 500 kB warning threshold.
+
+## 2026-05-17
+
+- Task: Continued the hub/mobile visual audit from current rendered state.
+- Hub fixes: fixed the reusable segmented control so active tabs render with the expected dark selected state, cleaned sent-order line item spacing so item names/prices no longer run together, rebuilt the transfer panel toggle as a visible full-width control, added transfer row/quantity control layout, and shortened report payment labels to avoid cramped wrapping.
+- Hub evidence: captured current rendered screenshots for Setup, Take Orders table map, selected-table modal states, Alcohol, Kitchen, Reports, and Advanced under `.agent/screenshots/current-hub-*` and `.agent/screenshots/postfix-hub-*`; the browser audit reported no console/network events.
+- Mobile evidence: paired a waiter token against the seeded hub and captured mobile Tables, selected-table Menu, and Check screens under `.agent/screenshots/current-mobile-*` using the exported web bundle.
+- Verification: `pnpm --filter @gaurav-pos/hub-electron typecheck`, `pnpm --filter @gaurav-pos/hub-electron build`, `pnpm --filter @gaurav-pos/mobile typecheck`, `pnpm --filter @gaurav-pos/mobile test`, mobile web export, `pnpm lint`, and `git diff --check` passed. Hub chunks remain below the old warning threshold.
+
+## 2026-05-17
+
+- Task: Closed the remaining narrow-phone menu overflow found during the final seeded mobile pass.
+- Mobile fix: multi-variant menu items now render as stacked cards with wrapped variant buttons, so alcohol sizes such as 30 ml / 180 ml / 750 ml stay inside the card instead of clipping horizontally on a 390px viewport.
+- Evidence: captured `.agent/screenshots/deep-mobile-menu-after-patch.png` and `.agent/screenshots/deep-mobile-menu-after-patch.json`; browser bounds showed `scrollWidth` equal to the 390px viewport and all variant controls inside the card.
+- Verification: `pnpm --filter @gaurav-pos/mobile typecheck`, `pnpm --filter @gaurav-pos/mobile test`, `pnpm --filter @gaurav-pos/mobile exec expo export --platform web --output-dir dist-web-check`, `pnpm lint`, and `git diff --check` passed.
+
+## 2026-05-17
+
+- Task: Re-audited the current built hub instead of treating completion as already proven.
+- Hub fix: table map rows now keep a stable 120px tile height and table bodies have an explicit hover affordance, so second-row free tables no longer render shorter than first-row tables.
+- Hub fix: alcohol catalog rows now stack the liquor name and bottle-size metadata, fixing the rendered `Royal Stag750 ml / 180 ml` text collision.
+- Evidence: captured current built-hub screenshots under `.agent/screenshots/audit3-*`, `.agent/screenshots/audit4-*`, `.agent/screenshots/audit5-*`, and `.agent/screenshots/audit6-*`. DOM audits show no page-level horizontal scroll, role-card text has visible contrast, menu filters stay in one row, reports have no nested card count, and the final built hub emitted no console/network events.
+- Mobile evidence: rebuilt the Expo web export and captured `.agent/screenshots/audit7-mobile-tables.png`, `.agent/screenshots/audit7-mobile-menu.png`, and `.agent/screenshots/audit7-mobile-check.png` at 390px against the seeded hub; the mobile DOM audit showed no horizontal scroll or overflow events.
+- Verification: `pnpm --filter @gaurav-pos/hub-electron build`, `pnpm --filter @gaurav-pos/hub-electron typecheck`, `pnpm --filter @gaurav-pos/mobile typecheck`, `pnpm --filter @gaurav-pos/mobile test`, `pnpm --filter @gaurav-pos/mobile exec expo export --platform web --output-dir dist-web-check`, `pnpm test`, `pnpm lint`, and `git diff --check` passed after updating the stale orders-view layout test.
+
+## 2026-05-17
+
+- Task: Fixed the order-modal menu card layout after rendered review showed cramped alcohol cards with overlapping category text.
+- Hub fix: compact menu cards now force item name/category into a vertical text stack, the order-modal menu grid is single-column, and variant buttons use equal-width responsive columns instead of squeezing into tiny two-column cards.
+- Evidence: captured `.agent/screenshots/menu-card-fix-hub-order-menu.png` and `.agent/screenshots/menu-card-fix-hub-order-menu-alcohol.png`; the alcohol DOM audit showed the three variant buttons in one row and no overflow inside the menu panel.
+- Verification: `pnpm --filter @gaurav-pos/hub-electron build`, `pnpm --filter @gaurav-pos/hub-electron typecheck`, and `git diff --check` passed.
+
+## 2026-05-17
+
+- Task: Fixed the sent-items editor controls after rendered review showed quantity buttons colliding with the `2 x` label and an unstructured edit/search block.
+- Hub fix: quantity clusters now use fixed `[-] [qty] [+]` columns with stable button sizing, and the sent-items editor header now renders as a proper panel with an Edited Total label, Saved pill, and Add Item search field.
+- Evidence: captured `.agent/screenshots/sent-editor-qty-fix.png`; DOM bounds show each quantity cluster has separate 38px buttons and a 48px centered quantity label with no overflow.
+- Verification: `pnpm --filter @gaurav-pos/hub-electron build`, `pnpm --filter @gaurav-pos/hub-electron typecheck`, and `git diff --check` passed.
+## 2026-05-17
+
+- Task: Added inline new-order menu search and cleaned the remaining rough hub operational surfaces raised in rendered screenshots.
+- Hub fix: New order now has an in-panel Add Dish search with compact menu result rows and variant buttons, so normal menu items can be added without opening the side menu. Sent-item add search uses the same row structure.
+- Hub fix: Alcohol CSV import, catalog edit rows, stock adjustment rows, Kitchen KOT cards, Reports bill history, item summaries, and alcohol movement rows now use constrained operational layouts instead of stretched auto-fit strips.
+- Evidence: captured .agent/screenshots/new-order-menu-search-results-fix.png, .agent/screenshots/new-order-menu-search-after-add.png, .agent/screenshots/reports-layout-fix.png, .agent/screenshots/alcohol-items-edit-import-fix.png, .agent/screenshots/alcohol-storage-fix.png, and .agent/screenshots/kitchen-layout-fix.png; browser overflow audits passed on the checked screens.
+- Verification: pnpm --filter @gaurav-pos/lá	j
+## 2026-05-17
+
+- Task: Reworked Reports and remaining spacing defects after rendered review showed fake table rows, clipped bill history, collapsed CSV spacing, and cramped KOT cards.
+- Hub fix: Reports now uses semantic tables for payments, sale/tax categories, order history, item summary, closed day reports, and alcohol stock movements. Metrics have semantic color bands and bill status is shown as paid/pending chips.
+- Hub fix: Closed report detail spans the full table width, new-order search result actions stay inline on desktop, collapsed CSV import summary is compact, and Kitchen KOT cards have proper vertical spacing.
+- Evidence: captured .agent/screenshots/reports-semantic-tables-fix.png, .agent/screenshots/new-order-search-row-inline-fix.png, .agent/screenshots/alcohol-csv-collapsed-summary-fix.png, and .agent/screenshots/kitchen-spacing-fix.png; browser audits showed no page overflow and only intentional table wrappers can scroll if data is wider than the viewport.
+- Verification: pnpm --filter @gaur!ä	j
+## 2026-05-17
+
+- Task: Tightened remaining hub operational layout issues from rendered feedback.
+- Hub fix: Order menu cards now behave as compact list rows, with single-price actions inline and liquor variants in a controlled compact row.
+- Hub fix: Guest/KOT controls now give the guest input a compact width and make KOT actions the primary area; transfer panel now has clearer mode, target, warning, and action styling.
+- Hub fix: Reports tables reserve non-wrapping bill/status columns and the business-day metric grid has explicit responsive spacing.
+- Hub fix: Alcohol Catalog now renders as a semantic table with compact price chips and a full-width edit detail row; setup/details dropdown summaries now have stronger section affordance; line items now place amount before quantity controls.
+- Evidence: captured .agent/screenshots/order-menu-list-row-fix.png, .agent/screenshots/transfer-panel-guest-row-fix.png, .agent/screenshots/details-header-alcohol-catalog-table-fix.png, .agent/screenshots/line-row-column-or¹ç	j
+
+## 2026-05-17
+
+- Task: Fixed visually weak collapsed disclosure/dropdown section headers after rendered review showed CSV import sections disappearing into white space.
+- Hub fix: setup-subdetails and csv-import-details now share a proper section-control pattern: no inherited card padding, stronger border, left accent rail, accent wash, metadata pill, stable chevron action, and cleaner open-state body spacing.
+- Evidence: captured .agent/screenshots/disclosure-section-header-fix.png, .agent/screenshots/disclosure-section-open-fix.png, and .agent/screenshots/setup-disclosure-section-header-fix.png; DOM audits showed the alcohol CSV header renders as a 60px grid row with no page overflow.
+- Verification: pnpm --filter @gaurav-pos/hub-electron build, pnpm --filter @gaurav-pos/hub-electron typecheck, and git diff --check passed.
+
+## 2026-05-17
+
+- Task: Improved setup sub-record menus after rendered review showed Kitchens/Counters edit rows using stretched forms and primary-looking row actions.
+- Hub fix: Editable setup records now have compact title/status rows, secondary edit/disable actions, destructive delete styling, highlighted editing state, and a dedicated bordered edit panel with grouped fields plus separated save actions.
+- Hub fix: Kitchen/counter metadata now reports printer/Kitchen-screen visibility instead of repeating only Active.
+- Evidence: captured .agent/screenshots/setup-record-edit-row-fix.png and .agent/screenshots/setup-record-edit-row-visible-fix.png; DOM audit showed no page overflow and secondary row buttons rendering at compact 34px height.
+- Verification: pnpm --filter @gaurav-pos/hub-electron build, pnpm --filter @gaurav-pos/hub-electron typecheck, and git diff --check passed.

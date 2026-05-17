@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { formatInr, formatPosDateTime } from "@gaurav-pos/shared";
 import { hubApi, type CloseSummary, type DailyReportDetail } from "../../hub-api.js";
@@ -49,16 +49,19 @@ export function ReportsView() {
               <Metric
                 label="Sales"
                 value={formatInr(summary.finalSalesPaise)}
+                className="report-metric sales"
               />
               <Metric
                 label="Cash"
                 value={formatInr(summary.cashPaymentsPaise)}
+                className="report-metric cash"
               />
               <Metric
-                label="UPI/Card/Online"
+                label="Non-cash"
                 value={formatInr(summary.nonCashPaymentsPaise)}
+                className="report-metric noncash"
               />
-              <Metric label="Bills" value={String(summary.billCount)} />
+              <Metric label="Bills" value={String(summary.billCount)} className="report-metric bills" />
             </div>
             <ReportDetailPanels summary={summary} />
           </>
@@ -75,42 +78,54 @@ export function ReportsView() {
           <h2>Closed day reports</h2>
           <span>{closedReports.length} saved</span>
         </div>
-        <div className="report-list">
-          {closedReports.slice(0, closedLimit).map((report) => (
-            <article key={report.pos_day_id} className="report-row">
-              <div>
-                <strong>{report.business_date}</strong>
-                <span>
-                  {report.bill_count} bills ·{" "}
-                  {formatInr(report.final_sales_paise)} sales
-                </span>
-              </div>
-              <div>
-                <b>{formatInr(report.total_payments_paise)}</b>
-                <span>
-                  finalized {formatPosDateTime(report.finalized_at)}
-                </span>
-              </div>
-              <button
-                type="button"
-                className="secondary-button"
-                onClick={() => setExpandedReportId(expandedReportId === report.pos_day_id ? null : report.pos_day_id)}
-              >
-                {expandedReportId === report.pos_day_id ? "Hide" : "Open"}
-              </button>
-              {expandedReportId === report.pos_day_id ? (
-                <div className="report-row-detail">
-                  {dailyReportDetail.isLoading ? (
-                    <p className="plain-state">Loading report...</p>
-                  ) : dailyReportDetail.data ? (
-                    <ReportDetailPanels summary={dailyReportDetail.data} />
-                  ) : (
-                    <p className="warning-text">Report detail could not load.</p>
-                  )}
-                </div>
-              ) : null}
-            </article>
-          ))}
+        <div className="report-table-wrap">
+          <table className="data-table closed-report-table">
+            <thead>
+              <tr>
+                <th>Business day</th>
+                <th>Bills</th>
+                <th>Sales</th>
+                <th>Payments</th>
+                <th>Finalized</th>
+                <th aria-label="Actions" />
+              </tr>
+            </thead>
+            <tbody>
+              {closedReports.slice(0, closedLimit).map((report) => (
+                <Fragment key={report.pos_day_id}>
+                  <tr>
+                    <td className="strong-cell">{report.business_date}</td>
+                    <td>{report.bill_count}</td>
+                    <td>{formatInr(report.final_sales_paise)}</td>
+                    <td>{formatInr(report.total_payments_paise)}</td>
+                    <td>{formatPosDateTime(report.finalized_at)}</td>
+                    <td className="action-cell">
+                      <button
+                        type="button"
+                        className="secondary-button compact"
+                        onClick={() => setExpandedReportId(expandedReportId === report.pos_day_id ? null : report.pos_day_id)}
+                      >
+                        {expandedReportId === report.pos_day_id ? "Hide" : "Open"}
+                      </button>
+                    </td>
+                  </tr>
+                  {expandedReportId === report.pos_day_id ? (
+                    <tr>
+                      <td colSpan={6} className="report-table-detail">
+                        {dailyReportDetail.isLoading ? (
+                          <p className="plain-state">Loading report...</p>
+                        ) : dailyReportDetail.data ? (
+                          <ReportDetailPanels summary={dailyReportDetail.data} />
+                        ) : (
+                          <p className="warning-text">Report detail could not load.</p>
+                        )}
+                      </td>
+                    </tr>
+                  ) : null}
+                </Fragment>
+              ))}
+            </tbody>
+          </table>
           {!dailyReports.data?.length ? (
             <EmptyState
               title="No finalized reports yet"
@@ -130,31 +145,33 @@ export function ReportsView() {
           <h2>Alcohol stock movements</h2>
           <span>{stockMovements.length} recent</span>
         </div>
-        <div className="report-list">
-          {stockMovements.slice(0, stockLimit).map((movement) => (
-            <article
-              key={movement.id}
-              className="report-row stock-movement-row"
-            >
-              <div>
-                <strong>{movement.item_name}</strong>
-                <span>
-                  {alcoholMovementSourceLabel(movement.source_type)} ·{" "}
-                  {alcoholMovementDeltaText(movement)}
-                </span>
-              </div>
-              <div>
-                <b>
-                  {movement.balance_sealed_large} large ·{" "}
-                  {movement.balance_open_large_ml} ml ·{" "}
-                  {movement.balance_sealed_small} small
-                </b>
-                <span>
-                  {formatPosDateTime(movement.created_at)}
-                </span>
-              </div>
-            </article>
-          ))}
+        <div className="report-table-wrap">
+          <table className="data-table stock-movement-table">
+            <thead>
+              <tr>
+                <th>Item</th>
+                <th>Source</th>
+                <th>Movement</th>
+                <th>Large</th>
+                <th>Open ml</th>
+                <th>Small</th>
+                <th>Time</th>
+              </tr>
+            </thead>
+            <tbody>
+              {stockMovements.slice(0, stockLimit).map((movement) => (
+                <tr key={movement.id}>
+                  <td className="strong-cell">{movement.item_name}</td>
+                  <td>{alcoholMovementSourceLabel(movement.source_type)}</td>
+                  <td>{alcoholMovementDeltaText(movement)}</td>
+                  <td>{movement.balance_sealed_large}</td>
+                  <td>{movement.balance_open_large_ml}</td>
+                  <td>{movement.balance_sealed_small}</td>
+                  <td>{formatPosDateTime(movement.created_at)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
           {!alcoholStockMovements.data?.length ? (
             <EmptyState
               title="No alcohol stock history yet"
@@ -187,15 +204,18 @@ function ReportDetailPanels({ summary }: { summary: CloseSummary | DailyReportDe
     <div className="report-detail-grid">
       <section className="report-detail-card">
         <div className="mini-title">
-          <strong>Payment split</strong>
+          <strong>Payments</strong>
           <span>{formatInr(payments.total)} collected</span>
         </div>
-        <div className="payment-summary-grid">
-          <span><small>Cash</small><b>{formatInr(payments.cash)}</b></span>
-          <span><small>UPI</small><b>{formatInr(payments.upi)}</b></span>
-          <span><small>Card</small><b>{formatInr(payments.card)}</b></span>
-          <span><small>Online</small><b>{formatInr(payments.online)}</b></span>
-        </div>
+        <ReportTable
+          columns={["Method", "Amount"]}
+          rows={[
+            ["Cash", formatInr(payments.cash)],
+            ["UPI", formatInr(payments.upi)],
+            ["Card", formatInr(payments.card)],
+            ["Online", formatInr(payments.online)],
+          ]}
+        />
       </section>
 
       <section className="report-detail-card">
@@ -203,49 +223,85 @@ function ReportDetailPanels({ summary }: { summary: CloseSummary | DailyReportDe
           <strong>Sale & tax categories</strong>
           <span>{groups.length} categories</span>
         </div>
-        <div className="compact-list">
-          {groups.map((group) => (
-            <div key={group.saleGroupId} className="compact-row">
-              <span>{group.name}</span>
-              <b>{formatInr(group.finalSalesPaise)}</b>
-              <small>{group.quantity} qty · {formatInr(group.taxPaise)} tax</small>
-            </div>
-          ))}
+        <div className="report-table-wrap">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Category</th>
+                <th>Qty</th>
+                <th>Tax</th>
+                <th>Sales</th>
+              </tr>
+            </thead>
+            <tbody>
+              {groups.map((group) => (
+                <tr key={group.saleGroupId}>
+                  <td className="strong-cell">{group.name}</td>
+                  <td>{group.quantity}</td>
+                  <td>{formatInr(group.taxPaise)}</td>
+                  <td>{formatInr(group.finalSalesPaise)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
           {!groups.length ? <p className="plain-state">No category totals yet.</p> : null}
         </div>
       </section>
 
-      <section className="report-detail-card report-detail-wide">
+      <section className="report-detail-card report-history-panel">
         <div className="mini-title">
           <strong>Order History</strong>
-          <span>{bills.length} bills</span>
+          <span>
+            showing {Math.min(billLimit, bills.length)} of {bills.length} bills
+          </span>
         </div>
-        <div className="compact-list">
-          {bills.slice(0, billLimit).map((bill) => (
-            <div key={bill.billId} className="compact-row bill-history-row">
-              <span>
-                Bill #{bill.billNumber ?? bill.billId} · Table {bill.tableName} · {bill.status}
-                {bill.revisionNumber ? ` · rev ${bill.revisionNumber}` : ""}
-                {bill.isNc ? " · NC" : ""}
-              </span>
-              <b>{formatInr(bill.finalTotalPaise)}</b>
-              <small>
-                {bill.items?.length ? `${bill.items.map((item) => `${item.quantity} x ${item.name}`).join(", ")} · ` : ""}
-                subtotal {formatInr(bill.subtotalPaise ?? Math.max(0, bill.totalPaise - (bill.taxPaise ?? 0)))} · tax {formatInr(bill.taxPaise ?? 0)} · discount {formatInr(bill.discountPaise)} · tip {formatInr(bill.tipPaise)} ·{" "}
-                paid {formatInr(bill.paidPaise)}
-                {bill.payments.length ? ` · ${bill.payments.map((payment) => payment.method).join(", ")}` : ""}
-                {bill.settledAt ? ` · ${formatPosDateTime(bill.settledAt)}` : ""}
-              </small>
-              <button
-                type="button"
-                className="secondary-button compact"
-                disabled={historyReprint.isPending}
-                onClick={() => historyReprint.mutate(bill.billId)}
-              >
-                {historyReprint.isPending ? "Printing..." : "Print"}
-              </button>
-            </div>
-          ))}
+        <div className="report-table-wrap bill-history-list">
+          <table className="data-table bill-history-table">
+            <thead>
+              <tr>
+                <th>Bill</th>
+                <th>Table</th>
+                <th>Status</th>
+                <th>Items</th>
+                <th>Total</th>
+                <th>Paid</th>
+                <th>Breakup</th>
+                <th>Settled</th>
+                <th aria-label="Actions" />
+              </tr>
+            </thead>
+            <tbody>
+              {bills.slice(0, billLimit).map((bill) => (
+                <tr key={bill.billId}>
+                  <td className="strong-cell">
+                    #{bill.billNumber ?? bill.billId}
+                    {bill.revisionNumber ? <small>rev {bill.revisionNumber}</small> : null}
+                    {bill.isNc ? <small>NC</small> : null}
+                  </td>
+                  <td>{bill.tableName}</td>
+                  <td><span className={`bill-status ${bill.status}`}>{bill.status}</span></td>
+                  <td className="wrap-cell">{bill.items?.length ? bill.items.map((item) => `${item.quantity} x ${item.name}`).join(", ") : "No item detail"}</td>
+                  <td>{formatInr(bill.finalTotalPaise)}</td>
+                  <td>{formatInr(bill.paidPaise)}</td>
+                  <td className="wrap-cell">
+                    Subtotal {formatInr(bill.subtotalPaise ?? Math.max(0, bill.totalPaise - (bill.taxPaise ?? 0)))} · tax {formatInr(bill.taxPaise ?? 0)} · discount {formatInr(bill.discountPaise)} · tip {formatInr(bill.tipPaise)}
+                    {bill.payments.length ? ` · ${bill.payments.map((payment) => payment.method).join(", ")}` : ""}
+                  </td>
+                  <td>{bill.settledAt ? formatPosDateTime(bill.settledAt) : "Not settled"}</td>
+                  <td className="action-cell">
+                    <button
+                      type="button"
+                      className="secondary-button compact"
+                      disabled={historyReprint.isPending}
+                      onClick={() => historyReprint.mutate(bill.billId)}
+                    >
+                      {historyReprint.isPending ? "Printing..." : "Print"}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
           {!bills.length ? <p className="plain-state">No bills recorded yet.</p> : null}
           {bills.length > billLimit ? (
             <button type="button" className="load-more-button compact" onClick={() => setBillLimit((limit) => limit + DETAIL_PAGE_SIZE)}>
@@ -255,19 +311,32 @@ function ReportDetailPanels({ summary }: { summary: CloseSummary | DailyReportDe
         </div>
       </section>
 
-      <section className="report-detail-card report-detail-wide">
+      <section className="report-detail-card item-summary-panel">
         <div className="mini-title">
           <strong>Item summary</strong>
           <span>{items.length} items</span>
         </div>
-        <div className="compact-list item-summary-list">
-          {items.slice(0, itemLimit).map((item) => (
-            <div key={item.menuItemId} className="compact-row">
-              <span>{item.name}</span>
-              <b>{formatInr(item.grossSalesPaise)}</b>
-              <small>{item.quantity} sold · {item.saleGroupName}</small>
-            </div>
-          ))}
+        <div className="report-table-wrap">
+          <table className="data-table item-summary-table">
+            <thead>
+              <tr>
+                <th>Item</th>
+                <th>Group</th>
+                <th>Sold</th>
+                <th>Gross</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.slice(0, itemLimit).map((item) => (
+                <tr key={item.menuItemId}>
+                  <td className="strong-cell">{item.name}</td>
+                  <td>{item.saleGroupName}</td>
+                  <td>{item.quantity}</td>
+                  <td>{formatInr(item.grossSalesPaise)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
           {!items.length ? <p className="plain-state">No item totals yet.</p> : null}
           {items.length > itemLimit ? (
             <button type="button" className="load-more-button compact" onClick={() => setItemLimit((limit) => limit + DETAIL_PAGE_SIZE)}>
@@ -276,6 +345,29 @@ function ReportDetailPanels({ summary }: { summary: CloseSummary | DailyReportDe
           ) : null}
         </div>
       </section>
+    </div>
+  );
+}
+
+function ReportTable({ columns, rows }: { columns: string[]; rows: string[][] }) {
+  return (
+    <div className="report-table-wrap">
+      <table className="data-table">
+        <thead>
+          <tr>
+            {columns.map((column) => <th key={column}>{column}</th>)}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.join(":")}>
+              {row.map((cell, index) => (
+                <td key={`${cell}-${index}`} className={index === 0 ? "strong-cell" : ""}>{cell}</td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

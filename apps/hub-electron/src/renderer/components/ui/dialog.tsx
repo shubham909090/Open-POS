@@ -29,6 +29,7 @@ export function Dialog({
         >
           <div className="flex items-center justify-between gap-4">
             <DialogPrimitive.Title className="text-lg font-semibold text-ink">{title}</DialogPrimitive.Title>
+            <DialogPrimitive.Description className="sr-only">{title}</DialogPrimitive.Description>
             <DialogPrimitive.Close asChild>
               <Button type="button" variant="ghost" size="icon" aria-label="Close">
                 <X size={18} />

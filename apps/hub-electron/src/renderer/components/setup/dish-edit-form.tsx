@@ -52,51 +52,55 @@ export function DishEditForm({
           .finally(() => setSaving(false));
       }}
     >
-      <label>
-        Dish name
-        <input
-          value={name}
-          onChange={(event) => setName(event.target.value)}
-        />
-      </label>
-      <label>
-        Price
-        <input
-          value={price}
-          onChange={(event) => setPrice(event.target.value)}
-          inputMode="decimal"
-        />
-      </label>
-      <label>
-        Kitchen
-        <select
-          value={productionUnitId}
-          onChange={(event) => setProductionUnitId(event.target.value)}
-        >
-          <option value="">No kitchen assigned</option>
-          {units.map((unit) => (
-            <option key={unit.id} value={unit.id}>
-              {unit.name}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label>
-        Group
-        <select
-          value={saleGroupId}
-          onChange={(event) => setSaleGroupId(event.target.value)}
-        >
-          {saleGroups.map((group) => (
-            <option key={group.id} value={group.id}>
-              {group.name}
-            </option>
-          ))}
-        </select>
-      </label>
-      <button type="submit" disabled={!name.trim() || pricePaise <= 0 || saving}>
-        Save
-      </button>
+      <div className="row-edit-fields">
+        <label>
+          Dish name
+          <input
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+          />
+        </label>
+        <label>
+          Price
+          <input
+            value={price}
+            onChange={(event) => setPrice(event.target.value)}
+            inputMode="decimal"
+          />
+        </label>
+        <label>
+          Kitchen
+          <select
+            value={productionUnitId}
+            onChange={(event) => setProductionUnitId(event.target.value)}
+          >
+            <option value="">No kitchen assigned</option>
+            {units.map((unit) => (
+              <option key={unit.id} value={unit.id}>
+                {unit.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Group
+          <select
+            value={saleGroupId}
+            onChange={(event) => setSaleGroupId(event.target.value)}
+          >
+            {saleGroups.map((group) => (
+              <option key={group.id} value={group.id}>
+                {group.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <div className="row-edit-actions">
+        <button type="submit" disabled={!name.trim() || pricePaise <= 0 || saving}>
+          Save dish
+        </button>
+      </div>
     </form>
   );
 }

@@ -27,7 +27,7 @@ export function LineItems({
     <div className="line-list">
       {rows.map((row) => (
         <article key={row.id} className="line-row">
-          <div>
+          <div className="line-main">
             <strong>{row.title}</strong>
             <span>{row.meta}</span>
           </div>
@@ -44,7 +44,7 @@ export function LineItems({
               </button>
             ) : null}
           </div>
-          <strong>{formatInr(row.amount)}</strong>
+          <strong className="line-amount">{formatInr(row.amount)}</strong>
           {row.action ? <div className="line-row-action">{row.action}</div> : null}
         </article>
       ))}

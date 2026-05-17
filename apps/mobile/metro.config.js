@@ -1,4 +1,5 @@
 import { getDefaultConfig } from "expo/metro-config.js";
+import { withNativeWind } from "nativewind/dist/metro/index.js";
 import { existsSync } from "node:fs";
 import { dirname, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -21,4 +22,4 @@ config.resolver.resolveRequest = (context, moduleName, platform) => {
   return context.resolveRequest(context, moduleName, platform);
 };
 
-export default config;
+export default withNativeWind(config, { input: "./global.css" });

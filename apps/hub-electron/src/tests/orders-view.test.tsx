@@ -16,7 +16,7 @@ describe("hub orders view layout", () => {
 
     const { container } = render(<OrdersView bootstrap={bootstrap()} setNotice={vi.fn()} requestManagerApproval={vi.fn()} />);
 
-    expect(container.querySelector(".order-workspace-grid.menu-collapsed")).not.toBeNull();
+    expect(container.querySelector(".order-modal-layout.menu-closed")).not.toBeNull();
     expect(screen.getByRole("button", { name: "Open menu" })).not.toBeNull();
     expect(screen.getByTestId("selected-workspace")).not.toBeNull();
     expect(screen.queryByPlaceholderText("Search dish")).toBeNull();
@@ -30,13 +30,13 @@ describe("hub orders view layout", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Open menu" }));
 
-    expect(container.querySelector(".order-workspace-grid.menu-open")).not.toBeNull();
+    expect(container.querySelector(".order-modal-layout.menu-open")).not.toBeNull();
     expect(screen.getByPlaceholderText("Search dish")).not.toBeNull();
     expect(screen.getByText("Imported Whisky")).not.toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: "Close menu" }));
+    fireEvent.click(screen.getByRole("button", { name: "Hide menu" }));
 
-    expect(container.querySelector(".order-workspace-grid.menu-collapsed")).not.toBeNull();
+    expect(container.querySelector(".order-modal-layout.menu-closed")).not.toBeNull();
     expect(screen.queryByPlaceholderText("Search dish")).toBeNull();
   });
 });

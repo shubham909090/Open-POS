@@ -24,6 +24,9 @@
         "android.permission.RECORD_AUDIO"
       ]
     },
+    "web": {
+      "bundler": "metro"
+    },
     "extra": {
       "eas": {
         "projectId": "253e6cd4-439c-4f52-bff4-f3a03e298621"

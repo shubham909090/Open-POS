@@ -80,6 +80,7 @@ export function KitchenView({
                   <button
                     key={status}
                     type="button"
+                    className={`kot-status-button ${status}`}
                     disabled={
                       ticket.status === status || statusMutation.isPending
                     }

@@ -118,33 +118,45 @@ function AlcoholStorageCard({
           adjust.mutate(approval.pin);
         }}
       >
-        <select
-          value={mode}
-          onChange={(event) => setMode(event.target.value as "delta" | "set")}
-        >
-          <option value="delta">Plus / minus</option>
-          <option value="set">Set exact</option>
-        </select>
-        <input
-          value={large}
-          onChange={(event) => setLarge(event.target.value)}
-          placeholder="Large bottles"
-          inputMode="numeric"
-        />
-        <input
-          value={open}
-          onChange={(event) => setOpen(event.target.value)}
-          placeholder="Open ml"
-          inputMode="numeric"
-        />
-        <input
-          value={small}
-          onChange={(event) => setSmall(event.target.value)}
-          placeholder="Small bottles"
-          inputMode="numeric"
-        />
+        <label>
+          Adjustment
+          <select
+            value={mode}
+            onChange={(event) => setMode(event.target.value as "delta" | "set")}
+          >
+            <option value="delta">Plus / minus</option>
+            <option value="set">Set exact</option>
+          </select>
+        </label>
+        <label>
+          Large bottles
+          <input
+            value={large}
+            onChange={(event) => setLarge(event.target.value)}
+            placeholder="0"
+            inputMode="numeric"
+          />
+        </label>
+        <label>
+          Open ml
+          <input
+            value={open}
+            onChange={(event) => setOpen(event.target.value)}
+            placeholder="0"
+            inputMode="numeric"
+          />
+        </label>
+        <label>
+          Small bottles
+          <input
+            value={small}
+            onChange={(event) => setSmall(event.target.value)}
+            placeholder="0"
+            inputMode="numeric"
+          />
+        </label>
         <button type="submit" disabled={adjust.isPending}>
-          Save
+          {adjust.isPending ? "Saving..." : "Save"}
         </button>
       </form>
     </article>

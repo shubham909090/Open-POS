@@ -1,32 +1,15 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { formatInr, searchMenuItems } from "@gaurav-pos/shared";
-import {
-  CalendarCheck,
-  ChefHat,
-  ClipboardList,
-  Printer,
-  Settings,
-  Users,
-} from "lucide-react";
+import { searchMenuItems } from "@gaurav-pos/shared";
+import { ChefHat, Printer, Settings } from "lucide-react";
 import { useEffect, useState } from "react";
 import { hubApi, type Bootstrap, type CsvImportResult } from "../../hub-api.js";
 import { type NoticeSetter, messageOf } from "../../lib/format.js";
 import type { ManagerApprovalRequest } from "../../hooks/use-manager-approval.js";
-import { CsvImportBox } from "../ui/csv-import-box.js";
 import { SetupCard } from "./setup-card.js";
-import { EditableRecordList } from "./editable-record-list.js";
-import { FloorEditForm } from "./floor-edit-form.js";
-import { TableEditForm } from "./table-edit-form.js";
-import { UnitEditForm } from "./unit-edit-form.js";
-import { DishEditForm } from "./dish-edit-form.js";
 import { DevicePairingCard } from "./device-pairing-card.js";
 import { PrintLayoutEditor } from "./print-layout-editor.js";
-
-const DISH_IMPORT_TEMPLATE = [
-  "name,price,kitchen_or_counter,sale_category,active",
-  "Veg Fried Rice,180,Kitchen,Food,true",
-  "Sweet Lassi,90,Bar,Beverage,true",
-].join("\n");
+import { BusinessDayCard } from "./setup-business-day-card.js";
+import { DishesCard, FloorsTablesCard, KitchensCountersCard } from "./setup-catalog-cards.js";
 
 export function SetupView({
   bootstrap,
@@ -244,13 +227,7 @@ export function SetupView({
 
   return (
     <div className="grid gap-4">
-      <SetupCard
-        title="Business Day"
-        done
-        icon={<CalendarCheck size={20} />}
-        summary={`${bootstrap.currentBusinessDay.business_date} · rolls over at 6:00 AM IST`}
-        defaultOpen={false}
-      />
+      <BusinessDayCard bootstrap={bootstrap} />
 
       <SetupCard
         title="Hub Connection And Security"
@@ -297,21 +274,22 @@ export function SetupView({
           <>
             <p className="text-sm text-muted">Paste the hub connection values from the cloud portal here. These fields are saved on this hub and hidden unless the Manager PIN is entered.</p>
             <form className="template-form" onSubmit={(event) => event.preventDefault()}>
+              <input className="sr-only" name="username" tabIndex={-1} autoComplete="username" value="hub-sync" readOnly aria-hidden="true" />
               <label>
                 Cloud URL
-                <input value={cloudUrl} onChange={(event) => setCloudUrl(event.target.value)} placeholder="https://your-deployment.convex.site" />
+                <input value={cloudUrl} onChange={(event) => setCloudUrl(event.target.value)} placeholder="https://your-deployment.convex.site" autoComplete="off" />
               </label>
               <label>
                 Hub connection ID
-                <input value={installationId} onChange={(event) => setInstallationId(event.target.value)} />
+                <input value={installationId} onChange={(event) => setInstallationId(event.target.value)} autoComplete="off" />
               </label>
               <label>
                 Sync secret
-                <input value={syncSecret} onChange={(event) => setSyncSecret(event.target.value)} type="password" />
+                <input value={syncSecret} onChange={(event) => setSyncSecret(event.target.value)} type="password" autoComplete="current-password" />
               </label>
               <label>
                 Hub public URL
-                <input value={hubPublicUrl} onChange={(event) => setHubPublicUrl(event.target.value)} placeholder="http://192.168.1.20:3737" />
+                <input value={hubPublicUrl} onChange={(event) => setHubPublicUrl(event.target.value)} placeholder="http://192.168.1.20:3737" autoComplete="off" />
               </label>
               <div className="flex flex-wrap gap-2">
                 <button
@@ -454,159 +432,58 @@ export function SetupView({
         </details>
       </SetupCard>
 
-      <SetupCard
-        title="Floors And Tables"
-        done={bootstrap.tables.some((table) => table.active)}
-        icon={<Users size={20} />}
-        summary={`${bootstrap.tables.filter((table) => table.active).length} active tables`}
-      >
-        <form className="flex flex-wrap items-end gap-3" onSubmit={(event) => { event.preventDefault(); createFloor.mutate(); }}>
-          <label>
-            Floor name
-            <input value={floorName} onChange={(event) => setFloorName(event.target.value)} placeholder="Main hall" />
-          </label>
-          <button disabled={!floorName.trim() || createFloor.isPending} type="submit">Add floor</button>
-        </form>
-        <form className="flex flex-wrap items-end gap-3" onSubmit={(event) => { event.preventDefault(); createTable.mutate(); }}>
-          <label>
-            Floor
-            <select value={tableFloorId} onChange={(event) => setTableFloorId(event.target.value)}>
-              {activeFloors.map((floor) => (
-                <option key={floor.id} value={floor.id}>{floor.name}</option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Table name
-            <input value={tableName} onChange={(event) => setTableName(event.target.value)} placeholder="T1" />
-          </label>
-          <button disabled={!firstFloorId || !tableName.trim() || createTable.isPending} type="submit">Add table</button>
-        </form>
-        <EditableRecordList
-          setNotice={setNotice}
-          rows={bootstrap.tables.map((table) => ({
-            id: table.id,
-            title: table.name,
-            meta: `${table.floor_name} · ${table.active ? table.status : "disabled"}`,
-            active: table.active,
-            onToggle: () => hubApi.updateTable(table.id, { active: !table.active }).then(invalidate),
-            onDelete: () => hubApi.deleteTable(table.id).then(invalidate),
-            editForm: (close) => (
-              <TableEditForm table={table} floors={activeFloors} onSaved={async () => { close(); await invalidate(); }} setNotice={setNotice} />
-            ),
-          }))}
-        />
-        <EditableRecordList
-          setNotice={setNotice}
-          rows={bootstrap.floors.map((floor) => ({
-            id: floor.id,
-            title: floor.name,
-            meta: floor.active ? "Floor active" : "Floor disabled",
-            active: floor.active,
-            onToggle: () => hubApi.updateFloor(floor.id, { active: !floor.active }).then(invalidate),
-            onDelete: () => hubApi.deleteFloor(floor.id).then(invalidate),
-            editForm: (close) => (
-              <FloorEditForm floor={floor} onSaved={async () => { close(); await invalidate(); }} setNotice={setNotice} />
-            ),
-          }))}
-        />
-      </SetupCard>
+      <FloorsTablesCard
+        bootstrap={bootstrap}
+        activeFloors={activeFloors}
+        firstFloorId={firstFloorId}
+        floorName={floorName}
+        setFloorName={setFloorName}
+        tableName={tableName}
+        setTableName={setTableName}
+        tableFloorId={tableFloorId}
+        setTableFloorId={setTableFloorId}
+        createFloorPending={createFloor.isPending}
+        createTablePending={createTable.isPending}
+        onCreateFloor={() => createFloor.mutate()}
+        onCreateTable={() => createTable.mutate()}
+        invalidate={invalidate}
+        setNotice={setNotice}
+      />
 
-      <SetupCard
-        title="Kitchens And Counters"
-        done={bootstrap.productionUnits.some((unit) => unit.active)}
-        icon={<ChefHat size={20} />}
-        summary={`${bootstrap.productionUnits.filter((unit) => unit.active).length} active kitchens/counters`}
-      >
-        <form className="flex flex-wrap items-end gap-3" onSubmit={(event) => { event.preventDefault(); createUnit.mutate(); }}>
-          <label>
-            Kitchen or counter name
-            <input value={unitName} onChange={(event) => setUnitName(event.target.value)} placeholder="Main kitchen" />
-          </label>
-          <button disabled={!unitName.trim() || createUnit.isPending} type="submit">Add</button>
-        </form>
-        <EditableRecordList
-          setNotice={setNotice}
-          rows={bootstrap.productionUnits.map((unit) => ({
-            id: unit.id,
-            title: unit.name,
-            meta: unit.active ? "Active" : "Disabled",
-            active: unit.active,
-            onToggle: () => hubApi.updateUnit(unit.id, { active: !unit.active }).then(invalidate),
-            onDelete: () => hubApi.deleteUnit(unit.id).then(invalidate),
-            editForm: (close) => (
-              <UnitEditForm unit={unit} onSaved={async () => { close(); await invalidate(); }} setNotice={setNotice} />
-            ),
-          }))}
-        />
-      </SetupCard>
+      <KitchensCountersCard
+        bootstrap={bootstrap}
+        unitName={unitName}
+        setUnitName={setUnitName}
+        createUnitPending={createUnit.isPending}
+        onCreateUnit={() => createUnit.mutate()}
+        invalidate={invalidate}
+        setNotice={setNotice}
+      />
 
-      <SetupCard
-        title="Dishes"
-        done={rawSetupDishItems.some((item) => item.active)}
-        icon={<ClipboardList size={20} />}
-        summary={`${rawSetupDishItems.filter((item) => item.active).length} active dishes`}
-      >
-        <details className="setup-subdetails csv-import-details">
-          <summary>
-            <span>Import dishes from CSV</span>
-            <small>Bulk menu setup</small>
-          </summary>
-          <CsvImportBox
-            title="Dish menu CSV"
-            templateName="dish-menu-template.csv"
-            templateCsv={DISH_IMPORT_TEMPLATE}
-            busy={importDishes.isPending}
-            result={dishImportResult}
-            onImport={(csv) => importDishes.mutate(csv)}
-          />
-        </details>
-        <form className="dish-form" onSubmit={(event) => { event.preventDefault(); createDish.mutate(); }}>
-          <label>
-            Dish name
-            <input value={dishName} onChange={(event) => setDishName(event.target.value)} placeholder="Paneer tikka" />
-          </label>
-          <label>
-            Price
-            <input value={dishPrice} onChange={(event) => setDishPrice(event.target.value)} inputMode="decimal" placeholder="220" />
-          </label>
-          <label>
-            Kitchen
-            <select value={dishUnit} onChange={(event) => setDishUnit(event.target.value)}>
-              <option value="">No kitchen yet</option>
-              {bootstrap.productionUnits.filter((unit) => unit.active).map((unit) => (
-                <option key={unit.id} value={unit.id}>{unit.name}</option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Group
-            <select value={dishGroup} onChange={(event) => setDishGroup(event.target.value)}>
-              {dishSaleGroups.map((group) => (
-                <option key={group.id} value={group.id}>{group.name}</option>
-              ))}
-            </select>
-          </label>
-          <button disabled={!dishName.trim() || dishPricePaise <= 0 || createDish.isPending} type="submit">Add dish</button>
-        </form>
-        <div className="setup-search-row">
-          <input value={dishListSearch} onChange={(event) => setDishListSearch(event.target.value)} placeholder="Search saved dishes" />
-        </div>
-        <EditableRecordList
-          setNotice={setNotice}
-          rows={setupDishItems.map((item) => ({
-            id: item.id,
-            title: item.name,
-            meta: `${formatInr(item.price_paise)} · ${item.sale_group_name} · ${item.production_unit_name ?? "No kitchen assigned"} · ${item.active ? "active" : "disabled"}`,
-            active: item.active,
-            onToggle: () => hubApi.updateDish(item.id, { active: !item.active }).then(invalidate),
-            onDelete: () => hubApi.deleteDish(item.id).then(invalidate),
-            editForm: (close) => (
-              <DishEditForm item={item} units={bootstrap.productionUnits.filter((unit) => unit.active)} saleGroups={bootstrap.saleGroups.filter((group) => group.active)} onSaved={async () => { close(); await invalidate(); }} setNotice={setNotice} />
-            ),
-          }))}
-        />
-      </SetupCard>
+      <DishesCard
+        bootstrap={bootstrap}
+        rawSetupDishItems={rawSetupDishItems}
+        setupDishItems={setupDishItems}
+        dishListSearch={dishListSearch}
+        setDishListSearch={setDishListSearch}
+        dishName={dishName}
+        setDishName={setDishName}
+        dishPrice={dishPrice}
+        setDishPrice={setDishPrice}
+        dishUnit={dishUnit}
+        setDishUnit={setDishUnit}
+        dishGroup={dishGroup}
+        setDishGroup={setDishGroup}
+        dishSaleGroups={dishSaleGroups}
+        dishPricePaise={dishPricePaise}
+        createDishPending={createDish.isPending}
+        importDishesPending={importDishes.isPending}
+        dishImportResult={dishImportResult}
+        onCreateDish={() => createDish.mutate()}
+        onImportDishes={(csv) => importDishes.mutate(csv)}
+        invalidate={invalidate}
+        setNotice={setNotice}
+      />
 
       <DevicePairingCard
         devices={devices.data ?? []}

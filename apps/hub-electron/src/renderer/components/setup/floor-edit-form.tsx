@@ -16,7 +16,7 @@ export function FloorEditForm({
 
   return (
     <form
-      className="row-edit-form"
+      className="row-edit-form floor-edit-form"
       onSubmit={(event) => {
         event.preventDefault();
         setSaving(true);
@@ -30,16 +30,20 @@ export function FloorEditForm({
           .finally(() => setSaving(false));
       }}
     >
-      <label>
-        Floor name
-        <input
-          value={name}
-          onChange={(event) => setName(event.target.value)}
-        />
-      </label>
-      <button type="submit" disabled={!name.trim() || saving}>
-        Save
-      </button>
+      <div className="row-edit-fields">
+        <label>
+          Floor name
+          <input
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+          />
+        </label>
+      </div>
+      <div className="row-edit-actions">
+        <button type="submit" disabled={!name.trim() || saving}>
+          Save floor
+        </button>
+      </div>
     </form>
   );
 }

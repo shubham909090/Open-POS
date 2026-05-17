@@ -23,7 +23,11 @@ export function OrdersView({ bootstrap, setNotice, requestManagerApproval }: { b
   const selectedTable = activeTables.find((table) => table.id === selectedTableId) ?? null;
 
   const saleGroupKinds = Array.from(new Map(bootstrap.saleGroups.filter((group) => group.active).map((group) => [group.kind, group.name])).entries());
-  const activeSaleGroup = saleGroupFilter ?? (saleGroupKinds[0]?.[0] as SaleGroupKind | undefined);
+  const preferredSaleGroup = (["food", "beverage", "alcohol", "other"] as SaleGroupKind[]).find((kind) =>
+    saleGroupKinds.some(([saleGroupKind]) => saleGroupKind === kind) &&
+    bootstrap.menuItems.some((item) => item.active && item.sale_group_kind === kind)
+  );
+  const activeSaleGroup = saleGroupFilter ?? preferredSaleGroup ?? (saleGroupKinds[0]?.[0] as SaleGroupKind | undefined);
   const hasSearch = search.trim().length > 0;
   const activeItems = searchMenuItems(bootstrap.menuItems, search, { saleGroupKind: activeSaleGroup }).slice(0, 80);
   const openTablePanel = (tableId: string, panel: OrderPanel) => {
@@ -32,15 +36,22 @@ export function OrdersView({ bootstrap, setNotice, requestManagerApproval }: { b
   };
 
   useEffect(() => {
-    setMenuOpen(false);
+    if (selectedTable) setMenuOpen(false);
   }, [selectedTable?.id]);
 
   return (
-    <div className={selectedTable ? "orders-grid has-selection" : "orders-grid tables-only"}>
+    <div className="orders-grid tables-first">
       <section className="table-map panel">
         <div className="panel-title">
-          <h2>Tables</h2>
-          <span>{activeTables.length} active</span>
+          <div>
+            <h2>Tables</h2>
+            <span>Tap a table to open its order workspace</span>
+          </div>
+          <div className="table-map-counts" aria-label="Table state counts">
+            <span className="state-dot free">{activeTables.filter((table) => getTableDisplayState(table) === "free").length} free</span>
+            <span className="state-dot running">{activeTables.filter((table) => getTableDisplayState(table) === "running").length} running</span>
+            <span className="state-dot billed">{activeTables.filter((table) => getTableDisplayState(table) === "bill_printed").length} billed</span>
+          </div>
         </div>
         <div className="floor-table-list">
           {bootstrap.floors.filter((floor) => floor.active).map((floor) => {
@@ -91,50 +102,57 @@ export function OrdersView({ bootstrap, setNotice, requestManagerApproval }: { b
       </section>
 
       {selectedTable ? (
-        <div className={menuOpen ? "order-workspace-grid menu-open" : "order-workspace-grid menu-collapsed"}>
-          {menuOpen ? (
-          <section className="menu-browser panel">
-            <div className="panel-title">
-              <h2>Menu</h2>
-              <div className="menu-browser-title-actions">
-                <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search dish" />
-                <button type="button" className="order-icon-button" onClick={() => setMenuOpen(false)} aria-label="Close menu">
-                  <X size={16} />
+        <div className="modal-backdrop order-modal-backdrop" role="presentation">
+          <section className="order-modal-card" role="dialog" aria-modal="true" aria-label={`${selectedTable.name} order workspace`}>
+            <header className="order-modal-header">
+              <div>
+                <span>{selectedTable.floor_name}</span>
+                <h2>{selectedTable.name}</h2>
+              </div>
+              <div className="order-modal-actions">
+                <button type="button" className="secondary-button" onClick={() => setMenuOpen((open) => !open)}>
+                  <PanelLeftOpen size={16} />
+                  {menuOpen ? "Hide menu" : "Open menu"}
+                </button>
+                <button type="button" className="order-icon-button" onClick={clearSelectedTable} aria-label="Close selected table">
+                  <X size={18} />
                 </button>
               </div>
+            </header>
+            <div className={menuOpen ? "order-modal-layout menu-open" : "order-modal-layout menu-closed"}>
+              {menuOpen ? (
+                <section className="menu-browser order-menu-panel">
+                  <div className="panel-title">
+                    <h2>Menu</h2>
+                    <div className="menu-browser-title-actions">
+                      <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search dish" />
+                    </div>
+                  </div>
+                  <div className="menu-filter-row" aria-label="Menu filters">
+                    {saleGroupKinds.map(([kind, label]) => (
+                      <button key={kind} type="button" className={activeSaleGroup === kind ? "active" : ""} onClick={() => setSaleGroupFilter(kind as SaleGroupKind)}>
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  <MenuResultSection
+                    title={hasSearch ? "Best matches" : (saleGroupKinds.find(([kind]) => kind === activeSaleGroup)?.[1] ?? "Menu")}
+                    items={activeItems}
+                    selectedTableId={selectedTable.id}
+                    onAdd={addDraftItem}
+                    emptyText={hasSearch ? "No dishes found. Check spelling or clear filters." : "No dishes found. Add active dishes in setup."}
+                  />
+                </section>
+              ) : null}
+              <TableWorkspace
+                tableId={selectedTable.id}
+                tableName={selectedTable.name}
+                bootstrap={bootstrap}
+                setNotice={setNotice}
+                requestManagerApproval={requestManagerApproval}
+              />
             </div>
-            <div className="menu-filter-row" aria-label="Menu filters">
-              {saleGroupKinds.map(([kind, label]) => (
-                <button key={kind} type="button" className={activeSaleGroup === kind ? "active" : ""} onClick={() => setSaleGroupFilter(kind as SaleGroupKind)}>
-                  {label}
-                </button>
-              ))}
-            </div>
-            <MenuResultSection
-              title={hasSearch ? "Best matches" : (saleGroupKinds.find(([kind]) => kind === activeSaleGroup)?.[1] ?? "Menu")}
-              items={activeItems}
-              selectedTableId={selectedTable.id}
-              onAdd={addDraftItem}
-              emptyText={hasSearch ? "No dishes found. Check spelling or clear filters." : "No dishes found. Add active dishes in setup."}
-            />
           </section>
-          ) : (
-            <section className="menu-rail panel" aria-label="Menu collapsed">
-              <button type="button" className="menu-rail-button" onClick={() => setMenuOpen(true)} aria-label="Open menu">
-                <PanelLeftOpen size={18} />
-                <span>Menu</span>
-              </button>
-            </section>
-          )}
-
-          <TableWorkspace
-            tableId={selectedTable.id}
-            tableName={selectedTable.name}
-            bootstrap={bootstrap}
-            setNotice={setNotice}
-            requestManagerApproval={requestManagerApproval}
-            onClose={clearSelectedTable}
-          />
         </div>
       ) : null}
     </div>

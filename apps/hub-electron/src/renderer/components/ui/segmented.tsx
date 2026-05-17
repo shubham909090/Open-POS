@@ -21,7 +21,7 @@ export function Segmented<T extends string>({
           className={cn(
             "rounded px-3 py-1.5 text-sm font-semibold transition-colors",
             value === opt.value
-              ? "bg-panel text-ink shadow-sm"
+              ? "active bg-panel text-ink shadow-sm"
               : "text-muted hover:text-ink"
           )}
         >

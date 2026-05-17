@@ -6,7 +6,18 @@ export default defineConfig({
   root: ".",
   build: {
     outDir: "dist/public",
-    emptyOutDir: true
+    emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes("node_modules")) return undefined;
+          if (id.includes("react-dom") || id.includes("/react/")) return "react";
+          if (id.includes("@tanstack")) return "query";
+          if (id.includes("@radix-ui") || id.includes("lucide-react")) return "ui";
+          return undefined;
+        }
+      }
+    }
   },
   server: {
     port: 5177

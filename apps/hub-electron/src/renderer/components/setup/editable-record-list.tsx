@@ -36,14 +36,23 @@ export function EditableRecordList({
   return (
     <div className="record-list">
       {rows.map((row) => (
-        <article key={row.id} className="record-row">
-          <div>
-            <strong>{row.title}</strong>
+        <article
+          key={row.id}
+          className={`record-row${editingId === row.id ? " editing" : ""}`}
+        >
+          <div className="record-row-main">
+            <div className="record-row-title">
+              <strong>{row.title}</strong>
+              <span className={`record-status${row.active ? " active" : " disabled"}`}>
+                {row.active ? "Active" : "Disabled"}
+              </span>
+            </div>
             <span>{row.meta}</span>
           </div>
           <div className="row-actions">
             <button
               type="button"
+              className="record-action"
               disabled={busyId === row.id}
               onClick={() =>
                 setEditingId((current) =>
@@ -56,6 +65,7 @@ export function EditableRecordList({
             </button>
             <button
               type="button"
+              className="record-action"
               disabled={busyId === row.id}
               onClick={() => void run(row.id, row.onToggle)}
             >
@@ -63,7 +73,7 @@ export function EditableRecordList({
             </button>
             <button
               type="button"
-              className="icon-button danger"
+              className="record-action danger icon-only"
               disabled={busyId === row.id}
               onClick={() => void run(row.id, row.onDelete)}
               aria-label={`Delete ${row.title}`}

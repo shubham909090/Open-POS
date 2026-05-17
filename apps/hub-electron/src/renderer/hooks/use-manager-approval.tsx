@@ -86,11 +86,13 @@ export function ManagerApprovalModal({
           setState({ ...state, open: false, pin: "", resolve: undefined, reject: undefined });
         }}
       >
+        <input className="sr-only" name="username" tabIndex={-1} autoComplete="username" value="manager" readOnly aria-hidden="true" />
         <Input
           label={state.reasonLabel}
           value={state.reason}
           onChange={(event) => setState((current) => ({ ...current, reason: event.target.value }))}
           placeholder={state.requireReason ? "Required" : "Optional"}
+          autoComplete="off"
         />
         <Input
           label="Manager PIN"

@@ -19,7 +19,7 @@ export function TableEditForm({
 
   return (
     <form
-      className="row-edit-form"
+      className="row-edit-form table-edit-form"
       onSubmit={(event) => {
         event.preventDefault();
         setSaving(true);
@@ -33,29 +33,33 @@ export function TableEditForm({
           .finally(() => setSaving(false));
       }}
     >
-      <label>
-        Table name
-        <input
-          value={name}
-          onChange={(event) => setName(event.target.value)}
-        />
-      </label>
-      <label>
-        Floor
-        <select
-          value={floorId}
-          onChange={(event) => setFloorId(event.target.value)}
-        >
-          {floors.map((floor) => (
-            <option key={floor.id} value={floor.id}>
-              {floor.name}
-            </option>
-          ))}
-        </select>
-      </label>
-      <button type="submit" disabled={!name.trim() || !floorId || saving}>
-        Save
-      </button>
+      <div className="row-edit-fields">
+        <label>
+          Table name
+          <input
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+          />
+        </label>
+        <label>
+          Floor
+          <select
+            value={floorId}
+            onChange={(event) => setFloorId(event.target.value)}
+          >
+            {floors.map((floor) => (
+              <option key={floor.id} value={floor.id}>
+                {floor.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <div className="row-edit-actions">
+        <button type="submit" disabled={!name.trim() || !floorId || saving}>
+          Save table
+        </button>
+      </div>
     </form>
   );
 }

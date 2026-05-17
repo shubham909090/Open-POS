@@ -3,7 +3,6 @@ import websocket from "@fastify/websocket";
 import { and, eq } from "drizzle-orm";
 import Fastify from "fastify";
 import { createHash, randomBytes } from "node:crypto";
-import { existsSync } from "node:fs";
 import { networkInterfaces } from "node:os";
 import { fileURLToPath } from "node:url";
 import QRCode from "qrcode";
@@ -61,6 +60,8 @@ import { OrderService } from "../domain/order-service.js";
 import type { PrintJobService } from "../printing/print-job-service.js";
 import { listSystemPrinters } from "../printing/printer-discovery.js";
 import type { ConvexSyncBridge } from "../sync/convex-sync.js";
+
+const hubFaviconSvg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="12" fill="#18181b"/><path fill="#fff" d="M17 17h30v7H17zM17 29h30v7H17zM17 41h20v7H17z"/><path fill="#0f766e" d="M42 41h5v7h-5z"/></svg>';
 
 export function isRealtimeEventVisibleForRole(event: unknown, role: UserRole): boolean {
   if (role === "admin" || role === "captain") return true;
@@ -221,12 +222,10 @@ export function createHubServer(input: {
   }
 
   app.register(websocket);
-  const staticRootCandidates = [
-    fileURLToPath(new URL("../../dist/public", import.meta.url)),
-    fileURLToPath(new URL("../public", import.meta.url))
-  ];
+  app.get("/favicon.ico", async (_request, reply) => reply.type("image/svg+xml").send(hubFaviconSvg));
+  const staticRoot = fileURLToPath(new URL("../../dist/public", import.meta.url));
   app.register(fastifyStatic, {
-    root: staticRootCandidates.find((candidate) => existsSync(candidate)) ?? staticRootCandidates[0],
+    root: staticRoot,
     index: "index.html"
   });
 

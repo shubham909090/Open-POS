@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Gaurav POS Hub">
+  <rect width="64" height="64" rx="12" fill="#18181b"/>
+  <path fill="#ffffff" d="M17 17h30v7H17zM17 29h30v7H17zM17 41h20v7H17z"/>
+  <path fill="#0f766e" d="M42 41h5v7h-5z"/>
+</svg>

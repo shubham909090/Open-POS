@@ -59,11 +59,11 @@ describe("hub table workspace send actions", () => {
 
     const { container } = renderWorkspace(TableWorkspace);
 
-    await screen.findByText("₹300.00 current edited total");
+    await screen.findByText("Edited total");
     expect(screen.queryByRole("button", { name: /^Save$/ })).toBeNull();
     expect(screen.queryByText("Saved")).not.toBeNull();
 
-    fireEvent.change(screen.getByPlaceholderText("Search item to add"), { target: { value: "whisky" } });
+    fireEvent.change(screen.getByPlaceholderText("Search menu item"), { target: { value: "whisky" } });
     expect(await screen.findByText("30 ml ₹40")).not.toBeNull();
     expect(screen.getByText("180 ml ₹250")).not.toBeNull();
     expect(screen.getByText("750 ml ₹900")).not.toBeNull();
@@ -78,6 +78,28 @@ describe("hub table workspace send actions", () => {
     fireEvent.click(screen.getByRole("button", { name: /^Save$/ }));
     await waitFor(() => expect(updateOrderStateMock).toHaveBeenCalledWith("order-1", expect.objectContaining({ saveMode: "save" }), expect.any(String)));
     await waitFor(() => expect(screen.queryByRole("button", { name: /^Save$/ })).toBeNull());
+  });
+
+  it("removes unsaved search-added state rows when their quantity returns to zero", async () => {
+    const { TableWorkspace, useHubStore } = await importWorkspace();
+    tableOrderMock.mockResolvedValue(tableOrder(1));
+    useHubStore.setState({ selectedTableId: "table-t1", orderPanel: "sent", drafts: {} });
+
+    renderWorkspace(TableWorkspace);
+
+    await screen.findByText("Edited total");
+    fireEvent.change(screen.getByPlaceholderText("Search menu item"), { target: { value: "whisky" } });
+    fireEvent.click(await screen.findByText("30 ml ₹40"));
+
+    expect(await screen.findByText("Imported Whisky 30 ml")).not.toBeNull();
+    const addedRow = screen.getByText("Imported Whisky 30 ml").closest(".line-row");
+    const minus = addedRow?.querySelector("button");
+    expect(minus).not.toBeNull();
+    fireEvent.click(minus as HTMLButtonElement);
+
+    expect(screen.queryByText("Imported Whisky 30 ml")).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Save$/ })).toBeNull();
+    expect(screen.queryByText("Saved")).not.toBeNull();
   });
 
   it("renders menu alcohol variants as one compact action group without Add text", async () => {

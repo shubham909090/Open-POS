@@ -31,6 +31,8 @@ import { AdvancedView } from "./components/advanced/advanced-view.js";
 import "./styles/tokens.css";
 import "./styles/globals.css";
 import "./styles.css";
+import "./styles/components.css";
+import "./styles/responsive.css";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -129,6 +131,7 @@ function HubShell() {
           </p>
           {notice ? <Notice variant={notice.tone === "good" ? "success" : "error"}>{notice.text}</Notice> : null}
           <form className="grid gap-3" onSubmit={(e) => { e.preventDefault(); createPin.mutate(); }}>
+            <input className="sr-only" name="username" tabIndex={-1} autoComplete="username" value="manager" readOnly aria-hidden="true" />
             <Input
               label="Manager PIN"
               value={newPin}
@@ -155,7 +158,7 @@ function HubShell() {
       {/* ─── Sidebar ─── */}
       <aside className="side-rail">
         <div className="grid gap-0.5">
-          <span className="text-[0.85rem] font-extrabold text-[#a6c9bc]">Gaurav POS</span>
+          <span className="text-[0.85rem] font-extrabold text-white/70">Gaurav POS</span>
           <strong className="text-2xl">Hub</strong>
         </div>
         <nav className="grid content-start gap-2" aria-label="Hub sections">
@@ -170,7 +173,7 @@ function HubShell() {
           {!hubUnlocked ? (
             <div className="grid gap-2.5">
               <div className="grid gap-0.5">
-                <span className="text-xs text-[#a6c9bc]">Setup access</span>
+                <span className="text-xs text-white/70">Setup access</span>
                 <strong className="text-sm">{managerPinConfigured ? "Locked" : "PIN needed"}</strong>
               </div>
               <Button type="button" variant="secondary" size="sm" onClick={() => setUnlockModalOpen(true)}>
@@ -180,7 +183,7 @@ function HubShell() {
           ) : (
             <div className="grid gap-2.5">
               <div className="grid gap-0.5">
-                <span className="text-xs text-[#a6c9bc]">Setup access</span>
+                <span className="text-xs text-white/70">Setup access</span>
                 <strong className="text-sm">Unlocked</strong>
               </div>
               <Button type="button" variant="secondary" size="sm" onClick={() => void lockHub()}>Lock</Button>
@@ -256,11 +259,7 @@ function NavBtn({
     <button
       type="button"
       onClick={() => onClick(view)}
-      className={
-        active
-          ? "flex w-full items-center gap-2.5 rounded-md bg-[#eef8ef] px-3 py-2 text-sm font-semibold text-sidebar"
-          : "flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-sm font-semibold text-[#d7e5dc] hover:bg-[#eef8ef] hover:text-sidebar"
-      }
+      className={active ? "nav-button active" : "nav-button"}
     >
       {icon}
       {label}
@@ -290,6 +289,7 @@ function UnlockSetupModal({
     <Dialog open onOpenChange={(o) => { if (!o) onClose(); }} title="Unlock setup">
       <p className="text-sm text-muted">Enter the Manager PIN for this hub. This unlocks setup tools on this screen only.</p>
       <form className="grid gap-3" onSubmit={(e) => { e.preventDefault(); onSubmit(); }}>
+        <input className="sr-only" name="username" tabIndex={-1} autoComplete="username" value="manager" readOnly aria-hidden="true" />
         <Input
           label="Manager PIN"
           value={pin}

@@ -32,7 +32,7 @@ export function UnitEditForm({
 
   return (
     <form
-      className="row-edit-form"
+      className="row-edit-form unit-edit-form"
       onSubmit={(event) => {
         event.preventDefault();
         setSaving(true);
@@ -58,94 +58,98 @@ export function UnitEditForm({
           .finally(() => setSaving(false));
       }}
     >
-      <label>
-        Kitchen or counter name
-        <input
-          value={name}
-          onChange={(event) => setName(event.target.value)}
-        />
-      </label>
-      <label>
-        Printer type
-        <select
-          value={printerMode}
-          onChange={(event) =>
-            setPrinterMode(event.target.value as "system" | "network")
+      <div className="row-edit-fields">
+        <label>
+          Kitchen or counter name
+          <input
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+          />
+        </label>
+        <label>
+          Printer type
+          <select
+            value={printerMode}
+            onChange={(event) =>
+              setPrinterMode(event.target.value as "system" | "network")
+            }
+          >
+            <option value="system">PC printer installed on this computer</option>
+            <option value="network">LAN printer by IP address</option>
+          </select>
+        </label>
+        {printerMode === "system" ? (
+          <>
+            <label>
+              PC printer
+              <select
+                value={printerName}
+                onChange={(event) => setPrinterName(event.target.value)}
+              >
+                <option value="">
+                  {systemPrinters.data?.length
+                    ? "Choose PC printer"
+                    : "Load PC printers first"}
+                </option>
+                {(systemPrinters.data ?? []).map((printer) => (
+                  <option key={printer.name} value={printer.name}>
+                    {printer.displayName}
+                    {printer.isDefault ? " (default)" : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() => void systemPrinters.refetch()}
+              disabled={systemPrinters.isFetching}
+            >
+              Load PC printers
+            </button>
+          </>
+        ) : (
+          <>
+            <label>
+              LAN printer IP
+              <input
+                value={printerHost}
+                onChange={(event) => setPrinterHost(event.target.value)}
+                placeholder="192.168.1.50"
+              />
+            </label>
+            <label>
+              Port
+              <input
+                value={printerPort}
+                onChange={(event) => setPrinterPort(event.target.value)}
+                inputMode="numeric"
+                placeholder="9100"
+              />
+            </label>
+          </>
+        )}
+        <label className="checkbox-row">
+          <input
+            type="checkbox"
+            checked={kdsEnabled}
+            onChange={(event) => setKdsEnabled(event.target.checked)}
+          />
+          Show this counter on Kitchen screen
+        </label>
+      </div>
+      <div className="row-edit-actions">
+        <button
+          type="submit"
+          disabled={
+            !name.trim() ||
+            saving ||
+            (printerMode === "network" && !printerHost.trim())
           }
         >
-          <option value="system">PC printer installed on this computer</option>
-          <option value="network">LAN printer by IP address</option>
-        </select>
-      </label>
-      {printerMode === "system" ? (
-        <>
-          <label>
-            PC printer
-            <select
-              value={printerName}
-              onChange={(event) => setPrinterName(event.target.value)}
-            >
-              <option value="">
-                {systemPrinters.data?.length
-                  ? "Choose PC printer"
-                  : "Load PC printers first"}
-              </option>
-              {(systemPrinters.data ?? []).map((printer) => (
-                <option key={printer.name} value={printer.name}>
-                  {printer.displayName}
-                  {printer.isDefault ? " (default)" : ""}
-                </option>
-              ))}
-            </select>
-          </label>
-          <button
-            type="button"
-            className="secondary-button"
-            onClick={() => void systemPrinters.refetch()}
-            disabled={systemPrinters.isFetching}
-          >
-            Load PC printers
-          </button>
-        </>
-      ) : (
-        <>
-          <label>
-            LAN printer IP
-            <input
-              value={printerHost}
-              onChange={(event) => setPrinterHost(event.target.value)}
-              placeholder="192.168.1.50"
-            />
-          </label>
-          <label>
-            Port
-            <input
-              value={printerPort}
-              onChange={(event) => setPrinterPort(event.target.value)}
-              inputMode="numeric"
-              placeholder="9100"
-            />
-          </label>
-        </>
-      )}
-      <label className="checkbox-row">
-        <input
-          type="checkbox"
-          checked={kdsEnabled}
-          onChange={(event) => setKdsEnabled(event.target.checked)}
-        />
-        Show this counter on Kitchen screen
-      </label>
-      <button
-        type="submit"
-        disabled={
-          !name.trim() ||
-          saving ||
-          (printerMode === "network" && !printerHost.trim())
-        }
-      >
-        Save counter setup
-      </button>
+          Save counter setup
+        </button>
+      </div>
     </form>
   );
 }
