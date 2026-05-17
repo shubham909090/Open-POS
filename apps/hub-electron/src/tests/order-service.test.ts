@@ -56,7 +56,7 @@ describe("OrderService KOT lifecycle", () => {
 
     const tables = orderService.listTables() as Array<{ id: string; current_order_total_paise: number; sent_item_count: number }>;
     expect(tables.find((table) => table.id === "table-t1")).toMatchObject({
-      current_order_total_paise: 37_800,
+      current_order_total_paise: 36_000,
       sent_item_count: 2
     });
     expect(tables.find((table) => table.id === "table-t2")).toMatchObject({
@@ -134,7 +134,7 @@ describe("OrderService KOT lifecycle", () => {
     });
 
     const bill = orderService.generateBill(order.orderId);
-    expect(bill.totalPaise).toBe(21_000);
+    expect(bill.totalPaise).toBe(20_000);
 
     database.close();
   });
@@ -159,7 +159,7 @@ describe("OrderService KOT lifecycle", () => {
 
     expect(row.subtotal_paise).toBe(18_000);
     expect(row.tax_paise).toBe(900);
-    expect(row.total_paise).toBe(18_900);
+    expect(row.total_paise).toBe(18_000);
     expect(JSON.parse(row.tax_breakdown_json)).toEqual([
       { name: "Food CGST", rateBps: 250, amountPaise: 450 },
       { name: "Food SGST", rateBps: 250, amountPaise: 450 }
@@ -544,15 +544,11 @@ describe("OrderService KOT lifecycle", () => {
       receivedBy: "captain-1"
     });
 
-    const printJob = database.db.prepare("SELECT payload FROM print_jobs WHERE target_id = ? AND target_type = 'BILL'").get(bill.billId) as { payload: string };
-    expect(printJob.payload).toContain("Item");
-    expect(printJob.payload).toContain("Qty");
-    expect(printJob.payload).toContain("Rate");
-    expect(printJob.payload).toContain("Amt");
-    expect(printJob.payload).toContain("Dal Fry");
-    expect(printJob.payload).toContain("2");
-    expect(printJob.payload).toContain("180.00");
-    expect(printJob.payload).toContain("360.00");
+	    const printJob = database.db.prepare("SELECT payload FROM print_jobs WHERE target_id = ? AND target_type = 'BILL'").get(bill.billId) as { payload: string };
+	    expect(printJob.payload).toContain("Item");
+	    expect(printJob.payload).toContain("Amt");
+	    expect(printJob.payload).toContain("2 x Dal Fry");
+	    expect(printJob.payload).toContain("360.00");
     expect(printJob.payload).not.toContain("₹");
 
     database.close();
@@ -1022,16 +1018,16 @@ describe("OrderService KOT lifecycle", () => {
     });
     expect(database.db.prepare("SELECT target_type FROM print_jobs ORDER BY created_at DESC LIMIT 1").get()).toEqual({ target_type: "BOT" });
     const bill = orderService.generateBill(order.orderId);
-    expect(bill.totalPaise).toBe(22_000);
+    expect(bill.totalPaise).toBe(20_000);
     const ncBill = orderService.markBillNc(bill.billId, {
       managerApproval: { pin: "1234", reason: "Owner tasting", approvedBy: "manager" }
     });
     const ncPrintJob = database.db.prepare("SELECT payload FROM print_jobs WHERE id = ?").get(ncBill.printJobId) as { payload: string };
-    expect(ncPrintJob.payload).toContain("Item");
-    expect(ncPrintJob.payload).toContain("Open Bar");
-    expect(ncPrintJob.payload).toContain("2");
-    expect(ncPrintJob.payload).toContain("100.00");
-    expect(ncPrintJob.payload).toContain("200.00");
+	    expect(ncPrintJob.payload).toContain("Item");
+	    expect(ncPrintJob.payload).toContain("Open Bar");
+	    expect(ncPrintJob.payload).toContain("2");
+	    expect(ncPrintJob.payload).toContain("200.00");
+	    expect(ncPrintJob.payload).not.toContain("VAT");
     expect(ncPrintJob.payload).not.toContain("₹");
     expect(ncPrintJob.payload).toContain("NC Reason: Owner tasting");
 
@@ -1138,6 +1134,283 @@ describe("OrderService KOT lifecycle", () => {
     database.close();
   });
 
+  it("edits paid history bills with master PIN, auto-matches payment, tags modified, and prints full updated bill", () => {
+    const { database, orderService } = createTestHub();
+    orderService.setManagerPin({ newPin: "1234", updatedBy: "admin" });
+    orderService.setMasterPin({ newPin: "9876", confirmPin: "9876", updatedBy: "owner" });
+    const order = orderService.submitOrder({
+      tableId: "table-t1",
+      captainId: "waiter-1",
+      pax: 1,
+      orderType: "dine_in",
+      printMode: "kot",
+      items: [{ menuItemId: "item-dal-fry", quantity: 1 }]
+    });
+    const bill = orderService.generateBill(order.orderId);
+    orderService.settleBill(bill.billId, { method: "cash", amountPaise: bill.totalPaise, receivedBy: "captain-1" });
+
+    expect(() =>
+      orderService.editHistoryBill(bill.billId, {
+        items: [{ menuItemId: "item-dal-fry", quantity: 2 }],
+        masterApproval: { pin: "1234", reason: "Owner history edit", approvedBy: "owner" }
+      })
+    ).toThrow("Master PIN is incorrect");
+
+    const edited = orderService.editHistoryBill(bill.billId, {
+      items: [{ menuItemId: "item-dal-fry", quantity: 2 }],
+      masterApproval: { pin: "9876", reason: "Owner history edit", approvedBy: "owner" }
+    });
+
+    expect(edited).toMatchObject({ billId: bill.billId, revisionNumber: 2, totalPaise: 36_000, printJobId: expect.any(String), modified: true });
+    expect(database.db.prepare("SELECT status, total_paise, final_total_paise, revision_number FROM bills WHERE id = ?").get(bill.billId)).toEqual({
+      status: "paid",
+      total_paise: 36_000,
+      final_total_paise: 36_000,
+      revision_number: 2
+    });
+    expect(database.db.prepare("SELECT amount_paise FROM payments WHERE bill_id = ?").get(bill.billId)).toEqual({ amount_paise: 36_000 });
+    const summary = orderService.getCurrentBusinessDaySummary() as {
+      finalSalesPaise: number;
+      billSummaries?: Array<{ finalTotalPaise: number; paidPaise: number; revisionNumber: number; modified: boolean }>;
+    };
+    expect(summary.finalSalesPaise).toBe(36_000);
+    expect(summary.billSummaries?.[0]).toMatchObject({ finalTotalPaise: 36_000, paidPaise: 36_000, revisionNumber: 2, modified: true });
+    const printJob = database.db.prepare("SELECT payload FROM print_jobs WHERE id = ?").get(edited.printJobId) as { payload: string };
+    expect(printJob.payload).toContain("Dal Fry");
+    expect(printJob.payload).toContain("360.00");
+    expect(printJob.payload).toContain("Modified");
+    expect(printJob.payload).not.toContain("REPRINT");
+
+    database.close();
+  });
+
+  it("rejects pending history edits so active billed orders stay on the table editor flow", () => {
+    const { database, orderService } = createTestHub();
+    orderService.setMasterPin({ newPin: "9876", confirmPin: "9876", updatedBy: "owner" });
+    const order = orderService.submitOrder({
+      tableId: "table-t1",
+      captainId: "waiter-1",
+      pax: 1,
+      orderType: "dine_in",
+      printMode: "kot",
+      items: [{ menuItemId: "item-dal-fry", quantity: 1 }]
+    });
+    const bill = orderService.generateBill(order.orderId);
+    const orderItem = database.db.prepare("SELECT id, quantity FROM order_items WHERE order_id = ?").get(order.orderId) as { id: string; quantity: number };
+
+    expect(() =>
+      orderService.editHistoryBill(bill.billId, {
+        items: [{ orderItemId: orderItem.id, menuItemId: "item-dal-fry", quantity: 2 }],
+        masterApproval: { pin: "9876", reason: "Owner history edit", approvedBy: "owner" }
+      })
+    ).toThrow("Only paid or NC bills can be edited from Order History");
+
+    expect(database.db.prepare("SELECT quantity FROM order_items WHERE id = ?").get(orderItem.id)).toEqual({ quantity: 1 });
+    expect(database.db.prepare("SELECT COUNT(*) AS count FROM print_jobs WHERE target_id = ? AND target_type = 'BILL'").get(bill.billId)).toEqual({ count: 1 });
+
+    database.close();
+  });
+
+  it("allows NC history bills to be edited with the master PIN", () => {
+    const { database, orderService } = createTestHub();
+    orderService.setManagerPin({ newPin: "1234", updatedBy: "admin" });
+    orderService.setMasterPin({ newPin: "9876", confirmPin: "9876", updatedBy: "owner" });
+    const order = orderService.submitOrder({
+      tableId: "table-t1",
+      captainId: "waiter-1",
+      pax: 1,
+      orderType: "dine_in",
+      printMode: "kot",
+      items: [{ menuItemId: "item-dal-fry", quantity: 1 }]
+    });
+    const bill = orderService.generateBill(order.orderId);
+    orderService.markBillNc(bill.billId, {
+      managerApproval: { pin: "1234", reason: "Owner tasting", approvedBy: "manager" }
+    });
+
+    const edited = orderService.editHistoryBill(bill.billId, {
+      items: [{ menuItemId: "item-dal-fry", quantity: 2 }],
+      masterApproval: { pin: "9876", reason: "Owner history edit", approvedBy: "owner" }
+    });
+
+    expect(edited).toMatchObject({ billId: bill.billId, revisionNumber: 2, totalPaise: 36_000, modified: true });
+    expect(database.db.prepare("SELECT status, is_nc, total_paise, revision_number FROM bills WHERE id = ?").get(bill.billId)).toEqual({
+      status: "paid",
+      is_nc: 1,
+      total_paise: 36_000,
+      revision_number: 2
+    });
+
+    database.close();
+  });
+
+  it("preserves paid bill payment split proportions when a history edit changes the total", () => {
+    const { database, orderService } = createTestHub();
+    orderService.setMasterPin({ newPin: "9876", confirmPin: "9876", updatedBy: "owner" });
+    const order = orderService.submitOrder({
+      tableId: "table-t1",
+      captainId: "waiter-1",
+      pax: 1,
+      orderType: "dine_in",
+      printMode: "kot",
+      items: [{ menuItemId: "item-dal-fry", quantity: 1 }]
+    });
+    const bill = orderService.generateBill(order.orderId);
+    orderService.settleBill(bill.billId, {
+      receivedBy: "captain-1",
+      payments: [
+        { method: "cash", amountPaise: 10_000 },
+        { method: "upi", amountPaise: 8_000, reference: "UPI-1" }
+      ]
+    });
+
+    orderService.editHistoryBill(bill.billId, {
+      items: [{ menuItemId: "item-dal-fry", quantity: 2 }],
+      masterApproval: { pin: "9876", reason: "Owner history edit", approvedBy: "owner" }
+    });
+
+    const summary = orderService.getCurrentBusinessDaySummary() as {
+      cashPaymentsPaise: number;
+      upiPaymentsPaise: number;
+      billSummaries?: Array<{ paidPaise: number; payments: Array<{ method: string; amountPaise: number; reference: string | null }> }>;
+    };
+    expect(summary.cashPaymentsPaise).toBe(20_000);
+    expect(summary.upiPaymentsPaise).toBe(16_000);
+    expect(summary.billSummaries?.[0]?.paidPaise).toBe(36_000);
+    expect([...(summary.billSummaries?.[0]?.payments ?? [])].sort((a, b) => a.method.localeCompare(b.method))).toEqual([
+      { method: "cash", amountPaise: 20_000, reference: null },
+      { method: "upi", amountPaise: 16_000, reference: "UPI-1" }
+    ]);
+
+    database.close();
+  });
+
+  it("updates finalized order history snapshots when an old paid bill is edited", () => {
+    const { database, orderService } = createTestHub();
+    orderService.setMasterPin({ newPin: "9876", confirmPin: "9876", updatedBy: "owner" });
+    const order = orderService.submitOrder({
+      tableId: "table-t1",
+      captainId: "waiter-1",
+      pax: 1,
+      orderType: "dine_in",
+      printMode: "kot",
+      items: [{ menuItemId: "item-dal-fry", quantity: 1 }]
+    });
+    const bill = orderService.generateBill(order.orderId);
+    orderService.settleBill(bill.billId, { method: "cash", amountPaise: bill.totalPaise, receivedBy: "captain-1" });
+    const day = database.db.prepare("SELECT pos_day_id FROM orders WHERE id = ?").get(order.orderId) as { pos_day_id: string };
+    database.db
+      .prepare(
+        `UPDATE pos_days
+         SET business_date = '2026-05-08',
+             period_start_at = '2026-05-07T00:30:00.000Z',
+             period_end_at = '2026-05-08T00:30:00.000Z'
+         WHERE id = ?`
+      )
+      .run(day.pos_day_id);
+
+    expect(orderService.listDailyReports()).toMatchObject([{ final_sales_paise: 18_000 }]);
+
+    orderService.editHistoryBill(bill.billId, {
+      items: [{ menuItemId: "item-dal-fry", quantity: 2 }],
+      masterApproval: { pin: "9876", reason: "Owner history edit", approvedBy: "owner" }
+    });
+    const detail = orderService.getDailyReport(day.pos_day_id) as {
+      final_sales_paise: number;
+      billSummaries: Array<{ finalTotalPaise: number; paidPaise: number; modified: boolean; items: Array<{ quantity: number }> }>;
+    };
+
+    expect(detail.final_sales_paise).toBe(36_000);
+    expect(detail.billSummaries[0]).toMatchObject({ finalTotalPaise: 36_000, paidPaise: 36_000, modified: true });
+    expect(detail.billSummaries[0]?.items[0]).toMatchObject({ quantity: 2 });
+
+    database.close();
+  });
+
+  it("applies liquor stock deltas when a paid history bill is edited", () => {
+    const { database, orderService } = createTestHub();
+    orderService.setMasterPin({ newPin: "9876", confirmPin: "9876", updatedBy: "owner" });
+    const whisky = orderService.createAlcoholItem({
+      type: "plain_liquor",
+      name: "History Edit Whisky",
+      productionUnitId: "unit-bar",
+      largeBottleMl: 750,
+      smallBottleMl: 180,
+      sealedLargeCount: 1,
+      openLargeMl: 0,
+      sealedSmallCount: 0,
+      variants: [{ label: "30 ml", kind: "shot", pricePaise: 10_000, volumeMl: 30, inventoryAction: "large_ml", sortOrder: 0, active: true }],
+      recipeIngredients: []
+    });
+    const shot = database.db.prepare("SELECT id FROM menu_item_variants WHERE menu_item_id = ? AND kind = 'shot'").get(whisky.id) as { id: string };
+    const order = orderService.submitOrder({
+      tableId: "table-t1",
+      captainId: "waiter-1",
+      pax: 1,
+      orderType: "dine_in",
+      items: [{ menuItemId: whisky.id, menuItemVariantId: shot.id, quantity: 1 }]
+    });
+    const bill = orderService.generateBill(order.orderId);
+    orderService.settleBill(bill.billId, { method: "cash", amountPaise: bill.totalPaise, receivedBy: "captain-1" });
+    expect(database.db.prepare("SELECT sealed_large_count, open_large_ml FROM alcohol_stock_levels WHERE menu_item_id = ?").get(whisky.id)).toEqual({
+      sealed_large_count: 0,
+      open_large_ml: 720
+    });
+
+    orderService.editHistoryBill(bill.billId, {
+      items: [{ menuItemId: whisky.id, menuItemVariantId: shot.id, quantity: 2 }],
+      masterApproval: { pin: "9876", reason: "Owner history edit", approvedBy: "owner" }
+    });
+
+    expect(database.db.prepare("SELECT sealed_large_count, open_large_ml FROM alcohol_stock_levels WHERE menu_item_id = ?").get(whisky.id)).toEqual({
+      sealed_large_count: 0,
+      open_large_ml: 690
+    });
+    expect(database.db.prepare("SELECT COUNT(*) AS count FROM alcohol_stock_movements WHERE source_id = ? AND source_type = 'bill_history_edit'").get(bill.billId)).toEqual({ count: 1 });
+
+    database.close();
+  });
+
+  it("restores liquor stock when a paid history edit removes the liquor item", () => {
+    const { database, orderService } = createTestHub();
+    orderService.setMasterPin({ newPin: "9876", confirmPin: "9876", updatedBy: "owner" });
+    const whisky = orderService.createAlcoholItem({
+      type: "plain_liquor",
+      name: "Removed History Whisky",
+      productionUnitId: "unit-bar",
+      largeBottleMl: 750,
+      smallBottleMl: 180,
+      sealedLargeCount: 1,
+      openLargeMl: 0,
+      sealedSmallCount: 0,
+      variants: [{ label: "30 ml", kind: "shot", pricePaise: 10_000, volumeMl: 30, inventoryAction: "large_ml", sortOrder: 0, active: true }],
+      recipeIngredients: []
+    });
+    const shot = database.db.prepare("SELECT id FROM menu_item_variants WHERE menu_item_id = ? AND kind = 'shot'").get(whisky.id) as { id: string };
+    const order = orderService.submitOrder({
+      tableId: "table-t1",
+      captainId: "waiter-1",
+      pax: 1,
+      orderType: "dine_in",
+      items: [{ menuItemId: whisky.id, menuItemVariantId: shot.id, quantity: 1 }]
+    });
+    const bill = orderService.generateBill(order.orderId);
+    orderService.settleBill(bill.billId, { method: "cash", amountPaise: bill.totalPaise, receivedBy: "captain-1" });
+
+    orderService.editHistoryBill(bill.billId, {
+      items: [{ menuItemId: "item-dal-fry", quantity: 1 }],
+      masterApproval: { pin: "9876", reason: "Owner history edit", approvedBy: "owner" }
+    });
+
+    expect(database.db.prepare("SELECT sealed_large_count, open_large_ml FROM alcohol_stock_levels WHERE menu_item_id = ?").get(whisky.id)).toEqual({
+      sealed_large_count: 1,
+      open_large_ml: 0
+    });
+    expect(database.db.prepare("SELECT COUNT(*) AS count FROM alcohol_stock_movements WHERE source_id = ? AND source_type = 'bill_history_edit'").get(bill.billId)).toEqual({ count: 1 });
+
+    database.close();
+  });
+
   it("preserves printed bill line prices when revising after a catalog price change", () => {
     const { database, orderService } = createTestHub();
     orderService.setManagerPin({ newPin: "1234", updatedBy: "admin" });
@@ -1158,7 +1431,7 @@ describe("OrderService KOT lifecycle", () => {
       managerApproval: { pin: "1234", reason: "Quantity checked", approvedBy: "manager" }
     });
 
-    expect(revised.totalPaise).toBe(10_500);
+    expect(revised.totalPaise).toBe(10_000);
     expect(database.db.prepare("SELECT quantity, unit_price_paise, status FROM order_items WHERE id = ?").get(orderItem.id)).toEqual({
       quantity: 1,
       unit_price_paise: 10_000,
@@ -1622,7 +1895,7 @@ describe("OrderService KOT lifecycle", () => {
     database.close();
   });
 
-  it("requires manager PIN for manual alcohol stock edits", () => {
+  it("uses manager PIN for positive stock additions and master PIN for set exact or lowering edits", () => {
     const { database, orderService } = createTestHub();
     const liquor = orderService.createAlcoholItem({
       type: "plain_liquor",
@@ -1646,13 +1919,14 @@ describe("OrderService KOT lifecycle", () => {
     ).toThrow("Set a manager PIN before using manager-only actions");
 
     orderService.setManagerPin({ newPin: "1234", updatedBy: "admin" });
+    orderService.setMasterPin({ newPin: "9876", confirmPin: "9876", updatedBy: "owner" });
     expect(() =>
       orderService.adjustAlcoholStock(liquor.id, {
         mode: "delta",
         sealedLargeCount: -1,
         managerApproval: { pin: "1234", reason: "Alcohol stock edit", approvedBy: "manager" }
       })
-    ).toThrow("Alcohol stock cannot go below zero");
+    ).toThrow("Master PIN is required for lowering liquor stock");
 
     orderService.adjustAlcoholStock(liquor.id, {
       mode: "delta",
@@ -1664,6 +1938,29 @@ describe("OrderService KOT lifecycle", () => {
     expect(database.db.prepare("SELECT sealed_large_count, open_large_ml FROM alcohol_stock_levels WHERE menu_item_id = ?").get(liquor.id)).toEqual({
       sealed_large_count: 2,
       open_large_ml: 120
+    });
+
+    expect(() =>
+      orderService.adjustAlcoholStock(liquor.id, {
+        mode: "set",
+        sealedLargeCount: 1,
+        openLargeMl: 0,
+        sealedSmallCount: 0,
+        managerApproval: { pin: "1234", reason: "Alcohol stock edit", approvedBy: "manager" }
+      })
+    ).toThrow("Master PIN is required for exact liquor stock edits");
+
+    orderService.adjustAlcoholStock(liquor.id, {
+      mode: "set",
+      sealedLargeCount: 1,
+      openLargeMl: 0,
+      sealedSmallCount: 0,
+      masterApproval: { pin: "9876", reason: "Owner stock correction", approvedBy: "owner" }
+    });
+
+    expect(database.db.prepare("SELECT sealed_large_count, open_large_ml FROM alcohol_stock_levels WHERE menu_item_id = ?").get(liquor.id)).toEqual({
+      sealed_large_count: 1,
+      open_large_ml: 0
     });
 
     database.close();

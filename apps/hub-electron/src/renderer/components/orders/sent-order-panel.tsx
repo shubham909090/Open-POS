@@ -237,7 +237,7 @@ export function SentOrderPanel({
               <button
                 type="button"
                 className="transfer-submit-button"
-                disabled={!shiftTargetTableId || shiftTablePending || shiftItemsPending}
+                disabled={!selectedShiftTarget || shiftTablePending || shiftItemsPending}
                 onClick={onTransfer}
               >
                 {shiftTablePending || shiftItemsPending ? "Transferring..." : transferMode === "table" ? "Transfer full table" : "Transfer selected quantities"}

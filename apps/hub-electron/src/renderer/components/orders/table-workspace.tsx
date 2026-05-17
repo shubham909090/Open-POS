@@ -1,4 +1,4 @@
-import { formatInr, getOrderStateSignature, searchMenuItems } from "@gaurav-pos/shared";
+import { formatInr, getOrderStateSignature, isTransferTargetTable, searchMenuItems } from "@gaurav-pos/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { hubApi, type Bootstrap, type MenuItem } from "../../hub-api.js";
@@ -96,7 +96,7 @@ export function TableWorkspace({
     quantity: item.quantity
   })));
   const hasOrderStateChanges = Boolean(data?.order) && savedOrderStateSignature !== draftOrderStateSignature;
-  const shiftTargets = bootstrap.tables.filter((table) => table.active && table.id !== tableId);
+  const shiftTargets = bootstrap.tables.filter((table) => table.id !== tableId && isTransferTargetTable(table));
   const selectedShiftTarget = shiftTargets.find((table) => table.id === shiftTargetTableId);
   const draftTotal = draft.reduce((total, item) => total + item.pricePaise * item.quantity, 0);
   const sentTotal = sentItems.reduce((total, item) => total + item.unit_price_paise * item.quantity, 0);

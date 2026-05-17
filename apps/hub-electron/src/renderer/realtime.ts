@@ -9,8 +9,11 @@ export function getRealtimeInvalidationKeys(event: RealtimeEvent): QueryKey[] {
   if (type === "bill.settled" || type === "bill.nc_marked") {
     return [["bootstrap"], ["tableOrder"], ["currentBusinessDaySummary"], ["dailyReports"], ["alcohol"], ["alcoholStockMovements"]];
   }
+  if (type === "bill.history_edited") {
+    return [["bootstrap"], ["tableOrder"], ["currentBusinessDaySummary"], ["dailyReports"], ["dailyReport"], ["alcohol"], ["alcoholStockMovements"]];
+  }
   if (type === "bill.generated" || type === "bill.printed" || type === "bill.reprinted" || type === "bill.history_reprinted" || type === "bill.revised") {
-    return [["bootstrap"], ["tableOrder"], ["currentBusinessDaySummary"]];
+    return [["bootstrap"], ["tableOrder"], ["currentBusinessDaySummary"], ["dailyReports"]];
   }
   if (type === "table.shifted" || type === "order_items.shifted") return [["bootstrap"], ["tableOrder"], ["kds"]];
   if (type === "kot.status_changed" || type === "kot.reprinted") return [["kds"], ["bootstrap"]];

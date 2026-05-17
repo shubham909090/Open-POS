@@ -23,6 +23,7 @@ export function UnitEditForm({
   );
   const [kdsEnabled, setKdsEnabled] = useState(Boolean(unit.kds_enabled));
   const [saving, setSaving] = useState(false);
+  const canSave = Boolean(name.trim()) && !saving && (printerMode === "system" || Boolean(printerHost.trim()));
 
   const systemPrinters = useQuery({
     queryKey: ["system-printers"],
@@ -58,7 +59,7 @@ export function UnitEditForm({
           .finally(() => setSaving(false));
       }}
     >
-      <div className="row-edit-fields">
+      <div className="row-edit-fields unit-edit-fields">
         <label>
           Kitchen or counter name
           <input
@@ -66,20 +67,16 @@ export function UnitEditForm({
             onChange={(event) => setName(event.target.value)}
           />
         </label>
-        <label>
-          Printer type
-          <select
-            value={printerMode}
-            onChange={(event) =>
-              setPrinterMode(event.target.value as "system" | "network")
-            }
-          >
-            <option value="system">PC printer installed on this computer</option>
-            <option value="network">LAN printer by IP address</option>
-          </select>
-        </label>
+        <div className="printer-mode-tabs">
+          <button type="button" className={printerMode === "system" ? "active" : ""} onClick={() => setPrinterMode("system")}>
+            PC printer
+          </button>
+          <button type="button" className={printerMode === "network" ? "active" : ""} onClick={() => setPrinterMode("network")}>
+            LAN printer
+          </button>
+        </div>
         {printerMode === "system" ? (
-          <>
+          <div className="printer-fields-grid">
             <label>
               PC printer
               <select
@@ -105,11 +102,11 @@ export function UnitEditForm({
               onClick={() => void systemPrinters.refetch()}
               disabled={systemPrinters.isFetching}
             >
-              Load PC printers
+              {systemPrinters.isFetching ? "Loading..." : "Load PC printers"}
             </button>
-          </>
+          </div>
         ) : (
-          <>
+          <div className="printer-fields-grid network">
             <label>
               LAN printer IP
               <input
@@ -127,7 +124,7 @@ export function UnitEditForm({
                 placeholder="9100"
               />
             </label>
-          </>
+          </div>
         )}
         <label className="checkbox-row">
           <input
@@ -141,13 +138,9 @@ export function UnitEditForm({
       <div className="row-edit-actions">
         <button
           type="submit"
-          disabled={
-            !name.trim() ||
-            saving ||
-            (printerMode === "network" && !printerHost.trim())
-          }
+          disabled={!canSave}
         >
-          Save counter setup
+          {saving ? "Saving..." : "Save counter setup"}
         </button>
       </div>
     </form>

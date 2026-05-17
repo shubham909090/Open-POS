@@ -393,3 +393,23 @@
 - Hub fix: Kitchen/counter metadata now reports printer/Kitchen-screen visibility instead of repeating only Active.
 - Evidence: captured .agent/screenshots/setup-record-edit-row-fix.png and .agent/screenshots/setup-record-edit-row-visible-fix.png; DOM audit showed no page overflow and secondary row buttons rendering at compact 34px height.
 - Verification: pnpm --filter @gaurav-pos/hub-electron build, pnpm --filter @gaurav-pos/hub-electron typecheck, and git diff --check passed.
+
+## 2026-05-17
+
+- Task: Fixed line item price placement and ran a phone-width visual pass after rendered feedback showed prices dropping into empty space.
+- Hub fix: LineItems now render amount before quantity controls in DOM order, and CSS uses a stable item / amount / quantity grid instead of forcing amount backward into column 2. This removes the second-row desktop price bug.
+- Hub fix: Pair Phones and Devices now has a structured pairing flow with constrained form width, role cards, QR/code panel, and a separate manual payload panel so QR details do not collide.
+- Evidence: captured .agent/screenshots/line-row-price-placement-desktop-fix.png, .agent/screenshots/phone-pass-line-row-fix.png, and .agent/screenshots/phone-pass-pairing-card-fix.png. DOM audits showed no horizontal overflow; desktop line rows are 68px high, phone rows keep amount left and quantity controls right.
+- Verification: pnpm --filter @gaurav-pos/hub-electron build, pnpm --filter @gaurav-pos/hub-electron typecheck, and git diff --check passed.
+
+## 2026-05-17
+
+- Task: Fixed desktop QR pairing card clipping after rendered feedback showed the code and expiry text cut off beside the QR.
+- Hub fix: Pairing QR panel is now vertical and constrained: QR on top, code/expiry underneath, payload in its own panel. Code/expiry wrap within the QR panel instead of overflowing sideways.
+- Evidence: captured .agent/screenshots/pairing-card-desktop-no-clip-fix.png and .agent/screenshots/pairing-card-phone-no-clip-fix.png. DOM audit showed no horizontal overflow and codeInside=true on desktop and phone-width checks.
+- Verification: pnpm --filter @gaurav-pos/hub-electron build, pnpm --filter @gaurav-pos/hub-electron typecheck, and git diff --check passed.
+
+## 2026-05-17 mobile menu/history pass
+- Added captain-only History tab in the Expo app and moved billing history out of Captain Billing.
+- Restyled mobile menu rows with stronger card separation, larger category icons, separated variant/action areas, and more spacing.
+- Verified: pnpm --filter @gaurav-pos/mobile typecheck; pnpm --filter @gaurav-pos/mobile test; Expo web smoke render with mock hub in Chrome.

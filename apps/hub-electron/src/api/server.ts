@@ -22,16 +22,18 @@ import {
   createSaleGroupSchema,
   createTableSchema,
   exchangePairingCodeSchema,
-  hubConnectionSettingsSchema,
-  managerPinSchema,
-  managerPinUnlockSchema,
+	  hubConnectionSettingsSchema,
+	  historyEditBillSchema,
+	  managerPinSchema,
+	  managerPinUnlockSchema,
   markNcBillSchema,
   moveOrderItemsSchema,
   moveTableSchema,
   reprintKotSchema,
   revokeDeviceSchema,
   reviseBillSchema,
-  retryPrintJobSchema,
+	  retryPrintJobSchema,
+	  setMasterPinSchema,
   settleBillSchema,
   printLayoutSettingsSchema,
 	  scheduleRestoreSchema,
@@ -415,18 +417,19 @@ export function createHubServer(input: {
       throw error;
     }
   });
-  app.get("/sync/bootstrap", { preHandler: anyRole }, async (request) => {
+	  app.get("/sync/bootstrap", { preHandler: anyRole }, async (request) => {
     const session = getSession(request);
     const bootstrap = input.orderService.bootstrap() as Record<string, unknown>;
     return {
       ...publicBootstrapForRole(bootstrap, session.role),
       setup: {
-        printerOutputMode: input.orderService.getPrinterOutputMode(),
-        managerPinConfigured: input.orderService.isManagerPinConfigured(),
-        hubConnection: input.orderService.getHubConnectionSettings(false)
-      }
-    };
-  });
+	        printerOutputMode: input.orderService.getPrinterOutputMode(),
+	        managerPinConfigured: input.orderService.isManagerPinConfigured(),
+	        masterPinConfigured: input.orderService.isMasterPinConfigured(),
+	        hubConnection: input.orderService.getHubConnectionSettings(false)
+	      }
+	    };
+	  });
   app.get("/sync/status", { preHandler: captainOrAdmin }, async () => input.orderService.getSyncStatus());
   app.post("/sync/push", { preHandler: adminOnly }, async () => input.syncBridge?.pushPending() ?? { pushed: 0, skipped: true });
   app.post("/sync/pull", { preHandler: adminOnly }, async () => input.syncBridge?.pullCloudSnapshot() ?? { applied: 0, skipped: true });
@@ -577,13 +580,19 @@ export function createHubServer(input: {
     input.eventBus.publish({ type: "receipt_printer.updated", result });
     return result;
   });
-  app.put("/settings/manager-pin", async (request) => {
+	  app.put("/settings/manager-pin", async (request) => {
     if (input.orderService.isManagerPinConfigured()) await adminOnly(request);
     else if (!isLocalRequest(request)) throw new DomainError("Create the first Manager PIN from the hub PC.", 403);
     const result = input.orderService.setManagerPin(managerPinSchema.parse(request.body));
     input.eventBus.publish({ type: "manager_pin.updated", result });
-    return result;
-  });
+	    return result;
+	  });
+	  app.get("/settings/master-pin/status", { preHandler: adminOnly }, async () => ({ masterPinConfigured: input.orderService.isMasterPinConfigured() }));
+	  app.put("/settings/master-pin", { preHandler: adminOnly }, async (request) => {
+	    const result = input.orderService.setMasterPin(setMasterPinSchema.parse(request.body));
+	    input.eventBus.publish({ type: "master_pin.created", result });
+	    return result;
+	  });
   app.get("/settings/hub-connection", { preHandler: adminOnly }, async (request) => {
     const query = request.query as { reveal?: string };
     const reveal = query.reveal === "1" || query.reveal === "true";
@@ -830,17 +839,26 @@ export function createHubServer(input: {
     return { ...result, ...(processed ? { processed } : {}) };
   });
 
-  app.post("/bills/:billId/revise", { preHandler: captainOrAdmin }, async (request) => {
-    const params = request.params as { billId: string };
-    const { result, replayed } = await withIdempotency(request, `bills.revise.${params.billId}`, () =>
-      input.orderService.reviseBill(params.billId, reviseBillSchema.parse(request.body))
-    );
+	  app.post("/bills/:billId/revise", { preHandler: captainOrAdmin }, async (request) => {
+	    const params = request.params as { billId: string };
+	    const { result, replayed } = await withIdempotency(request, `bills.revise.${params.billId}`, () =>
+	      input.orderService.reviseBill(params.billId, reviseBillSchema.parse(request.body))
+	    );
     const processed = replayed ? undefined : await processCreatedPrintJobs(result.printJobIds);
-    if (!replayed) input.eventBus.publish({ type: "bill.revised", result: { ...result, processed } });
-    return { ...result, ...(processed ? { processed } : {}) };
-  });
+	    if (!replayed) input.eventBus.publish({ type: "bill.revised", result: { ...result, processed } });
+	    return { ...result, ...(processed ? { processed } : {}) };
+	  });
+	  app.post("/bills/:billId/history-edit", { preHandler: captainOrAdmin }, async (request) => {
+	    const params = request.params as { billId: string };
+	    const { result, replayed } = await withIdempotency(request, `bills.history-edit.${params.billId}`, () =>
+	      input.orderService.editHistoryBill(params.billId, historyEditBillSchema.parse(request.body))
+	    );
+	    const processed = replayed ? undefined : await processCreatedPrintJobs([result.printJobId]);
+	    if (!replayed) input.eventBus.publish({ type: "bill.history_edited", result: { ...result, processed } });
+	    return { ...result, ...(processed ? { processed } : {}) };
+	  });
 
-  app.post("/bills/:billId/nc", { preHandler: captainOrAdmin }, async (request) => {
+	  app.post("/bills/:billId/nc", { preHandler: captainOrAdmin }, async (request) => {
     const params = request.params as { billId: string };
     const { result, replayed } = await withIdempotency(request, `bills.nc.${params.billId}`, () =>
       input.orderService.markBillNc(params.billId, markNcBillSchema.parse(request.body))

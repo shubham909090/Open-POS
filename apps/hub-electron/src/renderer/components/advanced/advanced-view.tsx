@@ -20,8 +20,11 @@ export function AdvancedView({
 }) {
   const queryClient = useQueryClient();
   const [newPin, setNewPin] = useState("");
+  const [newMasterPin, setNewMasterPin] = useState("");
+  const [confirmMasterPin, setConfirmMasterPin] = useState("");
   const [resetPhrase, setResetPhrase] = useState("");
   const [resetBackups, setResetBackups] = useState(false);
+  const masterPinConfigured = Boolean(bootstrap.setup?.masterPinConfigured);
 
   const pullCloud = useMutation({
     mutationFn: hubApi.pullCloud,
@@ -82,6 +85,24 @@ export function AdvancedView({
     },
     onError: (error) => setNotice({ tone: "bad", text: messageOf(error) }),
   });
+  const saveMasterPin = useMutation({
+    mutationFn: () =>
+      hubApi.setMasterPin({
+        newPin: newMasterPin,
+        confirmPin: confirmMasterPin,
+        updatedBy: "admin",
+      }),
+    onSuccess: async () => {
+      setNewMasterPin("");
+      setConfirmMasterPin("");
+      await queryClient.invalidateQueries({ queryKey: ["bootstrap"] });
+      setNotice({
+        tone: "good",
+        text: "Master PIN created. It cannot be changed without DB reset.",
+      });
+    },
+    onError: (error) => setNotice({ tone: "bad", text: messageOf(error) }),
+  });
   const fullReset = useMutation({
     mutationFn: (approval: ManagerApproval) =>
       hubApi.fullReset({
@@ -135,6 +156,45 @@ export function AdvancedView({
           >
             Save PIN
           </button>
+        </form>
+        <form
+          className="manager-pin-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (!masterPinConfigured && newMasterPin.length >= 4 && newMasterPin === confirmMasterPin) saveMasterPin.mutate();
+          }}
+        >
+          <input className="sr-only" name="username" tabIndex={-1} autoComplete="username" value="owner" readOnly aria-hidden="true" />
+          <label>
+            Master PIN
+            <input
+              value={newMasterPin}
+              onChange={(event) => setNewMasterPin(event.target.value)}
+              type="password"
+              autoComplete="new-password"
+              disabled={masterPinConfigured}
+              placeholder={masterPinConfigured ? "Configured" : "Owner-only PIN"}
+            />
+          </label>
+          <label>
+            Confirm Master PIN
+            <input
+              value={confirmMasterPin}
+              onChange={(event) => setConfirmMasterPin(event.target.value)}
+              type="password"
+              autoComplete="new-password"
+              disabled={masterPinConfigured}
+            />
+          </label>
+          <button
+            type="submit"
+            disabled={masterPinConfigured || newMasterPin.length < 4 || newMasterPin !== confirmMasterPin || saveMasterPin.isPending}
+          >
+            {masterPinConfigured ? "Master PIN set" : saveMasterPin.isPending ? "Saving..." : "Create Master PIN"}
+          </button>
+          <p className="soft-note">
+            Used for old bill edits and sensitive liquor stock corrections. Create once; reset database to change it.
+          </p>
         </form>
       </section>
 

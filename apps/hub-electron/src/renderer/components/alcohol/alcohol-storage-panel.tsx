@@ -2,7 +2,7 @@ import { useMutation } from "@tanstack/react-query";
 import { useState } from "react";
 import { hubApi, type AlcoholStorageRow } from "../../hub-api.js";
 import { type NoticeSetter, messageOf } from "../../lib/format.js";
-import type { ManagerApprovalRequest } from "../../hooks/use-manager-approval.js";
+import type { ManagerApproval, ManagerApprovalRequest } from "../../hooks/use-manager-approval.js";
 import { EmptyState } from "../ui/empty-state.js";
 
 export function AlcoholStoragePanel({
@@ -53,18 +53,18 @@ function AlcoholStorageCard({
   const [open, setOpen] = useState("");
   const [small, setSmall] = useState("");
 
+  const sensitiveEdit = mode === "set" || [large, open, small].some((value) => Number(value || 0) < 0);
+
   const adjust = useMutation({
-    mutationFn: (pin: string) =>
+    mutationFn: (approval: ManagerApproval) =>
       hubApi.adjustAlcoholStock(row.id, {
         mode,
         sealedLargeCount: large === "" ? undefined : Number(large),
         openLargeMl: open === "" ? undefined : Number(open),
         sealedSmallCount: small === "" ? undefined : Number(small),
-        managerApproval: {
-          pin,
-          reason: "Alcohol stock edit",
-          approvedBy: "manager",
-        },
+        ...(sensitiveEdit
+          ? { masterApproval: { ...approval, approvedBy: "owner" } }
+          : { managerApproval: { ...approval, approvedBy: "manager" } }),
       }),
     onSuccess: async () => {
       setLarge("");
@@ -109,13 +109,14 @@ function AlcoholStorageCard({
         onSubmit={async (event) => {
           event.preventDefault();
           const approval = await requestManagerApproval({
-            title: `Approve stock edit for ${row.name}`,
-            defaultReason: "Alcohol stock edit",
+            title: sensitiveEdit ? `Master approval for ${row.name}` : `Approve stock edit for ${row.name}`,
+            defaultReason: sensitiveEdit ? "Owner liquor stock correction" : "Alcohol stock addition",
+            pinLabel: sensitiveEdit ? "Master PIN" : "Manager PIN",
             confirmLabel: "Save stock",
             danger: true,
           }).catch(() => null);
           if (!approval) return;
-          adjust.mutate(approval.pin);
+          adjust.mutate(approval);
         }}
       >
         <label>

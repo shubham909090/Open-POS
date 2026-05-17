@@ -23,11 +23,21 @@ describe("hub realtime invalidation", () => {
       ["alcohol"],
       ["alcoholStockMovements"]
     ]);
-	    expect(getRealtimeInvalidationKeys({ type: "bill.reprinted" })).toEqual([
-	      ["bootstrap"],
-	      ["tableOrder"],
-	      ["currentBusinessDaySummary"]
-	    ]);
+		    expect(getRealtimeInvalidationKeys({ type: "bill.reprinted" })).toEqual([
+		      ["bootstrap"],
+		      ["tableOrder"],
+		      ["currentBusinessDaySummary"],
+		      ["dailyReports"]
+		    ]);
+		    expect(getRealtimeInvalidationKeys({ type: "bill.history_edited" })).toEqual([
+		      ["bootstrap"],
+		      ["tableOrder"],
+		      ["currentBusinessDaySummary"],
+		      ["dailyReports"],
+		      ["dailyReport"],
+		      ["alcohol"],
+		      ["alcoholStockMovements"]
+		    ]);
 	    expect(getRealtimeInvalidationKeys({ type: "order_state.updated" })).toEqual([
 	      ["bootstrap"],
 	      ["tableOrder"],

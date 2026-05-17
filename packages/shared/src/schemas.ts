@@ -22,6 +22,8 @@ export const managerApprovalSchema = z.object({
   approvedBy: z.string().trim().min(1).max(120)
 });
 
+export const masterApprovalSchema = managerApprovalSchema;
+
 export const managerPinUnlockSchema = z.object({
   pin: z.string().trim().min(4).max(32)
 });
@@ -98,6 +100,12 @@ export const managerPinSchema = z.object({
   newPin: z.string().trim().min(4).max(32),
   updatedBy: z.string().trim().min(1).max(120)
 });
+
+export const setMasterPinSchema = z.object({
+  newPin: z.string().trim().min(4).max(32),
+  confirmPin: z.string().trim().min(4).max(32),
+  updatedBy: z.string().trim().min(1).max(120)
+}).refine((value) => value.newPin === value.confirmPin, "Master PIN confirmation does not match");
 
 export const createSaleGroupSchema = z.object({
   name: z.string().trim().min(1).max(80),
@@ -226,7 +234,8 @@ export const updateAlcoholItemSchema = createAlcoholItemSchema.partial().extend(
 });
 
 export const adjustAlcoholStockSchema = z.object({
-  managerApproval: managerApprovalSchema,
+  managerApproval: managerApprovalSchema.optional(),
+  masterApproval: masterApprovalSchema.optional(),
   mode: z.enum(["delta", "set"]),
   sealedLargeCount: z.number().int().min(-100_000).optional(),
   openLargeMl: z.number().int().min(-1_000_000).optional(),
@@ -265,7 +274,7 @@ export const ticketTemplateSchema = z.object({
   kotFooter: z.string().max(1_000).default(""),
   restaurantName: z.string().trim().max(160).default(""),
   taxRegistrationText: z.string().trim().max(240).default(""),
-  lineWidthChars: z.number().int().min(32).max(64).default(42)
+  lineWidthChars: z.number().int().min(24).max(64).default(28)
 });
 
 export const hubConnectionSettingsSchema = z.object({
@@ -286,7 +295,7 @@ export const printLayoutSettingsSchema = z.object({
   billFooter: z.string().max(1_000).default(""),
   kotHeader: z.string().max(1_000).default(""),
   kotFooter: z.string().max(1_000).default(""),
-  lineWidthChars: z.number().int().min(32).max(64).default(42),
+  lineWidthChars: z.number().int().min(24).max(64).default(28),
   headerAlign: z.enum(["left", "center"]).default("center"),
   footerAlign: z.enum(["left", "center"]).default("center"),
   feedLines: z.number().int().min(1).max(8).default(3),
@@ -303,6 +312,11 @@ export const printLayoutSettingsSchema = z.object({
 export const reviseBillSchema = z.object({
   items: z.array(orderItemInputSchema).min(1),
   managerApproval: managerApprovalSchema
+});
+
+export const historyEditBillSchema = z.object({
+  items: z.array(orderItemInputSchema).min(1),
+  masterApproval: masterApprovalSchema
 });
 
 export const markNcBillSchema = z.object({
@@ -365,7 +379,9 @@ export type ReprintKotInput = z.infer<typeof reprintKotSchema>;
 export type CancelOrderInput = z.infer<typeof cancelOrderSchema>;
 export type CancelOrderItemsInput = z.infer<typeof cancelOrderItemsSchema>;
 export type ManagerApprovalInput = z.infer<typeof managerApprovalSchema>;
+export type MasterApprovalInput = z.infer<typeof masterApprovalSchema>;
 export type ManagerPinInput = z.infer<typeof managerPinSchema>;
+export type SetMasterPinInput = z.infer<typeof setMasterPinSchema>;
 export type CreateSaleGroupInput = z.input<typeof createSaleGroupSchema>;
 export type UpdateSaleGroupInput = z.infer<typeof updateSaleGroupSchema>;
 export type CreateFloorInput = z.input<typeof createFloorSchema>;
@@ -381,6 +397,7 @@ export type ImportAlcoholCsvInput = z.infer<typeof importAlcoholCsvSchema>;
 export type CreateAlcoholItemInput = z.input<typeof createAlcoholItemSchema>;
 export type UpdateAlcoholItemInput = z.infer<typeof updateAlcoholItemSchema>;
 export type AdjustAlcoholStockInput = z.infer<typeof adjustAlcoholStockSchema>;
+export type HistoryEditBillInput = z.infer<typeof historyEditBillSchema>;
 export type UpdateKotStatusInput = z.infer<typeof updateKotStatusSchema>;
 export type RetryPrintJobInput = z.infer<typeof retryPrintJobSchema>;
 export type PrinterOutputMode = z.infer<typeof printerOutputModeSchema>;

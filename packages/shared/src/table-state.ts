@@ -32,3 +32,8 @@ export function tableDisplayLabel(state: TableDisplayState): string {
 export function tableDisplayClass(state: TableDisplayState): string {
   return state.replace("_", "-");
 }
+
+export function isTransferTargetTable(table: TableStateInput): boolean {
+  const state = getTableDisplayState(table);
+  return state === "free" || state === "running";
+}

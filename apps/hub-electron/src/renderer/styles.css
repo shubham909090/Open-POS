@@ -125,6 +125,73 @@
     @apply grid gap-3 border-t border-line bg-panel p-4;
   }
 
+  .printer-settings-grid {
+    @apply grid gap-3;
+    grid-template-columns: minmax(0, 1.2fr) minmax(260px, 0.8fr);
+  }
+
+  .printer-mode-card,
+  .printer-status-card {
+    @apply grid min-w-0 gap-3 rounded-lg border border-line bg-white p-3;
+  }
+
+  .printer-mode-card > div:first-child,
+  .printer-status-card {
+    @apply min-w-0;
+  }
+
+  .printer-mode-card strong,
+  .printer-status-card strong {
+    @apply block text-base font-black text-ink;
+  }
+
+  .printer-mode-card span,
+  .printer-status-card span {
+    @apply block text-xs font-bold uppercase tracking-wide text-muted;
+  }
+
+  .printer-status-card {
+    @apply border-warning bg-warning-soft;
+  }
+
+  .printer-status-card.ready {
+    @apply border-accent bg-accent-soft;
+  }
+
+  .printer-status-card p {
+    @apply truncate text-sm font-bold text-ink;
+  }
+
+  .printer-setup-form {
+    @apply rounded-lg border border-line bg-white p-3;
+    grid-template-columns: 1fr;
+  }
+
+  .printer-mode-tabs {
+    @apply flex flex-wrap gap-1 rounded-lg border border-line bg-wash p-1;
+  }
+
+  .printer-mode-tabs button {
+    @apply min-h-10 flex-1 rounded-md bg-transparent px-3 text-sm font-bold text-muted shadow-none hover:bg-white hover:text-ink;
+  }
+
+  .printer-mode-tabs button.active {
+    @apply bg-ink text-white;
+  }
+
+  .printer-fields-grid {
+    @apply grid items-end gap-3;
+    grid-template-columns: minmax(260px, 1fr) auto;
+  }
+
+  .printer-fields-grid.network {
+    grid-template-columns: minmax(240px, 1fr) minmax(110px, 160px);
+  }
+
+  .unit-edit-fields {
+    grid-template-columns: minmax(220px, 0.8fr) minmax(260px, 1.2fr);
+  }
+
   .setup-status {
     @apply border-line bg-wash text-muted;
   }
@@ -462,6 +529,22 @@
     @apply border-danger bg-danger-soft;
   }
 
+  .saved-settings-card {
+    @apply flex items-center justify-between gap-3 bg-white;
+  }
+
+  .saved-settings-card > div:first-child {
+    @apply grid min-w-0 gap-1;
+  }
+
+  .saved-settings-card strong {
+    @apply truncate text-base font-black text-ink;
+  }
+
+  .saved-settings-card span {
+    @apply text-sm font-semibold leading-5 text-muted;
+  }
+
   .warning-text {
     @apply text-sm font-semibold leading-5 text-warning;
   }
@@ -486,7 +569,7 @@
 
   .line-row {
     @apply gap-4;
-    grid-template-columns: minmax(220px, 1fr) minmax(110px, auto) auto;
+    grid-template-columns: minmax(220px, 1fr) minmax(112px, auto) auto auto;
   }
 
   .line-main {
@@ -505,13 +588,11 @@
 
   .line-amount {
     @apply justify-self-end whitespace-nowrap text-base font-black text-ink;
-    grid-column: 2;
   }
 
   .qty-cluster {
     @apply grid items-center justify-end gap-2;
     grid-template-columns: 40px minmax(48px, auto) 40px;
-    grid-column: 3;
   }
 
   .qty-cluster.qty-readonly {
@@ -524,6 +605,10 @@
 
   .qty-cluster b {
     @apply min-w-12 whitespace-nowrap text-center text-base font-black leading-10 text-ink;
+  }
+
+  .line-row-action {
+    @apply justify-self-end;
   }
 
   .menu-category-icon,
@@ -640,12 +725,25 @@
   }
 
   .pairing-card {
-    @apply grid gap-4;
-    grid-template-columns: 180px minmax(0, 1fr);
+    @apply grid items-start gap-4 rounded-lg border border-line bg-wash p-3;
+    grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
+  }
+
+  .pairing-copy {
+    @apply max-w-3xl text-sm font-medium leading-6 text-muted;
+  }
+
+  .pairing-form {
+    @apply grid items-end gap-3;
+    grid-template-columns: minmax(220px, 360px) minmax(160px, 220px) auto;
+  }
+
+  .role-card-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .role-card {
-    @apply grid gap-1 text-left text-ink shadow-sm hover:border-line-strong hover:bg-wash;
+    @apply grid min-h-24 gap-1 text-left text-ink shadow-sm hover:border-line-strong hover:bg-wash;
   }
 
   .role-card strong {
@@ -672,7 +770,45 @@
   }
 
   .pairing-card img {
-    @apply h-[180px] w-[180px] rounded-md border border-line;
+    @apply h-56 w-56 rounded-md border border-line bg-white;
+  }
+
+  .pairing-qr-panel {
+    @apply grid min-w-0 justify-items-center gap-3 rounded-md border border-line bg-white p-3 text-center;
+  }
+
+  .pairing-code {
+    @apply grid min-w-0 max-w-full gap-1;
+  }
+
+  .pairing-code strong {
+    @apply text-xl font-black leading-6 text-ink;
+    overflow-wrap: anywhere;
+  }
+
+  .pairing-code span {
+    @apply text-sm font-semibold leading-5 text-muted;
+    overflow-wrap: anywhere;
+  }
+
+  .pairing-payload-panel {
+    @apply grid min-w-0 gap-2 rounded-md border border-line bg-white p-3;
+  }
+
+  .pairing-payload-panel > div {
+    @apply flex min-w-0 flex-wrap items-baseline justify-between gap-2;
+  }
+
+  .pairing-payload-panel strong {
+    @apply text-sm font-black text-ink;
+  }
+
+  .pairing-payload-panel span {
+    @apply text-sm font-semibold text-muted;
+  }
+
+  .pairing-payload-panel textarea {
+    @apply min-h-32 w-full resize-y whitespace-pre-wrap break-all font-mono text-xs leading-5;
   }
 
   .csv-import-grid {
@@ -690,6 +826,42 @@
 
   .print-preview {
     @apply max-w-full overflow-auto whitespace-pre-wrap rounded-lg border border-line bg-white p-3 font-mono text-xs;
+  }
+
+  .history-actions {
+    @apply flex flex-wrap justify-end gap-2;
+  }
+
+  .history-edit-modal {
+    @apply grid gap-3;
+  }
+
+  .history-edit-items,
+  .history-edit-search {
+    @apply grid max-h-64 gap-2 overflow-auto rounded-lg border border-line bg-wash p-2;
+  }
+
+  .history-edit-row,
+  .history-edit-search-row {
+    @apply flex min-w-0 items-center justify-between gap-3 rounded-md border border-line bg-white p-2;
+  }
+
+  .history-edit-row span {
+    @apply block text-xs font-semibold text-muted;
+  }
+
+  .history-edit-qty,
+  .history-edit-actions,
+  .history-edit-footer {
+    @apply flex shrink-0 items-center gap-2;
+  }
+
+  .history-edit-actions {
+    @apply max-w-[58%] overflow-x-auto;
+  }
+
+  .history-edit-footer {
+    @apply justify-end border-t border-line pt-3;
   }
 
   .empty,

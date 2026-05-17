@@ -144,6 +144,7 @@ export interface Bootstrap {
   setup?: {
     printerOutputMode: "test" | "live";
     managerPinConfigured?: boolean;
+    masterPinConfigured?: boolean;
     hubConnection?: HubConnectionSettings;
   };
 }
@@ -187,6 +188,10 @@ export interface PrintLayouts {
 
 export interface ManagerApprovalPayload {
   managerApproval: { pin: string; reason: string; approvedBy: string };
+}
+
+export interface MasterApprovalPayload {
+  masterApproval: { pin: string; reason: string; approvedBy: string };
 }
 
 export interface OrderItem {
@@ -330,10 +335,21 @@ export interface ReportBillSummary {
   paidPaise: number;
   settledAt: string | null;
   payments: Array<{ method: string; amountPaise: number; reference: string | null }>;
-  items?: Array<{ name: string; quantity: number; unitPricePaise: number; lineTotalPaise: number }>;
+  items?: Array<{
+    orderItemId?: string;
+    menuItemId?: string | null;
+    menuItemVariantId?: string | null;
+    saleGroupId?: string;
+    productionUnitId?: string | null;
+    name: string;
+    quantity: number;
+    unitPricePaise: number;
+    lineTotalPaise: number;
+  }>;
   isNc?: boolean;
   ncReason?: string | null;
   revisionNumber?: number;
+  modified?: boolean;
 }
 
 export interface ReportItemSummary {
@@ -485,6 +501,9 @@ export const hubApi = {
   deleteDish: (id: string) => apiFetch<{ id: string; deleted: boolean }>(`/menu-items/${id}`, { method: "DELETE" }),
   setManagerPin: (payload: { currentPin?: string; newPin: string; updatedBy: string }) =>
     apiFetch<{ configured: boolean }>("/settings/manager-pin", { method: "PUT", body: JSON.stringify(payload) }),
+  masterPinStatus: () => apiFetch<{ masterPinConfigured: boolean }>("/settings/master-pin/status"),
+  setMasterPin: (payload: { newPin: string; confirmPin: string; updatedBy: string }) =>
+    apiFetch<{ configured: boolean }>("/settings/master-pin", { method: "PUT", body: JSON.stringify(payload) }),
   hubConnection: (managerPin?: string) =>
     apiFetch<HubConnectionSettings>(`/settings/hub-connection${managerPin ? "?reveal=1" : ""}`, {
       headers: managerPin ? { "x-manager-pin": managerPin } : undefined
@@ -518,7 +537,7 @@ export const hubApi = {
   updateSaleGroup: (id: string, payload: { defaultProductionUnitId?: string | null; taxComponents?: Array<{ name: string; rateBps: number }>; ticketLabel?: "KOT" | "BOT"; active?: boolean }) =>
     apiFetch<{ id: string }>(`/sale-groups/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
   systemPrinters: () => apiFetch<SystemPrinterInfo[]>("/system-printers"),
-  receiptPrinter: () => apiFetch<{ printerHost: string | null; printerPort: number | null; printerName: string | null }>("/settings/receipt-printer"),
+  receiptPrinter: () => apiFetch<{ printerMode?: "system" | "network"; printerHost: string | null; printerPort: number | null; printerName: string | null }>("/settings/receipt-printer"),
   updateReceiptPrinter: (payload: { printerMode: "system" | "network"; printerName?: string; printerHost?: string; printerPort: number }) =>
     apiFetch("/settings/receipt-printer", { method: "PUT", body: JSON.stringify(payload) }),
   updatePrinterMode: (mode: "test" | "live") =>
@@ -600,6 +619,22 @@ export const hubApi = {
     apiFetch<{ printJobId: string; processed?: PrintProcessSummary }>(`/bills/${billId}/reprint`, { method: "POST", idempotent: "bill-reprint", idempotencyKey, body: JSON.stringify({ reason: payload.managerApproval.reason, ...payload }) }),
   historyReprintBill: (billId: string, idempotencyKey?: string) =>
     apiFetch<{ printJobId: string; processed?: PrintProcessSummary }>(`/bills/${billId}/history-reprint`, { method: "POST", idempotent: "bill-history-reprint", idempotencyKey, body: JSON.stringify({}) }),
+  historyEditBill: (
+    billId: string,
+    payload: MasterApprovalPayload & {
+      items: Array<
+        | { orderItemId?: string; menuItemId: string; menuItemVariantId?: string; quantity: number }
+        | { orderItemId?: string; openName: string; openPricePaise: number; saleGroupId: string; productionUnitId?: string | null; quantity: number }
+      >;
+    },
+    idempotencyKey?: string
+  ) =>
+    apiFetch<{ billId: string; revisionNumber: number; totalPaise: number; printJobId: string; processed?: PrintProcessSummary; modified: boolean }>(`/bills/${billId}/history-edit`, {
+      method: "POST",
+      idempotent: "bill-history-edit",
+      idempotencyKey,
+      body: JSON.stringify(payload)
+    }),
   markBillNc: (billId: string, payload: ManagerApprovalPayload, idempotencyKey?: string) =>
     apiFetch<{ printJobId: string; processed?: PrintProcessSummary }>(`/bills/${billId}/nc`, { method: "POST", idempotent: "bill-nc", idempotencyKey, body: JSON.stringify(payload) }),
   cancelOrder: (orderId: string, payload: ManagerApprovalPayload) =>

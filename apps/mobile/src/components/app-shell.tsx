@@ -210,13 +210,24 @@ function ConnectionBanner({ message, savingDraft }: { message: string; savingDra
   );
 }
 
-function ModeTabs({ mode, onModeChange, newItemCount }: { mode: ViewMode; onModeChange: (mode: ViewMode) => void; newItemCount: number }) {
+function ModeTabs({
+  mode,
+  onModeChange,
+  newItemCount,
+  showHistory = false
+}: {
+  mode: ViewMode;
+  onModeChange: (mode: ViewMode) => void;
+  newItemCount: number;
+  showHistory?: boolean;
+}) {
+  const tabs: ViewMode[] = showHistory ? ["tables", "menu", "ticket", "history"] : ["tables", "menu", "ticket"];
   return (
     <View style={styles.modeTabs}>
-      {(["tables", "menu", "ticket"] as ViewMode[]).map((entry) => (
+      {tabs.map((entry) => (
         <Pressable key={entry} style={[styles.modeTab, mode === entry && styles.modeTabActive]} onPress={() => onModeChange(entry)}>
           <Text style={[styles.modeTabText, mode === entry && styles.modeTabTextActive]}>
-            {entry === "tables" ? "Tables" : entry === "menu" ? "Menu" : "Check"}
+            {entry === "tables" ? "Tables" : entry === "menu" ? "Menu" : entry === "ticket" ? "Check" : "History"}
           </Text>
           {entry === "ticket" && newItemCount > 0 && mode !== "ticket" ? (
             <View style={styles.modeBadge}>

@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Alert, LayoutAnimation, Pressable, ScrollView, SectionList, Text, TextInput, View } from "react-native";
-import { formatPosDateTime, getTableDisplayState, searchMenuItems, tableDisplayLabel, type OrderItemInput, type SaleGroupKind } from "@gaurav-pos/shared";
+import { ActivityIndicator, Alert, LayoutAnimation, Modal, Pressable, ScrollView, SectionList, Text, TextInput, View } from "react-native";
+import { formatPosDateTime, getTableDisplayState, isTransferTargetTable, searchMenuItems, tableDisplayLabel, type OrderItemInput, type SaleGroupKind } from "@gaurav-pos/shared";
 
-import type { CurrentDaySummary, DailyReportDetail, DailyReportRow, HubBootstrap, HubOrder, KdsTicket } from "../lib/hub-client";
+import type { HubBootstrap, HubOrder, KdsTicket } from "../lib/hub-client";
 import { mobileDraftOrderStateSignature, mobileSavedOrderStateSignature } from "../lib/order-state";
 import { formatMobileMenuActionLabel } from "../lib/menu-actions";
 import { amountInputToPaise, categoryToneFor, findMenuVariant, formatRupees, paiseToRupeeInput } from "../lib/mobile-format";
+import { clampTransferQuantity, filterTablesForSearch, groupTablesByFloor, normaliseTransferQuantityInput, stepTransferQuantity } from "../lib/table-flow";
 import type { ConnectionState, MobileOrderStateItem, OrderStateSaveMode, PaymentMethod, PrintMode } from "../lib/mobile-types";
 import { palette, styles } from "../styles/app-styles";
 import { CollapsibleSection, EmptyState, LabeledMoneyInput, SummaryBox, UncontrolledInput } from "./app-shell";
@@ -21,13 +22,10 @@ function TicketScreen({
   sentItems,
   menuItems,
   tables,
+  floors,
   draftTotal,
   tableTotal,
   currentOrder,
-  currentSummary,
-  dailyReports,
-  selectedHistoryDayId,
-  selectedHistoryDetail,
   connection,
   sending,
   canShift,
@@ -36,12 +34,9 @@ function TicketScreen({
   onChangeQty,
   onShiftTable,
   onShiftItem,
-  onCancelSentItem,
   onGenerateBill,
   onSaveOrderState,
   onReprintBill,
-  onHistoryPrint,
-  onSelectHistoryDay,
   onMarkNc,
   onReviseBill,
   onSettleBill,
@@ -55,13 +50,10 @@ function TicketScreen({
   sentItems: HubOrder["items"];
   menuItems: HubBootstrap["menuItems"];
   tables: HubBootstrap["tables"];
+  floors: HubBootstrap["floors"];
   draftTotal: number;
   tableTotal: number;
   currentOrder: HubOrder | null;
-  currentSummary: CurrentDaySummary | null;
-  dailyReports: DailyReportRow[];
-  selectedHistoryDayId: string | null;
-  selectedHistoryDetail: DailyReportDetail | null;
   connection: ConnectionState;
   sending: boolean;
   canShift: boolean;
@@ -70,12 +62,9 @@ function TicketScreen({
   onChangeQty: (index: number, delta: number) => void;
   onShiftTable: (tableId: string) => void;
   onShiftItem: (orderItemId: string, quantity: number, toTableId: string) => void;
-  onCancelSentItem: (orderItemId: string, quantity: number, pin: string, reason: string) => void;
   onGenerateBill: () => void;
   onSaveOrderState: (saveMode: OrderStateSaveMode, items: MobileOrderStateItem[], approval?: { pin: string; reason: string }) => void;
   onReprintBill: (pin: string, reason: string) => void;
-  onHistoryPrint: (billId: string) => void;
-  onSelectHistoryDay: (posDayId: string | null) => void;
   onMarkNc: (pin: string, reason: string) => void;
   onReviseBill: (pin: string, reason: string) => void;
   onSettleBill: (input: {
@@ -86,17 +75,25 @@ function TicketScreen({
   }) => void;
   onSubmit: (printMode: PrintMode) => void;
 }) {
+  const [fullShiftTargetId, setFullShiftTargetId] = useState("");
   const [itemShiftTargetId, setItemShiftTargetId] = useState("");
   const [itemShiftQty, setItemShiftQty] = useState<Record<string, string>>({});
-  const [cancelQty, setCancelQty] = useState<Record<string, string>>({});
-  const [cancelPin, setCancelPin] = useState("");
-  const [cancelReason, setCancelReason] = useState("Item cancelled");
+  const [targetPickerMode, setTargetPickerMode] = useState<"full" | "items" | null>(null);
+  const [targetSearch, setTargetSearch] = useState("");
   const [stateItems, setStateItems] = useState<MobileOrderStateItem[]>([]);
   const [stateSearch, setStateSearch] = useState("");
-  const [statePin, setStatePin] = useState("");
-  const [stateReason, setStateReason] = useState("Table state edited");
+  const [stateApprovalMode, setStateApprovalMode] = useState<OrderStateSaveMode | null>(null);
+  const [approvalPin, setApprovalPin] = useState("");
+  const [approvalReason, setApprovalReason] = useState("Billed table state edited");
   const canSubmit = Boolean(selectedTableName && items.length > 0 && !sending);
-  const shiftTargets = tables.filter((table) => table.id !== selectedTableId && getTableDisplayState(table) !== "disabled");
+  const shiftTargets = useMemo(
+    () => tables.filter((table) => table.id !== selectedTableId && isTransferTargetTable(table)),
+    [selectedTableId, tables]
+  );
+  const visibleShiftTargets = useMemo(() => filterTablesForSearch(shiftTargets, targetSearch), [shiftTargets, targetSearch]);
+  const visibleShiftTargetGroups = useMemo(() => groupTablesByFloor(visibleShiftTargets, floors), [floors, visibleShiftTargets]);
+  const selectedFullShiftTarget = shiftTargets.find((table) => table.id === fullShiftTargetId) ?? null;
+  const selectedItemShiftTarget = shiftTargets.find((table) => table.id === itemShiftTargetId) ?? null;
   const sentCount = sentItems.reduce((total, item) => total + item.quantity, 0);
   const sentItemsSignature = sentItems
     .map((item) => [item.id, item.menu_item_id, item.menu_item_variant_id, item.name_snapshot, item.unit_price_paise, item.quantity, item.status].join(":"))
@@ -137,6 +134,14 @@ function TicketScreen({
       )
     );
   }, [currentOrder?.order?.id, sentItemsSignature]);
+  useEffect(() => {
+    if (fullShiftTargetId && !shiftTargets.some((table) => table.id === fullShiftTargetId)) setFullShiftTargetId("");
+    if (itemShiftTargetId && !shiftTargets.some((table) => table.id === itemShiftTargetId)) setItemShiftTargetId("");
+    setItemShiftQty((current) => {
+      const allowed = new Set(sentItems.map((item) => item.id));
+      return Object.fromEntries(Object.entries(current).filter(([itemId]) => allowed.has(itemId)));
+    });
+  }, [fullShiftTargetId, itemShiftTargetId, sentItemsSignature, shiftTargets]);
   const toggleSection = (id: string) => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setExpandedSections((prev) => {
@@ -164,19 +169,42 @@ function TicketScreen({
   };
   const requestStateSave = (saveMode: OrderStateSaveMode) => {
     if (!hasStateChanges) return;
-    if (isBilledState && !statePin.trim()) {
-      Alert.alert("Manager PIN needed", "Billed table changes need manager PIN.");
+    if (isBilledState) {
+      setStateApprovalMode(saveMode);
+      setApprovalPin("");
+      setApprovalReason("Billed table state edited");
       return;
     }
-    const approval = isBilledState ? { pin: statePin, reason: stateReason || "Billed table state edited" } : undefined;
-    if (saveMode === "save" && !isBilledState) {
+    if (saveMode === "save") {
       Alert.alert("Save without print?", "No modification print or KDS update will be generated.", [
         { text: "Review", style: "cancel" },
-        { text: "Save", onPress: () => onSaveOrderState(saveMode, stateItems, approval) }
+        { text: "Save", onPress: () => onSaveOrderState(saveMode, stateItems) }
       ]);
       return;
     }
-    onSaveOrderState(saveMode, stateItems, approval);
+    onSaveOrderState(saveMode, stateItems);
+  };
+  const confirmBilledStateSave = () => {
+    if (!stateApprovalMode) return;
+    if (!approvalPin.trim()) {
+      Alert.alert("Manager PIN needed", "Enter manager PIN to save billed table changes.");
+      return;
+    }
+    onSaveOrderState(stateApprovalMode, stateItems, {
+      pin: approvalPin.trim(),
+      reason: approvalReason.trim() || "Billed table state edited"
+    });
+    setStateApprovalMode(null);
+    setApprovalPin("");
+  };
+  const openTargetPicker = (mode: "full" | "items") => {
+    setTargetPickerMode(mode);
+    setTargetSearch("");
+  };
+  const selectShiftTarget = (tableId: string) => {
+    if (targetPickerMode === "full") setFullShiftTargetId(tableId);
+    if (targetPickerMode === "items") setItemShiftTargetId(tableId);
+    setTargetPickerMode(null);
   };
   return (
     <View style={styles.panel}>
@@ -279,7 +307,7 @@ function TicketScreen({
             <View style={styles.sectionHeaderRow}>
               <View style={styles.flexText}>
                 <Text style={styles.actionTitle}>{isBilledState ? "Edit Billed Table" : "Edit Table State"}</Text>
-                <Text style={styles.actionMeta}>{isBilledState ? "Manager PIN required before saving changes." : "Save quietly or save and print modification tickets."}</Text>
+                <Text style={styles.actionMeta}>{isBilledState ? "Manager PIN opens only when saving changes." : "Save quietly or save and print modification tickets."}</Text>
               </View>
               <Text style={styles.actionAmount}>Rs {formatRupees(stateTotal)}</Text>
             </View>
@@ -331,25 +359,6 @@ function TicketScreen({
               )}
             </View>
 
-            {isBilledState ? (
-              <View style={styles.managerBox}>
-                <TextInput
-                  style={styles.input}
-                  value={statePin}
-                  onChangeText={setStatePin}
-                  secureTextEntry
-                  keyboardType="number-pad"
-                  placeholder="Manager PIN"
-                />
-                <TextInput
-                  style={styles.input}
-                  value={stateReason}
-                  onChangeText={setStateReason}
-                  placeholder="Reason"
-                />
-              </View>
-            ) : null}
-
             {hasStateChanges ? (
               <View style={styles.sendButtonRow}>
                 <Pressable style={[styles.secondaryButton, styles.sendButton, sending && styles.buttonDisabled]} disabled={sending} onPress={() => requestStateSave("save")}>
@@ -366,50 +375,6 @@ function TicketScreen({
             )}
           </View>
         )}
-        {canBill && sentItems.length > 0 ? (
-          <View style={[styles.actionSection, styles.cancelPanel]}>
-            <View>
-              <Text style={styles.actionTitle}>Cancel Sent Item</Text>
-              <Text style={styles.actionMeta}>Manager PIN required. Cancellation ticket prints.</Text>
-            </View>
-            <TextInput
-              style={styles.input}
-              value={cancelPin}
-              onChangeText={setCancelPin}
-              secureTextEntry
-              keyboardType="number-pad"
-              placeholder="Manager PIN"
-            />
-            <TextInput
-              style={styles.input}
-              value={cancelReason}
-              onChangeText={setCancelReason}
-              placeholder="Cancellation reason"
-            />
-            {sentItems.map((item) => {
-              const quantityText = cancelQty[item.id] ?? "1";
-              const quantity = Math.min(item.quantity, Math.max(1, Number(quantityText.replace(/\D/g, "") || 1)));
-              return (
-                <View key={`cancel-${item.id}`} style={styles.itemShiftRow}>
-                  <Text style={styles.sentName} numberOfLines={2}>{item.name_snapshot}</Text>
-                  <TextInput
-                    style={styles.shiftQtyInput}
-                    value={quantityText}
-                    onChangeText={(value) => setCancelQty((current) => ({ ...current, [item.id]: value.replace(/\D/g, "").slice(0, 3) }))}
-                    keyboardType="number-pad"
-                  />
-                  <Pressable
-                    style={[styles.dangerSmallButton, sending && styles.buttonDisabled]}
-                    disabled={sending}
-                    onPress={() => onCancelSentItem(item.id, quantity, cancelPin, cancelReason)}
-                  >
-                    <Text style={styles.dangerSmallButtonText}>Cancel</Text>
-                  </Pressable>
-                </View>
-              );
-            })}
-          </View>
-        ) : null}
       </CollapsibleSection>
 
       {selectedTableId && sentItems.length > 0 && canShift ? (
@@ -418,45 +383,73 @@ function TicketScreen({
             <Text style={styles.smallMuted}>No other active table is available for transfer.</Text>
           ) : (
             <>
-              <Text style={styles.smallMuted}>Full table transfer</Text>
-              <View style={styles.shiftGrid}>
-                {shiftTargets.map((table) => (
-                  <Pressable key={table.id} style={styles.shiftButton} onPress={() => onShiftTable(table.id)}>
-                    <Text style={styles.shiftButtonText}>{table.name}</Text>
-                    <Text style={styles.shiftButtonMeta}>{tableDisplayLabel(getTableDisplayState(table))}</Text>
+              <View style={styles.shiftActionCard}>
+                <View style={styles.sectionHeaderRow}>
+                  <View style={styles.flexText}>
+                    <Text style={styles.actionTitle}>Full table transfer</Text>
+                    <Text style={styles.actionMeta}>{selectedFullShiftTarget ? `${selectedFullShiftTarget.name} · ${selectedFullShiftTarget.floor_name}` : "Choose a target table from all floors."}</Text>
+                  </View>
+                </View>
+                <View style={styles.sendButtonRow}>
+                  <Pressable style={[styles.secondaryButton, styles.sendButton]} onPress={() => openTargetPicker("full")}>
+                    <Text style={styles.secondaryButtonText}>{selectedFullShiftTarget ? "Change target" : "Choose table"}</Text>
                   </Pressable>
-                ))}
-              </View>
-              <Text style={styles.smallMuted}>Selected item quantities</Text>
-              <View style={styles.fieldBlock}>
-                <Text style={styles.inputLabel}>Transfer items to</Text>
-                <View style={styles.shiftGrid}>
-                  {shiftTargets.map((table) => (
-                    <Pressable key={table.id} style={[styles.shiftButton, itemShiftTargetId === table.id && styles.shiftButtonActive]} onPress={() => setItemShiftTargetId(table.id)}>
-                      <Text style={styles.shiftButtonText}>{table.name}</Text>
-                      <Text style={styles.shiftButtonMeta}>{tableDisplayLabel(getTableDisplayState(table))}</Text>
-                    </Pressable>
-                  ))}
+                  <Pressable
+                    style={[styles.primaryButton, styles.sendButton, (!selectedFullShiftTarget || sending) && styles.buttonDisabled]}
+                    disabled={!selectedFullShiftTarget || sending}
+                    onPress={() => selectedFullShiftTarget && onShiftTable(selectedFullShiftTarget.id)}
+                  >
+                    <Text style={styles.primaryButtonText}>{sending ? "Moving..." : "Transfer table"}</Text>
+                  </Pressable>
                 </View>
               </View>
+
+              <View style={styles.shiftActionCard}>
+                <View style={styles.sectionHeaderRow}>
+                  <View style={styles.flexText}>
+                    <Text style={styles.actionTitle}>Transfer selected items</Text>
+                    <Text style={styles.actionMeta}>{selectedItemShiftTarget ? `${selectedItemShiftTarget.name} · ${selectedItemShiftTarget.floor_name}` : "Pick one target table, then move item quantities."}</Text>
+                  </View>
+                </View>
+                <Pressable style={styles.secondaryButton} onPress={() => openTargetPicker("items")}>
+                  <Text style={styles.secondaryButtonText}>{selectedItemShiftTarget ? "Change item target" : "Choose item target"}</Text>
+                </Pressable>
+              </View>
               {sentItems.map((item) => {
-                const quantityText = itemShiftQty[item.id] ?? "1";
-                const quantity = Math.min(item.quantity, Math.max(1, Number(quantityText.replace(/\D/g, "") || 1)));
+                const quantity = clampTransferQuantity(itemShiftQty[item.id], item.quantity);
+                const canTransferItem = Boolean(selectedItemShiftTarget && !sending && quantity > 0);
                 return (
                   <View key={`shift-${item.id}`} style={styles.itemShiftRow}>
                     <Text style={styles.sentName} numberOfLines={2}>{item.name_snapshot}</Text>
-                    <TextInput
-                      style={styles.shiftQtyInput}
-                      value={quantityText}
-                      onChangeText={(value) => setItemShiftQty((current) => ({ ...current, [item.id]: value.replace(/\D/g, "").slice(0, 3) }))}
-                      keyboardType="number-pad"
-                    />
+                    <View style={styles.transferQtyStepper}>
+                      <Pressable
+                        style={[styles.transferQtyButton, quantity <= 1 && styles.buttonDisabled]}
+                        disabled={quantity <= 1}
+                        onPress={() => setItemShiftQty((current) => ({ ...current, [item.id]: stepTransferQuantity(current[item.id], -1, item.quantity) }))}
+                      >
+                        <Text style={styles.qtyText}>-</Text>
+                      </Pressable>
+                      <TextInput
+                        style={styles.shiftQtyInput}
+                        value={quantity ? String(quantity) : ""}
+                        onChangeText={(value) => setItemShiftQty((current) => ({ ...current, [item.id]: normaliseTransferQuantityInput(value, item.quantity) }))}
+                        keyboardType="number-pad"
+                        selectTextOnFocus
+                      />
+                      <Pressable
+                        style={[styles.transferQtyButton, quantity >= item.quantity && styles.buttonDisabled]}
+                        disabled={quantity >= item.quantity}
+                        onPress={() => setItemShiftQty((current) => ({ ...current, [item.id]: stepTransferQuantity(current[item.id], 1, item.quantity) }))}
+                      >
+                        <Text style={styles.qtyText}>+</Text>
+                      </Pressable>
+                    </View>
                     <Pressable
-                      style={[styles.shiftButton, (!itemShiftTargetId || sending) && styles.buttonDisabled]}
-                      disabled={!itemShiftTargetId || sending}
+                      style={[styles.shiftButton, !canTransferItem && styles.buttonDisabled]}
+                      disabled={!canTransferItem}
                       onPress={() => onShiftItem(item.id, quantity, itemShiftTargetId)}
                     >
-                      <Text style={styles.shiftButtonText}>Transfer</Text>
+                      <Text style={styles.shiftButtonText}>Move {quantity}</Text>
                     </Pressable>
                   </View>
                 );
@@ -473,22 +466,106 @@ function TicketScreen({
           <CaptainBillingPanel
             canBill={canBill}
             currentOrder={currentOrder}
-            currentSummary={currentSummary}
-            dailyReports={dailyReports}
-            selectedHistoryDayId={selectedHistoryDayId}
-            selectedHistoryDetail={selectedHistoryDetail}
             hasNewItems={items.length > 0}
             sending={sending}
             onGenerateBill={onGenerateBill}
             onReprintBill={onReprintBill}
-            onHistoryPrint={onHistoryPrint}
-            onSelectHistoryDay={onSelectHistoryDay}
             onMarkNc={onMarkNc}
             onReviseBill={onReviseBill}
             onSettleBill={onSettleBill}
           />
         </CollapsibleSection>
       ) : null}
+
+      <Modal visible={Boolean(targetPickerMode)} transparent animationType="fade" onRequestClose={() => setTargetPickerMode(null)}>
+        <View style={styles.popupBackdrop}>
+          <View style={styles.popupCard}>
+            <View style={styles.sectionHeaderRow}>
+              <View style={styles.flexText}>
+                <Text style={styles.actionTitle}>{targetPickerMode === "full" ? "Transfer table to" : "Transfer items to"}</Text>
+                <Text style={styles.actionMeta}>Search by table or floor. Free and running tables are allowed.</Text>
+              </View>
+            </View>
+            <TextInput
+              style={styles.input}
+              value={targetSearch}
+              onChangeText={setTargetSearch}
+              placeholder="Search table or floor"
+              placeholderTextColor={palette.muted}
+              autoCorrect={false}
+            />
+            <ScrollView style={styles.popupScroll} contentContainerStyle={styles.floorTableStack} keyboardShouldPersistTaps="always">
+              {visibleShiftTargetGroups.length === 0 ? (
+                <EmptyState title="No matching tables" text="Clear search or check active tables on the hub." compact />
+              ) : (
+                visibleShiftTargetGroups.map((group) => (
+                  <View key={`picker-${group.floorId}`} style={styles.floorTableGroup}>
+                    <View style={styles.floorTableHeader}>
+                      <Text style={styles.subhead}>{group.floorName}</Text>
+                      <Text style={styles.smallMuted}>{group.tables.length}</Text>
+                    </View>
+                    <View style={styles.targetPickerList}>
+                      {group.tables.map((table) => {
+                        const state = getTableDisplayState(table);
+                        const selected = table.id === (targetPickerMode === "full" ? fullShiftTargetId : itemShiftTargetId);
+                        return (
+                          <Pressable key={table.id} style={[styles.targetPickerRow, selected && styles.shiftButtonActive]} onPress={() => selectShiftTarget(table.id)}>
+                            <View style={styles.flexText}>
+                              <Text style={styles.shiftButtonText}>{table.name}</Text>
+                              <Text style={styles.shiftButtonMeta}>{table.floor_name}</Text>
+                            </View>
+                            <Text style={[styles.shiftButtonMeta, state === "running" && styles.tableStatusBusy, state === "bill_printed" && styles.tableStatusBilled]}>
+                              {tableDisplayLabel(state)}
+                            </Text>
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+                  </View>
+                ))
+              )}
+            </ScrollView>
+            <Pressable style={styles.secondaryButton} onPress={() => setTargetPickerMode(null)}>
+              <Text style={styles.secondaryButtonText}>Close</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={Boolean(stateApprovalMode)} transparent animationType="fade" onRequestClose={() => setStateApprovalMode(null)}>
+        <View style={styles.popupBackdrop}>
+          <View style={styles.popupCard}>
+            <View>
+              <Text style={styles.actionTitle}>Manager approval</Text>
+              <Text style={styles.actionMeta}>Billed table changes need manager PIN before saving.</Text>
+            </View>
+            <TextInput
+              style={styles.input}
+              value={approvalPin}
+              onChangeText={setApprovalPin}
+              secureTextEntry
+              keyboardType="number-pad"
+              placeholder="Manager PIN"
+              placeholderTextColor={palette.muted}
+            />
+            <TextInput
+              style={styles.input}
+              value={approvalReason}
+              onChangeText={setApprovalReason}
+              placeholder="Reason"
+              placeholderTextColor={palette.muted}
+            />
+            <View style={styles.sendButtonRow}>
+              <Pressable style={[styles.secondaryButton, styles.sendButton]} onPress={() => setStateApprovalMode(null)}>
+                <Text style={styles.secondaryButtonText}>Cancel</Text>
+              </Pressable>
+              <Pressable style={[styles.primaryButton, styles.sendButton, sending && styles.buttonDisabled]} disabled={sending} onPress={confirmBilledStateSave}>
+                <Text style={styles.primaryButtonText}>{sending ? "Saving..." : stateApprovalMode === "save_print" ? "Save and print" : "Save"}</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }

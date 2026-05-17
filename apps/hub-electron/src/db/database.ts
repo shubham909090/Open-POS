@@ -32,7 +32,7 @@ export class HubDatabase {
     const seed = this.db.transaction(() => {
       const saleGroups = [
         ["sg-food", "Food", "food", "Food", "KOT", '[{"name":"CGST","rateBps":250},{"name":"SGST","rateBps":250}]'],
-        ["sg-alcohol", "Alcohol", "alcohol", "Alcohol", "BOT", '[{"name":"VAT","rateBps":1000}]'],
+        ["sg-alcohol", "Alcohol", "alcohol", "Alcohol", "BOT", "[]"],
         ["sg-beverage", "Beverage", "beverage", "Beverage", "KOT", '[{"name":"CGST","rateBps":250},{"name":"SGST","rateBps":250}]'],
         ["sg-other", "Other", "other", "Other", "KOT", "[]"]
       ] as const;

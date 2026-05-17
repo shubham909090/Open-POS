@@ -14,6 +14,9 @@ import {
   type DomainEvent,
   type ManagerApprovalInput,
   type ManagerPinInput,
+  type MasterApprovalInput,
+  type SetMasterPinInput,
+  type HistoryEditBillInput,
   type MarkNcBillInput,
   type HubConnectionSettingsInput,
   type MoveOrderItemsInput,
@@ -254,11 +257,12 @@ interface DaySummary {
     paidPaise: number;
     settledAt: string | null;
     payments: Array<{ method: string; amountPaise: number; reference: string | null }>;
-    items: Array<{ name: string; quantity: number; unitPricePaise: number; lineTotalPaise: number }>;
-    isNc?: boolean;
-    ncReason?: string | null;
-    revisionNumber?: number;
-  }>;
+	    items: Array<{ orderItemId: string; menuItemId: string | null; menuItemVariantId: string | null; name: string; quantity: number; unitPricePaise: number; lineTotalPaise: number; saleGroupId: string; productionUnitId: string | null }>;
+	    isNc?: boolean;
+	    ncReason?: string | null;
+	    revisionNumber?: number;
+	    modified?: boolean;
+	  }>;
   itemSummaries: Array<{
     menuItemId: string;
     name: string;
@@ -602,7 +606,7 @@ export class OrderService {
 
   reprintBillFromHistory(billId: string, requestedBy: string): { printJobId: string } {
     const run = this.db.transaction(() => {
-      const printJobId = this.enqueueBillReprint(billId, requestedBy, "REPRINT\n");
+      const printJobId = this.enqueueBillReprint(billId, requestedBy, "");
       this.appendEvent("bill.history_reprinted", "bill", billId, { billId, requestedBy, reason: "history_reprint", printJobId });
       return { printJobId };
     });
@@ -647,7 +651,7 @@ export class OrderService {
         tableName: bill.table_name,
         createdAt: new Date().toISOString()
       })
-    )}\n${suffix}`;
+    )}${suffix ? `\n${suffix}` : ""}`;
 
     const printJobId = this.enqueuePrintJob({
       targetType: "BILL",
@@ -729,8 +733,20 @@ export class OrderService {
     return { configured: true };
   }
 
+  setMasterPin(input: SetMasterPinInput): { configured: boolean } {
+    const currentHash = this.getSetting("master_pin_hash");
+    if (currentHash) throw new DomainError("Master PIN is already configured", 409);
+    this.upsertSetting("master_pin_hash", this.hashManagerPin(input.newPin));
+    this.appendEvent("master_pin.created", "hub_setting", "master_pin", { updatedBy: input.updatedBy });
+    return { configured: true };
+  }
+
   isManagerPinConfigured(): boolean {
     return Boolean(this.getSetting("manager_pin_hash"));
+  }
+
+  isMasterPinConfigured(): boolean {
+    return Boolean(this.getSetting("master_pin_hash"));
   }
 
   verifyManagerPinForSession(pin: string): void {
@@ -1703,8 +1719,26 @@ export class OrderService {
 
   adjustAlcoholStock(menuItemId: string, input: AdjustAlcoholStockInput): { id: string } {
     const run = this.db.transaction(() => {
-      this.verifyManagerApproval(input.managerApproval, "alcohol_stock.adjust", "menu_item", menuItemId, input.managerApproval.approvedBy);
       const stock = this.requireAlcoholStock(menuItemId);
+      const lowersStock =
+        input.mode === "delta"
+          ? (input.sealedLargeCount ?? 0) < 0 || (input.openLargeMl ?? 0) < 0 || (input.sealedSmallCount ?? 0) < 0
+          : false;
+      const usesExactStock = input.mode === "set";
+      if (usesExactStock || lowersStock) {
+        if (!input.masterApproval) {
+          throw new DomainError(usesExactStock ? "Master PIN is required for exact liquor stock edits" : "Master PIN is required for lowering liquor stock", 403);
+        }
+        this.verifyMasterApproval(
+          input.masterApproval,
+          usesExactStock ? "alcohol_stock.set_exact" : "alcohol_stock.lower",
+          "menu_item",
+          menuItemId,
+          input.masterApproval?.approvedBy ?? "owner"
+        );
+      } else {
+        this.verifyManagerApproval(input.managerApproval, "alcohol_stock.adjust", "menu_item", menuItemId, input.managerApproval?.approvedBy ?? "manager");
+      }
       const next = {
         sealedLarge: input.mode === "set" ? (input.sealedLargeCount ?? stock.sealed_large_count) : stock.sealed_large_count + (input.sealedLargeCount ?? 0),
         openLargeMl: input.mode === "set" ? (input.openLargeMl ?? stock.open_large_ml) : stock.open_large_ml + (input.openLargeMl ?? 0),
@@ -1721,9 +1755,9 @@ export class OrderService {
         balanceSealedLarge: next.sealedLarge,
         balanceOpenLargeMl: next.openLargeMl,
         balanceSealedSmall: next.sealedSmall,
-        approvedBy: input.managerApproval.approvedBy
+        approvedBy: input.masterApproval?.approvedBy ?? input.managerApproval?.approvedBy ?? "manager"
       });
-      this.appendEvent("alcohol_stock.adjusted", "menu_item", menuItemId, { menuItemId, mode: input.mode, approvedBy: input.managerApproval.approvedBy });
+      this.appendEvent("alcohol_stock.adjusted", "menu_item", menuItemId, { menuItemId, mode: input.mode, approvedBy: input.masterApproval?.approvedBy ?? input.managerApproval?.approvedBy ?? "manager" });
       return { id: menuItemId };
     });
     return run();
@@ -1872,11 +1906,13 @@ export class OrderService {
     return { id: printJobId };
   }
 
-  getReceiptPrinter(): { printerHost: string | null; printerPort: number | null; printerName: string | null } {
+  getReceiptPrinter(): { printerMode: "system" | "network"; printerHost: string | null; printerPort: number | null; printerName: string | null } {
+    const mode = this.getSetting("receipt_printer_mode");
     const host = this.getSetting("receipt_printer_host");
     const port = this.getSetting("receipt_printer_port");
     const name = this.getSetting("receipt_printer_name");
     return {
+      printerMode: mode === "network" ? "network" : "system",
       printerHost: host || null,
       printerPort: port ? Number(port) : null,
       printerName: name || null
@@ -2117,6 +2153,73 @@ export class OrderService {
         printJobIds: tickets.printJobIds
       });
       return { billId, revisionNumber, totalPaise: totals.totalPaise, kotIds: tickets.kotIds, printJobIds: tickets.printJobIds };
+    });
+    return run();
+  }
+
+  editHistoryBill(billId: string, input: HistoryEditBillInput): { billId: string; revisionNumber: number; totalPaise: number; printJobId: string; modified: boolean } {
+    const run = this.db.transaction(() => {
+      const bill = this.getBillById(billId);
+      if (!bill) throw new DomainError("Bill not found", 404);
+      if (bill.status !== "paid" && !bill.is_nc) {
+        throw new DomainError("Only paid or NC bills can be edited from Order History");
+      }
+      this.verifyMasterApproval(input.masterApproval, "bill.history_edit", "bill", billId, input.masterApproval.approvedBy);
+      const order = this.requireOrderById(bill.order_id);
+      const table = this.requireTable(order.table_id);
+      const now = new Date().toISOString();
+      const previousItems = this.getOrderItems(order.id);
+      const previousAlcoholUsage = this.calculateAlcoholUsageForItems(previousItems.filter((item) => item.quantity > 0 && item.status !== "cancelled"));
+      const previousVariantIds = new Set(previousItems.map((item) => item.menu_item_variant_id).filter((id): id is string => Boolean(id)));
+      const previousItemsById = new Map(previousItems.map((item) => [item.id, item]));
+      const normalizedItems = this.prepareSubmittedItems(input.items, now, previousVariantIds, previousItemsById);
+      const menuById = this.getMenuItems([
+        ...normalizedItems.map((item) => item.menuItemId).filter((id): id is string => Boolean(id)),
+        ...previousItems.map((item) => item.menu_item_id).filter((id): id is string => Boolean(id))
+      ]);
+      this.applyOrderItemDiff(order.id, normalizedItems, previousItems, menuById, now, true);
+      const activeItems = this.getOrderItems(order.id).filter((item) => item.quantity > 0 && item.status !== "cancelled");
+      if (activeItems.length === 0) throw new DomainError("History bill edit needs at least one item");
+      const totals = this.calculateBillTotals(activeItems);
+      const finalTotalPaise = Math.max(0, totals.totalPaise - bill.discount_paise + bill.tip_paise);
+      const revisionNumber = (bill.revision_number ?? 1) + 1;
+      if (bill.status === "paid" || bill.is_nc) {
+        this.applyAlcoholUsageDeltaForHistoryEdit(billId, previousAlcoholUsage, this.calculateAlcoholUsageForItems(activeItems));
+      }
+
+      this.orm
+        .update(bills)
+        .set({
+          subtotalPaise: totals.subtotalPaise,
+          taxPaise: totals.taxPaise,
+          totalPaise: totals.totalPaise,
+          finalTotalPaise,
+          taxBreakdownJson: JSON.stringify(totals.taxBreakdown),
+          revisionNumber
+        })
+        .where(eq(bills.id, billId))
+        .run();
+
+      this.syncPaidBillPaymentToFinalTotal(billId, finalTotalPaise, input.masterApproval.approvedBy, now);
+      this.recordBillRevision(billId, revisionNumber, totals, input.masterApproval.reason, input.masterApproval.approvedBy, now, {
+        discountPaise: bill.discount_paise,
+        tipPaise: bill.tip_paise,
+        finalTotalPaise
+      });
+
+      const updatedBill = this.getBillById(billId);
+      if (!updatedBill) throw new DomainError("Bill not found after history edit", 500);
+      const printJobId = this.enqueuePrintJob({
+        targetType: "BILL",
+        targetId: billId,
+        productionUnitId: null,
+        ...this.getReceiptPrinter(),
+        payload: renderBillTicket(this.buildBillTicket({ bill: updatedBill, tableName: table.name, createdAt: now }))
+      });
+      this.orm.update(bills).set({ printCount: sql`${bills.printCount} + 1` }).where(eq(bills.id, billId)).run();
+      this.refreshDailyReportSnapshot(order.pos_day_id, now);
+      this.appendEvent("bill.history_edited", "bill", billId, { billId, revisionNumber, totalPaise: totals.totalPaise, printJobId, modified: true });
+      return { billId, revisionNumber, totalPaise: totals.totalPaise, printJobId, modified: true };
     });
     return run();
   }
@@ -2517,15 +2620,27 @@ export class OrderService {
       .all(posDayId) as Array<{ bill_id: string; method: string; amount_paise: number; reference: string | null }>;
     const billItemRows = this.db
       .prepare(
-        `SELECT b.id AS bill_id, oi.name_snapshot AS name, oi.quantity, oi.unit_price_paise,
-          (oi.quantity * oi.unit_price_paise) AS line_total_paise
+	        `SELECT b.id AS bill_id, oi.id AS order_item_id, oi.menu_item_id, oi.menu_item_variant_id,
+	          oi.name_snapshot AS name, oi.quantity, oi.unit_price_paise, oi.sale_group_id, oi.production_unit_id,
+	          (oi.quantity * oi.unit_price_paise) AS line_total_paise
          FROM order_items oi
          JOIN orders o ON o.id = oi.order_id
          JOIN bills b ON b.order_id = o.id
          WHERE o.pos_day_id = ? AND oi.status != 'cancelled'
          ORDER BY b.bill_number ASC, oi.created_at ASC, oi.id ASC`
       )
-      .all(posDayId) as Array<{ bill_id: string; name: string; quantity: number; unit_price_paise: number; line_total_paise: number }>;
+	      .all(posDayId) as Array<{
+	        bill_id: string;
+	        order_item_id: string;
+	        menu_item_id: string | null;
+	        menu_item_variant_id: string | null;
+	        name: string;
+	        quantity: number;
+	        unit_price_paise: number;
+	        line_total_paise: number;
+	        sale_group_id: string;
+	        production_unit_id: string | null;
+	      }>;
     const itemSummaries = this.db
       .prepare(
         `SELECT COALESCE(oi.menu_item_id, oi.id) AS menu_item_id, oi.name_snapshot AS name, oi.sale_group_id, oi.sale_group_name_snapshot,
@@ -2618,13 +2733,13 @@ export class OrderService {
     for (const [billId, rows] of billGroupRowsByBill.entries()) {
       const bill = billRowsById.get(billId);
       if (!bill || bill.is_nc) continue;
-      const bases = rows.map((row) => row.gross_sales_paise + row.tax_paise);
+      const bases = rows.map((row) => row.gross_sales_paise);
       const discountShares = this.allocateByWeight(bill.discount_paise, bases);
       const tipShares = this.allocateByWeight(bill.tip_paise, bases);
       rows.forEach((row, index) => {
         const summary = groupSummaryMap.get(row.sale_group_id);
         if (!summary) return;
-        summary.finalSalesPaise += row.gross_sales_paise + row.tax_paise - (discountShares[index] ?? 0) + (tipShares[index] ?? 0);
+        summary.finalSalesPaise += row.gross_sales_paise - (discountShares[index] ?? 0) + (tipShares[index] ?? 0);
       });
     }
 
@@ -2642,10 +2757,20 @@ export class OrderService {
       list.push({ method: payment.method, amountPaise: payment.amount_paise, reference: payment.reference });
       paymentsByBill.set(payment.bill_id, list);
     }
-    const itemsByBill = new Map<string, Array<{ name: string; quantity: number; unitPricePaise: number; lineTotalPaise: number }>>();
-    for (const item of billItemRows) {
-      const list = itemsByBill.get(item.bill_id) ?? [];
-      list.push({ name: item.name, quantity: item.quantity, unitPricePaise: item.unit_price_paise, lineTotalPaise: item.line_total_paise });
+	    const itemsByBill = new Map<string, Array<{ orderItemId: string; menuItemId: string | null; menuItemVariantId: string | null; name: string; quantity: number; unitPricePaise: number; lineTotalPaise: number; saleGroupId: string; productionUnitId: string | null }>>();
+	    for (const item of billItemRows) {
+	      const list = itemsByBill.get(item.bill_id) ?? [];
+	      list.push({
+	        orderItemId: item.order_item_id,
+	        menuItemId: item.menu_item_id,
+	        menuItemVariantId: item.menu_item_variant_id,
+	        name: item.name,
+	        quantity: item.quantity,
+	        unitPricePaise: item.unit_price_paise,
+	        lineTotalPaise: item.line_total_paise,
+	        saleGroupId: item.sale_group_id,
+	        productionUnitId: item.production_unit_id
+	      });
       itemsByBill.set(item.bill_id, list);
     }
 
@@ -2685,7 +2810,8 @@ export class OrderService {
         items: itemsByBill.get(bill.bill_id) ?? [],
         isNc: Boolean(bill.is_nc),
         ncReason: bill.nc_reason,
-        revisionNumber: bill.revision_number
+        revisionNumber: bill.revision_number,
+        modified: bill.revision_number > 1
       })),
       itemSummaries: itemSummaries.map((item) => ({
         menuItemId: item.menu_item_id,
@@ -2801,6 +2927,7 @@ export class OrderService {
     const billPayments = this.db
       .prepare("SELECT method, amount_paise FROM payments WHERE bill_id = ? ORDER BY created_at, id")
       .all(input.bill.id) as Array<{ method: string; amount_paise: number }>;
+    const taxBreakdown = this.parseTaxBreakdown(input.bill.tax_breakdown_json);
     return {
       tableName: input.tableName,
 	      billId: String(input.bill.bill_number || input.bill.id),
@@ -2812,13 +2939,13 @@ export class OrderService {
         lineTotalPaise: calculateLineTotal(item.unit_price_paise, item.quantity)
       })),
       subtotalPaise: input.bill.subtotal_paise,
-      taxPaise: input.bill.tax_paise,
+      taxPaise: taxBreakdown.length ? input.bill.tax_paise : 0,
       totalPaise: input.bill.total_paise,
       discountPaise: input.discountPaise ?? input.bill.discount_paise,
       tipPaise: input.tipPaise ?? input.bill.tip_paise,
       finalTotalPaise: input.finalTotalPaise ?? input.bill.final_total_paise,
       createdAt: input.createdAt,
-      taxBreakdown: this.parseTaxBreakdown(input.bill.tax_breakdown_json),
+      taxBreakdown,
       payments: billPayments.map((payment) => ({ method: payment.method, amountPaise: payment.amount_paise })),
       revisionNumber: input.bill.revision_number,
       ncReason: input.ncReason ?? input.bill.nc_reason,
@@ -2848,7 +2975,7 @@ export class OrderService {
     return {
       subtotalPaise,
       taxPaise,
-      totalPaise: subtotalPaise + taxPaise,
+      totalPaise: subtotalPaise,
       taxBreakdown: [...taxByName.values()]
     };
   }
@@ -2869,9 +2996,8 @@ export class OrderService {
     const summaries = new Map<string, { totalPaise: number; itemCount: number }>();
     for (const item of rows) {
       const lineSubtotal = calculateLineTotal(item.unit_price_paise, item.quantity);
-      const taxPaise = calculateTaxComponents(lineSubtotal, this.parseTaxComponents(item.tax_components_json)).reduce((total, component) => total + component.amountPaise, 0);
       const current = summaries.get(item.order_id) ?? { totalPaise: 0, itemCount: 0 };
-      current.totalPaise += lineSubtotal + taxPaise;
+      current.totalPaise += lineSubtotal;
       current.itemCount += item.quantity;
       summaries.set(item.order_id, current);
     }
@@ -2963,28 +3089,38 @@ export class OrderService {
     return rows.filter((row) => this.parseAlcoholRecipeSnapshot(row.alcohol_recipe_snapshot_json).some((entry) => entry.liquorMenuItemId === menuItemId)).length;
   }
 
-  private applyAlcoholStockDelta(menuItemId: string, billId: string, delta: { sealedLarge: number; openLargeMl: number; sealedSmall: number }): void {
+  private applyAlcoholStockDelta(
+    menuItemId: string,
+    billId: string,
+    delta: { sealedLarge: number; openLargeMl: number; sealedSmall: number },
+    sourceType = "bill_settlement"
+  ): void {
     const stock = this.requireAlcoholStock(menuItemId);
     const next = {
       sealedLarge: stock.sealed_large_count + delta.sealedLarge,
       openLargeMl: stock.open_large_ml + delta.openLargeMl,
       sealedSmall: stock.sealed_small_count + delta.sealedSmall
     };
+    if (sourceType === "bill_history_edit" && delta.openLargeMl > 0 && stock.large_bottle_ml > 0 && next.openLargeMl >= stock.large_bottle_ml) {
+      const restoredSealed = Math.floor(next.openLargeMl / stock.large_bottle_ml);
+      next.sealedLarge += restoredSealed;
+      next.openLargeMl -= restoredSealed * stock.large_bottle_ml;
+    }
     this.writeAlcoholStock(menuItemId, next.sealedLarge, next.openLargeMl, next.sealedSmall, true);
     this.recordAlcoholMovement({
       menuItemId,
-      sourceType: "bill_settlement",
+      sourceType,
       sourceId: billId,
-      deltaSealedLarge: delta.sealedLarge,
-      deltaOpenLargeMl: delta.openLargeMl,
-      deltaSealedSmall: delta.sealedSmall,
+      deltaSealedLarge: next.sealedLarge - stock.sealed_large_count,
+      deltaOpenLargeMl: next.openLargeMl - stock.open_large_ml,
+      deltaSealedSmall: next.sealedSmall - stock.sealed_small_count,
       balanceSealedLarge: next.sealedLarge,
       balanceOpenLargeMl: next.openLargeMl,
       balanceSealedSmall: next.sealedSmall
     });
   }
 
-  private consumeAlcoholLargeMl(menuItemId: string, billId: string, ml: number): void {
+  private consumeAlcoholLargeMl(menuItemId: string, billId: string, ml: number, sourceType = "bill_settlement"): void {
     const stock = this.requireAlcoholStock(menuItemId);
 
     let sealedLarge = stock.sealed_large_count;
@@ -3007,7 +3143,7 @@ export class OrderService {
     this.writeAlcoholStock(menuItemId, sealedLarge, openLargeMl, stock.sealed_small_count, true);
     this.recordAlcoholMovement({
       menuItemId,
-      sourceType: "bill_settlement",
+      sourceType,
       sourceId: billId,
       deltaSealedLarge: sealedLarge - stock.sealed_large_count,
       deltaOpenLargeMl: openLargeMl - stock.open_large_ml,
@@ -3018,24 +3154,55 @@ export class OrderService {
     });
   }
 
+  private applyAlcoholUsageDeltaForHistoryEdit(
+    billId: string,
+    before: Map<string, { largeMl: number; largeBottles: number; smallBottles: number }>,
+    after: Map<string, { largeMl: number; largeBottles: number; smallBottles: number }>
+  ): void {
+    const menuItemIds = new Set([...before.keys(), ...after.keys()]);
+    for (const menuItemId of menuItemIds) {
+      const oldUsage = before.get(menuItemId) ?? { largeMl: 0, largeBottles: 0, smallBottles: 0 };
+      const newUsage = after.get(menuItemId) ?? { largeMl: 0, largeBottles: 0, smallBottles: 0 };
+      const largeBottles = newUsage.largeBottles - oldUsage.largeBottles;
+      const smallBottles = newUsage.smallBottles - oldUsage.smallBottles;
+      const largeMl = newUsage.largeMl - oldUsage.largeMl;
+      if (largeBottles) {
+        this.applyAlcoholStockDelta(menuItemId, billId, { sealedLarge: -largeBottles, openLargeMl: 0, sealedSmall: 0 }, "bill_history_edit");
+      }
+      if (smallBottles) {
+        this.applyAlcoholStockDelta(menuItemId, billId, { sealedLarge: 0, openLargeMl: 0, sealedSmall: -smallBottles }, "bill_history_edit");
+      }
+      if (largeMl > 0) {
+        this.consumeAlcoholLargeMl(menuItemId, billId, largeMl, "bill_history_edit");
+      } else if (largeMl < 0) {
+        this.applyAlcoholStockDelta(menuItemId, billId, { sealedLarge: 0, openLargeMl: -largeMl, sealedSmall: 0 }, "bill_history_edit");
+      }
+    }
+  }
+
   private parseTaxComponents(value: string | null | undefined): Array<{ name: string; rateBps: number }> {
     if (!value) return DEFAULT_TAX_COMPONENTS;
     try {
       const parsed = JSON.parse(value) as Array<{ name?: unknown; rateBps?: unknown }>;
-      if (!Array.isArray(parsed) || parsed.length === 0) return DEFAULT_TAX_COMPONENTS;
+      if (!Array.isArray(parsed)) return DEFAULT_TAX_COMPONENTS;
+      if (parsed.length === 0) return [];
       return parsed
         .map((component) => ({ name: String(component.name ?? "Tax"), rateBps: Number(component.rateBps ?? 0) }))
-        .filter((component) => component.name && Number.isFinite(component.rateBps));
+        .filter((component) => component.name && !this.isVatComponent(component.name) && Number.isFinite(component.rateBps));
     } catch {
       return DEFAULT_TAX_COMPONENTS;
     }
+  }
+
+  private isVatComponent(name: string): boolean {
+    return /\bvat\b/i.test(name);
   }
 
   private parseTaxBreakdown(value: string | null | undefined): TaxComponentAmount[] {
     if (!value) return [];
     try {
       const parsed = JSON.parse(value) as TaxComponentAmount[];
-      return Array.isArray(parsed) ? parsed : [];
+      return Array.isArray(parsed) ? parsed.filter((component) => !this.isVatComponent(component.name)) : [];
     } catch {
       return [];
     }
@@ -3112,6 +3279,34 @@ export class OrderService {
     const verification = this.verifyManagerPin(approval.pin, configuredHash);
     if (verification === "invalid") throw new DomainError("Manager PIN is incorrect", 403);
     if (verification === "valid_legacy") this.upsertSetting("manager_pin_hash", this.hashManagerPin(approval.pin));
+    this.orm
+      .insert(managerApprovals)
+      .values({
+        id: makeId("approval"),
+        action,
+        aggregateType,
+        aggregateId,
+        reason: approval.reason,
+        approvedBy: approval.approvedBy,
+        requestedBy,
+        createdAt: new Date().toISOString()
+      })
+      .run();
+  }
+
+  private verifyMasterApproval(
+    approval: MasterApprovalInput | undefined,
+    action: string,
+    aggregateType: string,
+    aggregateId: string,
+    requestedBy = "owner"
+  ): void {
+    const configuredHash = this.getSetting("master_pin_hash");
+    if (!configuredHash) throw new DomainError("Create a Master PIN before using owner-only actions", 403);
+    if (!approval) throw new DomainError("Master PIN is required for this action", 403);
+    const verification = this.verifyManagerPin(approval.pin, configuredHash);
+    if (verification === "invalid") throw new DomainError("Master PIN is incorrect", 403);
+    if (verification === "valid_legacy") this.upsertSetting("master_pin_hash", this.hashManagerPin(approval.pin));
     this.orm
       .insert(managerApprovals)
       .values({
@@ -4046,6 +4241,42 @@ export class OrderService {
     return report;
   }
 
+  private refreshDailyReportSnapshot(posDayId: string, now = new Date().toISOString()): void {
+    const snapshotExists = this.orm
+      .select({ posDayId: dailyReportSnapshots.posDayId })
+      .from(dailyReportSnapshots)
+      .where(eq(dailyReportSnapshots.posDayId, posDayId))
+      .get();
+    if (!snapshotExists) return;
+    const report = this.buildDaySummary(posDayId);
+    this.orm
+      .update(dailyReportSnapshots)
+      .set({
+        billCount: report.billCount,
+        openOrders: report.openOrders,
+        billedOrders: report.billedOrders,
+        paidBills: report.paidBills,
+        unpaidBills: report.unpaidBills,
+        cancelledOrders: report.cancelledOrders,
+        grossSalesPaise: report.grossSalesPaise,
+        discountPaise: report.discountPaise,
+        tipPaise: report.tipPaise,
+        finalSalesPaise: report.finalSalesPaise,
+        cashPaymentsPaise: report.cashPaymentsPaise,
+        upiPaymentsPaise: report.upiPaymentsPaise,
+        cardPaymentsPaise: report.cardPaymentsPaise,
+        onlinePaymentsPaise: report.onlinePaymentsPaise,
+        totalPaymentsPaise: report.totalPaymentsPaise,
+        nonCashPaymentsPaise: report.nonCashPaymentsPaise,
+        billSummariesJson: JSON.stringify(report.billSummaries),
+        itemSummariesJson: JSON.stringify(report.itemSummaries),
+        groupSummariesJson: JSON.stringify(report.groupSummaries),
+        updatedAt: now
+      })
+      .where(eq(dailyReportSnapshots.posDayId, posDayId))
+      .run();
+  }
+
   private requireTable(tableId: string): TableRow {
     const table = this.orm
       .select({
@@ -4464,7 +4695,7 @@ export class OrderService {
       kotFooter: this.getSetting("ticket_kot_footer") ?? "",
       restaurantName: this.getSetting("ticket_restaurant_name") ?? "",
       taxRegistrationText: this.getSetting("ticket_tax_registration_text") ?? "",
-      lineWidthChars: Number(this.getSetting("ticket_line_width_chars") ?? 42),
+      lineWidthChars: Number(this.getSetting("ticket_line_width_chars") ?? 28),
       headerAlign: "center",
       footerAlign: "center",
       feedLines: 3,
@@ -4487,6 +4718,35 @@ export class OrderService {
   private getBillPaidPaise(billId: string): number {
     const row = this.orm.select({ paid: sum(payments.amountPaise) }).from(payments).where(eq(payments.billId, billId)).get();
     return Number(row?.paid ?? 0);
+  }
+
+  private syncPaidBillPaymentToFinalTotal(billId: string, finalTotalPaise: number, receivedBy: string, now: string): void {
+    const bill = this.getBillById(billId);
+    if (!bill || bill.status !== "paid" || bill.is_nc) return;
+    const existingPayments = this.db
+      .prepare("SELECT method, amount_paise, reference, note FROM payments WHERE bill_id = ? ORDER BY created_at ASC, id ASC")
+      .all(billId) as Array<{ method: "cash" | "upi" | "card" | "online"; amount_paise: number; reference: string | null; note: string | null }>;
+    this.db.prepare("DELETE FROM payments WHERE bill_id = ?").run(billId);
+    if (finalTotalPaise <= 0) return;
+    const weights = existingPayments.length ? existingPayments.map((payment) => payment.amount_paise) : [finalTotalPaise];
+    const allocated = this.allocateByWeight(finalTotalPaise, weights);
+    const sourcePayments = existingPayments.length
+      ? existingPayments
+      : [{ method: "cash" as const, amount_paise: finalTotalPaise, reference: null, note: "Auto-adjusted after history edit" }];
+    for (const [index, source] of sourcePayments.entries()) {
+      const amountPaise = allocated[index] ?? 0;
+      if (amountPaise <= 0) continue;
+      this.orm.insert(payments).values({
+        id: makeId("pay"),
+        billId,
+        method: source.method,
+        amountPaise,
+        receivedBy,
+        reference: source.reference,
+        note: source.note ?? "Auto-adjusted after history edit",
+        createdAt: now
+      }).run();
+    }
   }
 
   private deleteLocalBillRecord(billId: string): void {

@@ -219,7 +219,7 @@ export const styles = StyleSheet.create({
   },
   modeTab: { flex: 1, minHeight: 42, alignItems: "center", justifyContent: "center", borderRadius: 6, position: "relative" as const },
   modeTabActive: { backgroundColor: palette.ink },
-  modeTabText: { color: palette.ink, fontWeight: "800", fontSize: 14 },
+  modeTabText: { color: palette.ink, fontWeight: "800", fontSize: 13 },
   modeTabTextActive: { color: palette.inverseText },
   modeBadge: {
     position: "absolute" as const,
@@ -247,6 +247,9 @@ export const styles = StyleSheet.create({
   },
   menuPanel: { flex: 1 },
   virtualMenuPanel: { padding: 0, overflow: "hidden" },
+  floorTableStack: { gap: 12 },
+  floorTableGroup: { gap: 8 },
+  floorTableHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 },
   tableGrid: { flexDirection: "row", flexWrap: "wrap", gap: 12 },
   tableTile: {
     minHeight: 100,
@@ -321,6 +324,14 @@ export const styles = StyleSheet.create({
   kotActions: { flexDirection: "row", gap: 8 },
   kotActionButton: { flex: 1, minHeight: 54 },
   shiftGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  shiftActionCard: {
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: palette.lineSoft,
+    backgroundColor: palette.white,
+    padding: 10,
+    gap: 10
+  },
   shiftButton: {
     minHeight: 48,
     minWidth: 76,
@@ -362,8 +373,8 @@ export const styles = StyleSheet.create({
     gap: 8
   },
   shiftQtyInput: {
-    width: 54,
-    minHeight: 42,
+    width: 42,
+    minHeight: 38,
     borderWidth: 1,
     borderColor: palette.line,
     borderRadius: 8,
@@ -371,6 +382,31 @@ export const styles = StyleSheet.create({
     color: palette.ink,
     fontWeight: "900",
     backgroundColor: palette.paper
+  },
+  transferQtyStepper: { flexDirection: "row", alignItems: "center", gap: 4, flexShrink: 0 },
+  transferQtyButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: palette.line,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: palette.wash
+  },
+  targetPickerList: { gap: 6 },
+  targetPickerRow: {
+    minHeight: 52,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: palette.lineSoft,
+    backgroundColor: palette.white,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10
   },
   cancelPanel: {
     gap: 8,
@@ -413,7 +449,7 @@ export const styles = StyleSheet.create({
   },
   dangerSmallButtonText: { color: palette.red, fontWeight: "800" },
   totalText: { color: palette.green, fontSize: 19, fontWeight: "900" },
-  filterChips: { gap: 8, paddingVertical: 2, paddingRight: 8 },
+  filterChips: { gap: 8, paddingTop: 2, paddingBottom: 4, paddingRight: 8 },
   filterChip: {
     minHeight: 42,
     borderRadius: 999,
@@ -427,67 +463,67 @@ export const styles = StyleSheet.create({
   filterChipActive: { backgroundColor: palette.ink, borderColor: palette.ink },
   filterChipText: { color: palette.ink, fontWeight: "900", fontSize: 13 },
   filterChipTextActive: { color: palette.inverseText },
-  virtualMenuList: { padding: 14, gap: 12, paddingBottom: 118 },
-  menuSection: { gap: 8 },
-  menuSectionHeader: { paddingTop: 12, paddingBottom: 6, borderBottomWidth: 2, borderBottomColor: palette.line, backgroundColor: palette.paper },
-  menuList: { gap: 8 },
+  virtualMenuList: { padding: 14, gap: 14, paddingBottom: 118 },
+  menuSection: { gap: 10 },
+  menuSectionHeader: { paddingTop: 12, paddingBottom: 8, borderBottomWidth: 2, borderBottomColor: palette.line, backgroundColor: palette.paper },
+  menuList: { gap: 10 },
   menuItem: {
-    minHeight: 48,
-    padding: 7,
+    minHeight: 88,
+    padding: 12,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: palette.line,
-    backgroundColor: palette.surfaceElevated,
-    gap: 7,
-    shadowColor: "transparent",
-    shadowOffset: { width: 0, height: 0 },
-    shadowRadius: 0,
-    shadowOpacity: 0,
-    elevation: 0
+    borderColor: palette.lineSoft,
+    backgroundColor: palette.white,
+    gap: 10,
+    shadowColor: palette.shadow,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 6,
+    shadowOpacity: 1,
+    elevation: 2
   },
   menuItemInline: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   menuItemStacked: { alignItems: "stretch" },
-  menuIdentity: { flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center", gap: 7 },
+  menuIdentity: { flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center", gap: 12 },
   menuCategoryIcon: {
-    width: 28,
-    height: 28,
+    width: 44,
+    height: 44,
     borderRadius: 8,
     alignItems: "center",
     justifyContent: "center"
   },
-  menuCategoryIconText: { fontSize: 12, fontWeight: "900" },
+  menuCategoryIconText: { fontSize: 18, fontWeight: "900" },
   menuText: { flex: 1, minWidth: 0 },
-  menuName: { fontSize: 14, fontWeight: "900", color: palette.ink, lineHeight: 18, marginBottom: 1 },
-  menuPriceBlock: { alignItems: "flex-end", gap: 4, flexShrink: 0 },
-  singleVariantBlock: { alignItems: "flex-end" },
-  variantStack: { width: "100%", maxWidth: "100%", minWidth: 0, flexShrink: 1 },
-  variantWrap: { flexDirection: "row", flexWrap: "wrap", gap: 6, alignItems: "stretch" },
+  menuName: { fontSize: 18, fontWeight: "900", color: palette.ink, lineHeight: 23, marginBottom: 1 },
+  menuPriceBlock: { minWidth: 118, alignItems: "stretch", gap: 4, flexShrink: 0 },
+  singleVariantBlock: { alignItems: "stretch" },
+  variantStack: { width: "100%", maxWidth: "100%", minWidth: 0, flexShrink: 1, borderTopWidth: 1, borderTopColor: palette.lineSoft, paddingTop: 10 },
+  variantWrap: { flexDirection: "row", flexWrap: "wrap", gap: 8, alignItems: "stretch" },
   variantChip: {
-    minHeight: 30,
-    minWidth: 96,
+    minHeight: 46,
+    minWidth: 132,
     flexGrow: 1,
     borderWidth: 1,
     borderColor: palette.line,
     borderRadius: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: palette.surfaceElevated
+    backgroundColor: palette.wash
   },
-  variantPrice: { color: palette.greenBold, fontWeight: "900", fontSize: 12 },
+  variantPrice: { color: palette.ink, fontWeight: "900", fontSize: 14 },
   price: { color: palette.greenBold, fontWeight: "900", fontSize: 14 },
   addButton: {
-    minHeight: 30,
-    minWidth: 64,
+    minHeight: 46,
+    minWidth: 112,
     borderRadius: 8,
     backgroundColor: palette.ink,
     alignItems: "center" as const,
     justifyContent: "center" as const,
-    paddingHorizontal: 8
+    paddingHorizontal: 12
   },
-  addButtonText: { color: palette.inverseText, fontSize: 12, fontWeight: "900" },
+  addButtonText: { color: palette.inverseText, fontSize: 14, fontWeight: "900" },
   addIndicator: { color: palette.greenBold, fontSize: 18, fontWeight: "900" },
   addText: { color: palette.ink, fontSize: 14, fontWeight: "900" },
   formStack: { gap: 9 },
@@ -573,31 +609,61 @@ export const styles = StyleSheet.create({
     padding: 10,
     gap: 4
   },
+  historyScreenPanel: { gap: 14 },
   historyBox: {
     borderRadius: 8,
     borderWidth: 1,
     borderColor: palette.line,
     backgroundColor: palette.white,
-    padding: 10,
-    gap: 8
+    overflow: "hidden"
   },
   historyDayChips: {
     gap: 8,
     paddingVertical: 2
   },
   historyRow: {
-    minHeight: 58,
-    borderTopWidth: 1,
+    minHeight: 96,
+    borderBottomWidth: 1,
     borderColor: palette.lineSoft,
-    paddingTop: 8,
+    padding: 12,
     flexDirection: "row",
-    alignItems: "center",
-    gap: 8
+    alignItems: "flex-start",
+    gap: 10
   },
+  historyRowHeader: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: 10 },
+  historyBillTitle: { color: palette.ink, fontSize: 16, fontWeight: "900", lineHeight: 21 },
+  historyAmount: { color: palette.greenBold, fontSize: 16, fontWeight: "900", lineHeight: 21 },
+  historyMeta: { color: palette.ink, fontSize: 12, fontWeight: "800", lineHeight: 17 },
+  historyModifiedTag: {
+    alignSelf: "flex-start",
+    borderRadius: 999,
+    backgroundColor: palette.amberSoft,
+    borderWidth: 1,
+    borderColor: palette.amberLine,
+    color: palette.amberBold,
+    fontSize: 11,
+    fontWeight: "900",
+    paddingHorizontal: 8,
+    paddingVertical: 2
+  },
+  historyActionStack: { gap: 8, alignItems: "stretch" },
   historyPrintButton: {
     minHeight: 42,
     paddingHorizontal: 12
   },
+  historyEditStack: { gap: 10, paddingBottom: 6 },
+  historyEditLine: {
+    minHeight: 52,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: palette.line,
+    backgroundColor: palette.white,
+    padding: 9,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8
+  },
+  historyVariantActions: { gap: 8, alignItems: "center" },
   segmentedRow: {
     flexDirection: "row",
     borderRadius: 10,
@@ -633,14 +699,22 @@ export const styles = StyleSheet.create({
     paddingHorizontal: 10
   },
   quickPayText: { color: palette.greenBold, fontWeight: "900", fontSize: 14 },
-  managerBox: {
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: palette.redLine,
-    backgroundColor: palette.redSoft,
-    padding: 10,
-    gap: 9
+  popupBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(21,19,15,0.5)",
+    padding: 18,
+    justifyContent: "center"
   },
+  popupCard: {
+    maxHeight: "86%",
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: palette.line,
+    backgroundColor: palette.paper,
+    padding: 14,
+    gap: 12
+  },
+  popupScroll: { maxHeight: 460 },
   dangerButton: {
     minHeight: 44,
     borderRadius: 8,

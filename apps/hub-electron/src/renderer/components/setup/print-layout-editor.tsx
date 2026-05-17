@@ -154,6 +154,8 @@ export function PrintLayoutEditor({
                 update("lineWidthChars", Number(event.target.value))
               }
             >
+              <option value={25}>45mm / extra narrow</option>
+              <option value={28}>50mm / receipt default</option>
               <option value={32}>58mm / narrow</option>
               <option value={42}>80mm standard</option>
               <option value={48}>80mm wide</option>
@@ -211,7 +213,7 @@ export function PrintLayoutEditor({
             />
           </label>
           <label>
-            Tax/GST/VAT line
+            GST registration line
             <input
               value={draft.taxRegistrationText}
               onChange={(event) =>

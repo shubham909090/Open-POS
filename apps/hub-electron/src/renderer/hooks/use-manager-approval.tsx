@@ -10,6 +10,7 @@ export type ManagerApprovalRequest = (options: {
   message?: string;
   defaultReason?: string;
   reasonLabel?: string;
+  pinLabel?: string;
   requireReason?: boolean;
   confirmLabel?: string;
   danger?: boolean;
@@ -21,6 +22,7 @@ export type ManagerApprovalState = {
   message?: string;
   reason: string;
   reasonLabel: string;
+  pinLabel: string;
   requireReason: boolean;
   confirmLabel: string;
   danger: boolean;
@@ -35,6 +37,7 @@ export function useManagerApproval() {
     title: "",
     reason: "",
     reasonLabel: "Reason",
+    pinLabel: "Manager PIN",
     requireReason: true,
     confirmLabel: "Approve",
     danger: false,
@@ -49,6 +52,7 @@ export function useManagerApproval() {
         message: options.message,
         reason: options.defaultReason ?? "",
         reasonLabel: options.reasonLabel ?? "Reason",
+        pinLabel: options.pinLabel ?? "Manager PIN",
         requireReason: options.requireReason ?? true,
         confirmLabel: options.confirmLabel ?? "Approve",
         danger: Boolean(options.danger),
@@ -95,7 +99,7 @@ export function ManagerApprovalModal({
           autoComplete="off"
         />
         <Input
-          label="Manager PIN"
+          label={state.pinLabel}
           value={state.pin}
           onChange={(event) => setState((current) => ({ ...current, pin: event.target.value }))}
           type="password"

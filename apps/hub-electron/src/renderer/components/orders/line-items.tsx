@@ -31,6 +31,7 @@ export function LineItems({
             <strong>{row.title}</strong>
             <span>{row.meta}</span>
           </div>
+          <strong className="line-amount">{formatInr(row.amount)}</strong>
           <div className={row.onMinus || row.onPlus ? "qty-cluster" : "qty-cluster qty-readonly"}>
             {row.onMinus ? (
               <button type="button" onClick={row.onMinus}>
@@ -44,7 +45,6 @@ export function LineItems({
               </button>
             ) : null}
           </div>
-          <strong className="line-amount">{formatInr(row.amount)}</strong>
           {row.action ? <div className="line-row-action">{row.action}</div> : null}
         </article>
       ))}

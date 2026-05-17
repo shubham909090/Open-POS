@@ -29,7 +29,13 @@
   .panel-title,
   .saved-settings-card,
   .pairing-card,
+  .pairing-form,
+  .role-card-grid,
   .csv-import-grid,
+  .printer-settings-grid,
+  .printer-fields-grid,
+  .printer-fields-grid.network,
+  .unit-edit-fields,
   .layout-editor {
     grid-template-columns: 1fr;
   }

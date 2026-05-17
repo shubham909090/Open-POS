@@ -11,6 +11,7 @@ export interface HubBootstrap {
     active?: number | boolean;
     current_order_id: string | null;
   }>;
+  floors: Array<{ id: string; name: string; active?: number | boolean }>;
   productionUnits: Array<{ id: string; name: string; active?: number | boolean; kds_enabled?: number | boolean }>;
   menuItems: Array<{
     id: string;
@@ -101,10 +102,21 @@ export interface CurrentDaySummary {
     paidPaise: number;
     settledAt: string | null;
     payments: Array<{ method: string; amountPaise: number; reference: string | null }>;
-    items?: Array<{ name: string; quantity: number; unitPricePaise: number; lineTotalPaise: number }>;
+    items?: Array<{
+      orderItemId?: string;
+      menuItemId?: string | null;
+      menuItemVariantId?: string | null;
+      saleGroupId?: string;
+      productionUnitId?: string | null;
+      name: string;
+      quantity: number;
+      unitPricePaise: number;
+      lineTotalPaise: number;
+    }>;
     isNc?: boolean;
     ncReason?: string | null;
     revisionNumber?: number;
+    modified?: boolean;
   }>;
   groupSummaries?: Array<{ name: string; kind: string; quantity: number; grossSalesPaise: number; finalSalesPaise: number }>;
 }
@@ -308,6 +320,23 @@ export class HubClient {
     });
   }
 
+  async historyEditBill(
+    billId: string,
+    input: MasterApprovalPayload & {
+      items: Array<
+        | { orderItemId?: string; menuItemId: string; menuItemVariantId?: string; quantity: number }
+        | { orderItemId?: string; openName: string; openPricePaise: number; saleGroupId: string; productionUnitId?: string | null; quantity: number }
+      >;
+    },
+    options: RequestOptions = {}
+  ): Promise<{ billId: string; revisionNumber: number; totalPaise: number; printJobId: string; modified: boolean }> {
+    return this.request(`/bills/${billId}/history-edit`, {
+      method: "POST",
+      headers: { "Idempotency-Key": options.idempotencyKey ?? createIdempotencyKey("mobile-bill-history-edit") },
+      body: JSON.stringify(input)
+    });
+  }
+
   async reprintBill(billId: string, input: ManagerApprovalPayload, options: RequestOptions = {}): Promise<{ printJobId: string }> {
     return this.request(`/bills/${billId}/reprint`, {
       method: "POST",
@@ -415,6 +444,14 @@ export function isHubHttpError(error: unknown): error is HubHttpError {
 
 export interface ManagerApprovalPayload {
   managerApproval: {
+    pin: string;
+    reason: string;
+    approvedBy: string;
+  };
+}
+
+export interface MasterApprovalPayload {
+  masterApproval: {
     pin: string;
     reason: string;
     approvedBy: string;

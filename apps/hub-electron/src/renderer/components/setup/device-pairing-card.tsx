@@ -105,7 +105,7 @@ export function DevicePairingCard({
       icon={<QrCode size={20} />}
       summary={`${activeDevices.length} paired devices`}
     >
-      <p className="text-sm text-muted">
+      <p className="pairing-copy">
         Create a QR for each phone or kitchen screen. Open the Android app,
         choose pair by QR, and scan this code.
       </p>
@@ -157,12 +157,18 @@ export function DevicePairingCard({
       </form>
       {pairing ? (
         <section className="pairing-card">
-          <img src={pairing.qrDataUrl} alt="Device pairing QR code" />
-          <div>
-            <strong>Code {pairing.code}</strong>
-            <span>
-              Expires {formatPosDateTime(pairing.expiresAt)}
-            </span>
+          <div className="pairing-qr-panel">
+            <img src={pairing.qrDataUrl} alt="Device pairing QR code" />
+            <div className="pairing-code">
+              <strong>Code {pairing.code}</strong>
+              <span>Expires {formatPosDateTime(pairing.expiresAt)}</span>
+            </div>
+          </div>
+          <div className="pairing-payload-panel">
+            <div>
+              <strong>Manual pairing payload</strong>
+              <span>Use only if QR scanning is unavailable.</span>
+            </div>
             <textarea readOnly value={pairing.pairingPayloadText} />
           </div>
         </section>

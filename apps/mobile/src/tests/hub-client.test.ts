@@ -311,6 +311,7 @@ describe("HubClient", () => {
       .mockResolvedValueOnce(new Response(JSON.stringify({ printJobId: "print-1" }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ printJobId: "print-2" }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ printJobId: "history-print" }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ billId: "bill-1", revisionNumber: 2, totalPaise: 36000, printJobId: "history-edit", modified: true }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ billId: "bill-1", revisionNumber: 2, totalPaise: 24200, kotIds: [] }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ printJobId: "print-nc" }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ billId: "bill-1", status: "paid", remainingPaise: 0 }), { status: 200 }))
@@ -323,6 +324,14 @@ describe("HubClient", () => {
     await client.printBill("bill-1", { idempotencyKey: "print-once" });
     await client.reprintBill("bill-1", approval, { idempotencyKey: "reprint-once" });
     await client.historyReprintBill("bill-1", { idempotencyKey: "history-reprint-once" });
+    await client.historyEditBill(
+      "bill-1",
+      {
+        masterApproval: { pin: "9876", reason: "Owner history edit", approvedBy: "owner" },
+        items: [{ orderItemId: "order-item-1", menuItemId: "item-1", quantity: 2 }]
+      },
+      { idempotencyKey: "history-edit-once" }
+    );
     await client.reviseBill("bill-1", { ...approval, items: [{ menuItemId: "item-1", quantity: 2 }] }, { idempotencyKey: "revise-once" });
     await client.markBillNc("bill-1", approval, { idempotencyKey: "nc-once" });
     await client.settleBill(
@@ -367,21 +376,33 @@ describe("HubClient", () => {
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       5,
+      "http://hub.local:3737/bills/bill-1/history-edit",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({ "Idempotency-Key": "history-edit-once" }),
+        body: JSON.stringify({
+          masterApproval: { pin: "9876", reason: "Owner history edit", approvedBy: "owner" },
+          items: [{ orderItemId: "order-item-1", menuItemId: "item-1", quantity: 2 }]
+        })
+      })
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      6,
       "http://hub.local:3737/bills/bill-1/revise",
       expect.objectContaining({ method: "POST", headers: expect.objectContaining({ "Idempotency-Key": "revise-once" }) })
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
-      6,
+      7,
       "http://hub.local:3737/bills/bill-1/nc",
       expect.objectContaining({ method: "POST", headers: expect.objectContaining({ "Idempotency-Key": "nc-once" }) })
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
-      7,
+      8,
       "http://hub.local:3737/bills/bill-1/settle",
       expect.objectContaining({ method: "POST", headers: expect.objectContaining({ "Idempotency-Key": "settle-once" }) })
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
-      8,
+      9,
       "http://hub.local:3737/business-day/current-summary",
       expect.objectContaining({ headers: expect.objectContaining({ "x-device-token": "captain-token" }) })
     );

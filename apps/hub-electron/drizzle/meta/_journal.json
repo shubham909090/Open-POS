@@ -57,6 +57,13 @@
       "when": 1778880000000,
       "tag": "0007_bill_numbers_order_state",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1779046000000,
+      "tag": "0008_inclusive_tax_master_pin",
+      "breakpoints": true
     }
   ]
 }

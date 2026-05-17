@@ -701,14 +701,83 @@ describe("Hub API auth and service flow", () => {
 
     expect(summaryResponse.statusCode).toBe(200);
     const summaryBill = summaryResponse.json<{ billSummaries: Array<{ subtotalPaise: number; taxPaise: number; totalPaise: number; items: Array<{ name: string; quantity: number }> }> }>().billSummaries[0];
-    expect(summaryBill).toMatchObject({ subtotalPaise: 18000, taxPaise: 900, totalPaise: 18900 });
+    expect(summaryBill).toMatchObject({ subtotalPaise: 18000, taxPaise: 900, totalPaise: 18000 });
     expect(summaryBill?.items).toEqual([
-      { name: "Dal Fry", quantity: 1, unitPricePaise: 18000, lineTotalPaise: 18000 }
+      expect.objectContaining({ name: "Dal Fry", quantity: 1, unitPricePaise: 18000, lineTotalPaise: 18000 })
     ]);
     expect(reprintResponse.statusCode).toBe(200);
     expect(reprintResponse.json()).toMatchObject({ printJobId: expect.any(String), processed: { printed: 1, failed: 0, skipped: 0 } });
     expect(database.db.prepare("SELECT print_count FROM bills WHERE id = ?").get(bill.billId)).toEqual({ print_count: 2 });
     expect(database.db.prepare("SELECT COUNT(*) AS count FROM event_log WHERE type = 'bill.history_reprinted'").get()).toEqual({ count: 1 });
+    const printJob = database.db.prepare("SELECT payload FROM print_jobs WHERE target_id = ? ORDER BY created_at DESC LIMIT 1").get(bill.billId) as { payload: string };
+    expect(printJob.payload).not.toContain("REPRINT");
+
+    await app.close();
+    database.close();
+  });
+
+  it("creates a master PIN once and edits paid history bills through owner approval", async () => {
+    const { app, database } = createTestServer();
+    const headers = { "x-device-token": "test-admin-token" };
+    const orderResponse = await app.inject({
+      method: "POST",
+      url: "/orders/submit",
+      headers,
+      payload: { tableId: "table-t1", pax: 1, orderType: "dine_in", printMode: "kot", items: [{ menuItemId: "item-dal-fry", quantity: 1 }] }
+    });
+    const order = orderResponse.json<{ orderId: string }>();
+    const billResponse = await app.inject({ method: "POST", url: `/bills/${order.orderId}/generate`, headers });
+    const bill = billResponse.json<{ billId: string; totalPaise: number }>();
+    await app.inject({ method: "POST", url: `/bills/${bill.billId}/settle`, headers, payload: { method: "cash", amountPaise: bill.totalPaise, receivedBy: "captain" } });
+
+    const initialStatus = await app.inject({ method: "GET", url: "/settings/master-pin/status", headers });
+    const created = await app.inject({
+      method: "PUT",
+      url: "/settings/master-pin",
+      headers,
+      payload: { newPin: "9876", confirmPin: "9876", updatedBy: "owner" }
+    });
+    const secondCreate = await app.inject({
+      method: "PUT",
+      url: "/settings/master-pin",
+      headers,
+      payload: { newPin: "1111", confirmPin: "1111", updatedBy: "owner" }
+    });
+    const badEdit = await app.inject({
+      method: "POST",
+      url: `/bills/${bill.billId}/history-edit`,
+      headers,
+      payload: {
+        items: [{ menuItemId: "item-dal-fry", quantity: 2 }],
+        masterApproval: { pin: "1234", reason: "Owner history edit", approvedBy: "owner" }
+      }
+    });
+    const edited = await app.inject({
+      method: "POST",
+      url: `/bills/${bill.billId}/history-edit`,
+      headers,
+      payload: {
+        items: [{ menuItemId: "item-dal-fry", quantity: 2 }],
+        masterApproval: { pin: "9876", reason: "Owner history edit", approvedBy: "owner" }
+      }
+    });
+
+    expect(initialStatus.json()).toEqual({ masterPinConfigured: false });
+    expect(created.statusCode).toBe(200);
+    expect(created.json()).toEqual({ configured: true });
+    expect(secondCreate.statusCode).toBe(409);
+    expect(badEdit.statusCode).toBe(403);
+    expect(edited.statusCode).toBe(200);
+    expect(edited.json()).toMatchObject({
+      billId: bill.billId,
+      revisionNumber: 2,
+      totalPaise: 36_000,
+      printJobId: expect.any(String),
+      modified: true,
+      processed: { printed: 1, failed: 0, skipped: 0 }
+    });
+    expect(database.db.prepare("SELECT amount_paise FROM payments WHERE bill_id = ?").get(bill.billId)).toEqual({ amount_paise: 36_000 });
+    expect(database.db.prepare("SELECT COUNT(*) AS count FROM event_log WHERE type = 'bill.history_edited'").get()).toEqual({ count: 1 });
 
     await app.close();
     database.close();

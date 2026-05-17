@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { calculateLineTotal, calculateTax, formatCompactInr, formatInr } from "../money.js";
 import { getOrderStateSignature } from "../order-state-signature.js";
-import { createMenuItemSchema, createPairingCodeSchema, submitOrderSchema, updateReceiptPrinterSchema } from "../schemas.js";
-import { getTableDisplayState, tableDisplayClass, tableDisplayLabel } from "../table-state.js";
+import { createMenuItemSchema, createPairingCodeSchema, printLayoutSettingsSchema, setMasterPinSchema, submitOrderSchema, updateReceiptPrinterSchema } from "../schemas.js";
+import { getTableDisplayState, isTransferTargetTable, tableDisplayClass, tableDisplayLabel } from "../table-state.js";
 
 describe("shared money helpers", () => {
   it("calculates line totals, GST, and INR formatting", () => {
@@ -63,6 +63,17 @@ describe("shared command schemas", () => {
     expect(() => createPairingCodeSchema.parse({ deviceName: "Phone", role: "owner" })).toThrow();
   });
 
+  it("validates narrow receipt widths and one-time master PIN input", () => {
+    expect(printLayoutSettingsSchema.parse({ scope: "receipt", lineWidthChars: 25 }).lineWidthChars).toBe(25);
+    expect(printLayoutSettingsSchema.parse({ scope: "receipt", lineWidthChars: 28 }).lineWidthChars).toBe(28);
+    expect(printLayoutSettingsSchema.parse({ scope: "receipt", lineWidthChars: 32 }).lineWidthChars).toBe(32);
+    expect(printLayoutSettingsSchema.parse({ scope: "receipt", lineWidthChars: 42 }).lineWidthChars).toBe(42);
+    expect(printLayoutSettingsSchema.parse({ scope: "receipt", lineWidthChars: 48 }).lineWidthChars).toBe(48);
+    expect(() => printLayoutSettingsSchema.parse({ scope: "receipt", lineWidthChars: 20 })).toThrow();
+    expect(setMasterPinSchema.parse({ newPin: "9876", confirmPin: "9876", updatedBy: "owner" })).toMatchObject({ newPin: "9876" });
+    expect(() => setMasterPinSchema.parse({ newPin: "9876", confirmPin: "1111", updatedBy: "owner" })).toThrow();
+  });
+
   it("requires a positive dish price", () => {
     expect(() => createMenuItemSchema.parse({ name: "Free Tea", pricePaise: 0 })).toThrow();
     expect(createMenuItemSchema.parse({ name: "Tea", pricePaise: 100 })).toMatchObject({ pricePaise: 100 });
@@ -78,5 +89,13 @@ describe("shared table display state", () => {
     expect(getTableDisplayState({ status: "occupied", active: false })).toBe("disabled");
     expect(tableDisplayLabel("bill_printed")).toBe("Bill printed");
     expect(tableDisplayClass("needs_attention")).toBe("needs-attention");
+  });
+
+  it("allows transfer targets only when tables are free or running", () => {
+    expect(isTransferTargetTable({ status: "free" })).toBe(true);
+    expect(isTransferTargetTable({ status: "occupied" })).toBe(true);
+    expect(isTransferTargetTable({ status: "billed" })).toBe(false);
+    expect(isTransferTargetTable({ status: "attention" })).toBe(false);
+    expect(isTransferTargetTable({ status: "occupied", active: false })).toBe(false);
   });
 });

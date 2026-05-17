@@ -31,10 +31,13 @@ import {
 } from "./lib/mobile-format";
 import { palette, styles } from "./styles/app-styles";
 import { AppHeader, ConnectionBanner, DraftBar, ModeTabs, OnboardingScreen } from "./components/app-shell";
-import { CaptainBillingPanel, KitchenScreen, MenuScreen, TablePicker, TicketScreen } from "./components/screens";
+import { BillingHistoryPanel, KitchenScreen, MenuScreen, TablePicker, TicketScreen } from "./components/screens";
 import type { ConnectionState, MobileOrderStateItem, OrderStateSaveMode, PaymentMethod, PrintMode, ViewMode } from "./lib/mobile-types";
 import { useDevicePairing } from "./hooks/use-device-pairing";
-import "../global.css";
+
+type HistoryEditPayloadItem =
+  | { orderItemId?: string; menuItemId: string; menuItemVariantId?: string; quantity: number }
+  | { orderItemId?: string; openName: string; openPricePaise: number; saleGroupId: string; productionUnitId?: string | null; quantity: number };
 
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -116,6 +119,7 @@ export default function App() {
   const tableTotal = sentTotal + draftTotal;
   const hasNewItems = items.length > 0;
   const canBill = deviceRole === "admin" || deviceRole === "captain";
+  const historyMode = mode === "history" && canBill;
   const isKitchenDevice = deviceRole === "kitchen";
   const shouldShowOnboarding = setupOpen || !deviceToken || connection === "offline";
   const useVirtualMenu = mode === "menu" && !isWide;
@@ -181,6 +185,10 @@ export default function App() {
       unsubscribe();
     };
   }, [client, deviceToken, initializing, kitchenUnitId, selectedHistoryDayId, selectedTableId]);
+
+  useEffect(() => {
+    if (!canBill && mode === "history") setMode("tables");
+  }, [canBill, mode]);
 
   async function refresh(showSpinner = true) {
     if (showSpinner) setLoading(true);
@@ -448,35 +456,6 @@ export default function App() {
     }
   }
 
-  async function cancelSentItem(orderItemId: string, quantity: number, pin: string, reason: string) {
-    if (!currentOrder?.order || !selectedTableId) {
-      setMessage("Choose a running table before cancelling an item.");
-      return;
-    }
-    if (connection !== "online") {
-      setMessage("Reconnect to the hub before cancelling sent items.");
-      return;
-    }
-    if (!pin.trim() || reason.trim().length < 3) {
-      setMessage("Manager PIN and a clear reason are required.");
-      return;
-    }
-    try {
-      setSending(true);
-      await client.cancelItems(currentOrder.order.id, {
-        managerApproval: { pin: pin.trim(), reason: reason.trim(), approvedBy: deviceName || "captain" },
-        items: [{ orderItemId, quantity }]
-      });
-      await refresh(false);
-      await loadTableOrder(selectedTableId);
-      setMessage("Item cancelled. Cancellation ticket was sent to the counter.");
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Could not cancel item.");
-    } finally {
-      setSending(false);
-    }
-  }
-
   async function generateBillForSelectedTable() {
     if (!currentOrder?.order || !selectedTableId) {
       setMessage("Send items first, then generate the bill.");
@@ -552,6 +531,28 @@ export default function App() {
       setMessage("History bill print queued.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not print history bill.");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  async function editHistoryBill(billId: string, items: HistoryEditPayloadItem[], masterPin: string): Promise<boolean> {
+    try {
+      setSending(true);
+      const payload = {
+        masterApproval: { pin: masterPin, reason: "Owner history edit", approvedBy: deviceName || "owner" },
+        items
+      };
+      const scope = { billId, payload };
+      await client.historyEditBill(billId, payload, { idempotencyKey: operationKey("mobile-history-edit", scope) });
+      clearOperationKey("mobile-history-edit", scope);
+      await refresh(false);
+      if (selectedHistoryDayId) setSelectedHistoryDetail(await client.dailyReport(selectedHistoryDayId));
+      setMessage("History bill edited and updated bill print queued.");
+      return true;
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not edit history bill.");
+      return false;
     } finally {
       setSending(false);
     }
@@ -719,17 +720,18 @@ export default function App() {
   }
 
   const workArea = (
-    <View style={[styles.workArea, isWide && styles.workAreaWide, useVirtualMenu && styles.workAreaMenuOnly]}>
-      {(mode === "tables" || isWide) && (
+    <View style={[styles.workArea, isWide && !historyMode && styles.workAreaWide, useVirtualMenu && styles.workAreaMenuOnly]}>
+      {!historyMode && (mode === "tables" || isWide) && (
         <TablePicker
           activeTables={activeTables}
+          floors={bootstrap?.floors ?? []}
           selectedTableId={selectedTableId}
           loading={loading}
           tileWidth={tableTileWidth}
           onSelectTable={(tableId) => void selectTable(tableId)}
         />
       )}
-      {(mode === "menu" || isWide) && (
+      {!historyMode && (mode === "menu" || isWide) && (
         <MenuScreen
           selectedTableName={selectedTable?.name ?? null}
           visibleMenu={visibleMenu}
@@ -744,7 +746,7 @@ export default function App() {
           onAddItem={addItem}
         />
       )}
-      {(mode === "ticket" || isWide) && (
+      {!historyMode && (mode === "ticket" || isWide) && (
         <TicketScreen
           selectedTableName={selectedTable?.name ?? null}
           deviceName={deviceName}
@@ -753,14 +755,11 @@ export default function App() {
           sentItems={sentItems}
           menuItems={bootstrap?.menuItems ?? []}
           tables={activeTables}
+          floors={bootstrap?.floors ?? []}
           selectedTableId={selectedTableId}
           draftTotal={draftTotal}
           tableTotal={tableTotal}
           currentOrder={currentOrder}
-          currentSummary={currentSummary}
-          dailyReports={dailyReports}
-          selectedHistoryDayId={selectedHistoryDayId}
-          selectedHistoryDetail={selectedHistoryDetail}
           connection={connection}
           sending={sending}
           canShift={deviceRole === "admin" || deviceRole === "captain"}
@@ -773,18 +772,28 @@ export default function App() {
           onChangeQty={changeQty}
           onShiftTable={(tableId) => void shiftTable(tableId)}
           onShiftItem={(orderItemId, quantity, toTableId) => void shiftItem(orderItemId, quantity, toTableId)}
-          onCancelSentItem={(orderItemId, quantity, pin, reason) => void cancelSentItem(orderItemId, quantity, pin, reason)}
           onGenerateBill={() => void generateBillForSelectedTable()}
           onSaveOrderState={(saveMode, stateItems, approval) => void saveOrderStateForSelectedTable(saveMode, stateItems, approval)}
           onReprintBill={(pin, reason) => void reprintSelectedBill(pin, reason)}
-          onHistoryPrint={(billId) => void printHistoryBill(billId)}
-          onSelectHistoryDay={(posDayId) => void selectHistoryDay(posDayId)}
           onMarkNc={(pin, reason) => void markSelectedBillNc(pin, reason)}
           onReviseBill={(pin, reason) => void reviseSelectedBill(pin, reason)}
           onSettleBill={(input) => void settleSelectedBill(input)}
           onSubmit={(printMode) => void submitOrder(printMode)}
         />
       )}
+      {historyMode ? (
+        <BillingHistoryPanel
+          currentSummary={currentSummary}
+          dailyReports={dailyReports}
+          selectedHistoryDayId={selectedHistoryDayId}
+          selectedHistoryDetail={selectedHistoryDetail}
+          menuItems={bootstrap?.menuItems ?? []}
+          sending={sending}
+          onHistoryPrint={(billId) => void printHistoryBill(billId)}
+          onHistoryEdit={(billId, historyItems, masterPin) => editHistoryBill(billId, historyItems, masterPin)}
+          onSelectHistoryDay={(posDayId) => void selectHistoryDay(posDayId)}
+        />
+      ) : null}
     </View>
   );
 
@@ -804,7 +813,7 @@ export default function App() {
   ) : (
     <>
       <ConnectionBanner message={message} savingDraft={savingDraft} />
-      <ModeTabs mode={mode} onModeChange={setMode} newItemCount={items.reduce((total, item) => total + item.quantity, 0)} />
+      <ModeTabs mode={mode} onModeChange={setMode} newItemCount={items.reduce((total, item) => total + item.quantity, 0)} showHistory={canBill} />
       {workArea}
     </>
   );

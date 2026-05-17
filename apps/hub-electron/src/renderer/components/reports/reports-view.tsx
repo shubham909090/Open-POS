@@ -1,13 +1,26 @@
 import { Fragment, useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { formatInr, formatPosDateTime } from "@gaurav-pos/shared";
-import { hubApi, type CloseSummary, type DailyReportDetail } from "../../hub-api.js";
+import { hubApi, type CloseSummary, type DailyReportDetail, type MenuItem } from "../../hub-api.js";
 import { alcoholMovementSourceLabel, alcoholMovementDeltaText } from "../../lib/format.js";
+import { Dialog } from "../ui/dialog.js";
 import { EmptyState } from "../ui/empty-state.js";
 import { Metric } from "../ui/metric.js";
 
 const REPORT_PAGE_SIZE = 8;
 const DETAIL_PAGE_SIZE = 6;
+type HistoryBill = NonNullable<CloseSummary["billSummaries"]>[number];
+type HistoryEditItem = {
+  key: string;
+  orderItemId?: string;
+  menuItemId?: string | null;
+  menuItemVariantId?: string | null;
+  saleGroupId?: string;
+  productionUnitId?: string | null;
+  name: string;
+  quantity: number;
+  unitPricePaise: number;
+};
 
 export function ReportsView() {
   const [expandedReportId, setExpandedReportId] = useState<string | null>(null);
@@ -190,15 +203,120 @@ export function ReportsView() {
 }
 
 function ReportDetailPanels({ summary }: { summary: CloseSummary | DailyReportDetail }) {
+  const queryClient = useQueryClient();
   const [billLimit, setBillLimit] = useState(DETAIL_PAGE_SIZE);
   const [itemLimit, setItemLimit] = useState(DETAIL_PAGE_SIZE);
+  const [editingBill, setEditingBill] = useState<HistoryBill | null>(null);
+  const [editItems, setEditItems] = useState<HistoryEditItem[]>([]);
+  const [search, setSearch] = useState("");
+  const [masterPin, setMasterPin] = useState("");
+  const [editError, setEditError] = useState<string | null>(null);
+  const bootstrap = useQuery({ queryKey: ["bootstrap"], queryFn: hubApi.bootstrap });
   const historyReprint = useMutation({
     mutationFn: (billId: string) => hubApi.historyReprintBill(billId, `history-reprint-${billId}-${Date.now()}`)
+  });
+  const historyEdit = useMutation({
+    mutationFn: (bill: HistoryBill) =>
+      hubApi.historyEditBill(
+        bill.billId,
+        {
+          masterApproval: { pin: masterPin, reason: "Owner history edit", approvedBy: "owner" },
+          items: editItems
+            .filter((item) => item.quantity > 0)
+            .map((item) =>
+              item.menuItemId
+                ? {
+                    orderItemId: item.orderItemId,
+                    menuItemId: item.menuItemId,
+                    menuItemVariantId: item.menuItemVariantId ?? undefined,
+                    quantity: item.quantity,
+                  }
+                : {
+                    orderItemId: item.orderItemId,
+                    openName: item.name,
+                    openPricePaise: item.unitPricePaise,
+                    saleGroupId: item.saleGroupId ?? "sg-food",
+                    productionUnitId: item.productionUnitId ?? null,
+                    quantity: item.quantity,
+                  }
+            ),
+        },
+        `history-edit-${bill.billId}-${Date.now()}`
+      ),
+    onSuccess: async () => {
+      setEditingBill(null);
+      setEditItems([]);
+      setSearch("");
+      setMasterPin("");
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["currentBusinessDaySummary"] }),
+        queryClient.invalidateQueries({ queryKey: ["dailyReports"] }),
+        queryClient.invalidateQueries({ queryKey: ["dailyReport"] }),
+      ]);
+    },
+    onError: (error) => setEditError(error instanceof Error ? error.message : "Could not edit history bill."),
   });
   const bills = summary.billSummaries ?? [];
   const groups = summary.groupSummaries ?? [];
   const items = summary.itemSummaries ?? [];
   const payments = getPaymentTotals(summary, bills);
+  const menuItems = bootstrap.data?.menuItems.filter((item) => item.active) ?? [];
+  const searchedMenu = search.trim()
+    ? menuItems
+        .filter((item) => item.name.toLowerCase().includes(search.trim().toLowerCase()))
+        .slice(0, 6)
+    : [];
+  const editTotal = editItems.reduce((total, item) => total + Math.max(0, item.quantity) * item.unitPricePaise, 0);
+  const canSaveEdit = Boolean(editingBill && masterPin.trim().length >= 4 && editItems.some((item) => item.quantity > 0) && !historyEdit.isPending);
+  const openHistoryEdit = (bill: HistoryBill) => {
+    setEditingBill(bill);
+    setEditError(null);
+    setMasterPin("");
+    setSearch("");
+    setEditItems(
+      (bill.items ?? []).map((item, index) => ({
+        key: item.orderItemId ?? `${bill.billId}-${index}`,
+        orderItemId: item.orderItemId,
+        menuItemId: item.menuItemId,
+        menuItemVariantId: item.menuItemVariantId,
+        saleGroupId: item.saleGroupId,
+        productionUnitId: item.productionUnitId,
+        name: item.name,
+        quantity: item.quantity,
+        unitPricePaise: item.unitPricePaise,
+      }))
+    );
+  };
+  const updateEditQty = (key: string, delta: number) => {
+    setEditItems((current) =>
+      current
+        .map((item) => (item.key === key ? { ...item, quantity: Math.max(0, item.quantity + delta) } : item))
+        .filter((item) => item.orderItemId || item.quantity > 0)
+    );
+  };
+  const addMenuItem = (item: MenuItem, variant?: NonNullable<MenuItem["variants"]>[number]) => {
+    const variantId = variant?.id ?? item.variants?.find((candidate) => candidate.kind === "default" && candidate.active)?.id ?? undefined;
+    const price = variant?.price_paise ?? item.variants?.find((candidate) => candidate.id === variantId)?.price_paise ?? item.price_paise;
+    const name = variant && variant.kind !== "default" ? `${item.name} ${variant.label}` : item.name;
+    const existingKey = `new-${item.id}-${variantId ?? "default"}`;
+    setEditItems((current) => {
+      const existing = current.find((entry) => entry.key === existingKey || (!entry.orderItemId && entry.menuItemId === item.id && entry.menuItemVariantId === variantId));
+      if (existing) return current.map((entry) => (entry === existing ? { ...entry, quantity: entry.quantity + 1 } : entry));
+      return [
+        ...current,
+        {
+          key: existingKey,
+          menuItemId: item.id,
+          menuItemVariantId: variantId,
+          saleGroupId: item.sale_group_id,
+          productionUnitId: item.production_unit_id,
+          name,
+          quantity: 1,
+          unitPricePaise: price,
+        },
+      ];
+    });
+  };
 
   return (
     <div className="report-detail-grid">
@@ -275,7 +393,7 @@ function ReportDetailPanels({ summary }: { summary: CloseSummary | DailyReportDe
                 <tr key={bill.billId}>
                   <td className="strong-cell">
                     #{bill.billNumber ?? bill.billId}
-                    {bill.revisionNumber ? <small>rev {bill.revisionNumber}</small> : null}
+                    {bill.modified ? <small>Modified</small> : bill.revisionNumber ? <small>rev {bill.revisionNumber}</small> : null}
                     {bill.isNc ? <small>NC</small> : null}
                   </td>
                   <td>{bill.tableName}</td>
@@ -289,14 +407,21 @@ function ReportDetailPanels({ summary }: { summary: CloseSummary | DailyReportDe
                   </td>
                   <td>{bill.settledAt ? formatPosDateTime(bill.settledAt) : "Not settled"}</td>
                   <td className="action-cell">
-                    <button
-                      type="button"
-                      className="secondary-button compact"
-                      disabled={historyReprint.isPending}
-                      onClick={() => historyReprint.mutate(bill.billId)}
-                    >
-                      {historyReprint.isPending ? "Printing..." : "Print"}
-                    </button>
+                    <div className="history-actions">
+                      <button
+                        type="button"
+                        className="secondary-button compact"
+                        disabled={historyReprint.isPending}
+                        onClick={() => historyReprint.mutate(bill.billId)}
+                      >
+                        {historyReprint.isPending ? "Printing..." : "Print"}
+                      </button>
+                      {bill.status === "paid" || bill.isNc ? (
+                        <button type="button" className="secondary-button compact" onClick={() => openHistoryEdit(bill)}>
+                          Edit
+                        </button>
+                      ) : null}
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -310,6 +435,73 @@ function ReportDetailPanels({ summary }: { summary: CloseSummary | DailyReportDe
           ) : null}
         </div>
       </section>
+
+      {editingBill ? (
+        <Dialog open onOpenChange={(open) => { if (!open) setEditingBill(null); }} title={`Edit Bill #${editingBill.billNumber ?? editingBill.billId}`} danger>
+          <div className="history-edit-modal">
+            <div className="mini-title">
+              <strong>{formatInr(editTotal)} edited total</strong>
+              <span>Full updated bill prints after save</span>
+            </div>
+            <div className="history-edit-items">
+              {editItems.map((item) => (
+                <div key={item.key} className="history-edit-row">
+                  <div>
+                    <strong>{item.name}</strong>
+                    <span>{formatInr(item.unitPricePaise)} each</span>
+                  </div>
+                  <div className="history-edit-qty">
+                    <button type="button" className="secondary-button compact" onClick={() => updateEditQty(item.key, -1)}>-</button>
+                    <strong>{item.quantity}</strong>
+                    <button type="button" className="secondary-button compact" onClick={() => updateEditQty(item.key, 1)}>+</button>
+                  </div>
+                </div>
+              ))}
+              {!editItems.length ? <p className="plain-state">No items left. Add at least one item before saving.</p> : null}
+            </div>
+            <label>
+              Search item to add
+              <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Type dish or liquor name" />
+            </label>
+            {searchedMenu.length ? (
+              <div className="history-edit-search">
+                {searchedMenu.map((item) => {
+                  const variants = (item.variants ?? []).filter((variant) => variant.active && variant.kind !== "default");
+                  return (
+                    <div key={item.id} className="history-edit-search-row">
+                      <strong>{item.name}</strong>
+                      <div className="history-edit-actions">
+                        {variants.length ? (
+                          variants.map((variant) => (
+                            <button type="button" className="secondary-button compact" key={variant.id} onClick={() => addMenuItem(item, variant)}>
+                              {variant.label} {formatInr(variant.price_paise)}
+                            </button>
+                          ))
+                        ) : (
+                          <button type="button" className="secondary-button compact" onClick={() => addMenuItem(item)}>
+                            + {formatInr(item.price_paise)}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : null}
+            <label>
+              Master PIN
+              <input value={masterPin} onChange={(event) => setMasterPin(event.target.value)} type="password" autoComplete="current-password" />
+            </label>
+            {editError ? <p className="warning-text">{editError}</p> : null}
+            <div className="history-edit-footer">
+              <button type="button" className="secondary-button" onClick={() => setEditingBill(null)}>Cancel</button>
+              <button type="button" className="danger-button" disabled={!canSaveEdit} onClick={() => historyEdit.mutate(editingBill)}>
+                {historyEdit.isPending ? "Saving..." : "Save + Print"}
+              </button>
+            </div>
+          </div>
+        </Dialog>
+      ) : null}
 
       <section className="report-detail-card item-summary-panel">
         <div className="mini-title">

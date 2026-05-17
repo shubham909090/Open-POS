@@ -66,11 +66,11 @@ export interface BillTicketItem {
   lineTotalPaise: number;
 }
 
-const DEFAULT_TICKET_LINE_WIDTH = 42;
+const DEFAULT_TICKET_LINE_WIDTH = 28;
 
 function ticketWidth(value?: number): number {
   if (!value || !Number.isFinite(value)) return DEFAULT_TICKET_LINE_WIDTH;
-  return Math.max(32, Math.min(64, Math.floor(value)));
+  return Math.max(24, Math.min(64, Math.floor(value)));
 }
 
 function separator(width: number): string {
@@ -140,6 +140,16 @@ function renderBillItemLines(item: BillTicketItem, width: number): string[] {
   const variantName = item.variantName?.trim();
   const shouldAppendVariant = Boolean(variantName && variantName.toLowerCase() !== "regular" && !item.name.toLowerCase().includes(variantName.toLowerCase()));
   const name = shouldAppendVariant ? `${item.name} ${variantName}` : item.name;
+  if (width < 32) {
+    const amount = money(item.lineTotalPaise);
+    const itemText = `${item.quantity} x ${name}`;
+    const itemWidth = Math.max(8, width - amount.length - 1);
+    const nameLines = wrapTicketText(itemText, itemWidth);
+    return [
+      `${(nameLines[0] ?? "").padEnd(itemWidth)} ${amount}`,
+      ...nameLines.slice(1).map((line) => line.padEnd(itemWidth))
+    ];
+  }
   const qtyWidth = 4;
   const rateWidth = 8;
   const amountWidth = 9;
@@ -230,7 +240,7 @@ export function renderBillTicket(ticket: BillTicket): string {
     ...(ticket.showNcReprintRevision === false
       ? []
       : [
-          ...(ticket.revisionNumber && ticket.revisionNumber > 1 ? [`Revision: ${ticket.revisionNumber}`] : []),
+          ...(ticket.revisionNumber && ticket.revisionNumber > 1 ? [`Modified rev ${ticket.revisionNumber}`] : []),
           ...(ticket.ncReason ? centerTicketText("NC / NON CUSTOMER", width) : [])
         ]),
     ...(ticket.showTable === false ? [] : [`Table: ${ticket.tableName}`]),
@@ -238,8 +248,8 @@ export function renderBillTicket(ticket: BillTicket): string {
     ...(ticket.taxRegistrationText ? [ticket.taxRegistrationText] : []),
     separator(width),
     ...(ticket.items?.length
-      ? [
-          `${"Item".padEnd(Math.max(8, width - 25))} ${right("Qty", 4)} ${right("Rate", 8)} ${right("Amt", 9)}`,
+	      ? [
+	          width < 32 ? `${"Item".padEnd(Math.max(8, width - 7))} ${right("Amt", 6)}` : `${"Item".padEnd(Math.max(8, width - 25))} ${right("Qty", 4)} ${right("Rate", 8)} ${right("Amt", 9)}`,
           separator(width),
           ...ticket.items.flatMap((item) => renderBillItemLines(item, width)),
           separator(width)
@@ -250,7 +260,9 @@ export function renderBillTicket(ticket: BillTicket): string {
       ? ticket.showTaxBreakup === false
         ? [renderTaxLine("Tax", ticket.taxPaise, width)]
         : ticket.taxBreakdown.map((line) => renderTaxLine(line.name, line.amountPaise, width, line.rateBps))
-      : [renderTaxLine("Tax", ticket.taxPaise, width)]),
+      : ticket.taxPaise > 0
+        ? [renderTaxLine("Tax", ticket.taxPaise, width)]
+        : []),
     renderMoneyLine("Total", ticket.totalPaise, width)
   ];
 

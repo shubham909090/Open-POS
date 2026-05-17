@@ -60,8 +60,8 @@ describe("ticket rendering", () => {
       createdAt: "2026-05-15T00:00:00.000Z",
       subtotalPaise: 30000,
       taxPaise: 1500,
-      totalPaise: 31500,
-      lineWidthChars: 42,
+      totalPaise: 30000,
+      lineWidthChars: 28,
       taxBreakdown: [
         { name: "Food CGST", rateBps: 250, amountPaise: 750 },
         { name: "Food SGST", rateBps: 250, amountPaise: 750 }
@@ -73,6 +73,27 @@ describe("ticket rendering", () => {
       .map((line) => line.slice(0, 32));
 
     expect(firstVisibleColumns).toEqual(["Food CGST @ 2.5%: 7.50", "Food SGST @ 2.5%: 7.50"]);
+    expect(payload).toContain("Subtotal              300.00");
+    expect(payload).toContain("Total                 300.00");
+    expect(payload).not.toContain("VAT");
+  });
+
+  it("skips tax line when no tax components are configured", () => {
+    const payload = renderBillTicket({
+      tableName: "B1",
+      billId: "12",
+      createdAt: "2026-05-15T00:00:00.000Z",
+      subtotalPaise: 4000,
+      taxPaise: 0,
+      totalPaise: 4000,
+      taxBreakdown: [],
+      lineWidthChars: 28
+    });
+
+    expect(payload).toContain("Subtotal               40.00");
+    expect(payload).toContain("Total                  40.00");
+    expect(payload).not.toContain("Tax");
+    expect(payload).not.toContain("VAT");
   });
 
   it("can show or hide payment split lines", () => {
