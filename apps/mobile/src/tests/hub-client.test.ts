@@ -235,6 +235,51 @@ describe("HubClient", () => {
     );
   });
 
+  it("sends full order-state updates with caller-selected save mode", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ orderId: "order-1", status: "open", totalPaise: 37800, kotIds: [], printJobIds: [] }), { status: 200 })
+    );
+
+    const client = new HubClient("http://hub.local:3737", "captain-token");
+    await client.updateOrderState(
+      "order-1",
+      { saveMode: "save", items: [{ menuItemId: "item-1", quantity: 2 }] },
+      { idempotencyKey: "state-once" }
+    );
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://hub.local:3737/orders/order-1/state",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({ "Idempotency-Key": "state-once" }),
+        body: JSON.stringify({ saveMode: "save", items: [{ menuItemId: "item-1", quantity: 2 }] })
+      })
+    );
+  });
+
+  it("loads older order history days and detail reports", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response(JSON.stringify([{ pos_day_id: "day-1", business_date: "2026-05-16", bill_count: 2 }]), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ pos_day_id: "day-1", business_date: "2026-05-16", billSummaries: [{ billId: "bill-1", billNumber: 1, subtotalPaise: 10000, taxPaise: 500, totalPaise: 10500, finalTotalPaise: 10500, paidPaise: 10500, payments: [], items: [] }] }), { status: 200 }));
+
+    const client = new HubClient("http://hub.local:3737", "captain-token");
+    const reports = await client.dailyReports();
+    const detail = await client.dailyReport("day-1");
+
+    expect(reports[0]?.business_date).toBe("2026-05-16");
+    expect(detail.billSummaries[0]).toMatchObject({ billNumber: 1, subtotalPaise: 10000, taxPaise: 500 });
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "http://hub.local:3737/reports/daily",
+      expect.objectContaining({ headers: expect.objectContaining({ "x-device-token": "captain-token" }) })
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "http://hub.local:3737/reports/daily/day-1",
+      expect.objectContaining({ headers: expect.objectContaining({ "x-device-token": "captain-token" }) })
+    );
+  });
+
   it("loads kitchen tickets and updates KOT status for kitchen devices", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(new Response(JSON.stringify([{ id: "kot-1", table_name: "T1", status: "queued", items: [] }]), { status: 200 }))
@@ -265,6 +310,7 @@ describe("HubClient", () => {
       .mockResolvedValueOnce(new Response(JSON.stringify({ billId: "bill-1", totalPaise: 12100 }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ printJobId: "print-1" }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ printJobId: "print-2" }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ printJobId: "history-print" }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ billId: "bill-1", revisionNumber: 2, totalPaise: 24200, kotIds: [] }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ printJobId: "print-nc" }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ billId: "bill-1", status: "paid", remainingPaise: 0 }), { status: 200 }))
@@ -276,6 +322,7 @@ describe("HubClient", () => {
     await client.generateBill("order-1", { idempotencyKey: "generate-once" });
     await client.printBill("bill-1", { idempotencyKey: "print-once" });
     await client.reprintBill("bill-1", approval, { idempotencyKey: "reprint-once" });
+    await client.historyReprintBill("bill-1", { idempotencyKey: "history-reprint-once" });
     await client.reviseBill("bill-1", { ...approval, items: [{ menuItemId: "item-1", quantity: 2 }] }, { idempotencyKey: "revise-once" });
     await client.markBillNc("bill-1", approval, { idempotencyKey: "nc-once" });
     await client.settleBill(
@@ -311,21 +358,30 @@ describe("HubClient", () => {
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       4,
+      "http://hub.local:3737/bills/bill-1/history-reprint",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({ "Idempotency-Key": "history-reprint-once" }),
+        body: JSON.stringify({})
+      })
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      5,
       "http://hub.local:3737/bills/bill-1/revise",
       expect.objectContaining({ method: "POST", headers: expect.objectContaining({ "Idempotency-Key": "revise-once" }) })
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
-      5,
+      6,
       "http://hub.local:3737/bills/bill-1/nc",
       expect.objectContaining({ method: "POST", headers: expect.objectContaining({ "Idempotency-Key": "nc-once" }) })
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
-      6,
+      7,
       "http://hub.local:3737/bills/bill-1/settle",
       expect.objectContaining({ method: "POST", headers: expect.objectContaining({ "Idempotency-Key": "settle-once" }) })
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
-      7,
+      8,
       "http://hub.local:3737/business-day/current-summary",
       expect.objectContaining({ headers: expect.objectContaining({ "x-device-token": "captain-token" }) })
     );

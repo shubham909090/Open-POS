@@ -35,13 +35,14 @@ import {
   retryPrintJobSchema,
   settleBillSchema,
   printLayoutSettingsSchema,
-  scheduleRestoreSchema,
-  submitOrderSchema,
-  ticketTemplateSchema,
-  updateAlcoholItemSchema,
-  updateFloorSchema,
-  updateKotStatusSchema,
-  updateMenuItemSchema,
+	  scheduleRestoreSchema,
+	  submitOrderSchema,
+	  ticketTemplateSchema,
+	  updateAlcoholItemSchema,
+	  updateFloorSchema,
+	  updateKotStatusSchema,
+	  updateMenuItemSchema,
+	  updateOrderStateSchema,
   updatePrinterOutputModeSchema,
   updateProductionUnitSchema,
   updateReceiptPrinterSchema,
@@ -64,19 +65,24 @@ import type { ConvexSyncBridge } from "../sync/convex-sync.js";
 export function isRealtimeEventVisibleForRole(event: unknown, role: UserRole): boolean {
   if (role === "admin" || role === "captain") return true;
   const type = typeof event === "object" && event !== null && "type" in event ? String((event as { type?: unknown }).type ?? "") : "";
-  const kdsChangingEvents = ["order.submitted", "order.cancelled", "order_items.cancelled", "table.shifted", "order_items.shifted"];
-  if (role === "kitchen") return type.startsWith("kot.") || kdsChangingEvents.includes(type);
+    const kdsChangingEvents = ["order.submitted", "order.cancelled", "order_items.cancelled", "table.shifted", "order_items.shifted"];
+    if (role === "kitchen") {
+      if (type === "order_state.updated") return Boolean((event as { result?: { kdsChanged?: unknown } }).result?.kdsChanged);
+      return type.startsWith("kot.") || kdsChangingEvents.includes(type);
+    }
   if (role === "waiter") {
     return [
       "order.submitted",
       "order.cancelled",
-      "order_items.cancelled",
-      "table.shifted",
+	      "order_items.cancelled",
+	      "order_state.updated",
+	      "table.shifted",
       "order_items.shifted",
       "kot.status_changed",
       "bill.generated",
       "bill.printed",
       "bill.reprinted",
+      "bill.history_reprinted",
       "bill.revised",
       "bill.settled",
       "bill.nc_marked"
@@ -748,7 +754,7 @@ export function createHubServer(input: {
     return { ...result, processed };
   });
 
-  app.post("/orders/:id/items/cancel", { preHandler: captainOrAdmin }, async (request) => {
+	  app.post("/orders/:id/items/cancel", { preHandler: captainOrAdmin }, async (request) => {
     const params = request.params as { id: string };
     const session = getSession(request);
     const result = input.orderService.cancelOrderItems(
@@ -758,6 +764,21 @@ export function createHubServer(input: {
     const processed = await processCreatedPrintJobs(result.printJobIds);
     input.eventBus.publish({ type: "order_items.cancelled", result: { ...result, processed } });
     return { ...result, processed };
+	  });
+
+  app.post("/orders/:id/state", { preHandler: orderRole }, async (request) => {
+    const params = request.params as { id: string };
+    const { result, replayed } = await withIdempotency(request, `orders.state.${params.id}`, () =>
+      input.orderService.updateOrderState(params.id, updateOrderStateSchema.parse(request.body))
+    );
+    const processed = replayed ? undefined : await processCreatedPrintJobs(result.printJobIds);
+    if (!replayed) {
+      input.eventBus.publish({
+        type: "order_state.updated",
+        result: { ...result, kdsChanged: result.kotIds.length > 0, processed }
+      });
+    }
+    return { ...result, ...(processed ? { processed } : {}) };
   });
 
   app.post("/kot/:id/reprint", { preHandler: captainOrAdmin }, async (request) => {
@@ -785,6 +806,17 @@ export function createHubServer(input: {
     );
     const processed = replayed ? undefined : await processCreatedPrintJobs([result.printJobId]);
     if (!replayed) input.eventBus.publish({ type: "bill.reprinted", result: { ...result, processed } });
+    return { ...result, ...(processed ? { processed } : {}) };
+  });
+
+  app.post("/bills/:billId/history-reprint", { preHandler: captainOrAdmin }, async (request) => {
+    const params = request.params as { billId: string };
+    const session = getSession(request);
+    const { result, replayed } = await withIdempotency(request, `bills.history-reprint.${params.billId}`, () =>
+      input.orderService.reprintBillFromHistory(params.billId, session.name)
+    );
+    const processed = replayed ? undefined : await processCreatedPrintJobs([result.printJobId]);
+    if (!replayed) input.eventBus.publish({ type: "bill.history_reprinted", result: { ...result, processed } });
     return { ...result, ...(processed ? { processed } : {}) };
   });
 
@@ -819,14 +851,15 @@ export function createHubServer(input: {
     return { ...result, ...(processed ? { processed } : {}) };
   });
 
-  app.post("/bills/:orderId/generate", { preHandler: captainOrAdmin }, async (request) => {
-    const params = request.params as { orderId: string };
-    const { result, replayed } = await withIdempotency(request, `bills.generate.${params.orderId}`, () =>
-      input.orderService.generateBill(params.orderId)
-    );
-    if (!replayed) input.eventBus.publish({ type: "bill.generated", result });
-    return result;
-  });
+	  app.post("/bills/:orderId/generate", { preHandler: captainOrAdmin }, async (request) => {
+	    const params = request.params as { orderId: string };
+	    const { result, replayed } = await withIdempotency(request, `bills.generate.${params.orderId}`, () =>
+	      input.orderService.generateBill(params.orderId)
+	    );
+	    const processed = replayed ? undefined : await processCreatedPrintJobs([result.printJobId]);
+	    if (!replayed) input.eventBus.publish({ type: "bill.generated", result: { ...result, processed } });
+	    return { ...result, ...(processed ? { processed } : {}) };
+	  });
 
   app.post("/bills/:billId/settle", { preHandler: captainOrAdmin }, async (request) => {
     const params = request.params as { billId: string };

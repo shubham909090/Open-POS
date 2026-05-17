@@ -168,6 +168,144 @@ describe("OrderService KOT lifecycle", () => {
     database.close();
   });
 
+  it("generates a sequential bill number and queues the first customer bill print", () => {
+    const { database, orderService } = createTestHub();
+
+    const firstOrder = orderService.submitOrder({
+      tableId: "table-t1",
+      captainId: "waiter-1",
+      pax: 1,
+      orderType: "dine_in",
+      items: [{ menuItemId: "item-dal-fry", quantity: 1 }]
+    });
+    const firstBill = orderService.generateBill(firstOrder.orderId);
+
+    orderService.settleBill(firstBill.billId, { method: "cash", amountPaise: firstBill.totalPaise, receivedBy: "captain-1" });
+    const secondOrder = orderService.submitOrder({
+      tableId: "table-t2",
+      captainId: "waiter-1",
+      pax: 1,
+      orderType: "dine_in",
+      items: [{ menuItemId: "item-lassi", quantity: 1 }]
+    });
+    const secondBill = orderService.generateBill(secondOrder.orderId);
+
+    expect(firstBill).toMatchObject({ billNumber: 1, printJobId: expect.any(String) });
+    expect(secondBill).toMatchObject({ billNumber: 2, printJobId: expect.any(String) });
+    expect(database.db.prepare("SELECT bill_number, print_count FROM bills ORDER BY bill_number").all()).toEqual([
+      { bill_number: 1, print_count: 2 },
+      { bill_number: 2, print_count: 1 }
+    ]);
+    const printJob = database.db.prepare("SELECT payload FROM print_jobs WHERE id = ?").get(firstBill.printJobId) as { payload: string };
+    expect(printJob.payload).toContain("BILL 1");
+    expect(printJob.payload).not.toContain(firstBill.billId);
+
+    database.close();
+  });
+
+  it("updates running table state without KOTs on save and with KOTs on save and print", () => {
+    const { database, orderService } = createTestHub();
+
+    const order = orderService.submitOrder({
+      tableId: "table-t1",
+      captainId: "waiter-1",
+      pax: 1,
+      orderType: "dine_in",
+      printMode: "kot",
+      items: [{ menuItemId: "item-dal-fry", quantity: 1 }]
+    });
+
+    const saved = orderService.updateOrderState(order.orderId, {
+      saveMode: "save",
+      items: [
+        { menuItemId: "item-dal-fry", quantity: 3 },
+        { menuItemId: "item-lassi", quantity: 1 }
+      ]
+    });
+    expect(saved.kotIds).toEqual([]);
+    expect(saved.printJobIds).toEqual([]);
+    expect(database.db.prepare("SELECT COUNT(*) AS count FROM kots").get()).toEqual({ count: 1 });
+
+    const printed = orderService.updateOrderState(order.orderId, {
+      saveMode: "save_print",
+      items: [
+        { menuItemId: "item-dal-fry", quantity: 2 },
+        { menuItemId: "item-lassi", quantity: 2 }
+      ]
+    });
+    expect(printed.kotIds).toHaveLength(2);
+    expect(printed.printJobIds).toHaveLength(2);
+    expect(database.db.prepare("SELECT type, quantity_delta FROM kots JOIN kot_items ON kot_items.kot_id = kots.id WHERE type != 'new' ORDER BY type, quantity_delta").all()).toEqual([
+      { type: "modified", quantity_delta: 1 },
+      { type: "partial_cancel", quantity_delta: -1 }
+    ]);
+
+    database.close();
+  });
+
+  it("revises a billed order to zero before freeing the table when all items are removed", () => {
+    const { database, orderService } = createTestHub();
+    orderService.setManagerPin({ newPin: "1234", updatedBy: "admin" });
+    const order = orderService.submitOrder({
+      tableId: "table-t1",
+      captainId: "waiter-1",
+      pax: 1,
+      orderType: "dine_in",
+      printMode: "kot",
+      items: [{ menuItemId: "item-dal-fry", quantity: 1 }]
+    });
+    const bill = orderService.generateBill(order.orderId);
+
+    const result = orderService.updateOrderState(order.orderId, {
+      saveMode: "save",
+      items: [],
+      managerApproval: { pin: "1234", reason: "Remove billed table items", approvedBy: "manager" }
+    });
+
+    expect(result).toMatchObject({ orderId: order.orderId, status: "cancelled", totalPaise: 0, billId: bill.billId, revisionNumber: 2 });
+    expect(database.db.prepare("SELECT status FROM orders WHERE id = ?").get(order.orderId)).toEqual({ status: "cancelled" });
+    expect(database.db.prepare("SELECT status, current_order_id FROM restaurant_tables WHERE id = 'table-t1'").get()).toEqual({ status: "free", current_order_id: null });
+    expect(database.db.prepare("SELECT subtotal_paise, tax_paise, total_paise, final_total_paise, revision_number FROM bills WHERE id = ?").get(bill.billId)).toEqual({
+      subtotal_paise: 0,
+      tax_paise: 0,
+      total_paise: 0,
+      final_total_paise: 0,
+      revision_number: 2
+    });
+    expect(database.db.prepare("SELECT total_paise, final_total_paise FROM bill_revisions WHERE bill_id = ? ORDER BY revision_number DESC LIMIT 1").get(bill.billId)).toEqual({
+      total_paise: 0,
+      final_total_paise: 0
+    });
+
+    database.close();
+  });
+
+  it("keeps the original KOT number for KOT-only orders when later modified", () => {
+    const { database, orderService } = createTestHub();
+
+    const order = orderService.submitOrder({
+      tableId: "table-t1",
+      captainId: "waiter-1",
+      pax: 1,
+      orderType: "dine_in",
+      printMode: "kot",
+      items: [{ menuItemId: "item-dal-fry", quantity: 1 }]
+    });
+    const firstKot = database.db.prepare("SELECT sequence FROM kots WHERE order_id = ?").get(order.orderId) as { sequence: number };
+
+    orderService.updateOrderState(order.orderId, {
+      saveMode: "save_print",
+      items: [{ menuItemId: "item-dal-fry", quantity: 2 }]
+    });
+
+    expect(database.db.prepare("SELECT type, sequence, ticket_label FROM kots WHERE order_id = ? ORDER BY created_at, id").all(order.orderId)).toEqual([
+      { type: "new", sequence: firstKot.sequence, ticket_label: "KOT" },
+      { type: "modified", sequence: firstKot.sequence, ticket_label: "KOT" }
+    ]);
+
+    database.close();
+  });
+
   it("hides KDS tickets when the kitchen screen is disabled for a counter", () => {
     const { database, orderService } = createTestHub();
     orderService.updateProductionUnit("unit-kitchen", { kdsEnabled: false });
@@ -379,7 +517,6 @@ describe("OrderService KOT lifecycle", () => {
     });
     const bill = orderService.generateBill(order.orderId);
 
-    orderService.printBill(bill.billId, "captain-1");
     const reprint = orderService.reprintBill(bill.billId, {
       requestedBy: "captain-1",
       reason: "Customer copy",

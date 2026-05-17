@@ -224,7 +224,7 @@ Implement the full restaurant workflow pass from your brother’s notes in one d
   - bill revision updates totals and keeps audit history
   - NC bill prints but is excluded from sales/tax/payment totals
 - Printing:
-  - KOT only, bill only, and KOT+bill modes create correct print jobs
+  - KOT-only, Print and KOT, bill generate-and-print, and reprint modes create the correct saved tickets/print jobs
   - KOT/BOT labels route by group/counter
   - failed printer job surfaces error and remains retryable
 - Movement:
@@ -253,7 +253,6 @@ Implement the full restaurant workflow pass from your brother’s notes in one d
 - “Regenerate bill” means create a revised bill after manager-approved changes, not merely reprint.
 - NC bills count item quantities but exclude money from sales/tax/payment totals.
 - Kitchen/bar ready status is marked from the KDS screens, then pushed to APK.
-
 
 
 

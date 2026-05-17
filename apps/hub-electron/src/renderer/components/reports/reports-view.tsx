@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { formatInr } from "@gaurav-pos/shared";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { formatInr, formatPosDateTime } from "@gaurav-pos/shared";
 import { hubApi, type CloseSummary, type DailyReportDetail } from "../../hub-api.js";
 import { alcoholMovementSourceLabel, alcoholMovementDeltaText } from "../../lib/format.js";
 import { EmptyState } from "../ui/empty-state.js";
@@ -88,8 +88,7 @@ export function ReportsView() {
               <div>
                 <b>{formatInr(report.total_payments_paise)}</b>
                 <span>
-                  finalized{" "}
-                  {new Date(report.finalized_at).toLocaleString()}
+                  finalized {formatPosDateTime(report.finalized_at)}
                 </span>
               </div>
               <button
@@ -151,7 +150,7 @@ export function ReportsView() {
                   {movement.balance_sealed_small} small
                 </b>
                 <span>
-                  {new Date(movement.created_at).toLocaleString()}
+                  {formatPosDateTime(movement.created_at)}
                 </span>
               </div>
             </article>
@@ -176,6 +175,9 @@ export function ReportsView() {
 function ReportDetailPanels({ summary }: { summary: CloseSummary | DailyReportDetail }) {
   const [billLimit, setBillLimit] = useState(DETAIL_PAGE_SIZE);
   const [itemLimit, setItemLimit] = useState(DETAIL_PAGE_SIZE);
+  const historyReprint = useMutation({
+    mutationFn: (billId: string) => hubApi.historyReprintBill(billId, `history-reprint-${billId}-${Date.now()}`)
+  });
   const bills = summary.billSummaries ?? [];
   const groups = summary.groupSummaries ?? [];
   const items = summary.itemSummaries ?? [];
@@ -215,23 +217,33 @@ function ReportDetailPanels({ summary }: { summary: CloseSummary | DailyReportDe
 
       <section className="report-detail-card report-detail-wide">
         <div className="mini-title">
-          <strong>Bills and table history</strong>
+          <strong>Order History</strong>
           <span>{bills.length} bills</span>
         </div>
         <div className="compact-list">
           {bills.slice(0, billLimit).map((bill) => (
             <div key={bill.billId} className="compact-row bill-history-row">
               <span>
-                {bill.tableName} · {bill.status}
+                Bill #{bill.billNumber ?? bill.billId} · Table {bill.tableName} · {bill.status}
                 {bill.revisionNumber ? ` · rev ${bill.revisionNumber}` : ""}
                 {bill.isNc ? " · NC" : ""}
               </span>
               <b>{formatInr(bill.finalTotalPaise)}</b>
               <small>
+                {bill.items?.length ? `${bill.items.map((item) => `${item.quantity} x ${item.name}`).join(", ")} · ` : ""}
+                subtotal {formatInr(bill.subtotalPaise ?? Math.max(0, bill.totalPaise - (bill.taxPaise ?? 0)))} · tax {formatInr(bill.taxPaise ?? 0)} · discount {formatInr(bill.discountPaise)} · tip {formatInr(bill.tipPaise)} ·{" "}
                 paid {formatInr(bill.paidPaise)}
                 {bill.payments.length ? ` · ${bill.payments.map((payment) => payment.method).join(", ")}` : ""}
-                {bill.settledAt ? ` · ${new Date(bill.settledAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : ""}
+                {bill.settledAt ? ` · ${formatPosDateTime(bill.settledAt)}` : ""}
               </small>
+              <button
+                type="button"
+                className="secondary-button compact"
+                disabled={historyReprint.isPending}
+                onClick={() => historyReprint.mutate(bill.billId)}
+              >
+                {historyReprint.isPending ? "Printing..." : "Print"}
+              </button>
             </div>
           ))}
           {!bills.length ? <p className="plain-state">No bills recorded yet.</p> : null}

@@ -64,7 +64,7 @@ This runs on the admin PC. It is the local server, local database owner, printer
 It has four main areas:
 
 - Setup: automatic 6 AM IST business day, printers, floors/tables, kitchens/counters, menu, sale groups, manager PIN, device pairing, backups, and sync.
-- Service: live table order entry, menu search, draft totals, and KOT submission.
+- Service: live table order entry, compact menu search, draft totals, editable table state, KOT-only submission, and Print and KOT submission.
 - Kitchen: KOT/KDS status and print queue handling.
 - Billing: bill generation, receipt reprint, discounts, tips, split payments, NC bills, and settlement.
 - Reports: current business-day summary, finalized sale-group summaries, and local backup/report history.
@@ -81,13 +81,13 @@ It does a smaller set of tasks:
 - show LAN connection status
 - choose a table
 - search menu items with shared Fuse.js fuzzy search across dish name, sale group, kitchen/counter, and variation labels
-- use recent and popular-today quick picks before scrolling the full menu
+- use compact fuzzy search and sale-group tabs instead of recent/popular shortcuts
 - add simple dish quantities
 - review the KOT before sending
 - save a draft if the hub is temporarily unreachable
 - captain only: shift any running table to another free table
 - captain only: shift selected items from any running table to another table
-- captain only: generate/print/settle bills and view the current-day summary
+- captain only: generate-and-print bills, settle bills, and view current/older order history
 - captain only: receive kitchen/bar ready alerts
 
 It does not write directly to SQLite. It sends final orders to the hub.

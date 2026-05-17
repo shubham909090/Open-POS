@@ -1,3 +1,5 @@
+import { formatPosDateTime } from "@gaurav-pos/shared";
+
 export interface KotTicketItem {
   name: string;
   quantityDelta: number;
@@ -79,19 +81,6 @@ function money(valuePaise: number): string {
   return (valuePaise / 100).toFixed(2);
 }
 
-function formatTicketDateTime(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  const day = date.getDate();
-  const month = date.toLocaleString("en-IN", { month: "long" });
-  const year = date.getFullYear();
-  const time = date
-    .toLocaleString("en-IN", { hour: "numeric", minute: "2-digit", hour12: true })
-    .replace("am", "am")
-    .replace("pm", "pm");
-  return `${day} ${month} ${year} at ${time}`;
-}
-
 function truncateTicketText(value: string, maxLength: number): string {
   if (value.length <= maxLength) return value;
   if (maxLength <= 3) return value.slice(0, maxLength);
@@ -148,7 +137,9 @@ function wrapTicketText(value: string, width: number): string[] {
 }
 
 function renderBillItemLines(item: BillTicketItem, width: number): string[] {
-  const name = item.variantName ? `${item.name} ${item.variantName}` : item.name;
+  const variantName = item.variantName?.trim();
+  const shouldAppendVariant = Boolean(variantName && variantName.toLowerCase() !== "regular" && !item.name.toLowerCase().includes(variantName.toLowerCase()));
+  const name = shouldAppendVariant ? `${item.name} ${variantName}` : item.name;
   const qtyWidth = 4;
   const rateWidth = 8;
   const amountWidth = 9;
@@ -217,7 +208,7 @@ export function renderKotTicket(ticket: KotTicket): string {
     `Station: ${ticket.productionUnitName}`,
     ...(ticket.showTable === false ? [] : [`Table: ${ticket.tableName}`]),
     ...(ticket.showCaptain === false ? [] : [`Captain: ${ticket.captainId}`]),
-    ...(ticket.showDateTime === false ? [] : [`Time: ${formatTicketDateTime(ticket.createdAt)}`]),
+    ...(ticket.showDateTime === false ? [] : [`Time: ${formatPosDateTime(ticket.createdAt)}`]),
     separator(width)
   ];
 
@@ -243,7 +234,7 @@ export function renderBillTicket(ticket: BillTicket): string {
           ...(ticket.ncReason ? centerTicketText("NC / NON CUSTOMER", width) : [])
         ]),
     ...(ticket.showTable === false ? [] : [`Table: ${ticket.tableName}`]),
-    ...(ticket.showDateTime === false ? [] : [`Date: ${formatTicketDateTime(ticket.createdAt)}`]),
+    ...(ticket.showDateTime === false ? [] : [`Date: ${formatPosDateTime(ticket.createdAt)}`]),
     ...(ticket.taxRegistrationText ? [ticket.taxRegistrationText] : []),
     separator(width),
     ...(ticket.items?.length

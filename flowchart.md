@@ -274,7 +274,7 @@ sequenceDiagram
 flowchart TD
   Table["Selected running table"]
   SentItems{"Has sent items?"}
-  Generate["Generate bill<br/>POST /bills/:orderId/generate"]
+  Generate["Generate and print bill<br/>POST /bills/:orderId/generate"]
   PendingBill["Bill pending"]
   Adjust["Captain applies discount/tip"]
   PayChoice["Record payment rows"]

@@ -1,5 +1,6 @@
-import { formatInr, getTableDisplayState, rankMenuQuickPicks, searchMenuItems, tableDisplayClass, tableDisplayLabel, type SaleGroupKind } from "@gaurav-pos/shared";
-import { useState } from "react";
+import { formatInr, getTableDisplayState, searchMenuItems, tableDisplayClass, tableDisplayLabel, type SaleGroupKind } from "@gaurav-pos/shared";
+import { PanelLeftOpen, X } from "lucide-react";
+import { useEffect, useState } from "react";
 import type { NoticeSetter } from "../../lib/format.js";
 import type { ManagerApprovalRequest } from "../../hooks/use-manager-approval.js";
 import type { Bootstrap } from "../../hub-api.js";
@@ -15,27 +16,24 @@ export function OrdersView({ bootstrap, setNotice, requestManagerApproval }: { b
   const setOrderPanel = useHubStore((state) => state.setOrderPanel);
   const search = useHubStore((state) => state.menuSearch);
   const setSearch = useHubStore((state) => state.setMenuSearch);
-  const recentMenuItemIds = useHubStore((state) => state.recentMenuItemIds);
   const addDraftItem = useHubStore((state) => state.addDraftItem);
-  const [saleGroupFilter, setSaleGroupFilter] = useState<SaleGroupKind | "all">("all");
-  const [unitFilter, setUnitFilter] = useState("");
+  const [saleGroupFilter, setSaleGroupFilter] = useState<SaleGroupKind | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
   const activeTables = bootstrap.tables.filter((table) => table.active);
   const selectedTable = activeTables.find((table) => table.id === selectedTableId) ?? null;
 
-  const hasSearch = search.trim().length > 0;
-  const searchFilters = {
-    saleGroupKind: saleGroupFilter,
-    productionUnitId: unitFilter || undefined
-  };
-  const quickPicks = hasSearch ? [] : rankMenuQuickPicks(bootstrap.menuItems, recentMenuItemIds, bootstrap.menuPopularity ?? [], searchFilters).slice(0, 10);
-  const quickPickIds = new Set(quickPicks.map((pick) => pick.item.id));
-  const activeItems = searchMenuItems(bootstrap.menuItems, search, searchFilters)
-    .filter((item) => hasSearch || !quickPickIds.has(item.id));
   const saleGroupKinds = Array.from(new Map(bootstrap.saleGroups.filter((group) => group.active).map((group) => [group.kind, group.name])).entries());
+  const activeSaleGroup = saleGroupFilter ?? (saleGroupKinds[0]?.[0] as SaleGroupKind | undefined);
+  const hasSearch = search.trim().length > 0;
+  const activeItems = searchMenuItems(bootstrap.menuItems, search, { saleGroupKind: activeSaleGroup }).slice(0, 80);
   const openTablePanel = (tableId: string, panel: OrderPanel) => {
     selectTable(tableId);
     setOrderPanel(panel);
   };
+
+  useEffect(() => {
+    setMenuOpen(false);
+  }, [selectedTable?.id]);
 
   return (
     <div className={selectedTable ? "orders-grid has-selection" : "orders-grid tables-only"}>
@@ -93,50 +91,41 @@ export function OrdersView({ bootstrap, setNotice, requestManagerApproval }: { b
       </section>
 
       {selectedTable ? (
-        <div className="order-workspace-grid">
+        <div className={menuOpen ? "order-workspace-grid menu-open" : "order-workspace-grid menu-collapsed"}>
+          {menuOpen ? (
           <section className="menu-browser panel">
             <div className="panel-title">
               <h2>Menu</h2>
-              <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search dish" />
+              <div className="menu-browser-title-actions">
+                <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search dish" />
+                <button type="button" className="order-icon-button" onClick={() => setMenuOpen(false)} aria-label="Close menu">
+                  <X size={16} />
+                </button>
+              </div>
             </div>
             <div className="menu-filter-row" aria-label="Menu filters">
-              <button type="button" className={saleGroupFilter === "all" ? "active" : ""} onClick={() => setSaleGroupFilter("all")}>All</button>
               {saleGroupKinds.map(([kind, label]) => (
-                <button key={kind} type="button" className={saleGroupFilter === kind ? "active" : ""} onClick={() => setSaleGroupFilter(kind as SaleGroupKind)}>
+                <button key={kind} type="button" className={activeSaleGroup === kind ? "active" : ""} onClick={() => setSaleGroupFilter(kind as SaleGroupKind)}>
                   {label}
                 </button>
               ))}
-              <select value={unitFilter} onChange={(event) => setUnitFilter(event.target.value)} aria-label="Kitchen or counter filter">
-                <option value="">All kitchens</option>
-                {bootstrap.productionUnits.filter((unit) => unit.active).map((unit) => (
-                  <option key={unit.id} value={unit.id}>{unit.name}</option>
-                ))}
-              </select>
             </div>
-            {quickPicks.some((pick) => pick.section === "recent") ? (
-              <MenuResultSection
-                title="Recent"
-                items={quickPicks.filter((pick) => pick.section === "recent").map((pick) => pick.item)}
-                selectedTableId={selectedTable.id}
-                onAdd={addDraftItem}
-              />
-            ) : null}
-            {quickPicks.some((pick) => pick.section === "popular") ? (
-              <MenuResultSection
-                title="Popular today"
-                items={quickPicks.filter((pick) => pick.section === "popular").map((pick) => pick.item)}
-                selectedTableId={selectedTable.id}
-                onAdd={addDraftItem}
-              />
-            ) : null}
             <MenuResultSection
-              title={hasSearch ? "Best matches" : "All dishes"}
+              title={hasSearch ? "Best matches" : (saleGroupKinds.find(([kind]) => kind === activeSaleGroup)?.[1] ?? "Menu")}
               items={activeItems}
               selectedTableId={selectedTable.id}
               onAdd={addDraftItem}
               emptyText={hasSearch ? "No dishes found. Check spelling or clear filters." : "No dishes found. Add active dishes in setup."}
             />
           </section>
+          ) : (
+            <section className="menu-rail panel" aria-label="Menu collapsed">
+              <button type="button" className="menu-rail-button" onClick={() => setMenuOpen(true)} aria-label="Open menu">
+                <PanelLeftOpen size={18} />
+                <span>Menu</span>
+              </button>
+            </section>
+          )}
 
           <TableWorkspace
             tableId={selectedTable.id}

@@ -1,16 +1,30 @@
-import { formatInr, searchMenuItems } from "@gaurav-pos/shared";
+import { formatInr, getOrderStateSignature, searchMenuItems } from "@gaurav-pos/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { hubApi, type Bootstrap, type MenuItem } from "../../hub-api.js";
-import { messageOf, type NoticeSetter } from "../../lib/format.js";
+import { menuItemVariantOptions, messageOf, type NoticeSetter } from "../../lib/format.js";
 import type { ManagerApproval, ManagerApprovalRequest } from "../../hooks/use-manager-approval.js";
 import { useOperationKeys } from "../../hooks/use-operation-keys.js";
 import { useHubStore } from "../../store.js";
 import { EmptyState } from "../ui/empty-state.js";
 import { LineItems } from "./line-items.js";
 import { BillingPanel } from "./billing-panel.js";
+import { CategoryBadge, getMenuActionVariants, MenuItemActionGroup } from "./menu-card.js";
 
 type PrintMode = "kot" | "kot_print";
+type SaveMode = "save" | "save_print";
+type StateItem = {
+  key: string;
+  orderItemId?: string;
+  menuItemId?: string;
+  menuItemVariantId?: string;
+  openName?: string;
+  pricePaise: number;
+  saleGroupId: string;
+  productionUnitId?: string | null;
+  name: string;
+  quantity: number;
+};
 
 export function TableWorkspace({
   tableId,
@@ -44,7 +58,8 @@ export function TableWorkspace({
   const [transferMode, setTransferMode] = useState<"table" | "items">("items");
   const [transferOpen, setTransferOpen] = useState(false);
   const [shiftQuantities, setShiftQuantities] = useState<Record<string, string>>({});
-  const [cancelQuantities, setCancelQuantities] = useState<Record<string, string>>({});
+  const [orderStateItems, setOrderStateItems] = useState<StateItem[]>([]);
+  const [orderStateSearch, setOrderStateSearch] = useState("");
   const operationKeys = useOperationKeys();
   const draft = tableId ? Object.values(drafts[tableId] ?? {}) : [];
   const tableOrder = useQuery({
@@ -54,19 +69,40 @@ export function TableWorkspace({
   });
   const data = tableOrder.data;
   const sentItems = (data?.items ?? []).filter((item) => item.status !== "cancelled" && item.quantity > 0);
+  const sentItemsSignature = sentItems
+    .map((item) => [item.id, item.menu_item_id, item.menu_item_variant_id, item.name_snapshot, item.unit_price_paise, item.quantity, item.status].join(":"))
+    .join("|");
+  const savedOrderStateSignature = getOrderStateSignature(sentItems.map((item) => ({
+    orderItemId: item.id,
+    menuItemId: item.menu_item_id,
+    menuItemVariantId: item.menu_item_variant_id,
+    openName: item.menu_item_id ? undefined : item.name_snapshot,
+    pricePaise: item.unit_price_paise,
+    saleGroupId: item.sale_group_id,
+    productionUnitId: item.production_unit_id,
+    quantity: item.quantity
+  })));
+  const draftOrderStateSignature = getOrderStateSignature(orderStateItems.map((item) => ({
+    orderItemId: item.orderItemId,
+    menuItemId: item.menuItemId,
+    menuItemVariantId: item.menuItemVariantId,
+    openName: item.openName,
+    pricePaise: item.pricePaise,
+    saleGroupId: item.saleGroupId,
+    productionUnitId: item.productionUnitId,
+    quantity: item.quantity
+  })));
+  const hasOrderStateChanges = Boolean(data?.order) && savedOrderStateSignature !== draftOrderStateSignature;
   const shiftTargets = bootstrap.tables.filter((table) => table.active && table.id !== tableId);
   const selectedShiftTarget = shiftTargets.find((table) => table.id === shiftTargetTableId);
   const draftTotal = draft.reduce((total, item) => total + item.pricePaise * item.quantity, 0);
   const sentTotal = sentItems.reduce((total, item) => total + item.unit_price_paise * item.quantity, 0);
+  const editableTotal = orderStateItems.reduce((total, item) => total + item.pricePaise * item.quantity, 0);
+  const orderStateMatches = searchMenuItems(bootstrap.menuItems, orderStateSearch, {}).slice(0, 8);
   const setTransferQuantity = (itemId: string, value: number, max: number) => {
     const next = Math.min(max, Math.max(0, Math.trunc(value || 0)));
     setShiftQuantities((current) => ({ ...current, [itemId]: next ? String(next) : "" }));
   };
-  const setCancelQuantity = (itemId: string, value: number, max: number) => {
-    const next = Math.min(max, Math.max(1, Math.trunc(value || 1)));
-    setCancelQuantities((current) => ({ ...current, [itemId]: String(next) }));
-  };
-
   const refreshTable = async () => {
     await queryClient.invalidateQueries({ queryKey: ["bootstrap"] });
     await queryClient.invalidateQueries({ queryKey: ["tableOrder"] });
@@ -198,20 +234,98 @@ export function TableWorkspace({
     },
     onError: (error) => setNotice({ tone: "bad", text: messageOf(error) })
   });
-  const cancelItems = useMutation({
-    mutationFn: ({ orderItemId, quantity, approval }: { orderItemId: string; quantity: number; approval: ManagerApproval }) => {
-      const orderId = data?.order?.id;
-      if (!orderId) throw new Error("No active order to cancel from.");
-      return hubApi.cancelItems(orderId, { managerApproval: approval, items: [{ orderItemId, quantity }] });
+  useEffect(() => {
+    setOrderStateItems(sentItems.map((item) => ({
+      key: item.id,
+      orderItemId: item.id,
+      menuItemId: item.menu_item_id ?? undefined,
+      menuItemVariantId: item.menu_item_variant_id ?? undefined,
+      openName: item.menu_item_id ? undefined : item.name_snapshot,
+      pricePaise: item.unit_price_paise,
+      saleGroupId: item.sale_group_id,
+      productionUnitId: item.production_unit_id,
+      name: item.name_snapshot,
+      quantity: item.quantity
+    })));
+  }, [data?.order?.id, sentItemsSignature]);
+
+  const changeStateQty = (key: string, delta: number) => {
+    setOrderStateItems((current) => current.map((item) => item.key === key ? { ...item, quantity: Math.max(0, item.quantity + delta) } : item));
+  };
+
+  const addStateMenuItem = (menuItem: MenuItem, variantId?: string) => {
+    const variants = menuItemVariantOptions(menuItem);
+    const variant = variants.find((entry) => (entry.id ?? "") === (variantId ?? "")) ?? variants[0];
+    const resolvedVariantId = variant?.id;
+    const lineName = variant && variant.kind !== "default" ? `${menuItem.name} ${variant.label}` : menuItem.name;
+    setOrderStateItems((current) => {
+      const existing = current.find((item) => item.menuItemId === menuItem.id && (item.menuItemVariantId ?? "") === (resolvedVariantId ?? ""));
+      if (existing) return current.map((item) => item.key === existing.key ? { ...item, quantity: item.quantity + 1 } : item);
+      return [...current, {
+        key: `new-${menuItem.id}-${resolvedVariantId ?? "default"}`,
+        menuItemId: menuItem.id,
+        menuItemVariantId: resolvedVariantId,
+        pricePaise: variant?.price_paise ?? menuItem.price_paise,
+        saleGroupId: menuItem.sale_group_id,
+        productionUnitId: menuItem.production_unit_id,
+        name: lineName,
+        quantity: 1
+      }];
+    });
+    setOrderStateSearch("");
+  };
+
+  const saveOrderState = useMutation({
+    mutationFn: async (input: { saveMode: SaveMode; approval?: ManagerApproval }) => {
+      const order = data?.order;
+      if (!order) throw new Error("No active order to update.");
+      if (input.saveMode === "save" && order.status !== "billed") {
+        const ok = window.confirm("Save these table changes without printing a modification KOT/BOT?");
+        if (!ok) throw new Error("Table changes were not saved.");
+      }
+      const payload = {
+        saveMode: input.saveMode,
+        managerApproval: input.approval,
+        items: orderStateItems.map((item) => item.menuItemId
+          ? { orderItemId: item.orderItemId, menuItemId: item.menuItemId, menuItemVariantId: item.menuItemVariantId, quantity: item.quantity }
+          : {
+              orderItemId: item.orderItemId,
+              openName: item.openName ?? item.name,
+              openPricePaise: item.pricePaise,
+              saleGroupId: item.saleGroupId,
+              productionUnitId: item.productionUnitId ?? null,
+              quantity: item.quantity
+            })
+      };
+      return hubApi.updateOrderState(order.id, payload, operationKeys.keyFor("order-state", { orderId: order.id, payload }));
     },
-    onSuccess: async () => {
-      setCancelQuantities({});
+    onSuccess: async (_result, input) => {
       await refreshTable();
       setOrderPanel("sent");
-      setNotice({ tone: "good", text: "Item cancelled and cancellation ticket sent." });
+      setNotice({ tone: "good", text: input.saveMode === "save" ? "Table state saved without printing." : "Table state saved and modification ticket sent." });
     },
-    onError: (error) => setNotice({ tone: "bad", text: messageOf(error) })
+    onError: (error) => {
+      if (messageOf(error) === "Table changes were not saved.") return;
+      setNotice({ tone: "bad", text: messageOf(error) });
+    }
   });
+
+  async function requestOrderStateSave(saveMode: SaveMode) {
+    const order = data?.order;
+    if (!order || saveOrderState.isPending || !hasOrderStateChanges) return;
+    if (order.status === "billed") {
+      const approval = await requestManagerApproval({
+        title: "Approve billed table edit",
+        defaultReason: saveMode === "save" ? "Billed table state saved" : "Billed table state saved and printed",
+        message: "Manager PIN is required to change a printed bill.",
+        confirmLabel: saveMode === "save" ? "Save" : "Save and print"
+      }).catch(() => null);
+      if (!approval) return;
+      saveOrderState.mutate({ saveMode, approval });
+      return;
+    }
+    saveOrderState.mutate({ saveMode });
+  }
 
   if (!tableId) {
     return (
@@ -323,53 +437,59 @@ export function TableWorkspace({
         </div>
       ) : null}
 
-      {orderPanel === "sent" ? (
-        <div className="ticket-section">
-          <LineItems
-            emptyTitle="Nothing sent yet"
-            emptyText="After Send to kitchen succeeds, server-confirmed items appear here."
-            rows={sentItems.map((item) => ({
-              id: item.id,
-              title: item.name_snapshot,
-              meta: `${formatInr(item.unit_price_paise)} each · ${item.production_unit_name ?? "No kitchen assigned"}`,
-              quantity: item.quantity,
-              amount: item.unit_price_paise * item.quantity,
-              action: (() => {
-                const quantity = Math.min(item.quantity, Math.max(1, Number(cancelQuantities[item.id] ?? 1)));
-                return (
-                  <div className="sent-item-cancel">
-                    <div className="transfer-qty-control compact" aria-label={`Cancel quantity for ${item.name_snapshot}`}>
-                      <button type="button" onClick={() => setCancelQuantity(item.id, quantity - 1, item.quantity)} disabled={quantity <= 1}>-</button>
-                      <input
-                        value={String(quantity)}
-                        onChange={(event) => setCancelQuantity(item.id, Number(event.target.value.replace(/\D/g, "")), item.quantity)}
-                        inputMode="numeric"
-                        aria-label={`Cancel quantity, max ${item.quantity}`}
-                      />
-                      <button type="button" onClick={() => setCancelQuantity(item.id, quantity + 1, item.quantity)} disabled={quantity >= item.quantity}>+</button>
-                    </div>
-                    <button
-                      type="button"
-                      className="danger-outline-button"
-                      disabled={cancelItems.isPending}
-                      onClick={async () => {
-                        const approval = await requestManagerApproval({
-                          title: "Cancel sent item",
-                          defaultReason: `${item.name_snapshot} cancelled`,
-                          message: `Cancel ${quantity} x ${item.name_snapshot}. A cancellation KOT/BOT will print.`,
-                          confirmLabel: cancelItems.isPending ? "Cancelling..." : "Cancel item",
-                          danger: true
-                        }).catch(() => null);
-                        if (approval) cancelItems.mutate({ orderItemId: item.id, quantity, approval });
-                      }}
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                );
-              })()
-            }))}
-          />
+	      {orderPanel === "sent" ? (
+	        <div className="ticket-section">
+	          {data?.order ? (
+	            <section className="state-editor">
+	              <div className="state-editor-head">
+	                <div>
+	                  <span>{formatInr(editableTotal)} current edited total</span>
+	                </div>
+	                {hasOrderStateChanges ? (
+	                  <div className="state-editor-actions">
+	                    <button type="button" className="secondary-button" disabled={saveOrderState.isPending} onClick={() => void requestOrderStateSave("save")}>
+	                      {saveOrderState.isPending ? "Saving..." : "Save"}
+	                    </button>
+	                    <button type="button" disabled={saveOrderState.isPending} onClick={() => void requestOrderStateSave("save_print")}>
+	                      {saveOrderState.isPending ? "Sending..." : "Save and print"}
+	                    </button>
+	                  </div>
+	                ) : (
+	                  <span className="state-editor-status">Saved</span>
+	                )}
+	              </div>
+	              <div className="state-search">
+	                <input value={orderStateSearch} onChange={(event) => setOrderStateSearch(event.target.value)} placeholder="Search item to add" />
+	                {orderStateSearch.trim() ? (
+	                  <div className="state-search-results">
+	                    {orderStateMatches.map((item) => {
+	                      const variants = getMenuActionVariants(item);
+	                      return (
+	                        <div key={item.id} className={`state-search-row menu-card compact-menu-card category-${item.sale_group_kind ?? "other"}`}>
+	                          <CategoryBadge kind={item.sale_group_kind} className="state-search-icon" />
+	                          <span>{item.name}</span>
+	                          <MenuItemActionGroup itemName={item.name} variants={variants} onAdd={(variantId) => addStateMenuItem(item, variantId)} className="state-search-actions" />
+	                        </div>
+	                      );
+	                    })}
+	                  </div>
+	                ) : null}
+	              </div>
+	            </section>
+	          ) : null}
+	          <LineItems
+	            emptyTitle="Nothing sent yet"
+	            emptyText="Use the search above to add items to this table."
+	            rows={orderStateItems.map((item) => ({
+	              id: item.key,
+	              title: item.name,
+	              meta: `${formatInr(item.pricePaise)} each`,
+	              quantity: item.quantity,
+	              amount: item.pricePaise * item.quantity,
+	              onMinus: () => changeStateQty(item.key, -1),
+	              onPlus: () => changeStateQty(item.key, 1)
+	            }))}
+	          />
           {data?.order ? (
             <section className="shift-panel transfer-panel">
               <button

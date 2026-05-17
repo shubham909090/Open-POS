@@ -132,4 +132,26 @@ describe("ticket rendering", () => {
     expect(payload).not.toContain("Reason:");
     expect(payload).not.toContain("T00:");
   });
+
+  it("prints compact bill item variants without default labels or duplicate volumes", async () => {
+    const { renderBillTicket } = await import("../domain/tickets.js");
+
+    const ticket = renderBillTicket({
+      tableName: "T1",
+      billId: "1",
+      createdAt: "2026-05-17T12:35:00.000Z",
+      subtotalPaise: 60000,
+      taxPaise: 0,
+      totalPaise: 60000,
+      items: [
+        { name: "Whisky 30 ml", variantName: "30 ml", quantity: 2, unitPricePaise: 30000, lineTotalPaise: 60000 },
+        { name: "Dal Fry", variantName: "Regular", quantity: 1, unitPricePaise: 18000, lineTotalPaise: 18000 }
+      ]
+    });
+
+    expect(ticket).toContain("Whisky 30 ml");
+    expect(ticket).toContain("Dal Fry");
+    expect(ticket).not.toContain("30 ml 30 ml");
+    expect(ticket).not.toContain("Regular");
+  });
 });

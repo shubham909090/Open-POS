@@ -225,6 +225,7 @@ export const kots = sqliteTable(
     type: text("type").notNull(),
     status: text("status").notNull(),
     sequence: integer("sequence").notNull(),
+    ticketLabel: text("ticket_label").notNull().default("KOT"),
     reason: text("reason"),
     createdAt: text("created_at").notNull()
   },
@@ -242,6 +243,7 @@ export const kotItems = sqliteTable("kot_items", {
 
 export const bills = sqliteTable("bills", {
   id: text("id").primaryKey(),
+  billNumber: integer("bill_number").notNull().default(0),
   orderId: text("order_id").notNull().references(() => orders.id),
   status: text("status").notNull(),
   subtotalPaise: integer("subtotal_paise").notNull(),

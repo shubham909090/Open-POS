@@ -4,6 +4,8 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const submitOrderMock = vi.fn();
+const tableOrderMock = vi.fn();
+const updateOrderStateMock = vi.fn();
 
 describe("hub table workspace send actions", () => {
   afterEach(() => {
@@ -11,6 +13,8 @@ describe("hub table workspace send actions", () => {
     vi.restoreAllMocks();
     vi.resetModules();
     submitOrderMock.mockReset();
+    tableOrderMock.mockReset();
+    updateOrderStateMock.mockReset();
   });
 
   it("shows KOT and Print and KOT buttons and sends the selected print mode", async () => {
@@ -41,13 +45,60 @@ describe("hub table workspace send actions", () => {
 
     expect(submitOrderMock).not.toHaveBeenCalled();
   });
+
+  it("keeps compact alcohol add actions and hides table-state save buttons until the draft is dirty", async () => {
+    const { TableWorkspace, useHubStore } = await importWorkspace();
+    let quantity = 1;
+    tableOrderMock.mockImplementation(() => Promise.resolve(tableOrder(quantity)));
+    updateOrderStateMock.mockImplementation(async () => {
+      quantity = 2;
+      return { orderId: "order-1", printJobIds: [], kotIds: [] };
+    });
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    useHubStore.setState({ selectedTableId: "table-t1", orderPanel: "sent", drafts: {} });
+
+    const { container } = renderWorkspace(TableWorkspace);
+
+    await screen.findByText("₹300.00 current edited total");
+    expect(screen.queryByRole("button", { name: /^Save$/ })).toBeNull();
+    expect(screen.queryByText("Saved")).not.toBeNull();
+
+    fireEvent.change(screen.getByPlaceholderText("Search item to add"), { target: { value: "whisky" } });
+    expect(await screen.findByText("30 ml ₹40")).not.toBeNull();
+    expect(screen.getByText("180 ml ₹250")).not.toBeNull();
+    expect(screen.getByText("750 ml ₹900")).not.toBeNull();
+    expect(screen.queryByText("Add")).toBeNull();
+    expect(container.querySelector(".state-search-icon svg")).not.toBeNull();
+    expect(container.querySelector(".state-search-actions.menu-variant-buttons")).not.toBeNull();
+
+    fireEvent.click(screen.getByText("30 ml ₹40"));
+    expect(await screen.findByRole("button", { name: /^Save$/ })).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Save and print" })).not.toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: /^Save$/ }));
+    await waitFor(() => expect(updateOrderStateMock).toHaveBeenCalledWith("order-1", expect.objectContaining({ saveMode: "save" }), expect.any(String)));
+    await waitFor(() => expect(screen.queryByRole("button", { name: /^Save$/ })).toBeNull());
+  });
+
+  it("renders menu alcohol variants as one compact action group without Add text", async () => {
+    const { MenuCard } = await import("../renderer/components/orders/menu-card.js");
+    const onAdd = vi.fn();
+    const { container } = render(<MenuCard item={alcoholMenuItem()} onAdd={onAdd} />);
+
+    expect(screen.getByText("30 ml ₹40")).not.toBeNull();
+    expect(screen.getByText("180 ml ₹250")).not.toBeNull();
+    expect(screen.getByText("750 ml ₹900")).not.toBeNull();
+    expect(screen.queryByText("Add")).toBeNull();
+    expect(container.querySelector(".menu-variant-buttons")).not.toBeNull();
+  });
 });
 
 async function importWorkspace() {
   vi.doMock("../renderer/hub-api.js", () => ({
     hubApi: {
-      tableOrder: vi.fn().mockResolvedValue(null),
-      submitOrder: submitOrderMock
+      tableOrder: tableOrderMock.mockResolvedValue(null),
+      submitOrder: submitOrderMock,
+      updateOrderState: updateOrderStateMock
     }
   }));
   const [{ TableWorkspace }, { useHubStore }] = await Promise.all([
@@ -91,8 +142,11 @@ function wrapWorkspace(TableWorkspace: typeof import("../renderer/components/ord
           floors: [],
           tables: [{ id: "table-t1", floor_id: "floor-1", floor_name: "Main", name: "T1", active: true, status: "free", current_order_id: null, occupied_at: null, current_order_total_paise: 0, sent_item_count: 0 }],
           productionUnits: [],
-          saleGroups: [],
-          menuItems: [],
+          saleGroups: [
+            { id: "sg-alcohol", name: "Alcohol", kind: "alcohol", report_label: "Alcohol", ticket_label: "BOT", tax_components_json: "[]", default_production_unit_id: "bar", active: true },
+            { id: "sg-food", name: "Food", kind: "food", report_label: "Food", ticket_label: "KOT", tax_components_json: "[]", default_production_unit_id: "kitchen", active: true }
+          ],
+          menuItems: [alcoholMenuItem()],
           printJobs: [],
           syncStatus: {}
         }}
@@ -101,4 +155,49 @@ function wrapWorkspace(TableWorkspace: typeof import("../renderer/components/ord
       />
     </QueryClientProvider>
   );
+}
+
+function tableOrder(quantity: number) {
+  return {
+    order: { id: "order-1", table_id: "table-t1", status: "open", pax: 2, captain_id: "device-1" },
+    items: [
+      {
+        id: "oi-food",
+        order_id: "order-1",
+        menu_item_id: "item-bhaji",
+        menu_item_variant_id: null,
+        name_snapshot: "bhaji",
+        unit_price_paise: 30_000,
+        quantity,
+        production_unit_id: "kitchen",
+        sale_group_id: "sg-food",
+        sale_group_name_snapshot: "Food",
+        sale_group_kind_snapshot: "food",
+        ticket_label_snapshot: "KOT",
+        status: "sent"
+      }
+    ],
+    bill: null,
+    payments: []
+  };
+}
+
+function alcoholMenuItem() {
+  return {
+    id: "item-whisky",
+    name: "Imported Whisky",
+    price_paise: 4_000,
+    production_unit_id: "bar",
+    production_unit_name: "Bar",
+    sale_group_id: "sg-alcohol",
+    sale_group_name: "Alcohol",
+    sale_group_kind: "alcohol",
+    ticket_label: "BOT" as const,
+    active: true,
+    variants: [
+      { id: "v30", menu_item_id: "item-whisky", label: "30 ml", kind: "shot", price_paise: 4_000, volume_ml: 30, inventory_action: "large_ml", sort_order: 0, active: true },
+      { id: "v180", menu_item_id: "item-whisky", label: "180 ml", kind: "small_bottle", price_paise: 25_000, volume_ml: 180, inventory_action: "small_bottle", sort_order: 1, active: true },
+      { id: "v750", menu_item_id: "item-whisky", label: "750 ml", kind: "large_bottle", price_paise: 90_000, volume_ml: 750, inventory_action: "large_bottle", sort_order: 2, active: true }
+    ]
+  };
 }

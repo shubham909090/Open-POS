@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { QrCode } from "lucide-react";
+import { formatPosDateTime } from "@gaurav-pos/shared";
 import { type NoticeSetter, messageOf } from "../../lib/format.js";
 import type { ManagerApprovalRequest } from "../../hooks/use-manager-approval.js";
 import {
@@ -160,7 +161,7 @@ export function DevicePairingCard({
           <div>
             <strong>Code {pairing.code}</strong>
             <span>
-              Expires {new Date(pairing.expiresAt).toLocaleTimeString()}
+              Expires {formatPosDateTime(pairing.expiresAt)}
             </span>
             <textarea readOnly value={pairing.pairingPayloadText} />
           </div>
@@ -183,7 +184,7 @@ export function DevicePairingCard({
               <span>
                 {device.role} · {device.status}
                 {device.last_seen_at
-                  ? ` · seen ${new Date(device.last_seen_at).toLocaleString()}`
+                  ? ` · seen ${formatPosDateTime(device.last_seen_at)}`
                   : ""}
               </span>
             </div>

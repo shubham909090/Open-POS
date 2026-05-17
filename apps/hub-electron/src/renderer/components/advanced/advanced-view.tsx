@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { CloudDownload, Printer } from "lucide-react";
+import { formatPosDateTime } from "@gaurav-pos/shared";
 import { hubApi, type Bootstrap } from "../../hub-api.js";
 import { type NoticeSetter, messageOf } from "../../lib/format.js";
 import type { ManagerApproval, ManagerApprovalRequest } from "../../hooks/use-manager-approval.js";
@@ -294,7 +295,7 @@ export function AdvancedView({
                   <strong>{failure.type}</strong>
                   <span>
                     {failure.error} ·{" "}
-                    {new Date(failure.failedAt).toLocaleString()}
+                    {formatPosDateTime(failure.failedAt)}
                   </span>
                 </div>
                 <button

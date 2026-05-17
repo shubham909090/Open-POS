@@ -659,6 +659,95 @@ describe("Hub API auth and service flow", () => {
     database.close();
   });
 
+  it("generates and processes a printed bill in one bill action", async () => {
+    const { app, database } = createTestServer();
+    const headers = { "x-device-token": "test-admin-token" };
+    const orderResponse = await app.inject({
+      method: "POST",
+      url: "/orders/submit",
+      headers,
+      payload: { tableId: "table-t1", pax: 1, orderType: "dine_in", printMode: "kot", items: [{ menuItemId: "item-dal-fry", quantity: 1 }] }
+    });
+    const order = orderResponse.json<{ orderId: string }>();
+
+    const billResponse = await app.inject({ method: "POST", url: `/bills/${order.orderId}/generate`, headers });
+
+    expect(billResponse.statusCode).toBe(200);
+    expect(billResponse.json()).toMatchObject({
+      billNumber: 1,
+      printJobId: expect.any(String),
+      processed: { printed: 1, failed: 0, skipped: 0 }
+    });
+
+    await app.close();
+    database.close();
+  });
+
+  it("reprints a bill from order history without manager approval", async () => {
+    const { app, database } = createTestServer();
+    const headers = { "x-device-token": "test-admin-token" };
+    const orderResponse = await app.inject({
+      method: "POST",
+      url: "/orders/submit",
+      headers,
+      payload: { tableId: "table-t1", pax: 1, orderType: "dine_in", printMode: "kot", items: [{ menuItemId: "item-dal-fry", quantity: 1 }] }
+    });
+    const order = orderResponse.json<{ orderId: string }>();
+    const billResponse = await app.inject({ method: "POST", url: `/bills/${order.orderId}/generate`, headers });
+    const bill = billResponse.json<{ billId: string }>();
+    const summaryResponse = await app.inject({ method: "GET", url: "/business-day/current-summary", headers });
+
+    const reprintResponse = await app.inject({ method: "POST", url: `/bills/${bill.billId}/history-reprint`, headers });
+
+    expect(summaryResponse.statusCode).toBe(200);
+    const summaryBill = summaryResponse.json<{ billSummaries: Array<{ subtotalPaise: number; taxPaise: number; totalPaise: number; items: Array<{ name: string; quantity: number }> }> }>().billSummaries[0];
+    expect(summaryBill).toMatchObject({ subtotalPaise: 18000, taxPaise: 900, totalPaise: 18900 });
+    expect(summaryBill?.items).toEqual([
+      { name: "Dal Fry", quantity: 1, unitPricePaise: 18000, lineTotalPaise: 18000 }
+    ]);
+    expect(reprintResponse.statusCode).toBe(200);
+    expect(reprintResponse.json()).toMatchObject({ printJobId: expect.any(String), processed: { printed: 1, failed: 0, skipped: 0 } });
+    expect(database.db.prepare("SELECT print_count FROM bills WHERE id = ?").get(bill.billId)).toEqual({ print_count: 2 });
+    expect(database.db.prepare("SELECT COUNT(*) AS count FROM event_log WHERE type = 'bill.history_reprinted'").get()).toEqual({ count: 1 });
+
+    await app.close();
+    database.close();
+  });
+
+  it("saves order state without KDS for save and with KDS for save_print", async () => {
+    const { app, database } = createTestServer();
+    const headers = { "x-device-token": "test-admin-token" };
+    const orderResponse = await app.inject({
+      method: "POST",
+      url: "/orders/submit",
+      headers,
+      payload: { tableId: "table-t1", pax: 1, orderType: "dine_in", printMode: "kot", items: [{ menuItemId: "item-dal-fry", quantity: 1 }] }
+    });
+    const order = orderResponse.json<{ orderId: string }>();
+
+    const saveResponse = await app.inject({
+      method: "POST",
+      url: `/orders/${order.orderId}/state`,
+      headers,
+      payload: { saveMode: "save", items: [{ menuItemId: "item-dal-fry", quantity: 2 }] }
+    });
+    const printResponse = await app.inject({
+      method: "POST",
+      url: `/orders/${order.orderId}/state`,
+      headers,
+      payload: { saveMode: "save_print", items: [{ menuItemId: "item-dal-fry", quantity: 3 }] }
+    });
+
+    expect(saveResponse.statusCode).toBe(200);
+    expect(saveResponse.json()).toMatchObject({ kotIds: [], printJobIds: [] });
+    expect(printResponse.statusCode).toBe(200);
+    expect(printResponse.json()).toMatchObject({ kotIds: [expect.any(String)], processed: { printed: 1, failed: 0, skipped: 0 } });
+    expect(database.db.prepare("SELECT quantity FROM order_items WHERE order_id = ?").get(order.orderId)).toEqual({ quantity: 3 });
+
+    await app.close();
+    database.close();
+  });
+
   it("filters realtime event visibility by device role", () => {
     expect(isRealtimeEventVisibleForRole({ type: "bill.settled" }, "captain")).toBe(true);
     expect(isRealtimeEventVisibleForRole({ type: "bill.settled" }, "waiter")).toBe(true);
@@ -1584,7 +1673,8 @@ describe("Hub API auth and service flow", () => {
       headers: captainHeaders
     });
 
-    expect(firstPrintResponse.statusCode).toBe(200);
+    expect(firstPrintResponse.statusCode).toBe(400);
+    expect(firstPrintResponse.json()).toMatchObject({ error: "Bill was already printed. Use manager-approved reprint." });
     expect(repeatedPrintResponse.statusCode).toBe(400);
     expect(repeatedPrintResponse.json()).toMatchObject({ error: "Bill was already printed. Use manager-approved reprint." });
     expect(reprintResponse.statusCode).toBe(200);

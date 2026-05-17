@@ -25,6 +25,7 @@ import {
   type RetryPrintJobInput,
   type SettleBillInput,
   type SubmitOrderInput,
+  type UpdateOrderStateInput,
   type TicketTemplateInput,
   type PrintLayoutSettingsInput,
   type UpdateAlcoholItemInput,
@@ -169,6 +170,7 @@ interface UnitRow {
 
 interface BillRow {
   id: string;
+  bill_number: number;
   order_id: string;
   status: string;
   subtotal_paise: number;
@@ -239,9 +241,12 @@ interface DaySummary {
   nonCashPaymentsPaise: number;
   billSummaries: Array<{
     billId: string;
+    billNumber?: number;
     orderId: string;
     tableName: string;
     status: string;
+    subtotalPaise: number;
+    taxPaise: number;
     totalPaise: number;
     discountPaise: number;
     tipPaise: number;
@@ -249,6 +254,7 @@ interface DaySummary {
     paidPaise: number;
     settledAt: string | null;
     payments: Array<{ method: string; amountPaise: number; reference: string | null }>;
+    items: Array<{ name: string; quantity: number; unitPricePaise: number; lineTotalPaise: number }>;
     isNc?: boolean;
     ncReason?: string | null;
     revisionNumber?: number;
@@ -585,57 +591,74 @@ export class OrderService {
   reprintBill(billId: string, input: ReprintKotInput): { printJobId: string } {
     const run = this.db.transaction(() => {
       this.verifyManagerApproval(input.managerApproval, "bill.reprint", "bill", billId, input.requestedBy);
-      const bill = this.db
-        .prepare(
-          `SELECT b.*, t.name AS table_name
-           FROM bills b
-           JOIN orders o ON o.id = b.order_id
-           JOIN restaurant_tables t ON t.id = o.table_id
-           WHERE b.id = ?`
-        )
-        .get(billId) as
-        | {
-            id: string;
-            order_id: string;
-            table_name: string;
-            subtotal_paise: number;
-            tax_paise: number;
-            total_paise: number;
-            discount_paise: number;
-            tip_paise: number;
-            final_total_paise: number;
-            tax_breakdown_json: string;
-            revision_number: number;
-            is_nc: number;
-            nc_reason: string | null;
-            created_at: string;
-          }
-        | undefined;
-
-      if (!bill) throw new DomainError("Bill not found", 404);
-
-      const payload = `${renderBillTicket(
-        this.buildBillTicket({
-          bill,
-          tableName: bill.table_name,
-          createdAt: new Date().toISOString()
-        })
-      )}\nREPRINT\nReason: ${input.reason}\nRequested by: ${input.requestedBy}\n`;
-
-      const printJobId = this.enqueuePrintJob({
-        targetType: "BILL",
-        targetId: billId,
-        productionUnitId: null,
-        ...this.getReceiptPrinter(),
-        payload
-      });
+      const printJobId = this.enqueueBillReprint(billId, input.requestedBy, `REPRINT\nReason: ${input.reason}\nRequested by: ${input.requestedBy}\n`);
 
       this.appendEvent("bill.reprinted", "bill", billId, { ...input, printJobId });
-      this.orm.update(bills).set({ printCount: sql`${bills.printCount} + 1` }).where(eq(bills.id, billId)).run();
       return { printJobId };
     });
 
     return run();
+  }
+
+  reprintBillFromHistory(billId: string, requestedBy: string): { printJobId: string } {
+    const run = this.db.transaction(() => {
+      const printJobId = this.enqueueBillReprint(billId, requestedBy, "REPRINT\n");
+      this.appendEvent("bill.history_reprinted", "bill", billId, { billId, requestedBy, reason: "history_reprint", printJobId });
+      return { printJobId };
+    });
+
+    return run();
+  }
+
+  private enqueueBillReprint(billId: string, requestedBy: string, suffix: string): string {
+    const bill = this.db
+      .prepare(
+        `SELECT b.*, t.name AS table_name
+           FROM bills b
+           JOIN orders o ON o.id = b.order_id
+           JOIN restaurant_tables t ON t.id = o.table_id
+           WHERE b.id = ?`
+      )
+      .get(billId) as
+      | {
+          id: string;
+          order_id: string;
+          table_name: string;
+          subtotal_paise: number;
+          tax_paise: number;
+          total_paise: number;
+          discount_paise: number;
+          tip_paise: number;
+          final_total_paise: number;
+          tax_breakdown_json: string;
+          revision_number: number;
+          is_nc: number;
+          nc_reason: string | null;
+          created_at: string;
+          bill_number: number;
+        }
+      | undefined;
+
+    if (!bill) throw new DomainError("Bill not found", 404);
+
+    const payload = `${renderBillTicket(
+      this.buildBillTicket({
+        bill,
+        tableName: bill.table_name,
+        createdAt: new Date().toISOString()
+      })
+    )}\n${suffix}`;
+
+    const printJobId = this.enqueuePrintJob({
+      targetType: "BILL",
+      targetId: billId,
+      productionUnitId: null,
+      ...this.getReceiptPrinter(),
+      payload
+    });
+
+    this.orm.update(bills).set({ printCount: sql`${bills.printCount} + 1` }).where(eq(bills.id, billId)).run();
+    return printJobId;
   }
 
   getCurrentBusinessDay(): BusinessDayRow {
@@ -831,7 +854,7 @@ export class OrderService {
     return layout;
   }
 
-  generateBill(orderId: string): { billId: string; totalPaise: number } {
+  generateBill(orderId: string): { billId: string; billNumber: number; totalPaise: number; printJobId: string } {
     const run = this.db.transaction(() => {
       const order = this.requireEditableOrder(orderId);
       const table = this.requireTable(order.table_id);
@@ -840,12 +863,14 @@ export class OrderService {
 
       const totals = this.calculateBillTotals(items);
       const billId = makeId("bill");
+      const billNumber = this.nextBillNumber();
       const now = new Date().toISOString();
 
       this.orm
         .insert(bills)
         .values({
           id: billId,
+          billNumber,
           orderId,
           status: "pending",
           subtotalPaise: totals.subtotalPaise,
@@ -863,11 +888,94 @@ export class OrderService {
       this.orm.update(orders).set({ status: "billed", updatedAt: now }).where(eq(orders.id, orderId)).run();
       this.orm.update(restaurantTables).set({ status: "billed" }).where(eq(restaurantTables.id, table.id)).run();
       this.recordBillRevision(billId, 1, totals, "Initial bill", "captain", now);
+      const bill = this.getBillById(billId);
+      if (!bill) throw new DomainError("Bill not found after generation", 500);
+      const printJobId = this.enqueuePrintJob({
+        targetType: "BILL",
+        targetId: billId,
+        productionUnitId: null,
+        ...this.getReceiptPrinter(),
+        payload: renderBillTicket(this.buildBillTicket({ bill, tableName: table.name, createdAt: now }))
+      });
+      this.orm.update(bills).set({ printCount: sql`${bills.printCount} + 1` }).where(eq(bills.id, billId)).run();
 
-      this.appendEvent("bill.generated", "bill", billId, { orderId, totalPaise: totals.totalPaise, taxBreakdown: totals.taxBreakdown });
-      return { billId, totalPaise: totals.totalPaise };
+      this.appendEvent("bill.generated", "bill", billId, { orderId, billNumber, totalPaise: totals.totalPaise, taxBreakdown: totals.taxBreakdown, printJobId });
+      return { billId, billNumber, totalPaise: totals.totalPaise, printJobId };
     });
 
+    return run();
+  }
+
+  updateOrderState(orderId: string, input: UpdateOrderStateInput): { orderId: string; status: string; totalPaise: number; kotIds: string[]; printJobIds: string[]; billId?: string; revisionNumber?: number } {
+    const run = this.db.transaction(() => {
+      const order = this.requireOrderById(orderId);
+      if (!["open", "billed"].includes(order.status)) throw new DomainError("Order cannot be edited");
+      if (order.status === "billed") {
+        this.verifyManagerApproval(input.managerApproval, "order_state.update_billed", "order", orderId, input.managerApproval?.approvedBy ?? "captain");
+      }
+      const table = this.requireTable(order.table_id);
+      const now = new Date().toISOString();
+      const previousItems = this.getOrderItems(orderId);
+      const previousVariantIds = new Set(previousItems.map((item) => item.menu_item_variant_id).filter((id): id is string => Boolean(id)));
+      const previousItemsById = new Map(previousItems.map((item) => [item.id, item]));
+      const normalizedItems = this.prepareSubmittedItems(input.items, now, previousVariantIds, previousItemsById);
+      const menuById = this.getMenuItems([
+        ...normalizedItems.map((item) => item.menuItemId).filter((id): id is string => Boolean(id)),
+        ...previousItems.map((item) => item.menu_item_id).filter((id): id is string => Boolean(id))
+      ]);
+      const changes = this.applyOrderItemDiff(orderId, normalizedItems, previousItems, menuById, now, true);
+      const activeItems = this.getOrderItems(orderId).filter((item) => item.quantity > 0 && item.status !== "cancelled");
+      const totals = this.calculateBillTotals(activeItems);
+      const shouldPrint = input.saveMode === "save_print";
+      const tickets = shouldPrint
+        ? this.createKotsForChanges(order, table, changes, now, false, false, order.status === "billed" ? input.managerApproval?.reason : undefined, undefined, undefined, true)
+        : { kotIds: [], printJobIds: [] };
+
+      if (order.status === "billed") {
+        const bill = this.getBillForOrder(orderId);
+        if (!bill) throw new DomainError("Bill not found", 404);
+        const finalTotalPaise = activeItems.length === 0 ? 0 : Math.max(0, totals.totalPaise - bill.discount_paise + bill.tip_paise);
+        const revisionNumber = (bill.revision_number ?? 1) + 1;
+        this.orm
+          .update(bills)
+          .set({
+            subtotalPaise: totals.subtotalPaise,
+            taxPaise: totals.taxPaise,
+            totalPaise: totals.totalPaise,
+            finalTotalPaise,
+            taxBreakdownJson: JSON.stringify(totals.taxBreakdown),
+            revisionNumber,
+            status: "pending"
+          })
+          .where(eq(bills.id, bill.id))
+          .run();
+        this.recordBillRevision(bill.id, revisionNumber, totals, input.managerApproval?.reason ?? "Bill state updated", input.managerApproval?.approvedBy ?? "manager", now, {
+          discountPaise: bill.discount_paise,
+          tipPaise: bill.tip_paise,
+          finalTotalPaise
+        });
+        if (activeItems.length === 0) {
+          this.orm.update(orders).set({ status: "cancelled", updatedAt: now }).where(eq(orders.id, orderId)).run();
+          this.freeTable(table.id);
+          this.appendEvent("order_state.updated", "order", orderId, { orderId, saveMode: input.saveMode, status: "cancelled", billId: bill.id, revisionNumber, kotIds: tickets.kotIds, printJobIds: tickets.printJobIds });
+          return { orderId, status: "cancelled", totalPaise: 0, kotIds: tickets.kotIds, printJobIds: tickets.printJobIds, billId: bill.id, revisionNumber };
+        }
+        this.orm.update(orders).set({ status: "billed", updatedAt: now }).where(eq(orders.id, orderId)).run();
+        this.orm.update(restaurantTables).set({ status: "billed" }).where(eq(restaurantTables.id, table.id)).run();
+        this.appendEvent("order_state.updated", "order", orderId, { orderId, saveMode: input.saveMode, billId: bill.id, revisionNumber, kotIds: tickets.kotIds, printJobIds: tickets.printJobIds });
+        return { orderId, status: "billed", totalPaise: totals.totalPaise, kotIds: tickets.kotIds, printJobIds: tickets.printJobIds, billId: bill.id, revisionNumber };
+      } else if (activeItems.length === 0) {
+        this.orm.update(orders).set({ status: "cancelled", updatedAt: now }).where(eq(orders.id, orderId)).run();
+        this.freeTable(table.id);
+      } else {
+        this.orm.update(orders).set({ status: "open", updatedAt: now }).where(eq(orders.id, orderId)).run();
+        this.orm.update(restaurantTables).set({ status: "occupied", currentOrderId: orderId }).where(eq(restaurantTables.id, table.id)).run();
+      }
+
+      const status = activeItems.length === 0 ? "cancelled" : "open";
+      this.appendEvent("order_state.updated", "order", orderId, { orderId, saveMode: input.saveMode, status, kotIds: tickets.kotIds, printJobIds: tickets.printJobIds });
+      return { orderId, status, totalPaise: totals.totalPaise, kotIds: tickets.kotIds, printJobIds: tickets.printJobIds };
+    });
     return run();
   }
 
@@ -2358,28 +2466,32 @@ export class OrderService {
     };
     const billRows = this.db
       .prepare(
-        `SELECT b.id AS bill_id, b.order_id, b.status, b.total_paise, b.discount_paise, b.tip_paise,
-          b.final_total_paise, b.settled_at, b.is_nc, b.nc_reason, b.revision_number, t.name AS table_name
+        `SELECT b.id AS bill_id, b.bill_number, b.order_id, b.status, b.subtotal_paise, b.tax_paise,
+          b.total_paise, b.discount_paise, b.tip_paise, b.final_total_paise, b.settled_at,
+          b.is_nc, b.nc_reason, b.revision_number, t.name AS table_name
          FROM bills b
          JOIN orders o ON o.id = b.order_id
          JOIN restaurant_tables t ON t.id = o.table_id
          WHERE o.pos_day_id = ?
-         ORDER BY b.created_at ASC`
+         ORDER BY b.bill_number ASC, b.created_at ASC`
       )
       .all(posDayId) as Array<{
-      bill_id: string;
-      order_id: string;
-      table_name: string;
-      status: string;
-      total_paise: number;
-      discount_paise: number;
-      tip_paise: number;
-      final_total_paise: number;
-      settled_at: string | null;
-      is_nc: number;
-      nc_reason: string | null;
-      revision_number: number;
-    }>;
+        bill_id: string;
+        bill_number: number;
+        order_id: string;
+        table_name: string;
+        status: string;
+        subtotal_paise: number;
+        tax_paise: number;
+        total_paise: number;
+        discount_paise: number;
+        tip_paise: number;
+        final_total_paise: number;
+        settled_at: string | null;
+        is_nc: number;
+        nc_reason: string | null;
+        revision_number: number;
+      }>;
     const paymentRows = this.db
       .prepare(
         `SELECT p.bill_id, p.method, p.amount_paise, p.reference
@@ -2390,6 +2502,17 @@ export class OrderService {
          ORDER BY p.created_at ASC`
       )
       .all(posDayId) as Array<{ bill_id: string; method: string; amount_paise: number; reference: string | null }>;
+    const billItemRows = this.db
+      .prepare(
+        `SELECT b.id AS bill_id, oi.name_snapshot AS name, oi.quantity, oi.unit_price_paise,
+          (oi.quantity * oi.unit_price_paise) AS line_total_paise
+         FROM order_items oi
+         JOIN orders o ON o.id = oi.order_id
+         JOIN bills b ON b.order_id = o.id
+         WHERE o.pos_day_id = ? AND oi.status != 'cancelled'
+         ORDER BY b.bill_number ASC, oi.created_at ASC, oi.id ASC`
+      )
+      .all(posDayId) as Array<{ bill_id: string; name: string; quantity: number; unit_price_paise: number; line_total_paise: number }>;
     const itemSummaries = this.db
       .prepare(
         `SELECT COALESCE(oi.menu_item_id, oi.id) AS menu_item_id, oi.name_snapshot AS name, oi.sale_group_id, oi.sale_group_name_snapshot,
@@ -2506,6 +2629,12 @@ export class OrderService {
       list.push({ method: payment.method, amountPaise: payment.amount_paise, reference: payment.reference });
       paymentsByBill.set(payment.bill_id, list);
     }
+    const itemsByBill = new Map<string, Array<{ name: string; quantity: number; unitPricePaise: number; lineTotalPaise: number }>>();
+    for (const item of billItemRows) {
+      const list = itemsByBill.get(item.bill_id) ?? [];
+      list.push({ name: item.name, quantity: item.quantity, unitPricePaise: item.unit_price_paise, lineTotalPaise: item.line_total_paise });
+      itemsByBill.set(item.bill_id, list);
+    }
 
     return {
       businessDay,
@@ -2525,11 +2654,14 @@ export class OrderService {
       onlinePaymentsPaise,
       totalPaymentsPaise,
       nonCashPaymentsPaise: upiPaymentsPaise + cardPaymentsPaise + onlinePaymentsPaise,
-      billSummaries: billRows.map((bill) => ({
-        billId: bill.bill_id,
+	      billSummaries: billRows.map((bill) => ({
+	        billId: bill.bill_id,
+        billNumber: bill.bill_number,
         orderId: bill.order_id,
         tableName: bill.table_name,
         status: bill.status,
+        subtotalPaise: bill.subtotal_paise,
+        taxPaise: bill.tax_paise,
         totalPaise: bill.total_paise,
         discountPaise: bill.discount_paise,
         tipPaise: bill.tip_paise,
@@ -2537,6 +2669,7 @@ export class OrderService {
         paidPaise: (paymentsByBill.get(bill.bill_id) ?? []).reduce((total, payment) => total + payment.amountPaise, 0),
         settledAt: bill.settled_at,
         payments: paymentsByBill.get(bill.bill_id) ?? [],
+        items: itemsByBill.get(bill.bill_id) ?? [],
         isNc: Boolean(bill.is_nc),
         ncReason: bill.nc_reason,
         revisionNumber: bill.revision_number
@@ -2630,9 +2763,10 @@ export class OrderService {
 
   private buildBillTicket(input: {
     bill: Pick<
-      BillRow,
-      | "id"
-      | "order_id"
+	      BillRow,
+	      | "id"
+	      | "bill_number"
+	      | "order_id"
       | "subtotal_paise"
       | "tax_paise"
       | "total_paise"
@@ -2656,7 +2790,7 @@ export class OrderService {
       .all(input.bill.id) as Array<{ method: string; amount_paise: number }>;
     return {
       tableName: input.tableName,
-      billId: input.bill.id,
+	      billId: String(input.bill.bill_number || input.bill.id),
       items: billableItems.map((item) => ({
         name: item.name_snapshot,
         variantName: item.variant_name_snapshot || null,
@@ -3627,9 +3761,10 @@ export class OrderService {
           orderId: order.id,
           productionUnitId,
           type,
-          status: "queued",
-          sequence,
-          reason: reason ?? null,
+	          status: "queued",
+	          sequence,
+	          ticketLabel,
+	          reason: reason ?? null,
           createdAt: now
         })
         .run();
@@ -4266,15 +4401,21 @@ export class OrderService {
     return (row?.current ?? 0) + 1;
   }
 
+  private nextBillNumber(): number {
+    const row = this.orm.select({ current: max(bills.billNumber) }).from(bills).get();
+    const next = (row?.current ?? 0) + 1;
+    this.upsertSetting("bill_number_sequence", String(next));
+    return next;
+  }
+
   private sequenceForKotGroup(orderId: string, productionUnitId: string, ticketLabel: "KOT" | "BOT"): number {
     const existing = this.db
       .prepare(
         `SELECT k.sequence
          FROM kots k
-         JOIN print_jobs pj ON pj.target_id = k.id
          WHERE k.order_id = ?
            AND k.production_unit_id = ?
-           AND pj.target_type = ?
+           AND k.ticket_label = ?
          ORDER BY k.created_at ASC, k.sequence ASC
          LIMIT 1`
       )
@@ -4387,6 +4528,7 @@ export class OrderService {
     return this.orm
       .select({
         id: bills.id,
+        bill_number: bills.billNumber,
         order_id: bills.orderId,
         status: bills.status,
         subtotal_paise: bills.subtotalPaise,
@@ -4403,6 +4545,31 @@ export class OrderService {
       })
       .from(bills)
       .where(eq(bills.id, billId))
+      .get();
+  }
+
+  private getBillForOrder(orderId: string): BillRow | undefined {
+    return this.orm
+      .select({
+        id: bills.id,
+        bill_number: bills.billNumber,
+        order_id: bills.orderId,
+        status: bills.status,
+        subtotal_paise: bills.subtotalPaise,
+        tax_paise: bills.taxPaise,
+        total_paise: bills.totalPaise,
+        discount_paise: bills.discountPaise,
+        tip_paise: bills.tipPaise,
+        final_total_paise: bills.finalTotalPaise,
+        tax_breakdown_json: bills.taxBreakdownJson,
+        revision_number: bills.revisionNumber,
+        print_count: bills.printCount,
+        is_nc: bills.isNc,
+        nc_reason: bills.ncReason
+      })
+      .from(bills)
+      .where(eq(bills.orderId, orderId))
+      .orderBy(desc(bills.createdAt))
       .get();
   }
 }

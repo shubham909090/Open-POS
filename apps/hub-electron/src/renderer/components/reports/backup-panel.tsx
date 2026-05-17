@@ -1,5 +1,6 @@
 import { useMutation } from "@tanstack/react-query";
 import { useState } from "react";
+import { formatPosDateTime } from "@gaurav-pos/shared";
 import { hubApi, type BackupSummary } from "../../hub-api.js";
 import { messageOf } from "../../lib/format.js";
 import { EmptyState } from "../ui/empty-state.js";
@@ -78,7 +79,7 @@ export function BackupPanel({
             <div>
               <strong>{backup.fileName}</strong>
               <span>
-                {new Date(backup.createdAt).toLocaleString()} ·{" "}
+                {formatPosDateTime(backup.createdAt)} ·{" "}
                 {Math.ceil(backup.sizeBytes / 1024)} KB
               </span>
             </div>

@@ -128,7 +128,7 @@ pnpm --filter @gaurav-pos/mobile android:aab
 1. Captain or admin opens the hub app.
 2. Hub automatically uses the current 6 AM IST business day.
 3. Waiters take orders on tablets.
-4. Hub creates KOTs and print jobs locally.
+4. Hub creates KOT/KDS records locally; paper jobs are created only when staff choose **Print and KOT**.
 5. Captain punches bills from occupied tables.
 6. After the next 6 AM IST boundary, hub finalizes the old settled business day.
 7. Hub saves the local report and syncs it to cloud when internet is available.

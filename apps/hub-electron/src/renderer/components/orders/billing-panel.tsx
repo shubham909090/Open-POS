@@ -95,14 +95,6 @@ export function BillingPanel({
     onError: (error) => setNotice({ tone: "bad", text: messageOf(error) })
   });
   const canPunchBill = Boolean(bill && !settle.isPending && newPaid > 0 && remaining === 0 && overpaid === 0);
-  const printBill = useMutation({
-    mutationFn: () => {
-      if (!bill) throw new Error("Generate the bill first.");
-      return hubApi.printBill(bill.id, operationKeys.keyFor("bill-print", { billId: bill.id }));
-    },
-    onSuccess: () => setNotice({ tone: "good", text: "Bill print queued." }),
-    onError: (error) => setNotice({ tone: "bad", text: messageOf(error) })
-  });
   const reprintBill = useMutation({
     mutationFn: (approval: ManagerApproval) => {
       if (!bill) throw new Error("Generate the bill first.");
@@ -266,9 +258,6 @@ export function BillingPanel({
         <Metric label="Balance" value={formatInr(Math.max(0, finalTotal - existingPaid))} />
       </div>
       {bill.revision_number ? <p className="text-sm text-muted">Bill revision {bill.revision_number}{bill.is_nc ? ` · NC: ${bill.nc_reason ?? ""}` : ""}</p> : null}
-      <div className="flex flex-wrap gap-2">
-        <button type="button" disabled={printBill.isPending} onClick={() => printBill.mutate()}>Print bill only</button>
-      </div>
       <div className="adjust-grid">
         <label>
           Discount

@@ -16,19 +16,24 @@ import {
   Text,
   TextInput,
   UIManager,
+  Vibration,
   useWindowDimensions,
   View
 } from "react-native";
 import { CameraView, useCameraPermissions } from "expo-camera";
-import { getTableDisplayState, rankMenuQuickPicks, searchMenuItems, tableDisplayLabel, type MenuQuickPick, type OrderItemInput, type SaleGroupKind } from "@gaurav-pos/shared";
-import { getLocalOnlyHubUrlMessage, getPairingFailureAlert, HubClient, type CurrentDaySummary, type HubBootstrap, type HubOrder, type KdsTicket } from "./lib/hub-client";
+import { formatPosDateTime, getTableDisplayState, searchMenuItems, tableDisplayLabel, type OrderItemInput, type SaleGroupKind } from "@gaurav-pos/shared";
+import { getLocalOnlyHubUrlMessage, getPairingFailureAlert, HubClient, type CurrentDaySummary, type DailyReportDetail, type DailyReportRow, type HubBootstrap, type HubOrder, type KdsTicket } from "./lib/hub-client";
 import { clearDraft, getDeviceToken, getHubUrl, loadDraft, saveDraft, setDeviceToken, setHubUrl } from "./lib/draft-store";
 import { getAndroidStatusBarTopInset } from "./lib/safe-area";
+import { mobileDraftOrderStateSignature, mobileSavedOrderStateSignature, type MobileOrderStateDraftItem } from "./lib/order-state";
+import { formatMobileMenuActionLabel } from "./lib/menu-actions";
 
 type ConnectionState = "checking" | "online" | "offline";
 type ViewMode = "tables" | "menu" | "ticket";
 type PaymentMethod = "cash" | "upi" | "card" | "online";
 type PrintMode = "kot" | "kot_print";
+type OrderStateSaveMode = "save" | "save_print";
+type MobileOrderStateItem = MobileOrderStateDraftItem;
 
 interface PairingPayload {
   kind: "gaurav-pos-pairing";
@@ -76,17 +81,19 @@ export default function App() {
   const [selectedTableId, setSelectedTableId] = useState<string | null>(null);
   const [currentOrder, setCurrentOrder] = useState<HubOrder | null>(null);
   const [currentSummary, setCurrentSummary] = useState<CurrentDaySummary | null>(null);
+  const [dailyReports, setDailyReports] = useState<DailyReportRow[]>([]);
+  const [selectedHistoryDayId, setSelectedHistoryDayId] = useState<string | null>(null);
+  const [selectedHistoryDetail, setSelectedHistoryDetail] = useState<DailyReportDetail | null>(null);
   const [kitchenUnitId, setKitchenUnitId] = useState("");
   const [kdsTickets, setKdsTickets] = useState<KdsTicket[]>([]);
   const [pax, setPax] = useState("2");
   const [items, setItems] = useState<OrderItemInput[]>([]);
   const [menuSearch, setMenuSearch] = useState("");
-  const [menuGroupFilter, setMenuGroupFilter] = useState<SaleGroupKind | "all">("all");
-  const [menuUnitFilter, setMenuUnitFilter] = useState("");
-  const [recentMenuItemIds, setRecentMenuItemIds] = useState<string[]>([]);
+  const [menuGroupFilter, setMenuGroupFilter] = useState<SaleGroupKind | null>(null);
   const [mode, setMode] = useState<ViewMode>("tables");
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const operationKeysRef = useRef<Record<string, string>>({});
+  const knownKdsTicketIdsRef = useRef<Set<string>>(new Set());
 
   const client = useMemo(() => new HubClient(hubUrl, deviceToken), [deviceToken, hubUrl]);
   const selectedTable = bootstrap?.tables.find((table) => table.id === selectedTableId) ?? null;
@@ -106,12 +113,6 @@ export default function App() {
   const useVirtualMenu = mode === "menu" && !isWide;
 
   const hasMenuSearch = menuSearch.trim().length > 0;
-  const menuFilters = { saleGroupKind: menuGroupFilter, productionUnitId: menuUnitFilter || undefined };
-  const quickPicks = hasMenuSearch
-    ? []
-    : rankMenuQuickPicks(bootstrap?.menuItems ?? [], recentMenuItemIds, bootstrap?.menuPopularity ?? [], menuFilters).slice(0, 8);
-  const quickPickIds = new Set(quickPicks.map((pick) => pick.item.id));
-  const visibleMenu = searchMenuItems(bootstrap?.menuItems ?? [], menuSearch, menuFilters).filter((item) => hasMenuSearch || !quickPickIds.has(item.id));
   const saleGroupFilters = Array.from(
     new Map(
       (bootstrap?.menuItems ?? [])
@@ -119,6 +120,9 @@ export default function App() {
         .map((item) => [item.sale_group_kind as SaleGroupKind, item.sale_group_name ?? item.sale_group_kind ?? "Other"])
     ).entries()
   );
+  const activeMenuGroup = menuGroupFilter ?? saleGroupFilters[0]?.[0] ?? null;
+  const menuFilters = { saleGroupKind: activeMenuGroup ?? undefined };
+  const visibleMenu = searchMenuItems(bootstrap?.menuItems ?? [], menuSearch, menuFilters).slice(0, 120);
   const activeKdsUnits = (bootstrap?.productionUnits ?? []).filter((unit) => unit.active !== false && unit.active !== 0 && unit.kds_enabled !== false && unit.kds_enabled !== 0);
 
   function operationKey(prefix: string, scope: unknown) {
@@ -153,7 +157,7 @@ export default function App() {
     void refresh();
     const interval = setInterval(() => void refresh(false), 8_000);
     return () => clearInterval(interval);
-  }, [client, initializing, kitchenUnitId, selectedTableId]);
+  }, [client, initializing, kitchenUnitId, selectedHistoryDayId, selectedTableId]);
 
   useEffect(() => {
     if (initializing || !deviceToken) return;
@@ -169,7 +173,7 @@ export default function App() {
       if (refreshTimer) clearTimeout(refreshTimer);
       unsubscribe();
     };
-  }, [client, deviceToken, initializing, kitchenUnitId, selectedTableId]);
+  }, [client, deviceToken, initializing, kitchenUnitId, selectedHistoryDayId, selectedTableId]);
 
   async function refresh(showSpinner = true) {
     if (showSpinner) setLoading(true);
@@ -190,21 +194,41 @@ export default function App() {
       if (session.role === "kitchen") {
         const kitchenUnits = nextBootstrap.productionUnits.filter((unit) => unit.active !== false && unit.active !== 0 && unit.kds_enabled !== false && unit.kds_enabled !== 0);
         const nextUnitId = kitchenUnits.some((unit) => unit.id === kitchenUnitId) ? kitchenUnitId : kitchenUnits[0]?.id ?? "";
+        const nextTickets = nextUnitId ? await client.kds(nextUnitId) : [];
+        chimeForNewKdsTickets(nextTickets);
         setKitchenUnitId(nextUnitId);
         setCurrentSummary(null);
+        setDailyReports([]);
+        setSelectedHistoryDetail(null);
         setCurrentOrder(null);
-        setKdsTickets(nextUnitId ? await client.kds(nextUnitId) : []);
+        setKdsTickets(nextTickets);
         setMessage(nextUnitId ? `Kitchen screen connected for ${kitchenUnits.find((unit) => unit.id === nextUnitId)?.name ?? "selected counter"}.` : "No enabled kitchen screen is available. Enable KDS on the hub setup screen.");
         return;
       }
       if (session.role === "admin" || session.role === "captain") {
         try {
-          setCurrentSummary(await client.currentBusinessDaySummary());
+          const [summary, reports] = await Promise.all([client.currentBusinessDaySummary(), client.dailyReports()]);
+          setCurrentSummary(summary);
+          setDailyReports(reports);
+          if (selectedHistoryDayId) {
+            try {
+              setSelectedHistoryDetail(await client.dailyReport(selectedHistoryDayId));
+            } catch {
+              setSelectedHistoryDayId(null);
+              setSelectedHistoryDetail(null);
+            }
+          } else {
+            setSelectedHistoryDetail(null);
+          }
         } catch {
           setCurrentSummary(null);
+          setDailyReports([]);
+          setSelectedHistoryDetail(null);
         }
       } else {
         setCurrentSummary(null);
+        setDailyReports([]);
+        setSelectedHistoryDetail(null);
       }
       await checkReadyNotifications();
       setMessage(`Connected. Business day ${nextBootstrap.currentBusinessDay.business_date} is active.`);
@@ -223,6 +247,7 @@ export default function App() {
       const ready = await client.readyNotifications();
       for (const notification of ready) {
         const itemText = notification.items.map((item) => `${item.quantity} x ${item.name}`).join(", ");
+        notifyChime();
         Alert.alert("Order ready", `${notification.productionUnitName} says Table ${notification.tableName} is ready.\n${itemText}`);
       }
     } catch {
@@ -237,6 +262,18 @@ export default function App() {
       setCurrentOrder(null);
       setMessage(error instanceof Error ? error.message : "Could not load table order.");
     }
+  }
+
+  function notifyChime() {
+    Vibration.vibrate([0, 180, 80, 180]);
+  }
+
+  function chimeForNewKdsTickets(nextTickets: KdsTicket[]) {
+    const previous = knownKdsTicketIdsRef.current;
+    const hasPrevious = previous.size > 0;
+    const nextIds = new Set(nextTickets.map((ticket) => ticket.id));
+    if (hasPrevious && nextTickets.some((ticket) => !previous.has(ticket.id))) notifyChime();
+    knownKdsTicketIdsRef.current = nextIds;
   }
 
   async function selectTable(tableId: string) {
@@ -270,7 +307,6 @@ export default function App() {
       setMode("tables");
       return;
     }
-    setRecentMenuItemIds((current) => [menuItemId, ...current.filter((id) => id !== menuItemId)].slice(0, 12));
     const current = items.find((item) => item.menuItemId === menuItemId && item.menuItemVariantId === menuItemVariantId);
     const next = current
       ? items.map((item) => (item.menuItemId === menuItemId && item.menuItemVariantId === menuItemVariantId ? { ...item, quantity: item.quantity + 1 } : item))
@@ -445,7 +481,7 @@ export default function App() {
       await client.generateBill(currentOrder.order.id, { idempotencyKey: operationKey("mobile-bill-generate", scope) });
       await refresh(false);
       await loadTableOrder(selectedTableId);
-      setMessage("Bill generated for this table.");
+      setMessage("Bill generated and print queued for this table.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not generate bill.");
     } finally {
@@ -453,17 +489,30 @@ export default function App() {
     }
   }
 
-  async function printSelectedBill() {
-    if (!currentOrder?.bill) {
-      setMessage("Generate the bill before printing.");
+  async function saveOrderStateForSelectedTable(
+    saveMode: OrderStateSaveMode,
+    stateItems: MobileOrderStateItem[],
+    managerApproval?: { pin: string; reason: string }
+  ) {
+    if (!currentOrder?.order || !selectedTableId) {
+      setMessage("Choose a running or billed table first.");
       return;
     }
     try {
       setSending(true);
-      await client.printBill(currentOrder.bill.id, { idempotencyKey: operationKey("mobile-bill-print", { billId: currentOrder.bill.id }) });
-      setMessage("Bill print queued on the hub printer.");
+      const approval = managerApproval ? approvalPayload(managerApproval.pin, managerApproval.reason, deviceName).managerApproval : undefined;
+      const scope = { orderId: currentOrder.order.id, saveMode, stateItems, approval };
+      await client.updateOrderState(
+        currentOrder.order.id,
+        { saveMode, items: stateItems, ...(approval ? { managerApproval: approval } : {}) },
+        { idempotencyKey: operationKey("mobile-order-state", scope) }
+      );
+      clearOperationKey("mobile-order-state", scope);
+      await refresh(false);
+      await loadTableOrder(selectedTableId);
+      setMessage(saveMode === "save" ? "Table state saved. No KDS or print update was sent." : "Table state saved and modification tickets were sent.");
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Could not print bill.");
+      setMessage(error instanceof Error ? error.message : "Could not save table state.");
     } finally {
       setSending(false);
     }
@@ -483,6 +532,36 @@ export default function App() {
       setMessage("Bill reprint queued.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not reprint bill.");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  async function printHistoryBill(billId: string) {
+    try {
+      setSending(true);
+      await client.historyReprintBill(billId, { idempotencyKey: operationKey("mobile-history-reprint", { billId }) });
+      clearOperationKey("mobile-history-reprint", { billId });
+      setMessage("History bill print queued.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not print history bill.");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  async function selectHistoryDay(posDayId: string | null) {
+    setSelectedHistoryDayId(posDayId);
+    if (!posDayId) {
+      setSelectedHistoryDetail(null);
+      return;
+    }
+    try {
+      setSending(true);
+      setSelectedHistoryDetail(await client.dailyReport(posDayId));
+    } catch (error) {
+      setSelectedHistoryDetail(null);
+      setMessage(error instanceof Error ? error.message : "Could not load order history for that day.");
     } finally {
       setSending(false);
     }
@@ -593,7 +672,9 @@ export default function App() {
     if (connection !== "online") return;
     try {
       setLoading(true);
-      setKdsTickets(await client.kds(unitId));
+      const tickets = await client.kds(unitId);
+      chimeForNewKdsTickets(tickets);
+      setKdsTickets(tickets);
       setMessage("Kitchen tickets refreshed.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not load kitchen tickets.");
@@ -756,18 +837,14 @@ export default function App() {
         <MenuScreen
           selectedTableName={selectedTable?.name ?? null}
           visibleMenu={visibleMenu}
-          quickPicks={quickPicks}
           saleGroupFilters={saleGroupFilters}
-          selectedSaleGroup={menuGroupFilter}
-          productionUnits={bootstrap?.productionUnits ?? []}
-          selectedProductionUnit={menuUnitFilter}
+          selectedSaleGroup={activeMenuGroup}
           hasSearch={hasMenuSearch}
           draftTotal={draftTotal}
           searchValue={menuSearch}
           virtualized={useVirtualMenu}
           onSearchChange={setMenuSearch}
           onSaleGroupChange={setMenuGroupFilter}
-          onProductionUnitChange={setMenuUnitFilter}
           onAddItem={addItem}
         />
       )}
@@ -785,6 +862,9 @@ export default function App() {
           tableTotal={tableTotal}
           currentOrder={currentOrder}
           currentSummary={currentSummary}
+          dailyReports={dailyReports}
+          selectedHistoryDayId={selectedHistoryDayId}
+          selectedHistoryDetail={selectedHistoryDetail}
           connection={connection}
           sending={sending}
           canShift={deviceRole === "admin" || deviceRole === "captain"}
@@ -799,8 +879,10 @@ export default function App() {
           onShiftItem={(orderItemId, quantity, toTableId) => void shiftItem(orderItemId, quantity, toTableId)}
           onCancelSentItem={(orderItemId, quantity, pin, reason) => void cancelSentItem(orderItemId, quantity, pin, reason)}
           onGenerateBill={() => void generateBillForSelectedTable()}
-          onPrintBill={() => void printSelectedBill()}
+          onSaveOrderState={(saveMode, stateItems, approval) => void saveOrderStateForSelectedTable(saveMode, stateItems, approval)}
           onReprintBill={(pin, reason) => void reprintSelectedBill(pin, reason)}
+          onHistoryPrint={(billId) => void printHistoryBill(billId)}
+          onSelectHistoryDay={(posDayId) => void selectHistoryDay(posDayId)}
           onMarkNc={(pin, reason) => void markSelectedBillNc(pin, reason)}
           onReviseBill={(pin, reason) => void reviseSelectedBill(pin, reason)}
           onSettleBill={(input) => void settleSelectedBill(input)}
@@ -1299,42 +1381,31 @@ function KitchenScreen({
 function MenuScreen({
   selectedTableName,
   visibleMenu,
-  quickPicks,
   saleGroupFilters,
   selectedSaleGroup,
-  productionUnits,
-  selectedProductionUnit,
   hasSearch,
   draftTotal,
   searchValue,
   virtualized,
   onSearchChange,
   onSaleGroupChange,
-  onProductionUnitChange,
   onAddItem
 }: {
   selectedTableName: string | null;
   visibleMenu: HubBootstrap["menuItems"];
-  quickPicks: Array<MenuQuickPick<HubBootstrap["menuItems"][number]>>;
   saleGroupFilters: Array<[SaleGroupKind, string]>;
-  selectedSaleGroup: SaleGroupKind | "all";
-  productionUnits: HubBootstrap["productionUnits"];
-  selectedProductionUnit: string;
+  selectedSaleGroup: SaleGroupKind | null;
   hasSearch: boolean;
   draftTotal: number;
   searchValue: string;
   virtualized: boolean;
   onSearchChange: (value: string) => void;
-  onSaleGroupChange: (value: SaleGroupKind | "all") => void;
-  onProductionUnitChange: (value: string) => void;
+  onSaleGroupChange: (value: SaleGroupKind) => void;
   onAddItem: (menuItemId: string, variantId?: string) => void;
 }) {
-  const recentItems = quickPicks.filter((pick) => pick.section === "recent").map((pick) => pick.item);
-  const popularItems = quickPicks.filter((pick) => pick.section === "popular").map((pick) => pick.item);
+  const activeLabel = saleGroupFilters.find(([kind]) => kind === selectedSaleGroup)?.[1] ?? "Best matches";
   const sections = [
-    { title: "Recent", data: recentItems },
-    { title: "Popular today", data: popularItems },
-    { title: hasSearch ? "Best matches" : "All dishes", data: visibleMenu }
+    { title: hasSearch ? "Best matches" : activeLabel, data: visibleMenu }
   ].filter((section) => section.data.length > 0);
   const header = (
     <>
@@ -1358,20 +1429,9 @@ function MenuScreen({
         />
       </View>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always" contentContainerStyle={styles.filterChips}>
-        <Pressable style={[styles.filterChip, selectedSaleGroup === "all" && styles.filterChipActive]} onPress={() => onSaleGroupChange("all")}>
-          <Text style={[styles.filterChipText, selectedSaleGroup === "all" && styles.filterChipTextActive]}>All</Text>
-        </Pressable>
         {saleGroupFilters.map(([kind, label]) => (
           <Pressable key={kind} style={[styles.filterChip, selectedSaleGroup === kind && styles.filterChipActive]} onPress={() => onSaleGroupChange(kind)}>
             <Text style={[styles.filterChipText, selectedSaleGroup === kind && styles.filterChipTextActive]}>{label}</Text>
-          </Pressable>
-        ))}
-        <Pressable style={[styles.filterChip, !selectedProductionUnit && styles.filterChipActive]} onPress={() => onProductionUnitChange("")}>
-          <Text style={[styles.filterChipText, !selectedProductionUnit && styles.filterChipTextActive]}>All kitchens</Text>
-        </Pressable>
-        {productionUnits.map((unit) => (
-          <Pressable key={unit.id} style={[styles.filterChip, selectedProductionUnit === unit.id && styles.filterChipActive]} onPress={() => onProductionUnitChange(unit.id)}>
-            <Text style={[styles.filterChipText, selectedProductionUnit === unit.id && styles.filterChipTextActive]}>{unit.name}</Text>
           </Pressable>
         ))}
       </ScrollView>
@@ -1447,30 +1507,34 @@ function MenuItemRow({
 }) {
   const variants = menuItem.variants?.filter((variant) => Boolean(variant.active)) ?? [];
   const activeVariants = variants.length || menuItem.sale_group_kind === "alcohol" ? variants : [{ id: "", label: "Regular", kind: "default", price_paise: menuItem.price_paise }];
+  const categoryTone = categoryToneFor(menuItem.sale_group_kind);
   return (
     <View style={styles.menuItem}>
+      <View style={[styles.menuCategoryIcon, { backgroundColor: categoryTone.soft }]}>
+        <Text style={[styles.menuCategoryIconText, { color: categoryTone.ink }]}>{categoryTone.icon}</Text>
+      </View>
       <View style={styles.menuText}>
-        <Text style={styles.menuName} numberOfLines={2}>{menuItem.name}</Text>
-        <Text style={styles.muted} numberOfLines={1}>{menuItem.production_unit_name ?? "No kitchen assigned"}</Text>
+        <Text style={styles.menuName} numberOfLines={1}>{menuItem.name}</Text>
+        <Text style={[styles.muted, { color: categoryTone.ink }]} numberOfLines={1}>{menuItem.sale_group_name ?? menuItem.production_unit_name ?? "Menu"}</Text>
       </View>
       <View style={activeVariants.length > 1 ? styles.variantStack : styles.menuPriceBlock}>
         {activeVariants.length === 0 ? (
           <Text style={styles.muted}>Unavailable</Text>
         ) : activeVariants.length === 1 ? (
           (() => { const v = activeVariants[0]!; return (
-          <View style={{ alignItems: "flex-end", gap: 6 }}>
-            <Text style={styles.price}>Rs {formatRupees(v.price_paise)}</Text>
+          <View style={styles.singleVariantBlock}>
             <Pressable style={styles.addButton} onPress={() => onAddItem(menuItem.id, v.id || undefined)}>
-              <Text style={styles.addButtonText}>Add</Text>
+              <Text style={styles.addButtonText}>{formatMobileMenuActionLabel({ kind: v.kind, pricePaise: v.price_paise })}</Text>
             </Pressable>
           </View>); })()
         ) : (
-          activeVariants.map((variant) => (
-            <Pressable key={variant.id || menuItem.id} style={styles.variantChip} onPress={() => onAddItem(menuItem.id, variant.id || undefined)}>
-              <Text style={styles.price}>{variant.kind === "default" ? "" : `${variant.label} `}Rs {formatRupees(variant.price_paise)}</Text>
-              <Text style={styles.addIndicator}>+</Text>
-            </Pressable>
-          ))
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always" contentContainerStyle={styles.variantScroller}>
+            {activeVariants.map((variant) => (
+              <Pressable key={variant.id || menuItem.id} style={styles.variantChip} onPress={() => onAddItem(menuItem.id, variant.id || undefined)}>
+                <Text style={styles.variantPrice} numberOfLines={1}>{formatMobileMenuActionLabel({ kind: variant.kind, label: variant.label, pricePaise: variant.price_paise })}</Text>
+              </Pressable>
+            ))}
+          </ScrollView>
         )}
       </View>
     </View>
@@ -1519,6 +1583,9 @@ function TicketScreen({
   tableTotal,
   currentOrder,
   currentSummary,
+  dailyReports,
+  selectedHistoryDayId,
+  selectedHistoryDetail,
   connection,
   sending,
   canShift,
@@ -1529,8 +1596,10 @@ function TicketScreen({
   onShiftItem,
   onCancelSentItem,
   onGenerateBill,
-  onPrintBill,
+  onSaveOrderState,
   onReprintBill,
+  onHistoryPrint,
+  onSelectHistoryDay,
   onMarkNc,
   onReviseBill,
   onSettleBill,
@@ -1548,6 +1617,9 @@ function TicketScreen({
   tableTotal: number;
   currentOrder: HubOrder | null;
   currentSummary: CurrentDaySummary | null;
+  dailyReports: DailyReportRow[];
+  selectedHistoryDayId: string | null;
+  selectedHistoryDetail: DailyReportDetail | null;
   connection: ConnectionState;
   sending: boolean;
   canShift: boolean;
@@ -1558,8 +1630,10 @@ function TicketScreen({
   onShiftItem: (orderItemId: string, quantity: number, toTableId: string) => void;
   onCancelSentItem: (orderItemId: string, quantity: number, pin: string, reason: string) => void;
   onGenerateBill: () => void;
-  onPrintBill: () => void;
+  onSaveOrderState: (saveMode: OrderStateSaveMode, items: MobileOrderStateItem[], approval?: { pin: string; reason: string }) => void;
   onReprintBill: (pin: string, reason: string) => void;
+  onHistoryPrint: (billId: string) => void;
+  onSelectHistoryDay: (posDayId: string | null) => void;
   onMarkNc: (pin: string, reason: string) => void;
   onReviseBill: (pin: string, reason: string) => void;
   onSettleBill: (input: {
@@ -1575,11 +1649,52 @@ function TicketScreen({
   const [cancelQty, setCancelQty] = useState<Record<string, string>>({});
   const [cancelPin, setCancelPin] = useState("");
   const [cancelReason, setCancelReason] = useState("Item cancelled");
+  const [stateItems, setStateItems] = useState<MobileOrderStateItem[]>([]);
+  const [stateSearch, setStateSearch] = useState("");
+  const [statePin, setStatePin] = useState("");
+  const [stateReason, setStateReason] = useState("Table state edited");
   const canSubmit = Boolean(selectedTableName && items.length > 0 && !sending);
   const shiftTargets = tables.filter((table) => table.id !== selectedTableId && getTableDisplayState(table) !== "disabled");
   const sentCount = sentItems.reduce((total, item) => total + item.quantity, 0);
+  const sentItemsSignature = sentItems
+    .map((item) => [item.id, item.menu_item_id, item.menu_item_variant_id, item.name_snapshot, item.unit_price_paise, item.quantity, item.status].join(":"))
+    .join("|");
+  const savedStateSignature = mobileSavedOrderStateSignature(sentItems);
+  const draftStateSignature = mobileDraftOrderStateSignature(stateItems, menuItems);
+  const hasStateChanges = Boolean(currentOrder?.order) && savedStateSignature !== draftStateSignature;
   const newCount = items.reduce((total, item) => total + item.quantity, 0);
+  const isBilledState = currentOrder?.order?.status === "billed" || Boolean(currentOrder?.bill);
+  const stateTotal = stateItems.reduce((total, item) => {
+    const menuItem = menuItems.find((entry) => entry.id === item.menuItemId);
+    const variant = findMenuVariant(menuItem, item.menuItemVariantId);
+    return total + (item.unitPricePaise ?? variant?.price_paise ?? menuItem?.price_paise ?? 0) * item.quantity;
+  }, 0);
+  const stateMatches = searchMenuItems(menuItems, stateSearch, {}).slice(0, 8);
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(["new"]));
+  useEffect(() => {
+    setStateItems(
+      sentItems.map((item) =>
+        item.menu_item_id
+          ? {
+              orderItemId: item.id,
+              menuItemId: item.menu_item_id,
+              menuItemVariantId: item.menu_item_variant_id ?? undefined,
+              unitPricePaise: item.unit_price_paise,
+              saleGroupId: item.sale_group_id,
+              productionUnitId: item.production_unit_id ?? null,
+              quantity: item.quantity
+            }
+          : {
+              orderItemId: item.id,
+              openName: item.name_snapshot,
+              openPricePaise: item.unit_price_paise,
+              saleGroupId: item.sale_group_id ?? "sg-food",
+              productionUnitId: item.production_unit_id ?? null,
+              quantity: item.quantity
+            }
+      )
+    );
+  }, [currentOrder?.order?.id, sentItemsSignature]);
   const toggleSection = (id: string) => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setExpandedSections((prev) => {
@@ -1587,6 +1702,39 @@ function TicketScreen({
       if (next.has(id)) next.delete(id); else next.add(id);
       return next;
     });
+  };
+  const changeStateQty = (index: number, delta: number) => {
+    setStateItems((current) =>
+      current
+        .map((item, itemIndex) => (itemIndex === index ? { ...item, quantity: Math.max(0, item.quantity + delta) } : item))
+        .filter((item) => Boolean(item.orderItemId) || item.quantity > 0)
+    );
+  };
+  const addStateItem = (menuItemId: string, menuItemVariantId?: string) => {
+    setStateItems((current) => {
+      const found = current.find((item) => item.menuItemId === menuItemId && item.menuItemVariantId === menuItemVariantId);
+      if (found) {
+        return current.map((item) => (item === found ? { ...item, quantity: item.quantity + 1 } : item));
+      }
+      return [...current, { menuItemId, menuItemVariantId, quantity: 1 }];
+    });
+    setStateSearch("");
+  };
+  const requestStateSave = (saveMode: OrderStateSaveMode) => {
+    if (!hasStateChanges) return;
+    if (isBilledState && !statePin.trim()) {
+      Alert.alert("Manager PIN needed", "Billed table changes need manager PIN.");
+      return;
+    }
+    const approval = isBilledState ? { pin: statePin, reason: stateReason || "Billed table state edited" } : undefined;
+    if (saveMode === "save" && !isBilledState) {
+      Alert.alert("Save without print?", "No modification print or KDS update will be generated.", [
+        { text: "Review", style: "cancel" },
+        { text: "Save", onPress: () => onSaveOrderState(saveMode, stateItems, approval) }
+      ]);
+      return;
+    }
+    onSaveOrderState(saveMode, stateItems, approval);
   };
   return (
     <View style={styles.panel}>
@@ -1685,13 +1833,95 @@ function TicketScreen({
         {sentItems.length === 0 ? (
           <Text style={styles.smallMuted}>Nothing has been sent for this table yet.</Text>
         ) : (
-          <View style={styles.sentList}>
-            {sentItems.map((item) => (
-              <View key={item.id} style={styles.sentLine}>
-                <Text style={styles.sentName} numberOfLines={2}>{item.quantity} x {item.name_snapshot}</Text>
-                <Text style={styles.muted}>Rs {formatRupees(item.unit_price_paise * item.quantity)}</Text>
+          <View style={styles.stateEditor}>
+            <View style={styles.sectionHeaderRow}>
+              <View style={styles.flexText}>
+                <Text style={styles.actionTitle}>{isBilledState ? "Edit Billed Table" : "Edit Table State"}</Text>
+                <Text style={styles.actionMeta}>{isBilledState ? "Manager PIN required before saving changes." : "Save quietly or save and print modification tickets."}</Text>
               </View>
-            ))}
+              <Text style={styles.actionAmount}>Rs {formatRupees(stateTotal)}</Text>
+            </View>
+
+            <TextInput
+              style={styles.input}
+              value={stateSearch}
+              onChangeText={setStateSearch}
+              placeholder="Search to add item"
+              placeholderTextColor="#81786b"
+              autoCorrect={false}
+              returnKeyType="search"
+            />
+            {stateSearch.trim() ? (
+              <View style={styles.stateSearchResults}>
+                {stateMatches.map((menuItem) => (
+                  <MenuItemRow key={`state-add-${menuItem.id}`} menuItem={menuItem} onAddItem={addStateItem} />
+                ))}
+              </View>
+            ) : null}
+
+            <View style={styles.ticketList}>
+              {stateItems.length === 0 ? (
+                <Text style={styles.smallMuted}>All items removed. Saving will free this table.</Text>
+              ) : (
+                stateItems.map((item, index) => {
+                  const menuItem = menuItems.find((entry) => entry.id === item.menuItemId);
+                  const variant = findMenuVariant(menuItem, item.menuItemVariantId);
+                  const name = item.openName ?? `${menuItem?.name ?? item.menuItemId}${variant && variant.kind !== "default" ? ` ${variant.label}` : ""}`;
+                  const unitPrice = item.openPricePaise ?? item.unitPricePaise ?? variant?.price_paise ?? menuItem?.price_paise ?? 0;
+                  return (
+                    <View key={`${item.orderItemId ?? item.menuItemId}-${item.menuItemVariantId ?? "default"}-${index}`} style={styles.ticketLine}>
+                      <View style={styles.ticketText}>
+                        <Text style={styles.ticketName} numberOfLines={2}>{name}</Text>
+                        <Text style={styles.muted}>Rs {formatRupees(unitPrice * item.quantity)}</Text>
+                      </View>
+                      <View style={styles.qtyControls}>
+                        <Pressable style={styles.qtyButton} onPress={() => changeStateQty(index, -1)}>
+                          <Text style={styles.qtyText}>-</Text>
+                        </Pressable>
+                        <Text style={styles.qtyValue}>{item.quantity}</Text>
+                        <Pressable style={styles.qtyButton} onPress={() => changeStateQty(index, 1)}>
+                          <Text style={styles.qtyText}>+</Text>
+                        </Pressable>
+                      </View>
+                    </View>
+                  );
+                })
+              )}
+            </View>
+
+            {isBilledState ? (
+              <View style={styles.managerBox}>
+                <TextInput
+                  style={styles.input}
+                  value={statePin}
+                  onChangeText={setStatePin}
+                  secureTextEntry
+                  keyboardType="number-pad"
+                  placeholder="Manager PIN"
+                />
+                <TextInput
+                  style={styles.input}
+                  value={stateReason}
+                  onChangeText={setStateReason}
+                  placeholder="Reason"
+                />
+              </View>
+            ) : null}
+
+            {hasStateChanges ? (
+              <View style={styles.sendButtonRow}>
+                <Pressable style={[styles.secondaryButton, styles.sendButton, sending && styles.buttonDisabled]} disabled={sending} onPress={() => requestStateSave("save")}>
+                  <Text style={styles.secondaryButtonText}>Save</Text>
+                </Pressable>
+                <Pressable style={[styles.primaryButton, styles.sendButton, sending && styles.buttonDisabled]} disabled={sending} onPress={() => requestStateSave("save_print")}>
+                  <Text style={styles.primaryButtonText}>Save and print</Text>
+                </Pressable>
+              </View>
+            ) : (
+              <View style={styles.savedStatePill}>
+                <Text style={styles.savedStateText}>Saved</Text>
+              </View>
+            )}
           </View>
         )}
         {canBill && sentItems.length > 0 ? (
@@ -1802,11 +2032,15 @@ function TicketScreen({
             canBill={canBill}
             currentOrder={currentOrder}
             currentSummary={currentSummary}
+            dailyReports={dailyReports}
+            selectedHistoryDayId={selectedHistoryDayId}
+            selectedHistoryDetail={selectedHistoryDetail}
             hasNewItems={items.length > 0}
             sending={sending}
             onGenerateBill={onGenerateBill}
-            onPrintBill={onPrintBill}
             onReprintBill={onReprintBill}
+            onHistoryPrint={onHistoryPrint}
+            onSelectHistoryDay={onSelectHistoryDay}
             onMarkNc={onMarkNc}
             onReviseBill={onReviseBill}
             onSettleBill={onSettleBill}
@@ -1821,11 +2055,15 @@ function CaptainBillingPanel({
   canBill,
   currentOrder,
   currentSummary,
+  dailyReports,
+  selectedHistoryDayId,
+  selectedHistoryDetail,
   hasNewItems,
   sending,
   onGenerateBill,
-  onPrintBill,
   onReprintBill,
+  onHistoryPrint,
+  onSelectHistoryDay,
   onMarkNc,
   onReviseBill,
   onSettleBill
@@ -1833,11 +2071,15 @@ function CaptainBillingPanel({
   canBill: boolean;
   currentOrder: HubOrder | null;
   currentSummary: CurrentDaySummary | null;
+  dailyReports: DailyReportRow[];
+  selectedHistoryDayId: string | null;
+  selectedHistoryDetail: DailyReportDetail | null;
   hasNewItems: boolean;
   sending: boolean;
   onGenerateBill: () => void;
-  onPrintBill: () => void;
   onReprintBill: (pin: string, reason: string) => void;
+  onHistoryPrint: (billId: string) => void;
+  onSelectHistoryDay: (posDayId: string | null) => void;
   onMarkNc: (pin: string, reason: string) => void;
   onReviseBill: (pin: string, reason: string) => void;
   onSettleBill: (input: {
@@ -1849,6 +2091,11 @@ function CaptainBillingPanel({
 }) {
   const bill = currentOrder?.bill ?? null;
   const payments = currentOrder?.payments ?? [];
+  const historySummary = selectedHistoryDayId ? selectedHistoryDetail : currentSummary;
+  const historyBills = historySummary?.billSummaries ?? [];
+  const historyLabel = selectedHistoryDayId
+    ? selectedHistoryDetail?.business_date ?? "Older day"
+    : currentSummary?.businessDay.business_date ?? "Today";
   const [discountType, setDiscountType] = useState<"amount" | "percent">("amount");
   const [discountValue, setDiscountValue] = useState("0");
   const [tipValue, setTipValue] = useState("0");
@@ -1905,23 +2152,69 @@ function CaptainBillingPanel({
     <View style={{ gap: 12 }}>
       <View>
         <Text style={styles.actionTitle}>Captain Actions</Text>
-        <Text style={styles.actionMeta}>Billing, print, payment, NC, reprint, and revise</Text>
+        <Text style={styles.actionMeta}>Billing, payment, NC, reprint, and revise</Text>
       </View>
 
       {currentSummary ? (
-        <View style={styles.summaryGrid}>
-          <SummaryBox label="Sales" value={`Rs ${formatRupees(currentSummary.finalSalesPaise)}`} />
-          <SummaryBox label="Bills" value={String(currentSummary.billCount)} />
-          <SummaryBox label="Cash" value={`Rs ${formatRupees(currentSummary.cashPaymentsPaise)}`} />
-          <SummaryBox label="UPI/Card" value={`Rs ${formatRupees(currentSummary.upiPaymentsPaise + currentSummary.cardPaymentsPaise)}`} />
-        </View>
+        <>
+          <View style={styles.summaryGrid}>
+            <SummaryBox label="Sales" value={`Rs ${formatRupees(currentSummary.finalSalesPaise)}`} />
+            <SummaryBox label="Bills" value={String(currentSummary.billCount)} />
+            <SummaryBox label="Cash" value={`Rs ${formatRupees(currentSummary.cashPaymentsPaise)}`} />
+            <SummaryBox label="UPI/Card" value={`Rs ${formatRupees(currentSummary.upiPaymentsPaise + currentSummary.cardPaymentsPaise)}`} />
+          </View>
+          <View style={styles.historyBox}>
+            <View style={styles.sectionHeaderRow}>
+              <View style={styles.flexText}>
+                <Text style={styles.actionTitle}>Order History</Text>
+                <Text style={styles.actionMeta}>{historyLabel} · {historyBills.length} bills</Text>
+              </View>
+            </View>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.historyDayChips}>
+              <Pressable
+                style={[styles.filterChip, !selectedHistoryDayId && styles.filterChipActive]}
+                onPress={() => onSelectHistoryDay(null)}
+              >
+                <Text style={[styles.filterChipText, !selectedHistoryDayId && styles.filterChipTextActive]}>Today</Text>
+              </Pressable>
+              {dailyReports.map((report) => (
+                <Pressable
+                  key={report.pos_day_id}
+                  style={[styles.filterChip, selectedHistoryDayId === report.pos_day_id && styles.filterChipActive]}
+                  onPress={() => onSelectHistoryDay(report.pos_day_id)}
+                >
+                  <Text style={[styles.filterChipText, selectedHistoryDayId === report.pos_day_id && styles.filterChipTextActive]}>{report.business_date}</Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+            {historyBills.length === 0 ? (
+              <Text style={styles.smallMuted}>No bills found for this day.</Text>
+            ) : (
+              historyBills.map((historyBill) => (
+                <View key={historyBill.billId} style={styles.historyRow}>
+                  <View style={styles.flexText}>
+                    <Text style={styles.ticketName}>Bill #{historyBill.billNumber ?? historyBill.billId} · Table {historyBill.tableName}</Text>
+                    <Text style={styles.muted}>
+                      {historyBill.items?.length ? `${historyBill.items.slice(0, 3).map((item) => `${item.quantity} x ${item.name}`).join(", ")} · ` : ""}
+                      subtotal Rs {formatRupees(historyBill.subtotalPaise ?? Math.max(0, historyBill.totalPaise - (historyBill.taxPaise ?? 0)))} · tax Rs {formatRupees(historyBill.taxPaise ?? 0)} · total Rs {formatRupees(historyBill.finalTotalPaise)} · paid Rs {formatRupees(historyBill.paidPaise)}
+                      {historyBill.settledAt ? ` · ${formatPosDateTime(historyBill.settledAt)}` : ""}
+                    </Text>
+                  </View>
+                  <Pressable style={[styles.secondaryButton, styles.historyPrintButton, sending && styles.buttonDisabled]} disabled={sending} onPress={() => onHistoryPrint(historyBill.billId)}>
+                    <Text style={styles.secondaryButtonText}>Print</Text>
+                  </Pressable>
+                </View>
+              ))
+            )}
+          </View>
+        </>
       ) : null}
 
       {!currentOrder?.order ? (
         <Text style={styles.smallMuted}>Send items for this table before billing.</Text>
       ) : !bill ? (
         <Pressable style={[styles.primaryButton, styles.heroSendButton, sending && styles.buttonDisabled]} disabled={sending} onPress={onGenerateBill}>
-          <Text style={styles.primaryButtonText}>{sending ? "Working..." : "Generate Bill For Table"}</Text>
+          <Text style={styles.primaryButtonText}>{sending ? "Working..." : "Generate and Print Bill"}</Text>
         </Pressable>
       ) : (
         <>
@@ -1948,9 +2241,6 @@ function CaptainBillingPanel({
               }
             >
               <Text style={styles.primaryButtonText}>Punch Bill</Text>
-            </Pressable>
-            <Pressable style={[styles.secondaryButton, sending && styles.buttonDisabled]} disabled={sending} onPress={onPrintBill}>
-              <Text style={styles.secondaryButtonText}>Print Bill</Text>
             </Pressable>
           </View>
 
@@ -2214,6 +2504,13 @@ function normalisePax(value: string) {
 function findMenuVariant(menuItem: HubBootstrap["menuItems"][number] | undefined, variantId: string | undefined) {
   const variants = menuItem?.variants?.filter((variant) => Boolean(variant.active)) ?? [];
   return variants.find((variant) => variant.id === variantId) ?? variants[0];
+}
+
+function categoryToneFor(kind?: string) {
+  if (kind === "alcohol") return { icon: "A", soft: "#f8e6e9", ink: "#9a2f46" };
+  if (kind === "beverage") return { icon: "B", soft: "#e1f0fb", ink: "#1b5c83" };
+  if (kind === "food") return { icon: "F", soft: "#e5f3ed", ink: "#0d5248" };
+  return { icon: "M", soft: "#f1e8da", ink: "#6c4b1f" };
 }
 
 function formatRupees(paise: number) {
@@ -2594,6 +2891,30 @@ const styles = StyleSheet.create({
     borderColor: "#f0b8ad",
     backgroundColor: "#fff3ef"
   },
+  stateEditor: {
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#d8cdbb",
+    backgroundColor: "#fffaf1",
+    padding: 10,
+    gap: 10
+  },
+  stateSearchResults: {
+    gap: 8,
+    maxHeight: 360
+  },
+  savedStatePill: {
+    minHeight: 38,
+    alignSelf: "flex-start",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#d8cdbb",
+    backgroundColor: palette.paper,
+    paddingHorizontal: 12,
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  savedStateText: { color: palette.muted, fontSize: 12, fontWeight: "900" },
   dangerSmallButton: {
     minHeight: 48,
     paddingHorizontal: 14,
@@ -2625,48 +2946,59 @@ const styles = StyleSheet.create({
   menuSectionHeader: { paddingTop: 12, paddingBottom: 6, borderBottomWidth: 2, borderBottomColor: palette.line, backgroundColor: palette.paper },
   menuList: { gap: 8 },
   menuItem: {
-    minHeight: 78,
-    padding: 14,
-    borderRadius: 12,
-    borderWidth: 0,
+    minHeight: 48,
+    padding: 7,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#efe5d6",
     backgroundColor: palette.surfaceElevated,
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    gap: 10,
-    shadowColor: palette.shadow,
-    shadowOffset: { width: 0, height: 1 },
-    shadowRadius: 4,
-    shadowOpacity: 1,
-    elevation: 2
+    gap: 7,
+    shadowColor: "transparent",
+    shadowOffset: { width: 0, height: 0 },
+    shadowRadius: 0,
+    shadowOpacity: 0,
+    elevation: 0
   },
+  menuCategoryIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  menuCategoryIconText: { fontSize: 12, fontWeight: "900" },
   menuText: { flex: 1, minWidth: 0 },
-  menuName: { fontSize: 16, fontWeight: "900", color: palette.ink, lineHeight: 20, marginBottom: 2 },
-  menuPriceBlock: { alignItems: "flex-end", gap: 6 },
-  variantStack: { minWidth: 132, gap: 6, alignItems: "stretch" },
+  menuName: { fontSize: 14, fontWeight: "900", color: palette.ink, lineHeight: 18, marginBottom: 1 },
+  menuPriceBlock: { alignItems: "flex-end", gap: 4, flexShrink: 0 },
+  singleVariantBlock: { alignItems: "flex-end" },
+  variantStack: { maxWidth: 260, minWidth: 132, flexShrink: 1 },
+  variantScroller: { gap: 5, alignItems: "center", paddingRight: 2, flexWrap: "nowrap" as const },
   variantChip: {
-    minHeight: 44,
+    minHeight: 30,
     borderWidth: 1,
     borderColor: "#d8cdbb",
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
     backgroundColor: "#fffaf0"
   },
-  price: { color: palette.greenBold, fontWeight: "900", fontSize: 17 },
+  variantPrice: { color: palette.greenBold, fontWeight: "900", fontSize: 12 },
+  price: { color: palette.greenBold, fontWeight: "900", fontSize: 14 },
   addButton: {
-    minHeight: 36,
-    minWidth: 52,
+    minHeight: 30,
+    minWidth: 64,
     borderRadius: 8,
     backgroundColor: palette.ink,
     alignItems: "center" as const,
     justifyContent: "center" as const,
-    paddingHorizontal: 12
+    paddingHorizontal: 8
   },
-  addButtonText: { color: "#fffdfa", fontSize: 13, fontWeight: "900" },
+  addButtonText: { color: "#fffdfa", fontSize: 12, fontWeight: "900" },
   addIndicator: { color: palette.greenBold, fontSize: 18, fontWeight: "900" },
   addText: { color: palette.ink, fontSize: 14, fontWeight: "900" },
   formStack: { gap: 9 },
@@ -2750,6 +3082,31 @@ const styles = StyleSheet.create({
     backgroundColor: "#fbf6eb",
     padding: 10,
     gap: 4
+  },
+  historyBox: {
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#d8cdbb",
+    backgroundColor: "#fffaf1",
+    padding: 10,
+    gap: 8
+  },
+  historyDayChips: {
+    gap: 8,
+    paddingVertical: 2
+  },
+  historyRow: {
+    minHeight: 58,
+    borderTopWidth: 1,
+    borderColor: "#ece2d4",
+    paddingTop: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8
+  },
+  historyPrintButton: {
+    minHeight: 42,
+    paddingHorizontal: 12
   },
   segmentedRow: {
     flexDirection: "row",

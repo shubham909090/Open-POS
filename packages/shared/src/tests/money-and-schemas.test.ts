@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { calculateLineTotal, calculateTax, formatInr } from "../money.js";
+import { calculateLineTotal, calculateTax, formatCompactInr, formatInr } from "../money.js";
+import { getOrderStateSignature } from "../order-state-signature.js";
 import { createMenuItemSchema, createPairingCodeSchema, submitOrderSchema, updateReceiptPrinterSchema } from "../schemas.js";
 import { getTableDisplayState, tableDisplayClass, tableDisplayLabel } from "../table-state.js";
 
@@ -8,6 +9,34 @@ describe("shared money helpers", () => {
     expect(calculateLineTotal(12_500, 3)).toBe(37_500);
     expect(calculateTax(37_500, 500)).toBe(1_875);
     expect(formatInr(37_500)).toContain("375");
+    expect(formatCompactInr(4_000)).toBe("₹40");
+    expect(formatCompactInr(4_050)).toBe("₹40.50");
+  });
+});
+
+describe("shared order state signature", () => {
+  const saved = [
+    { orderItemId: "oi-1", menuItemId: "item-1", menuItemVariantId: "v-30", pricePaise: 4_000, saleGroupId: "sg-alcohol", productionUnitId: "bar", quantity: 2 },
+    { orderItemId: "oi-2", openName: "Open snack", pricePaise: 12_000, saleGroupId: "sg-food", productionUnitId: "kitchen", quantity: 1 }
+  ];
+
+  it("keeps unchanged and restored drafts stable", () => {
+    const base = getOrderStateSignature(saved);
+    expect(getOrderStateSignature([...saved].reverse())).toBe(base);
+    expect(getOrderStateSignature([{ ...saved[0]!, quantity: 3 }, saved[1]!, { menuItemId: "item-new", quantity: 0 }])).not.toBe(base);
+    expect(getOrderStateSignature(saved)).toBe(base);
+  });
+
+  it("marks quantity edits, existing removals, and real new items as dirty", () => {
+    const base = getOrderStateSignature(saved);
+    expect(getOrderStateSignature([{ ...saved[0]!, quantity: 3 }, saved[1]!])).not.toBe(base);
+    expect(getOrderStateSignature([{ ...saved[0]!, quantity: 0 }, saved[1]!])).not.toBe(base);
+    expect(getOrderStateSignature([...saved, { menuItemId: "item-3", pricePaise: 5_000, saleGroupId: "sg-food", quantity: 1 }])).not.toBe(base);
+  });
+
+  it("ignores new lines reduced back to zero", () => {
+    const base = getOrderStateSignature(saved);
+    expect(getOrderStateSignature([...saved, { menuItemId: "item-3", pricePaise: 5_000, saleGroupId: "sg-food", quantity: 0 }])).toBe(base);
   });
 });
 

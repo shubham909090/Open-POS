@@ -27,6 +27,7 @@ export function KitchenView({
     queryFn: () => hubApi.kds(unitId),
     enabled: Boolean(unitId),
   });
+
   const statusMutation = useMutation({
     mutationFn: ({ id, status }: { id: string; status: string }) =>
       hubApi.updateKotStatus(id, status),

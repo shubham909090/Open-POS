@@ -317,9 +317,12 @@ export interface CloseSummary {
 
 export interface ReportBillSummary {
   billId: string;
+  billNumber?: number;
   orderId: string;
   tableName: string;
   status: string;
+  subtotalPaise?: number;
+  taxPaise?: number;
   totalPaise: number;
   discountPaise: number;
   tipPaise: number;
@@ -327,6 +330,7 @@ export interface ReportBillSummary {
   paidPaise: number;
   settledAt: string | null;
   payments: Array<{ method: string; amountPaise: number; reference: string | null }>;
+  items?: Array<{ name: string; quantity: number; unitPricePaise: number; lineTotalPaise: number }>;
   isNc?: boolean;
   ncReason?: string | null;
   revisionNumber?: number;
@@ -538,8 +542,26 @@ export const hubApi = {
       idempotencyKey,
       body: JSON.stringify({ ...payload, orderType: "dine_in" })
     }),
-  generateBill: (orderId: string, idempotencyKey?: string) =>
-    apiFetch<{ billId: string; totalPaise: number }>(`/bills/${orderId}/generate`, { method: "POST", idempotent: "bill-generate", idempotencyKey }),
+	  updateOrderState: (
+	    orderId: string,
+	    payload: {
+	      saveMode: "save" | "save_print";
+	      items: Array<
+	        | { orderItemId?: string; menuItemId: string; menuItemVariantId?: string; quantity: number }
+	        | { orderItemId?: string; openName: string; openPricePaise: number; saleGroupId: string; productionUnitId?: string | null; quantity: number }
+	      >;
+	      managerApproval?: { pin: string; reason: string; approvedBy: string };
+	    },
+	    idempotencyKey?: string
+	  ) =>
+	    apiFetch<{ orderId: string; status: string; totalPaise: number; kotIds: string[]; printJobIds?: string[]; processed?: PrintProcessSummary }>(`/orders/${orderId}/state`, {
+	      method: "POST",
+	      idempotent: "order-state",
+	      idempotencyKey,
+	      body: JSON.stringify(payload)
+	    }),
+	  generateBill: (orderId: string, idempotencyKey?: string) =>
+	    apiFetch<{ billId: string; billNumber: number; totalPaise: number; printJobId: string; processed?: PrintProcessSummary }>(`/bills/${orderId}/generate`, { method: "POST", idempotent: "bill-generate", idempotencyKey }),
   settleBill: (
     billId: string,
     payload: {
@@ -576,6 +598,8 @@ export const hubApi = {
     }),
   reprintBill: (billId: string, payload: ManagerApprovalPayload, idempotencyKey?: string) =>
     apiFetch<{ printJobId: string; processed?: PrintProcessSummary }>(`/bills/${billId}/reprint`, { method: "POST", idempotent: "bill-reprint", idempotencyKey, body: JSON.stringify({ reason: payload.managerApproval.reason, ...payload }) }),
+  historyReprintBill: (billId: string, idempotencyKey?: string) =>
+    apiFetch<{ printJobId: string; processed?: PrintProcessSummary }>(`/bills/${billId}/history-reprint`, { method: "POST", idempotent: "bill-history-reprint", idempotencyKey, body: JSON.stringify({}) }),
   markBillNc: (billId: string, payload: ManagerApprovalPayload, idempotencyKey?: string) =>
     apiFetch<{ printJobId: string; processed?: PrintProcessSummary }>(`/bills/${billId}/nc`, { method: "POST", idempotent: "bill-nc", idempotencyKey, body: JSON.stringify(payload) }),
   cancelOrder: (orderId: string, payload: ManagerApprovalPayload) =>

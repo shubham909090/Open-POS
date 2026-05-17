@@ -18,6 +18,7 @@ export interface HubBootstrap {
     price_paise: number;
     production_unit_id: string | null;
     production_unit_name: string | null;
+    sale_group_id: string;
     sale_group_name?: string;
     sale_group_kind?: string;
     active: number;
@@ -85,7 +86,43 @@ export interface CurrentDaySummary {
   cardPaymentsPaise: number;
   onlinePaymentsPaise: number;
   totalPaymentsPaise: number;
+  billSummaries?: Array<{
+    billId: string;
+    billNumber?: number;
+    orderId: string;
+    tableName: string;
+    status: string;
+    subtotalPaise?: number;
+    taxPaise?: number;
+    totalPaise: number;
+    discountPaise: number;
+    tipPaise: number;
+    finalTotalPaise: number;
+    paidPaise: number;
+    settledAt: string | null;
+    payments: Array<{ method: string; amountPaise: number; reference: string | null }>;
+    items?: Array<{ name: string; quantity: number; unitPricePaise: number; lineTotalPaise: number }>;
+    isNc?: boolean;
+    ncReason?: string | null;
+    revisionNumber?: number;
+  }>;
   groupSummaries?: Array<{ name: string; kind: string; quantity: number; grossSalesPaise: number; finalSalesPaise: number }>;
+}
+
+export interface DailyReportRow {
+  pos_day_id: string;
+  business_date: string;
+  status: string;
+  bill_count: number;
+  gross_sales_paise: number;
+  final_sales_paise: number;
+  total_payments_paise: number;
+  finalized_at: string;
+}
+
+export interface DailyReportDetail extends DailyReportRow {
+  billSummaries: NonNullable<CurrentDaySummary["billSummaries"]>;
+  groupSummaries?: CurrentDaySummary["groupSummaries"];
 }
 
 export interface ReadyNotification {
@@ -144,10 +181,34 @@ export class HubClient {
     return this.request("/business-day/current-summary");
   }
 
+  async dailyReports(): Promise<DailyReportRow[]> {
+    return this.request("/reports/daily");
+  }
+
+  async dailyReport(posDayId: string): Promise<DailyReportDetail> {
+    return this.request(`/reports/daily/${posDayId}`);
+  }
+
   async submitOrder(input: SubmitOrderInput, options: RequestOptions = {}): Promise<{ orderId: string; kotIds: string[] }> {
     return this.request("/orders/submit", {
       method: "POST",
       headers: { "Idempotency-Key": options.idempotencyKey ?? createIdempotencyKey("mobile-order") },
+      body: JSON.stringify(input)
+    });
+  }
+
+  async updateOrderState(
+    orderId: string,
+    input: {
+      saveMode: "save" | "save_print";
+      items: SubmitOrderInput["items"];
+      managerApproval?: ManagerApprovalPayload["managerApproval"];
+    },
+    options: RequestOptions = {}
+  ): Promise<{ orderId: string; status: string; totalPaise: number; kotIds: string[]; printJobIds?: string[] }> {
+    return this.request(`/orders/${orderId}/state`, {
+      method: "POST",
+      headers: { "Idempotency-Key": options.idempotencyKey ?? createIdempotencyKey("mobile-order-state") },
       body: JSON.stringify(input)
     });
   }
@@ -224,7 +285,7 @@ export class HubClient {
     };
   }
 
-  async generateBill(orderId: string, options: RequestOptions = {}): Promise<{ billId: string; totalPaise: number }> {
+  async generateBill(orderId: string, options: RequestOptions = {}): Promise<{ billId: string; billNumber: number; totalPaise: number; printJobId: string }> {
     return this.request(`/bills/${orderId}/generate`, {
       method: "POST",
       headers: { "Idempotency-Key": options.idempotencyKey ?? createIdempotencyKey("mobile-bill-generate") }
@@ -235,6 +296,14 @@ export class HubClient {
     return this.request(`/bills/${billId}/print`, {
       method: "POST",
       headers: { "Idempotency-Key": options.idempotencyKey ?? createIdempotencyKey("mobile-bill-print") },
+      body: JSON.stringify({})
+    });
+  }
+
+  async historyReprintBill(billId: string, options: RequestOptions = {}): Promise<{ printJobId: string }> {
+    return this.request(`/bills/${billId}/history-reprint`, {
+      method: "POST",
+      headers: { "Idempotency-Key": options.idempotencyKey ?? createIdempotencyKey("mobile-bill-history-reprint") },
       body: JSON.stringify({})
     });
   }

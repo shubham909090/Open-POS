@@ -29,3 +29,8 @@ export function formatInr(paise: Paisa): string {
     maximumFractionDigits: 2
   }).format(paise / 100);
 }
+
+export function formatCompactInr(paise: Paisa): string {
+  const rupees = paise / 100;
+  return `₹${Number.isInteger(rupees) ? rupees.toFixed(0) : rupees.toFixed(2)}`;
+}

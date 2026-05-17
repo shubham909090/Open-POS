@@ -3,13 +3,13 @@ export type QueryKey = readonly unknown[];
 
 export function getRealtimeInvalidationKeys(event: RealtimeEvent): QueryKey[] {
   const type = String(event.type ?? "");
-  if (type === "order.submitted" || type === "order.cancelled" || type === "order_items.cancelled") {
+  if (type === "order.submitted" || type === "order.cancelled" || type === "order_items.cancelled" || type === "order_state.updated") {
     return [["bootstrap"], ["tableOrder"], ["kds"], ["currentBusinessDaySummary"], ["alcohol"]];
   }
   if (type === "bill.settled" || type === "bill.nc_marked") {
     return [["bootstrap"], ["tableOrder"], ["currentBusinessDaySummary"], ["dailyReports"], ["alcohol"], ["alcoholStockMovements"]];
   }
-  if (type === "bill.generated" || type === "bill.printed" || type === "bill.reprinted" || type === "bill.revised") {
+  if (type === "bill.generated" || type === "bill.printed" || type === "bill.reprinted" || type === "bill.history_reprinted" || type === "bill.revised") {
     return [["bootstrap"], ["tableOrder"], ["currentBusinessDaySummary"]];
   }
   if (type === "table.shifted" || type === "order_items.shifted") return [["bootstrap"], ["tableOrder"], ["kds"]];

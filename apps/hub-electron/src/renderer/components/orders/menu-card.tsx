@@ -1,7 +1,15 @@
-import { formatInr } from "@gaurav-pos/shared";
-import { Plus } from "lucide-react";
+import { formatCompactInr } from "@gaurav-pos/shared";
+import { Beer, Coffee, Package, Utensils, Wine } from "lucide-react";
 import type { MenuItem } from "../../hub-api.js";
 import { EmptyState } from "../ui/empty-state.js";
+
+type MenuActionVariant = {
+  id?: string;
+  label: string;
+  kind?: string;
+  price_paise: number;
+  active?: boolean | number;
+};
 
 export function MenuResultSection({
   title,
@@ -33,40 +41,76 @@ export function MenuResultSection({
 }
 
 export function MenuCard({ item, onAdd }: { item: MenuItem; onAdd: (variantId?: string) => void }) {
-  const activeVariants = (item.variants ?? []).filter((variant) => Boolean(variant.active));
-  const variants = activeVariants.length || item.sale_group_kind === "alcohol" ? activeVariants : [{ id: "", label: "Regular", kind: "default", price_paise: item.price_paise, volume_ml: null, inventory_action: "none", sort_order: 0, active: true }];
+  const variants = getMenuActionVariants(item);
   return (
-    <article className="menu-card">
-      <div>
+    <article className={`menu-card compact-menu-card category-${item.sale_group_kind ?? "other"}`}>
+      <CategoryBadge kind={item.sale_group_kind} />
+      <div className="menu-card-main">
         <strong>{item.name}</strong>
-        <span>{item.production_unit_name ?? "No kitchen assigned"}</span>
+        <span>{item.sale_group_name ?? item.production_unit_name ?? "Menu item"}</span>
       </div>
       <footer>
-        {variants.length === 0 ? (
-          <>
-            <b>Unavailable</b>
-            <button type="button" className="add-item-button" disabled aria-label={`${item.name} unavailable`}>
-              <Plus size={18} />
-            </button>
-          </>
-        ) : variants.length === 1 ? (
-          <>
-            <b>{formatInr(variants[0]?.price_paise ?? item.price_paise)}</b>
-            <button type="button" className="add-item-button" onClick={() => onAdd(variants[0]?.id || undefined)} aria-label={`Add ${item.name}`}>
-              <Plus size={18} />
-            </button>
-          </>
-        ) : (
-          <div className="variant-buttons">
-            {variants.map((variant) => (
-              <button key={variant.id} type="button" onClick={() => onAdd(variant.id)}>
-                <span>{variant.label}</span>
-                <b>{formatInr(variant.price_paise)}</b>
-              </button>
-            ))}
-          </div>
-        )}
+        <MenuItemActionGroup itemName={item.name} variants={variants} onAdd={onAdd} />
       </footer>
     </article>
   );
+}
+
+export function getMenuActionVariants(item: MenuItem): MenuActionVariant[] {
+  const activeVariants = (item.variants ?? []).filter((variant) => Boolean(variant.active));
+  return activeVariants.length || item.sale_group_kind === "alcohol"
+    ? activeVariants
+    : [{ id: "", label: "", kind: "default", price_paise: item.price_paise, active: true }];
+}
+
+export function MenuItemActionGroup({
+  itemName,
+  variants,
+  onAdd,
+  className = ""
+}: {
+  itemName: string;
+  variants: MenuActionVariant[];
+  onAdd: (variantId?: string) => void;
+  className?: string;
+}) {
+  if (!variants.length) {
+    return (
+      <div className={`variant-buttons menu-variant-buttons ${className}`.trim()}>
+        <button type="button" disabled aria-label={`${itemName} unavailable`}>
+          Unavailable
+        </button>
+      </div>
+    );
+  }
+  return (
+    <div className={`variant-buttons menu-variant-buttons ${className}`.trim()}>
+      {variants.map((variant) => {
+        const variantId = variant.id || undefined;
+        const label = variant.kind === "default" ? `+ ${formatCompactInr(variant.price_paise)}` : `${variant.label} ${formatCompactInr(variant.price_paise)}`;
+        return (
+          <button key={variant.id || "default"} type="button" onClick={() => onAdd(variantId)} aria-label={`${itemName} ${label}`}>
+            <span>{label}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+export function CategoryBadge({ kind, className = "" }: { kind?: string; className?: string }) {
+  const Icon = categoryIcon(kind);
+  return (
+    <div className={`menu-card-icon ${className}`.trim()} aria-hidden="true">
+      <Icon size={18} />
+    </div>
+  );
+}
+
+export function categoryIcon(kind?: string) {
+  if (kind === "food") return Utensils;
+  if (kind === "alcohol") return Wine;
+  if (kind === "beverage") return Coffee;
+  if (kind === "other") return Package;
+  return Beer;
 }

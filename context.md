@@ -60,7 +60,7 @@ Responsibilities:
 Hub UI sections in the React renderer:
 
 - `Setup`: automatic business-day status, floors, tables, kitchens/counters, dishes.
-- `Take Orders`: floor/table view, fuzzy menu search, recent/popular quick picks, open items, table check, KOT/BOT send, table/item shift, bill panel.
+- `Take Orders`: floor/table view, compact fuzzy menu search, sale-group tabs, open items, editable table-state check, KOT-only / Print and KOT send, table/item shift, bill panel.
 - `Kitchen`: KDS ticket list and KOT/BOT status controls.
 - `Reports & Backups`: current business-day summary, finalized local daily reports, and backups.
 - `Advanced`: manager PIN, sale/tax groups, print text/template settings, printers/backups/sync support surfaces.
@@ -80,7 +80,7 @@ Responsibilities:
 - Show connection status.
 - Pick a floor/table.
 - Search menu items with shared Fuse.js fuzzy search across dish name, sale group, kitchen/counter, and variation labels.
-- Use recent and popular-today quick picks before scrolling the full menu.
+- Use compact fuzzy search and sale-group tabs instead of recent/popular shortcuts.
 - Add dishes and review new items before sending.
 - Send finalized order items to the hub.
 - Save local drafts when needed.
@@ -373,7 +373,7 @@ Sale groups affect:
 7. Hub creates or updates the table's open order.
 8. Hub stores item snapshots: name, price, variant, sale group, tax info, ticket label, kitchen/counter, inventory action, and alcohol recipe where relevant.
 9. Hub creates KOT/BOT only for items with a kitchen/counter.
-10. Hub creates print jobs for generated KOT/BOT.
+10. If the user chose `Print and KOT`, hub creates print jobs for generated KOT/BOT; if the user chose `KOT`, hub saves KOT/KDS state without paper printing.
 11. Hub appends events to `event_log` and `sync_outbox`.
 12. Hub broadcasts realtime updates.
 13. UI refetches from the hub; no domain-critical optimistic update should be trusted as final.
@@ -445,7 +445,7 @@ Main flow:
 
 1. Select a running table.
 2. Send required KOT/BOT items first.
-3. Generate bill for the table/order.
+3. Generate and print the bill for the table/order in one action.
 4. Apply discount:
    - amount,
    - or percentage.
