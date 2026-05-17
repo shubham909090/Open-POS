@@ -133,7 +133,7 @@ export interface Bootstrap {
   saleGroups: SaleGroup[];
   menuItems: MenuItem[];
   menuPopularity?: Array<{ menuItemId: string; quantity: number }>;
-  ticketTemplate?: { billHeader: string; billFooter: string; kotHeader: string; kotFooter: string; restaurantName: string; taxRegistrationText: string; lineWidthChars: number };
+  ticketTemplate?: { billHeader: string; billFooter: string; kotHeader: string; kotFooter: string; restaurantName: string; restaurantAddress: string; taxRegistrationText: string; lineWidthChars: number };
   printLayouts?: PrintLayouts;
   printJobs: PrintJob[];
   syncStatus: {
@@ -161,6 +161,7 @@ export interface PrintLayoutSettings {
   scope: "default" | "receipt" | "unit";
   productionUnitId?: string;
   restaurantName: string;
+  restaurantAddress: string;
   taxRegistrationText: string;
   billHeader: string;
   billFooter: string;
@@ -520,7 +521,7 @@ export const hubApi = {
       headers: { "x-manager-pin": managerPin },
       body: JSON.stringify({})
     }),
-  updateTicketTemplate: (payload: { billHeader?: string; billFooter?: string; kotHeader?: string; kotFooter?: string; restaurantName?: string; taxRegistrationText?: string; lineWidthChars?: number }) =>
+  updateTicketTemplate: (payload: { billHeader?: string; billFooter?: string; kotHeader?: string; kotFooter?: string; restaurantName?: string; restaurantAddress?: string; taxRegistrationText?: string; lineWidthChars?: number }) =>
     apiFetch("/settings/ticket-template", { method: "PUT", body: JSON.stringify(payload) }),
   printLayouts: () => apiFetch<PrintLayouts>("/print-layouts"),
   updatePrintLayout: (scope: "default" | "receipt" | "unit", payload: PrintLayoutSettings, managerPin: string) =>

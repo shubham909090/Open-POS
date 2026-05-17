@@ -848,6 +848,11 @@ describe("OrderService KOT lifecycle", () => {
       printerHost: "192.168.1.70",
       printerPort: 9100
     });
+    orderService.updatePrintLayout({
+      ...orderService.getPrintLayout("receipt"),
+      restaurantName: "Gaurav Restaurant",
+      restaurantAddress: "Main Road, Indore"
+    });
 
     const order = orderService.submitOrder({
       tableId: "table-t1",
@@ -863,6 +868,9 @@ describe("OrderService KOT lifecycle", () => {
       printer_host: "192.168.1.70",
       printer_port: 9100
     });
+    const printJob = database.db.prepare("SELECT payload FROM print_jobs WHERE target_id = ? ORDER BY created_at ASC LIMIT 1").get(bill.billId) as { payload: string };
+    expect(printJob.payload.indexOf("Gaurav Restaurant")).toBeLessThan(printJob.payload.indexOf("Main Road, Indore"));
+    expect(printJob.payload).toContain("Main Road, Indore");
 
     database.close();
   });

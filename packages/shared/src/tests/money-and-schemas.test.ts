@@ -64,6 +64,7 @@ describe("shared command schemas", () => {
   });
 
   it("validates narrow receipt widths and one-time master PIN input", () => {
+    expect(printLayoutSettingsSchema.parse({ scope: "receipt", restaurantAddress: "Main Road, Indore" }).restaurantAddress).toBe("Main Road, Indore");
     expect(printLayoutSettingsSchema.parse({ scope: "receipt", lineWidthChars: 25 }).lineWidthChars).toBe(25);
     expect(printLayoutSettingsSchema.parse({ scope: "receipt", lineWidthChars: 28 }).lineWidthChars).toBe(28);
     expect(printLayoutSettingsSchema.parse({ scope: "receipt", lineWidthChars: 32 }).lineWidthChars).toBe(32);

@@ -815,6 +815,7 @@ export class OrderService {
       kotHeader: layout.kotHeader,
       kotFooter: layout.kotFooter,
       restaurantName: layout.restaurantName,
+      restaurantAddress: layout.restaurantAddress,
       taxRegistrationText: layout.taxRegistrationText,
       lineWidthChars: layout.lineWidthChars
     };
@@ -826,6 +827,7 @@ export class OrderService {
     this.upsertSetting("ticket_kot_header", input.kotHeader ?? "");
     this.upsertSetting("ticket_kot_footer", input.kotFooter ?? "");
     this.upsertSetting("ticket_restaurant_name", input.restaurantName ?? "");
+    this.upsertSetting("ticket_restaurant_address", input.restaurantAddress ?? "");
     this.upsertSetting("ticket_tax_registration_text", input.taxRegistrationText ?? "");
     this.upsertSetting("ticket_line_width_chars", String(input.lineWidthChars ?? 42));
     this.upsertSetting("print_layout_default", JSON.stringify({ ...this.defaultPrintLayout("default"), ...input }));
@@ -1981,6 +1983,7 @@ export class OrderService {
         finalTotalPaise: 100,
         createdAt: new Date().toISOString(),
         restaurantName: template.restaurantName,
+        restaurantAddress: template.restaurantAddress,
         taxRegistrationText: template.taxRegistrationText,
         lineWidthChars: template.lineWidthChars,
         headerAlign: template.headerAlign,
@@ -4694,6 +4697,7 @@ export class OrderService {
       kotHeader: this.getSetting("ticket_kot_header") ?? "",
       kotFooter: this.getSetting("ticket_kot_footer") ?? "",
       restaurantName: this.getSetting("ticket_restaurant_name") ?? "",
+      restaurantAddress: this.getSetting("ticket_restaurant_address") ?? "",
       taxRegistrationText: this.getSetting("ticket_tax_registration_text") ?? "",
       lineWidthChars: Number(this.getSetting("ticket_line_width_chars") ?? 28),
       headerAlign: "center",

@@ -273,6 +273,7 @@ export const ticketTemplateSchema = z.object({
   kotHeader: z.string().max(1_000).default(""),
   kotFooter: z.string().max(1_000).default(""),
   restaurantName: z.string().trim().max(160).default(""),
+  restaurantAddress: z.string().trim().max(500).default(""),
   taxRegistrationText: z.string().trim().max(240).default(""),
   lineWidthChars: z.number().int().min(24).max(64).default(28)
 });
@@ -290,6 +291,7 @@ export const printLayoutSettingsSchema = z.object({
   scope: printLayoutScopeSchema,
   productionUnitId: z.string().trim().min(1).optional(),
   restaurantName: z.string().trim().max(160).default(""),
+  restaurantAddress: z.string().trim().max(500).default(""),
   taxRegistrationText: z.string().trim().max(240).default(""),
   billHeader: z.string().max(1_000).default(""),
   billFooter: z.string().max(1_000).default(""),

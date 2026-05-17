@@ -37,6 +37,7 @@ describe("ticket rendering", () => {
       billId: "BILL-1",
       createdAt: "2026-05-15T00:00:00.000Z",
       restaurantName: "Gaurav Restaurant",
+      restaurantAddress: "Main Road, Indore",
       header: "Tax Invoice",
       items: [{ name: "Paneer Tikka", quantity: 2, unitPricePaise: 22000, lineTotalPaise: 44000 }],
       subtotalPaise: 44000,
@@ -47,7 +48,10 @@ describe("ticket rendering", () => {
 
     expect(payload).toContain("------------------------------------------");
     expect(payload).toContain("            Gaurav Restaurant");
+    expect(payload).toContain("            Main Road, Indore");
     expect(payload).toContain("               Tax Invoice");
+    expect(payload.indexOf("Gaurav Restaurant")).toBeLessThan(payload.indexOf("Main Road, Indore"));
+    expect(payload.indexOf("Main Road, Indore")).toBeLessThan(payload.indexOf("Tax Invoice"));
     expect(payload).toContain("Paneer Tikka");
     expect(payload).toContain("220.00");
     expect(payload).toContain("440.00");

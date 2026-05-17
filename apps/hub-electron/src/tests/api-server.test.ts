@@ -1354,6 +1354,7 @@ describe("Hub API auth and service flow", () => {
       payload: {
         scope: "receipt",
         restaurantName: "Sky Bistro",
+        restaurantAddress: "MG Road, Indore",
         billHeader: "TAX INVOICE",
         billFooter: "Thank you",
         kotHeader: "",
@@ -1381,6 +1382,7 @@ describe("Hub API auth and service flow", () => {
         scope: "unit",
         productionUnitId: "unit-bar",
         restaurantName: "",
+        restaurantAddress: "",
         billHeader: "",
         billFooter: "",
         kotHeader: "HOT KITCHEN",
@@ -1408,6 +1410,8 @@ describe("Hub API auth and service flow", () => {
     expect(receiptLayout.statusCode).toBe(200);
     expect(unitLayout.statusCode).toBe(200);
     expect(billPayload.payload).toContain("Sky Bistro");
+    expect(billPayload.payload).toContain("MG Road, Indore");
+    expect(billPayload.payload.indexOf("Sky Bistro")).toBeLessThan(billPayload.payload.indexOf("MG Road, Indore"));
     expect(billPayload.payload).toContain("TAX INVOICE");
     expect(billPayload.payload).not.toContain("Table: TEST");
     expect(kotPayload.payload).toContain("HOT KITCHEN");

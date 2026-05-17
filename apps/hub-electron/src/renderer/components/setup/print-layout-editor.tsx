@@ -81,6 +81,7 @@ export function PrintLayoutEditor({
 
   const preview = [
     draft.restaurantName,
+    scope === "receipt" ? draft.restaurantAddress : "",
     draft.billHeader || draft.kotHeader,
     scope === "receipt" && draft.showBillId
       ? "BILL TEST-BILL"
@@ -212,6 +213,19 @@ export function PrintLayoutEditor({
               }
             />
           </label>
+          {scope === "receipt" ? (
+            <label>
+              Address on bill
+              <textarea
+                value={draft.restaurantAddress}
+                onChange={(event) =>
+                  update("restaurantAddress", event.target.value)
+                }
+                rows={3}
+                placeholder="Shop address / phone line"
+              />
+            </label>
+          ) : null}
           <label>
             GST registration line
             <input

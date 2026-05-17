@@ -42,6 +42,7 @@ export interface BillTicket {
   header?: string;
   footer?: string;
   restaurantName?: string;
+  restaurantAddress?: string;
   taxRegistrationText?: string;
   ncReason?: string | null;
   revisionNumber?: number;
@@ -235,6 +236,7 @@ export function renderBillTicket(ticket: BillTicket): string {
   const width = ticketWidth(ticket.lineWidthChars);
   const lines = [
     ...(ticket.restaurantName ? alignTicketText(ticket.restaurantName, width, ticket.headerAlign) : []),
+    ...(ticket.restaurantAddress ? alignTicketText(ticket.restaurantAddress, width, ticket.headerAlign) : []),
     ...(ticket.header ? alignTicketText(ticket.header, width, ticket.headerAlign) : []),
     ...(ticket.showBillId === false ? [] : centerTicketText(`BILL ${ticket.billId}`, width)),
     ...(ticket.showNcReprintRevision === false

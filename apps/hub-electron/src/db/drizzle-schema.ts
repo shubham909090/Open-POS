@@ -415,6 +415,7 @@ export const ticketTemplates = sqliteTable("ticket_templates", {
   kotHeader: text("kot_header").notNull().default(""),
   kotFooter: text("kot_footer").notNull().default(""),
   restaurantName: text("restaurant_name").notNull().default(""),
+  restaurantAddress: text("restaurant_address").notNull().default(""),
   taxRegistrationText: text("tax_registration_text").notNull().default(""),
   updatedAt: text("updated_at").notNull()
 });
