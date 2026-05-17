@@ -63,6 +63,7 @@ export function SetupView({
       ? `${receiptPrinter.data.printerHost}:${receiptPrinter.data.printerPort ?? 9100}`
       : "";
   const receiptPrinterReady = receiptPrinterConfigured ? receiptPrinterTarget : "No cash counter printer selected";
+  const printerCardSummary = `${printerOutputMode === "live" ? "Live" : "Test"} · ${receiptPrinterConfigured ? receiptPrinterReady : "cash counter not set"}`;
   const canSaveReceiptPrinter = receiptPrinterMode === "system" ? Boolean(receiptPrinterName) : Boolean(receiptHost.trim());
 
   useEffect(() => {
@@ -347,130 +348,120 @@ export function SetupView({
       </SetupCard>
 
       <SetupCard
-        title="Printer Mode And Cash Counter"
+        title="Printing"
         done={printerOutputMode === "test" || receiptPrinterConfigured}
         icon={<Printer size={20} />}
-        summary={`${printerOutputMode === "live" ? "Live printing" : "Test mode"} · ${receiptPrinterConfigured ? "cash counter saved" : "cash counter not set"}`}
+        summary={printerCardSummary}
       >
-        <div className="printer-settings-grid">
-          <div className="printer-mode-card">
-            <div>
-              <strong>Print output</strong>
-              <span>{printerOutputMode === "live" ? "Real tickets print from this hub." : "Setup is protected. Jobs are logged only."}</span>
-            </div>
-            <div className="segment-row">
-              <button
-                type="button"
-                className={printerOutputMode === "test" ? "active" : ""}
-                onClick={() => void requestPrinterMode("test")}
-                disabled={updatePrinterMode.isPending}
-              >
-                Test
-              </button>
-              <button
-                type="button"
-                className={printerOutputMode === "live" ? "active" : ""}
-                onClick={() => void requestPrinterMode("live")}
-                disabled={updatePrinterMode.isPending}
-              >
-                Live
-              </button>
-            </div>
-            <p className={printerOutputMode === "live" ? "text-sm text-muted" : "warning-text"}>
-              {printerOutputMode === "live"
-                ? "Bills and kitchen tickets go to the selected printers."
-                : "Safe mode for setup. Nothing is sent to printer hardware."}
-            </p>
-          </div>
-          <div className={receiptPrinterConfigured ? "printer-status-card ready" : "printer-status-card"}>
-            <span>Cash counter printer</span>
-            <strong>{receiptPrinterConfigured ? (savedReceiptMode === "system" ? "PC printer" : "LAN printer") : "Not configured"}</strong>
-            <p>{receiptPrinterReady}</p>
-          </div>
-        </div>
-        {receiptPrinterConfigured && !printerEditing ? (
-          <div className="saved-settings-card">
-            <div>
-              <strong>{savedReceiptMode === "system" ? "PC printer saved" : "LAN printer saved"}</strong>
-              <span>{receiptPrinterReady}</span>
-            </div>
-            <div className="row-actions">
-              <button type="button" className="secondary-button" onClick={() => setPrinterEditing(true)}>
-                Edit
-              </button>
-              <button
-                type="button"
-                className="secondary-button"
-                onClick={() => void refreshSystemPrinters()}
-                disabled={systemPrinters.isFetching}
-              >
-                Load PC printers
-              </button>
-            </div>
-          </div>
-        ) : (
-          <form className="printer-form printer-setup-form" onSubmit={(event) => { event.preventDefault(); saveReceiptPrinter.mutate(); }}>
-            <div className="printer-mode-tabs">
-              <button type="button" className={receiptPrinterMode === "system" ? "active" : ""} onClick={() => setReceiptPrinterMode("system")}>
-                PC printer
-              </button>
-              <button type="button" className={receiptPrinterMode === "network" ? "active" : ""} onClick={() => setReceiptPrinterMode("network")}>
-                LAN printer
-              </button>
-            </div>
-            {receiptPrinterMode === "system" ? (
-              <div className="printer-fields-grid">
-                <label>
-                  Installed printer
-                  <select value={receiptPrinterName} onChange={(event) => setReceiptPrinterName(event.target.value)}>
-                    <option value="">{systemPrinters.data?.length ? "Choose PC printer" : "Load PC printers first"}</option>
-                    {(systemPrinters.data ?? []).map((printer) => (
-                      <option key={printer.name} value={printer.name}>
-                        {printer.displayName}{printer.isDefault ? " (default)" : ""}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <button
-                  type="button"
-                  className="secondary-button"
-                  onClick={() => void refreshSystemPrinters()}
-                  disabled={systemPrinters.isFetching}
-                >
-                  {systemPrinters.isFetching ? "Loading..." : "Load PC printers"}
-                </button>
+        <div className="printer-console">
+          <div className="printer-config-main">
+            <div className="printer-section-header">
+              <div>
+                <span>Cash counter</span>
+                <strong>{receiptPrinterConfigured ? receiptPrinterReady : "Choose where bills print"}</strong>
               </div>
-            ) : (
-              <div className="printer-fields-grid network">
-                <label>
-                  Printer IP
-                  <input value={receiptHost} onChange={(event) => setReceiptHost(event.target.value)} placeholder="192.168.1.50" />
-                </label>
-                <label>
-                  Port
-                  <input value={receiptPort} onChange={(event) => setReceiptPort(event.target.value)} inputMode="numeric" placeholder="9100" />
-                </label>
-              </div>
-            )}
-            <div className="form-actions">
-              <button type="submit" disabled={saveReceiptPrinter.isPending || !canSaveReceiptPrinter}>
-                {saveReceiptPrinter.isPending ? "Saving..." : "Save cash counter printer"}
-              </button>
-              {receiptPrinterConfigured ? (
-                <button type="button" className="secondary-button" onClick={() => setPrinterEditing(false)}>
-                  Cancel
+              {receiptPrinterConfigured && !printerEditing ? (
+                <button type="button" className="secondary-button" onClick={() => setPrinterEditing(true)}>
+                  Edit printer
                 </button>
               ) : null}
             </div>
-          </form>
-        )}
-        <div className="printer-test-actions utility-actions">
-          <button type="button" className="utility-action" onClick={() => testBillPrint.mutate()} disabled={testBillPrint.isPending}>
-            <Printer size={18} /> Print test bill
-          </button>
-          <button type="button" className="utility-action" onClick={() => testKotPrint.mutate()} disabled={testKotPrint.isPending}>
-            <ChefHat size={18} /> Print test kitchen ticket
-          </button>
+            {receiptPrinterConfigured && !printerEditing ? (
+              <div className="printer-saved-panel">
+                <span>{savedReceiptMode === "system" ? "PC printer" : "LAN printer"}</span>
+                <strong>{receiptPrinterReady}</strong>
+                <p>{printerOutputMode === "live" ? "Bills print to this target." : "Saved target. Test mode is still blocking real output."}</p>
+              </div>
+            ) : (
+              <form className="printer-form printer-setup-form" onSubmit={(event) => { event.preventDefault(); saveReceiptPrinter.mutate(); }}>
+                <div className="printer-mode-tabs">
+                  <button type="button" className={receiptPrinterMode === "system" ? "active" : ""} onClick={() => setReceiptPrinterMode("system")}>
+                    PC printer
+                  </button>
+                  <button type="button" className={receiptPrinterMode === "network" ? "active" : ""} onClick={() => setReceiptPrinterMode("network")}>
+                    LAN printer
+                  </button>
+                </div>
+                {receiptPrinterMode === "system" ? (
+                  <div className="printer-fields-grid">
+                    <label>
+                      Installed printer
+                      <select value={receiptPrinterName} onChange={(event) => setReceiptPrinterName(event.target.value)}>
+                        <option value="">{systemPrinters.data?.length ? "Choose PC printer" : "Load PC printers first"}</option>
+                        {(systemPrinters.data ?? []).map((printer) => (
+                          <option key={printer.name} value={printer.name}>
+                            {printer.displayName}{printer.isDefault ? " (default)" : ""}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      onClick={() => void refreshSystemPrinters()}
+                      disabled={systemPrinters.isFetching}
+                    >
+                      {systemPrinters.isFetching ? "Loading..." : "Load printers"}
+                    </button>
+                  </div>
+                ) : (
+                  <div className="printer-fields-grid network">
+                    <label>
+                      Printer IP
+                      <input value={receiptHost} onChange={(event) => setReceiptHost(event.target.value)} placeholder="192.168.1.50" />
+                    </label>
+                    <label>
+                      Port
+                      <input value={receiptPort} onChange={(event) => setReceiptPort(event.target.value)} inputMode="numeric" placeholder="9100" />
+                    </label>
+                  </div>
+                )}
+                <div className="form-actions printer-form-actions">
+                  <button type="submit" disabled={saveReceiptPrinter.isPending || !canSaveReceiptPrinter}>
+                    {saveReceiptPrinter.isPending ? "Saving..." : "Save printer"}
+                  </button>
+                  {receiptPrinterConfigured ? (
+                    <button type="button" className="secondary-button" onClick={() => setPrinterEditing(false)}>
+                      Cancel
+                    </button>
+                  ) : null}
+                </div>
+              </form>
+            )}
+          </div>
+
+          <aside className="printer-config-side">
+            <div className={printerOutputMode === "live" ? "printer-output-panel live" : "printer-output-panel"}>
+              <span>Output mode</span>
+              <strong>{printerOutputMode === "live" ? "Live printing" : "Test mode"}</strong>
+              <div className="segment-row">
+                <button
+                  type="button"
+                  className={printerOutputMode === "test" ? "active" : ""}
+                  onClick={() => void requestPrinterMode("test")}
+                  disabled={updatePrinterMode.isPending}
+                >
+                  Test
+                </button>
+                <button
+                  type="button"
+                  className={printerOutputMode === "live" ? "active" : ""}
+                  onClick={() => void requestPrinterMode("live")}
+                  disabled={updatePrinterMode.isPending}
+                >
+                  Live
+                </button>
+              </div>
+            </div>
+            <div className="printer-test-actions">
+              <button type="button" className="utility-action" onClick={() => testBillPrint.mutate()} disabled={testBillPrint.isPending}>
+                <Printer size={18} /> Test bill
+              </button>
+              <button type="button" className="utility-action" onClick={() => testKotPrint.mutate()} disabled={testKotPrint.isPending}>
+                <ChefHat size={18} /> Test kitchen
+              </button>
+            </div>
+          </aside>
         </div>
         <details className="setup-subdetails">
           <summary>

@@ -125,41 +125,58 @@
     @apply grid gap-3 border-t border-line bg-panel p-4;
   }
 
-  .printer-settings-grid {
-    @apply grid gap-3;
-    grid-template-columns: minmax(0, 1.2fr) minmax(260px, 0.8fr);
+  .printer-console {
+    @apply grid min-w-0 gap-3;
+    grid-template-columns: minmax(0, 1fr) minmax(280px, 340px);
   }
 
-  .printer-mode-card,
-  .printer-status-card {
-    @apply grid min-w-0 gap-3 rounded-lg border border-line bg-white p-3;
+  .printer-config-main,
+  .printer-config-side {
+    @apply grid min-w-0 gap-3;
   }
 
-  .printer-mode-card > div:first-child,
-  .printer-status-card {
-    @apply min-w-0;
+  .printer-section-header,
+  .printer-saved-panel,
+  .printer-output-panel {
+    @apply min-w-0 rounded-lg border border-line bg-white p-3;
   }
 
-  .printer-mode-card strong,
-  .printer-status-card strong {
-    @apply block text-base font-black text-ink;
+  .printer-section-header {
+    @apply flex items-center justify-between gap-3;
   }
 
-  .printer-mode-card span,
-  .printer-status-card span {
-    @apply block text-xs font-bold uppercase tracking-wide text-muted;
+  .printer-section-header > div,
+  .printer-saved-panel,
+  .printer-output-panel {
+    @apply grid min-w-0 gap-1;
   }
 
-  .printer-status-card {
-    @apply border-warning bg-warning-soft;
+  .printer-section-header span,
+  .printer-saved-panel span,
+  .printer-output-panel span {
+    @apply text-xs font-black uppercase tracking-wide text-muted;
   }
 
-  .printer-status-card.ready {
+  .printer-section-header strong,
+  .printer-saved-panel strong,
+  .printer-output-panel strong {
+    @apply truncate text-lg font-black text-ink;
+  }
+
+  .printer-saved-panel {
     @apply border-accent bg-accent-soft;
   }
 
-  .printer-status-card p {
-    @apply truncate text-sm font-bold text-ink;
+  .printer-saved-panel p {
+    @apply text-sm font-semibold leading-5 text-accent-dark;
+  }
+
+  .printer-output-panel {
+    @apply border-warning bg-warning-soft;
+  }
+
+  .printer-output-panel.live {
+    @apply border-accent bg-accent-soft;
   }
 
   .printer-setup-form {
@@ -186,6 +203,15 @@
 
   .printer-fields-grid.network {
     grid-template-columns: minmax(240px, 1fr) minmax(110px, 160px);
+  }
+
+  .printer-form-actions {
+    @apply border-t border-line pt-3;
+  }
+
+  .printer-test-actions {
+    @apply grid gap-2;
+    grid-template-columns: 1fr;
   }
 
   .unit-edit-fields {
