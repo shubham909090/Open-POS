@@ -934,7 +934,23 @@ export class OrderService {
       if (order.status === "billed") {
         const bill = this.getBillForOrder(orderId);
         if (!bill) throw new DomainError("Bill not found", 404);
-        const finalTotalPaise = activeItems.length === 0 ? 0 : Math.max(0, totals.totalPaise - bill.discount_paise + bill.tip_paise);
+        if (activeItems.length === 0) {
+          const paidPaise = this.getBillPaidPaise(bill.id);
+          if (paidPaise > 0) throw new DomainError("Remove or reverse recorded payments before removing all billed items");
+          this.deleteLocalBillRecord(bill.id);
+          this.orm.update(orders).set({ status: "cancelled", updatedAt: now }).where(eq(orders.id, orderId)).run();
+          this.freeTable(table.id);
+          this.appendEvent("order_state.updated", "order", orderId, {
+            orderId,
+            saveMode: input.saveMode,
+            status: "cancelled",
+            removedBillId: bill.id,
+            kotIds: tickets.kotIds,
+            printJobIds: tickets.printJobIds
+          });
+          return { orderId, status: "cancelled", totalPaise: 0, kotIds: tickets.kotIds, printJobIds: tickets.printJobIds };
+        }
+        const finalTotalPaise = Math.max(0, totals.totalPaise - bill.discount_paise + bill.tip_paise);
         const revisionNumber = (bill.revision_number ?? 1) + 1;
         this.orm
           .update(bills)
@@ -954,12 +970,6 @@ export class OrderService {
           tipPaise: bill.tip_paise,
           finalTotalPaise
         });
-        if (activeItems.length === 0) {
-          this.orm.update(orders).set({ status: "cancelled", updatedAt: now }).where(eq(orders.id, orderId)).run();
-          this.freeTable(table.id);
-          this.appendEvent("order_state.updated", "order", orderId, { orderId, saveMode: input.saveMode, status: "cancelled", billId: bill.id, revisionNumber, kotIds: tickets.kotIds, printJobIds: tickets.printJobIds });
-          return { orderId, status: "cancelled", totalPaise: 0, kotIds: tickets.kotIds, printJobIds: tickets.printJobIds, billId: bill.id, revisionNumber };
-        }
         this.orm.update(orders).set({ status: "billed", updatedAt: now }).where(eq(orders.id, orderId)).run();
         this.orm.update(restaurantTables).set({ status: "billed" }).where(eq(restaurantTables.id, table.id)).run();
         this.appendEvent("order_state.updated", "order", orderId, { orderId, saveMode: input.saveMode, billId: bill.id, revisionNumber, kotIds: tickets.kotIds, printJobIds: tickets.printJobIds });
@@ -1130,6 +1140,7 @@ export class OrderService {
 
   bootstrap(): unknown {
     this.finalizeCompletedBusinessDays();
+    this.removeEmptyPendingBills();
     return {
       currentBusinessDay: this.ensureCurrentBusinessDay(),
       floors: this.listFloors(),
@@ -2022,11 +2033,13 @@ export class OrderService {
 
   getCurrentBusinessDaySummary(): unknown {
     this.finalizeCompletedBusinessDays();
+    this.removeEmptyPendingBills();
     return this.buildDaySummary(this.ensureCurrentBusinessDay().id);
   }
 
   listDailyReports(limit = 30): unknown[] {
     this.finalizeCompletedBusinessDays();
+    this.removeEmptyPendingBills();
     return this.db
       .prepare(
         `SELECT pos_day_id, business_date, status, bill_count, gross_sales_paise, final_sales_paise,
@@ -4474,6 +4487,44 @@ export class OrderService {
   private getBillPaidPaise(billId: string): number {
     const row = this.orm.select({ paid: sum(payments.amountPaise) }).from(payments).where(eq(payments.billId, billId)).get();
     return Number(row?.paid ?? 0);
+  }
+
+  private deleteLocalBillRecord(billId: string): void {
+    this.orm.delete(payments).where(eq(payments.billId, billId)).run();
+    this.orm.delete(billRevisions).where(eq(billRevisions.billId, billId)).run();
+    this.orm.delete(printJobs).where(and(eq(printJobs.targetType, "BILL"), eq(printJobs.targetId, billId))).run();
+    this.orm.delete(bills).where(eq(bills.id, billId)).run();
+  }
+
+  private removeEmptyPendingBills(): void {
+    const rows = this.db
+      .prepare(
+        `SELECT b.id AS bill_id, b.order_id, o.table_id
+         FROM bills b
+         JOIN orders o ON o.id = b.order_id
+         WHERE b.status = 'pending'
+           AND b.total_paise = 0
+           AND b.final_total_paise = 0
+           AND NOT EXISTS (SELECT 1 FROM payments p WHERE p.bill_id = b.id)`
+      )
+      .all() as Array<{ bill_id: string; order_id: string; table_id: string }>;
+    if (rows.length === 0) return;
+
+    const now = new Date().toISOString();
+    const run = this.db.transaction(() => {
+      for (const row of rows) {
+        const remainingItems = this.getOrderItems(row.order_id).filter((item) => item.quantity > 0 && item.status !== "cancelled");
+        if (remainingItems.length > 0) continue;
+        this.deleteLocalBillRecord(row.bill_id);
+        this.orm.update(orders).set({ status: "cancelled", updatedAt: now }).where(eq(orders.id, row.order_id)).run();
+        this.freeTable(row.table_id);
+        this.appendEvent("bill.empty_pending_removed", "order", row.order_id, {
+          orderId: row.order_id,
+          removedBillId: row.bill_id
+        });
+      }
+    });
+    run();
   }
 
   private calculateDiscountPaise(totalPaise: number, input: SettleBillInput): number {

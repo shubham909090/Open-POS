@@ -243,7 +243,7 @@ describe("OrderService KOT lifecycle", () => {
     database.close();
   });
 
-  it("revises a billed order to zero before freeing the table when all items are removed", () => {
+  it("removes the local pending bill instead of saving a zero bill when all billed items are removed", () => {
     const { database, orderService } = createTestHub();
     orderService.setManagerPin({ newPin: "1234", updatedBy: "admin" });
     const order = orderService.submitOrder({
@@ -262,20 +262,73 @@ describe("OrderService KOT lifecycle", () => {
       managerApproval: { pin: "1234", reason: "Remove billed table items", approvedBy: "manager" }
     });
 
-    expect(result).toMatchObject({ orderId: order.orderId, status: "cancelled", totalPaise: 0, billId: bill.billId, revisionNumber: 2 });
+    expect(result).toMatchObject({ orderId: order.orderId, status: "cancelled", totalPaise: 0 });
+    expect(result.billId).toBeUndefined();
+    expect(result.revisionNumber).toBeUndefined();
     expect(database.db.prepare("SELECT status FROM orders WHERE id = ?").get(order.orderId)).toEqual({ status: "cancelled" });
     expect(database.db.prepare("SELECT status, current_order_id FROM restaurant_tables WHERE id = 'table-t1'").get()).toEqual({ status: "free", current_order_id: null });
-    expect(database.db.prepare("SELECT subtotal_paise, tax_paise, total_paise, final_total_paise, revision_number FROM bills WHERE id = ?").get(bill.billId)).toEqual({
-      subtotal_paise: 0,
-      tax_paise: 0,
-      total_paise: 0,
-      final_total_paise: 0,
-      revision_number: 2
+    expect(database.db.prepare("SELECT COUNT(*) AS count FROM bills WHERE id = ?").get(bill.billId)).toEqual({ count: 0 });
+    expect(database.db.prepare("SELECT COUNT(*) AS count FROM bills WHERE final_total_paise = 0").get()).toEqual({ count: 0 });
+    expect(database.db.prepare("SELECT COUNT(*) AS count FROM bill_revisions WHERE bill_id = ?").get(bill.billId)).toEqual({ count: 0 });
+    expect(database.db.prepare("SELECT COUNT(*) AS count FROM print_jobs WHERE target_type = 'BILL' AND target_id = ?").get(bill.billId)).toEqual({ count: 0 });
+
+    database.close();
+  });
+
+  it("cleans existing empty pending bills from local state before they show in summaries", () => {
+    const { database, orderService } = createTestHub();
+    const order = orderService.submitOrder({
+      tableId: "table-t1",
+      captainId: "waiter-1",
+      pax: 1,
+      orderType: "dine_in",
+      printMode: "kot",
+      items: [{ menuItemId: "item-dal-fry", quantity: 1 }]
     });
-    expect(database.db.prepare("SELECT total_paise, final_total_paise FROM bill_revisions WHERE bill_id = ? ORDER BY revision_number DESC LIMIT 1").get(bill.billId)).toEqual({
-      total_paise: 0,
-      final_total_paise: 0
+    const bill = orderService.generateBill(order.orderId);
+
+    database.db.prepare("UPDATE order_items SET quantity = 0, status = 'cancelled' WHERE order_id = ?").run(order.orderId);
+    database.db
+      .prepare("UPDATE bills SET subtotal_paise = 0, tax_paise = 0, total_paise = 0, final_total_paise = 0, status = 'pending' WHERE id = ?")
+      .run(bill.billId);
+
+    orderService.bootstrap();
+
+    expect(database.db.prepare("SELECT COUNT(*) AS count FROM bills WHERE id = ?").get(bill.billId)).toEqual({ count: 0 });
+    expect(database.db.prepare("SELECT COUNT(*) AS count FROM bills WHERE final_total_paise = 0").get()).toEqual({ count: 0 });
+    expect(database.db.prepare("SELECT status FROM orders WHERE id = ?").get(order.orderId)).toEqual({ status: "cancelled" });
+    expect(database.db.prepare("SELECT status, current_order_id FROM restaurant_tables WHERE id = 'table-t1'").get()).toEqual({ status: "free", current_order_id: null });
+    expect(orderService.getCurrentBusinessDaySummary()).toMatchObject({ unpaidBills: 0 });
+
+    database.close();
+  });
+
+  it("blocks removing all billed items when payments are already recorded", () => {
+    const { database, orderService } = createTestHub();
+    orderService.setManagerPin({ newPin: "1234", updatedBy: "admin" });
+    const order = orderService.submitOrder({
+      tableId: "table-t1",
+      captainId: "waiter-1",
+      pax: 1,
+      orderType: "dine_in",
+      printMode: "kot",
+      items: [{ menuItemId: "item-dal-fry", quantity: 1 }]
     });
+    const bill = orderService.generateBill(order.orderId);
+    orderService.settleBill(bill.billId, {
+      method: "cash",
+      amountPaise: Math.floor(bill.totalPaise / 2),
+      receivedBy: "captain-1"
+    });
+
+    expect(() =>
+      orderService.updateOrderState(order.orderId, {
+        saveMode: "save",
+        items: [],
+        managerApproval: { pin: "1234", reason: "Remove billed table items", approvedBy: "manager" }
+      })
+    ).toThrow("Remove or reverse recorded payments before removing all billed items");
+    expect(database.db.prepare("SELECT COUNT(*) AS count FROM bills WHERE id = ?").get(bill.billId)).toEqual({ count: 1 });
 
     database.close();
   });
