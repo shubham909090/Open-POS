@@ -29,7 +29,7 @@ export function AdvancedView({
   const pullCloud = useMutation({
     mutationFn: hubApi.pullCloud,
     onSuccess: async (result) => {
-      await queryClient.invalidateQueries();
+      await queryClient.invalidateQueries({ queryKey: ["bootstrap"] });
       setNotice({
         tone: result.failed ? "bad" : "good",
         text: `Cloud updates applied: ${result.applied}${result.failed ? `, failed: ${result.failed}` : ""}`,
@@ -40,7 +40,7 @@ export function AdvancedView({
   const requeueSync = useMutation({
     mutationFn: hubApi.requeueFailedSync,
     onSuccess: async (result) => {
-      await queryClient.invalidateQueries();
+      await queryClient.invalidateQueries({ queryKey: ["bootstrap"] });
       setNotice({
         tone: "good",
         text: `Sync events requeued: ${result.requeued}`,
@@ -48,6 +48,7 @@ export function AdvancedView({
     },
     onError: (error) => setNotice({ tone: "bad", text: messageOf(error) }),
   });
+  const syncBusy = pullCloud.isPending || requeueSync.isPending;
   const prints = useMutation({
     mutationFn: hubApi.processPrints,
     onSuccess: async (result) => {
@@ -224,18 +225,22 @@ export function AdvancedView({
           <button
             type="button"
             className="utility-action"
-            onClick={() => pullCloud.mutate()}
-            disabled={pullCloud.isPending}
+            onClick={() => {
+              if (!syncBusy) pullCloud.mutate();
+            }}
+            disabled={syncBusy}
           >
-            <CloudDownload size={18} /> Get cloud updates
+            <CloudDownload size={18} /> {pullCloud.isPending ? "Syncing..." : "Get cloud updates"}
           </button>
           <button
             type="button"
             className="utility-action"
-            onClick={() => requeueSync.mutate()}
-            disabled={requeueSync.isPending}
+            onClick={() => {
+              if (!syncBusy) requeueSync.mutate();
+            }}
+            disabled={syncBusy}
           >
-            Retry failed sync
+            {requeueSync.isPending ? "Retrying..." : "Retry failed sync"}
           </button>
           <button
             type="button"

@@ -277,6 +277,45 @@ describe("Hub API auth and service flow", () => {
     database.close();
   });
 
+  it("dedupes overlapping cloud pull sync requests so repeated clicks do not stack work", async () => {
+    const hub = createTestHub();
+    let releasePull!: () => void;
+    const pullCloudSnapshot = vi.fn(
+      () =>
+        new Promise<{ applied: number; failed: number; skipped: boolean }>((resolve) => {
+          releasePull = () => resolve({ applied: 3, failed: 0, skipped: false });
+        })
+    );
+    const app = createHubServer({
+      database: hub.database,
+      backupService: new BackupService(hub.database, ":memory:", "./data/test-backups"),
+      authService: hub.authService,
+      orderService: hub.orderService,
+      printJobService: new PrintJobService(hub.database.orm, new DryRunPrinterAdapter()),
+      syncBridge: {
+        pullCloudSnapshot,
+        pushPending: vi.fn(),
+        requeueFailedEvents: vi.fn()
+      } as unknown as ConvexSyncBridge,
+      eventBus: new EventBus<unknown>()
+    });
+
+    const first = app.inject({ method: "POST", url: "/sync/pull", headers: { "x-device-token": "test-admin-token" } });
+    const second = app.inject({ method: "POST", url: "/sync/pull", headers: { "x-device-token": "test-admin-token" } });
+    await vi.waitFor(() => expect(pullCloudSnapshot).toHaveBeenCalledTimes(1));
+    releasePull();
+    const [firstResponse, secondResponse] = await Promise.all([first, second]);
+
+    expect(firstResponse.statusCode).toBe(200);
+    expect(secondResponse.statusCode).toBe(200);
+    expect(firstResponse.json()).toEqual({ applied: 3, failed: 0, skipped: false });
+    expect(secondResponse.json()).toEqual({ applied: 3, failed: 0, skipped: false });
+    expect(pullCloudSnapshot).toHaveBeenCalledTimes(1);
+
+    await app.close();
+    hub.database.close();
+  });
+
   it("lets a fresh hub create a Manager PIN and unlock setup without hub.env admin token", async () => {
     const { app, database } = createTestServer();
 

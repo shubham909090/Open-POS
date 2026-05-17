@@ -2,6 +2,8 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
+const PRINTER_DISCOVERY_CACHE_MS = 30_000;
+const PRINTER_DISCOVERY_TIMEOUT_MS = 5_000;
 
 export interface SystemPrinterInfo {
   name: string;
@@ -10,9 +12,23 @@ export interface SystemPrinterInfo {
   status?: string;
 }
 
-export async function listSystemPrinters(): Promise<SystemPrinterInfo[]> {
-  if (process.platform === "win32") return listWindowsPrinters();
-  return listUnixPrinters();
+let cachedPrinters: { at: number; printers: SystemPrinterInfo[] } | null = null;
+let inFlightPrinters: Promise<SystemPrinterInfo[]> | null = null;
+
+export async function listSystemPrinters(options: { forceRefresh?: boolean } = {}): Promise<SystemPrinterInfo[]> {
+  const now = Date.now();
+  if (!options.forceRefresh && cachedPrinters && now - cachedPrinters.at < PRINTER_DISCOVERY_CACHE_MS) return cachedPrinters.printers;
+  if (inFlightPrinters) return inFlightPrinters;
+
+  inFlightPrinters = (process.platform === "win32" ? listWindowsPrinters() : listUnixPrinters())
+    .then((printers) => {
+      cachedPrinters = { at: Date.now(), printers };
+      return printers;
+    })
+    .finally(() => {
+      inFlightPrinters = null;
+    });
+  return inFlightPrinters;
 }
 
 async function listWindowsPrinters(): Promise<SystemPrinterInfo[]> {
@@ -20,7 +36,7 @@ async function listWindowsPrinters(): Promise<SystemPrinterInfo[]> {
     "-NoProfile",
     "-Command",
     "Get-Printer | Select-Object Name,PrinterStatus,Default | ConvertTo-Json -Compress"
-  ]);
+  ], { timeout: PRINTER_DISCOVERY_TIMEOUT_MS });
   const parsed = JSON.parse(stdout.trim() || "[]") as
     | Array<{ Name: string; PrinterStatus?: string; Default?: boolean }>
     | { Name: string; PrinterStatus?: string; Default?: boolean };
@@ -35,12 +51,12 @@ async function listWindowsPrinters(): Promise<SystemPrinterInfo[]> {
 
 async function listUnixPrinters(): Promise<SystemPrinterInfo[]> {
   const [printersResult, defaultResult] = await Promise.all([
-    execFileAsync("lpstat", ["-p"]).catch((error: { stderr?: string; message?: string }) => {
+    execFileAsync("lpstat", ["-p"], { timeout: PRINTER_DISCOVERY_TIMEOUT_MS }).catch((error: { stderr?: string; message?: string }) => {
       const output = `${error.stderr ?? ""}\n${error.message ?? ""}`;
       if (output.includes("No destinations added")) return { stdout: "" };
       throw error;
     }),
-    execFileAsync("lpstat", ["-d"]).catch(() => ({ stdout: "" }))
+    execFileAsync("lpstat", ["-d"], { timeout: PRINTER_DISCOVERY_TIMEOUT_MS }).catch(() => ({ stdout: "" }))
   ]);
   const printersStdout = printersResult.stdout;
   const defaultName = defaultResult.stdout.match(/system default destination:\s+(.+)/)?.[1]?.trim();

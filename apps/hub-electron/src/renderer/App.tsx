@@ -77,14 +77,29 @@ function HubShell() {
 
   useEffect(() => {
     if (!hubUnlocked) return;
-    return connectHubRealtime({
+    const pendingKeys = new Map<string, readonly unknown[]>();
+    let invalidateTimer: ReturnType<typeof setTimeout> | null = null;
+    const unsubscribe = connectHubRealtime({
       token: getAuthToken(),
       onEvent: (event) => {
         for (const queryKey of getRealtimeInvalidationKeys(event)) {
-          void queryClient.invalidateQueries({ queryKey });
+          pendingKeys.set(JSON.stringify(queryKey), queryKey);
         }
+        if (invalidateTimer) return;
+        invalidateTimer = setTimeout(() => {
+          invalidateTimer = null;
+          const keys = [...pendingKeys.values()];
+          pendingKeys.clear();
+          for (const queryKey of keys) {
+            void queryClient.invalidateQueries({ queryKey });
+          }
+        }, 250);
       }
     });
+    return () => {
+      if (invalidateTimer) clearTimeout(invalidateTimer);
+      unsubscribe();
+    };
   }, [hubUnlocked]);
 
   const createPin = useMutation({
@@ -204,7 +219,17 @@ function HubShell() {
               {bootstrap.data?.setup?.printerOutputMode === "live" ? "Printers Live" : "Printer Test Mode"}
             </Badge>
             <Badge>Sync pending {bootstrap.data?.syncStatus?.counts?.pending ?? 0}</Badge>
-            <Button type="button" variant="ghost" size="icon-sm" className="topbar-icon-button" onClick={() => void bootstrap.refetch()} aria-label="Refresh">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              className="topbar-icon-button"
+              onClick={() => {
+                if (!bootstrap.isFetching) void bootstrap.refetch();
+              }}
+              disabled={bootstrap.isFetching}
+              aria-label="Refresh"
+            >
               <RefreshCw size={18} />
             </Button>
           </div>

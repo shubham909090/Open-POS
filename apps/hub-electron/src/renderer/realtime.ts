@@ -34,11 +34,15 @@ export function connectHubRealtime(input: {
   let closed = false;
   let retry: ReturnType<typeof setTimeout> | null = null;
   let socket: WebSocket | null = null;
+  let retryDelayMs = 1_500;
 
   const open = () => {
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const url = `${protocol}//${window.location.host}/realtime?token=${encodeURIComponent(input.token)}`;
     socket = new WebSocket(url);
+    socket.onopen = () => {
+      retryDelayMs = 1_500;
+    };
     socket.onmessage = (message) => {
       try {
         input.onEvent(JSON.parse(String(message.data)) as RealtimeEvent);
@@ -48,7 +52,11 @@ export function connectHubRealtime(input: {
     };
     socket.onclose = () => {
       input.onDisconnect?.();
-      if (!closed) retry = setTimeout(open, 1500);
+      if (!closed) {
+        const delay = retryDelayMs;
+        retryDelayMs = Math.min(15_000, retryDelayMs * 2);
+        retry = setTimeout(open, delay);
+      }
     };
     socket.onerror = () => socket?.close();
   };

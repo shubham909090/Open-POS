@@ -266,6 +266,7 @@ export class HubClient {
     let closed = false;
     let retry: ReturnType<typeof setTimeout> | null = null;
     let socket: WebSocket | null = null;
+    let retryDelayMs = 1_500;
 
     const open = () => {
       let realtimeUrl: string;
@@ -275,6 +276,9 @@ export class HubClient {
         return;
       }
       socket = new WebSocket(realtimeUrl);
+      socket.onopen = () => {
+        retryDelayMs = 1_500;
+      };
       socket.onmessage = (message) => {
         try {
           onEvent(JSON.parse(String(message.data)) as HubRealtimeEvent);
@@ -283,7 +287,11 @@ export class HubClient {
         }
       };
       socket.onclose = () => {
-        if (!closed) retry = setTimeout(open, 1500);
+        if (!closed) {
+          const delay = retryDelayMs;
+          retryDelayMs = Math.min(15_000, retryDelayMs * 2);
+          retry = setTimeout(open, delay);
+        }
       };
       socket.onerror = () => socket?.close();
     };

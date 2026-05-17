@@ -64,6 +64,7 @@ describe("hub realtime invalidation", () => {
     class MockWebSocket {
       static instances: MockWebSocket[] = [];
       onmessage: ((message: { data: string }) => void) | null = null;
+      onopen: (() => void) | null = null;
       onclose: (() => void) | null = null;
       onerror: (() => void) | null = null;
       closed = false;
@@ -103,10 +104,16 @@ describe("hub realtime invalidation", () => {
     await vi.advanceTimersByTimeAsync(1_500);
     expect(MockWebSocket.instances).toHaveLength(2);
 
-    cleanup();
     MockWebSocket.instances[1]?.emitClose();
-    await vi.advanceTimersByTimeAsync(1_500);
+    await vi.advanceTimersByTimeAsync(2_999);
     expect(MockWebSocket.instances).toHaveLength(2);
-    expect(MockWebSocket.instances[1]?.closed).toBe(true);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(MockWebSocket.instances).toHaveLength(3);
+
+    cleanup();
+    MockWebSocket.instances[2]?.emitClose();
+    await vi.advanceTimersByTimeAsync(3_000);
+    expect(MockWebSocket.instances).toHaveLength(3);
+    expect(MockWebSocket.instances[2]?.closed).toBe(true);
   });
 });

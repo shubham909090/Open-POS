@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { type NoticeSetter, messageOf } from "../../lib/format.js";
 import { hubApi, type ProductionUnit } from "../../hub-api.js";
 
@@ -12,6 +12,7 @@ export function UnitEditForm({
   onSaved: () => Promise<void>;
   setNotice: NoticeSetter;
 }) {
+  const queryClient = useQueryClient();
   const [name, setName] = useState(unit.name);
   const [printerMode, setPrinterMode] = useState<"system" | "network">(
     unit.printer_mode ?? "system",
@@ -27,9 +28,13 @@ export function UnitEditForm({
 
   const systemPrinters = useQuery({
     queryKey: ["system-printers"],
-    queryFn: hubApi.systemPrinters,
+    queryFn: () => hubApi.systemPrinters(),
     enabled: false,
   });
+  const refreshSystemPrinters = async () => {
+    const printers = await hubApi.systemPrinters({ refresh: true });
+    queryClient.setQueryData(["system-printers"], printers);
+  };
 
   return (
     <form
@@ -99,7 +104,7 @@ export function UnitEditForm({
             <button
               type="button"
               className="secondary-button"
-              onClick={() => void systemPrinters.refetch()}
+              onClick={() => void refreshSystemPrinters()}
               disabled={systemPrinters.isFetching}
             >
               {systemPrinters.isFetching ? "Loading..." : "Load PC printers"}

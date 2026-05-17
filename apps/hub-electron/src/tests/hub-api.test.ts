@@ -32,4 +32,18 @@ describe("hub renderer API", () => {
     expect(headers.get("idempotency-key")).toBe("hub-submit-action-1");
     expect(headers.get("authorization")).toBe("Bearer captain-token");
   });
+
+  it("can force-refresh PC printer discovery instead of using the cached list", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify([]), { status: 200 }));
+    const { hubApi } = await import("../renderer/hub-api.js");
+
+    await hubApi.systemPrinters({ refresh: true });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/system-printers?refresh=1",
+      expect.objectContaining({
+        headers: expect.any(Headers)
+      })
+    );
+  });
 });

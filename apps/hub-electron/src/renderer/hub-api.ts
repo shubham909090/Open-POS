@@ -537,7 +537,7 @@ export const hubApi = {
     }),
   updateSaleGroup: (id: string, payload: { defaultProductionUnitId?: string | null; taxComponents?: Array<{ name: string; rateBps: number }>; ticketLabel?: "KOT" | "BOT"; active?: boolean }) =>
     apiFetch<{ id: string }>(`/sale-groups/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
-  systemPrinters: () => apiFetch<SystemPrinterInfo[]>("/system-printers"),
+  systemPrinters: (options: { refresh?: boolean } = {}) => apiFetch<SystemPrinterInfo[]>(`/system-printers${options.refresh ? "?refresh=1" : ""}`),
   receiptPrinter: () => apiFetch<{ printerMode?: "system" | "network"; printerHost: string | null; printerPort: number | null; printerName: string | null }>("/settings/receipt-printer"),
   updateReceiptPrinter: (payload: { printerMode: "system" | "network"; printerName?: string; printerHost?: string; printerPort: number }) =>
     apiFetch("/settings/receipt-printer", { method: "PUT", body: JSON.stringify(payload) }),

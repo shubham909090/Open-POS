@@ -65,18 +65,62 @@ function matchesFilters<T extends SearchableMenuItem>(item: T, filters: MenuSear
   return true;
 }
 
-export function searchMenuItems<T extends SearchableMenuItem>(
-  items: T[],
-  query: string,
-  filters: MenuSearchFilters = {}
-): T[] {
-  const filtered = items.filter((item) => matchesFilters(item, filters));
-  const trimmedQuery = query.trim();
-  const limit = filters.limit;
+type CachedMenuSearch<T extends SearchableMenuItem> = {
+  fingerprint: string;
+  filtered: T[];
+  fuse?: Fuse<T>;
+};
 
-  if (!trimmedQuery) return limit ? filtered.slice(0, limit) : filtered;
+const searchCache = new WeakMap<readonly SearchableMenuItem[], Map<string, CachedMenuSearch<SearchableMenuItem>>>();
 
-  const fuse = new Fuse(filtered, {
+function itemCacheFingerprint(item: SearchableMenuItem): string {
+  const variants = searchableVariants(item).map((variant) => `${variant.label ?? ""}:${variant.active ?? ""}`).join(",");
+  return [
+    item.id,
+    item.name,
+    item.active ?? "",
+    saleGroupKind(item),
+    productionUnitId(item) ?? "",
+    item.sale_group_name ?? item.saleGroupName ?? "",
+    item.production_unit_name ?? item.productionUnitName ?? "",
+    variants
+  ].join(":");
+}
+
+function menuCacheFingerprint(items: SearchableMenuItem[]): string {
+  return `${items.length}|${items.map(itemCacheFingerprint).join("|")}`;
+}
+
+function filterCacheKey(filters: MenuSearchFilters): string {
+  return [
+    filters.includeInactive ? "all" : "active",
+    filters.saleGroupKind ?? "",
+    filters.productionUnitId ?? ""
+  ].join("|");
+}
+
+function getCachedMenuSearch<T extends SearchableMenuItem>(items: T[], filters: MenuSearchFilters): CachedMenuSearch<T> {
+  const key = filterCacheKey(filters);
+  const fingerprint = menuCacheFingerprint(items);
+  let byFilter = searchCache.get(items);
+  if (!byFilter) {
+    byFilter = new Map();
+    searchCache.set(items, byFilter);
+  }
+
+  const cached = byFilter.get(key) as CachedMenuSearch<T> | undefined;
+  if (cached?.fingerprint === fingerprint) return cached;
+
+  const next: CachedMenuSearch<T> = {
+    fingerprint,
+    filtered: items.filter((item) => matchesFilters(item, filters))
+  };
+  byFilter.set(key, next as unknown as CachedMenuSearch<SearchableMenuItem>);
+  return next;
+}
+
+function getFuse<T extends SearchableMenuItem>(cached: CachedMenuSearch<T>): Fuse<T> {
+  cached.fuse ??= new Fuse(cached.filtered, {
     includeScore: true,
     ignoreLocation: true,
     threshold: 0.42,
@@ -96,7 +140,21 @@ export function searchMenuItems<T extends SearchableMenuItem>(
       return Fuse.config.getFn(item, path);
     }
   });
+  return cached.fuse;
+}
 
+export function searchMenuItems<T extends SearchableMenuItem>(
+  items: T[],
+  query: string,
+  filters: MenuSearchFilters = {}
+): T[] {
+  const cached = getCachedMenuSearch(items, filters);
+  const trimmedQuery = query.trim();
+  const limit = filters.limit;
+
+  if (!trimmedQuery) return limit ? cached.filtered.slice(0, limit) : cached.filtered;
+
+  const fuse = getFuse(cached);
   const results = fuse.search(trimmedQuery, limit ? { limit } : undefined).map((result) => result.item);
   return results;
 }

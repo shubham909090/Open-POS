@@ -1406,30 +1406,33 @@ export class OrderService {
   }
 
   importMenuItemsFromCsv(csv: string): CsvImportResult {
-    const rows = this.parseCsvRows(csv);
-    const result: CsvImportResult = { created: 0, failed: 0, ids: [], errors: [] };
-    for (const row of rows) {
-      try {
-        const name = this.requireCsvText(row, ["name", "item_name", "dish_name"]);
-        if (this.findMenuItemIdByName(name)) throw new DomainError(`Menu item "${name}" already exists`);
-        const pricePaise = this.csvMoneyToPaise(this.requireCsvText(row, ["price", "price_rupees", "rate"]));
-        const productionUnitId = this.resolveProductionUnitRef(this.csvText(row, ["kitchen_or_counter", "kitchen", "counter", "production_unit"]));
-        const saleGroupId = this.resolveSaleGroupRef(this.csvText(row, ["sale_category", "sale_group", "category"]) || "Food");
-        const created = this.createMenuItem({
-          name,
-          pricePaise,
-          productionUnitId,
-          saleGroupId,
-          active: this.csvBoolean(this.csvText(row, ["active"]), true)
-        });
-        result.created += 1;
-        result.ids.push(created.id);
-      } catch (error) {
-        result.failed += 1;
-        result.errors.push({ row: row.rowNumber, message: error instanceof Error ? error.message : "Could not import row" });
+    const run = this.db.transaction(() => {
+      const rows = this.parseCsvRows(csv);
+      const result: CsvImportResult = { created: 0, failed: 0, ids: [], errors: [] };
+      for (const row of rows) {
+        try {
+          const name = this.requireCsvText(row, ["name", "item_name", "dish_name"]);
+          if (this.findMenuItemIdByName(name)) throw new DomainError(`Menu item "${name}" already exists`);
+          const pricePaise = this.csvMoneyToPaise(this.requireCsvText(row, ["price", "price_rupees", "rate"]));
+          const productionUnitId = this.resolveProductionUnitRef(this.csvText(row, ["kitchen_or_counter", "kitchen", "counter", "production_unit"]));
+          const saleGroupId = this.resolveSaleGroupRef(this.csvText(row, ["sale_category", "sale_group", "category"]) || "Food");
+          const created = this.createMenuItem({
+            name,
+            pricePaise,
+            productionUnitId,
+            saleGroupId,
+            active: this.csvBoolean(this.csvText(row, ["active"]), true)
+          });
+          result.created += 1;
+          result.ids.push(created.id);
+        } catch (error) {
+          result.failed += 1;
+          result.errors.push({ row: row.rowNumber, message: error instanceof Error ? error.message : "Could not import row" });
+        }
       }
-    }
-    return result;
+      return result;
+    });
+    return run();
   }
 
   updateMenuItem(id: string, input: UpdateMenuItemInput): { id: string } {
@@ -1612,64 +1615,67 @@ export class OrderService {
   }
 
   importAlcoholItemsFromCsv(csv: string, type: "plain_liquor" | "prepared_product"): CsvImportResult {
-    const rows = this.parseCsvRows(csv);
-    const result: CsvImportResult = { created: 0, failed: 0, ids: [], errors: [] };
-    for (const row of rows) {
-      try {
-        const name = this.requireCsvText(row, ["name", "item_name", "liquor_name", "product_name"]);
-        if (this.findMenuItemIdByName(name)) throw new DomainError(`Alcohol item "${name}" already exists`);
-        const productionUnitId = this.resolveProductionUnitRef(this.csvText(row, ["bar_counter", "kitchen_or_counter", "counter", "production_unit"]));
-        const active = this.csvBoolean(this.csvText(row, ["active"]), true);
-        const largeBottleMl = this.csvInteger(this.csvText(row, ["large_bottle_ml", "large_ml"]), 750);
-        const smallBottleMl = this.csvInteger(this.csvText(row, ["small_bottle_ml", "small_ml"]), 180);
-        const shotPricePaise = this.csvMoneyToPaiseOptional(this.csvText(row, ["shot_price", "price_30_ml", "thirty_ml_price"]));
-        const smallPricePaise = this.csvMoneyToPaiseOptional(this.csvText(row, ["small_bottle_price", "small_price"]));
-        const largePricePaise = this.csvMoneyToPaiseOptional(this.csvText(row, ["large_bottle_price", "large_price"]));
-        const plainVariants: CreateAlcoholItemInput["variants"] = [
-          ...(shotPricePaise > 0 ? [{ label: "30 ml", kind: "shot" as const, pricePaise: shotPricePaise, volumeMl: 30, inventoryAction: "large_ml" as const, sortOrder: 0, active: true }] : []),
-          ...(smallPricePaise > 0 ? [{ label: `${smallBottleMl} ml`, kind: "small_bottle" as const, pricePaise: smallPricePaise, volumeMl: smallBottleMl, inventoryAction: "small_bottle" as const, sortOrder: 1, active: true }] : []),
-          ...(largePricePaise > 0 ? [{ label: `${largeBottleMl} ml`, kind: "large_bottle" as const, pricePaise: largePricePaise, volumeMl: largeBottleMl, inventoryAction: "large_bottle" as const, sortOrder: 2, active: true }] : [])
-        ];
-        const created = type === "plain_liquor"
-          ? this.createAlcoholItem({
-              type,
-              name,
-              productionUnitId,
-              largeBottleMl,
-              smallBottleMl,
-              sealedLargeCount: this.csvInteger(this.csvText(row, ["sealed_large_count", "large_bottles", "large_stock"]), 0),
-              openLargeMl: this.csvInteger(this.csvText(row, ["open_large_ml", "open_ml"]), 0),
-              sealedSmallCount: this.csvInteger(this.csvText(row, ["sealed_small_count", "small_bottles", "small_stock"]), 0),
-              variants: plainVariants,
-              recipeIngredients: [],
-              active
-            })
-          : this.createAlcoholItem({
-              type,
-              name,
-              productionUnitId,
-              variants: [
-                {
-                  label: "Regular",
-                  kind: "default",
-                  pricePaise: this.csvMoneyToPaise(this.requireCsvText(row, ["price", "price_rupees", "rate"])),
-                  volumeMl: null,
-                  inventoryAction: "none",
-                  sortOrder: 0,
-                  active: true
-                }
-              ],
-              recipeIngredients: this.parseAlcoholRecipeCsv(this.csvText(row, ["recipe", "recipe_ml", "ingredients"])),
-              active
-            });
-        result.created += 1;
-        result.ids.push(created.id);
-      } catch (error) {
-        result.failed += 1;
-        result.errors.push({ row: row.rowNumber, message: error instanceof Error ? error.message : "Could not import row" });
+    const run = this.db.transaction(() => {
+      const rows = this.parseCsvRows(csv);
+      const result: CsvImportResult = { created: 0, failed: 0, ids: [], errors: [] };
+      for (const row of rows) {
+        try {
+          const name = this.requireCsvText(row, ["name", "item_name", "liquor_name", "product_name"]);
+          if (this.findMenuItemIdByName(name)) throw new DomainError(`Alcohol item "${name}" already exists`);
+          const productionUnitId = this.resolveProductionUnitRef(this.csvText(row, ["bar_counter", "kitchen_or_counter", "counter", "production_unit"]));
+          const active = this.csvBoolean(this.csvText(row, ["active"]), true);
+          const largeBottleMl = this.csvInteger(this.csvText(row, ["large_bottle_ml", "large_ml"]), 750);
+          const smallBottleMl = this.csvInteger(this.csvText(row, ["small_bottle_ml", "small_ml"]), 180);
+          const shotPricePaise = this.csvMoneyToPaiseOptional(this.csvText(row, ["shot_price", "price_30_ml", "thirty_ml_price"]));
+          const smallPricePaise = this.csvMoneyToPaiseOptional(this.csvText(row, ["small_bottle_price", "small_price"]));
+          const largePricePaise = this.csvMoneyToPaiseOptional(this.csvText(row, ["large_bottle_price", "large_price"]));
+          const plainVariants: CreateAlcoholItemInput["variants"] = [
+            ...(shotPricePaise > 0 ? [{ label: "30 ml", kind: "shot" as const, pricePaise: shotPricePaise, volumeMl: 30, inventoryAction: "large_ml" as const, sortOrder: 0, active: true }] : []),
+            ...(smallPricePaise > 0 ? [{ label: `${smallBottleMl} ml`, kind: "small_bottle" as const, pricePaise: smallPricePaise, volumeMl: smallBottleMl, inventoryAction: "small_bottle" as const, sortOrder: 1, active: true }] : []),
+            ...(largePricePaise > 0 ? [{ label: `${largeBottleMl} ml`, kind: "large_bottle" as const, pricePaise: largePricePaise, volumeMl: largeBottleMl, inventoryAction: "large_bottle" as const, sortOrder: 2, active: true }] : [])
+          ];
+          const created = type === "plain_liquor"
+            ? this.createAlcoholItem({
+                type,
+                name,
+                productionUnitId,
+                largeBottleMl,
+                smallBottleMl,
+                sealedLargeCount: this.csvInteger(this.csvText(row, ["sealed_large_count", "large_bottles", "large_stock"]), 0),
+                openLargeMl: this.csvInteger(this.csvText(row, ["open_large_ml", "open_ml"]), 0),
+                sealedSmallCount: this.csvInteger(this.csvText(row, ["sealed_small_count", "small_bottles", "small_stock"]), 0),
+                variants: plainVariants,
+                recipeIngredients: [],
+                active
+              })
+            : this.createAlcoholItem({
+                type,
+                name,
+                productionUnitId,
+                variants: [
+                  {
+                    label: "Regular",
+                    kind: "default",
+                    pricePaise: this.csvMoneyToPaise(this.requireCsvText(row, ["price", "price_rupees", "rate"])),
+                    volumeMl: null,
+                    inventoryAction: "none",
+                    sortOrder: 0,
+                    active: true
+                  }
+                ],
+                recipeIngredients: this.parseAlcoholRecipeCsv(this.csvText(row, ["recipe", "recipe_ml", "ingredients"])),
+                active
+              });
+          result.created += 1;
+          result.ids.push(created.id);
+        } catch (error) {
+          result.failed += 1;
+          result.errors.push({ row: row.rowNumber, message: error instanceof Error ? error.message : "Could not import row" });
+        }
       }
-    }
-    return result;
+      return result;
+    });
+    return run();
   }
 
   updateAlcoholItem(id: string, input: UpdateAlcoholItemInput): { id: string } {

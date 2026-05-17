@@ -223,6 +223,16 @@ export function createHubServer(input: {
     return totals;
   }
 
+  const dedupeInFlight = <T>(state: { promise: Promise<T> | null }, run: () => Promise<T>) => {
+    if (state.promise) return state.promise;
+    state.promise = run().finally(() => {
+      state.promise = null;
+    });
+    return state.promise;
+  };
+  const syncPushState: { promise: Promise<{ pushed: number; skipped: boolean }> | null } = { promise: null };
+  const syncPullState: { promise: Promise<{ applied: number; failed?: number; skipped?: boolean; cursor?: string }> | null } = { promise: null };
+
   app.register(websocket);
   app.get("/favicon.ico", async (_request, reply) => reply.type("image/svg+xml").send(hubFaviconSvg));
   const staticRoot = fileURLToPath(new URL("../../dist/public", import.meta.url));
@@ -431,8 +441,12 @@ export function createHubServer(input: {
 	    };
 	  });
   app.get("/sync/status", { preHandler: captainOrAdmin }, async () => input.orderService.getSyncStatus());
-  app.post("/sync/push", { preHandler: adminOnly }, async () => input.syncBridge?.pushPending() ?? { pushed: 0, skipped: true });
-  app.post("/sync/pull", { preHandler: adminOnly }, async () => input.syncBridge?.pullCloudSnapshot() ?? { applied: 0, skipped: true });
+  app.post("/sync/push", { preHandler: adminOnly }, async () =>
+    input.syncBridge ? dedupeInFlight(syncPushState, () => input.syncBridge!.pushPending()) : { pushed: 0, skipped: true }
+  );
+  app.post("/sync/pull", { preHandler: adminOnly }, async () =>
+    input.syncBridge ? dedupeInFlight(syncPullState, () => input.syncBridge!.pullCloudSnapshot()) : { applied: 0, skipped: true }
+  );
   app.post("/sync/requeue-failed", { preHandler: adminOnly }, async () => input.syncBridge?.requeueFailedEvents() ?? { requeued: 0 });
   app.delete<{ Params: { commandId: string } }>("/sync/cloud-command-failures/:commandId", { preHandler: adminOnly }, async ({ params }) => {
     const result = input.database.orm.delete(cloudCommandFailures).where(eq(cloudCommandFailures.commandId, params.commandId)).run();
@@ -574,7 +588,10 @@ export function createHubServer(input: {
     input.eventBus.publish({ type: "printer_output_mode.updated", result });
     return result;
   });
-  app.get("/system-printers", { preHandler: adminOnly }, async () => listSystemPrinters());
+  app.get("/system-printers", { preHandler: adminOnly }, async (request) => {
+    const query = request.query as { refresh?: string };
+    return listSystemPrinters({ forceRefresh: query.refresh === "1" || query.refresh === "true" });
+  });
   app.put("/settings/receipt-printer", { preHandler: adminOnly }, async (request) => {
     const result = input.orderService.updateReceiptPrinter(updateReceiptPrinterSchema.parse(request.body));
     input.eventBus.publish({ type: "receipt_printer.updated", result });

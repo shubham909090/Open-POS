@@ -65,6 +65,7 @@ describe("HubClient", () => {
     class MockWebSocket {
       static instances: MockWebSocket[] = [];
       onmessage: ((message: { data: string }) => void) | null = null;
+      onopen: (() => void) | null = null;
       onclose: (() => void) | null = null;
       onerror: (() => void) | null = null;
       closed = false;
@@ -104,11 +105,17 @@ describe("HubClient", () => {
     await vi.advanceTimersByTimeAsync(1);
     expect(MockWebSocket.instances).toHaveLength(2);
 
-    unsubscribe();
     MockWebSocket.instances[1]?.emitClose();
-    await vi.advanceTimersByTimeAsync(1_500);
+    await vi.advanceTimersByTimeAsync(2_999);
     expect(MockWebSocket.instances).toHaveLength(2);
-    expect(MockWebSocket.instances[1]?.closed).toBe(true);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(MockWebSocket.instances).toHaveLength(3);
+
+    unsubscribe();
+    MockWebSocket.instances[2]?.emitClose();
+    await vi.advanceTimersByTimeAsync(3_000);
+    expect(MockWebSocket.instances).toHaveLength(3);
+    expect(MockWebSocket.instances[2]?.closed).toBe(true);
   });
 
   it("exchanges pairing codes through the public pairing endpoint", async () => {

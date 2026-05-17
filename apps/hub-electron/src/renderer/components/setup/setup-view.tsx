@@ -49,7 +49,7 @@ export function SetupView({
   const dishPricePaise = Math.round(Number(dishPrice || 0) * 100);
   const printerOutputMode = bootstrap.setup?.printerOutputMode ?? "test";
   const receiptPrinter = useQuery({ queryKey: ["receipt-printer"], queryFn: hubApi.receiptPrinter });
-  const systemPrinters = useQuery({ queryKey: ["system-printers"], queryFn: hubApi.systemPrinters, enabled: false });
+  const systemPrinters = useQuery({ queryKey: ["system-printers"], queryFn: () => hubApi.systemPrinters(), enabled: false });
   const printLayouts = useQuery({ queryKey: ["print-layouts"], queryFn: hubApi.printLayouts });
   const devices = useQuery({ queryKey: ["devices"], queryFn: hubApi.devices });
   const connectionConfigured = Boolean(bootstrap.setup?.hubConnection?.configured);
@@ -95,6 +95,10 @@ export function SetupView({
   }, [bootstrap.setup?.hubConnection]);
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ["bootstrap"] });
+  const refreshSystemPrinters = async () => {
+    const printers = await hubApi.systemPrinters({ refresh: true });
+    queryClient.setQueryData(["system-printers"], printers);
+  };
   const invalidatePrinter = async () => {
     await queryClient.invalidateQueries({ queryKey: ["receipt-printer"] });
     await invalidate();
@@ -394,7 +398,12 @@ export function SetupView({
               <button type="button" className="secondary-button" onClick={() => setPrinterEditing(true)}>
                 Edit
               </button>
-              <button type="button" className="secondary-button" onClick={() => void systemPrinters.refetch()} disabled={systemPrinters.isFetching}>
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => void refreshSystemPrinters()}
+                disabled={systemPrinters.isFetching}
+              >
                 Load PC printers
               </button>
             </div>
@@ -422,7 +431,12 @@ export function SetupView({
                     ))}
                   </select>
                 </label>
-                <button type="button" className="secondary-button" onClick={() => void systemPrinters.refetch()} disabled={systemPrinters.isFetching}>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={() => void refreshSystemPrinters()}
+                  disabled={systemPrinters.isFetching}
+                >
                   {systemPrinters.isFetching ? "Loading..." : "Load PC printers"}
                 </button>
               </div>

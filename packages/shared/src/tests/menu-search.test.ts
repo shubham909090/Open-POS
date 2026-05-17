@@ -55,6 +55,23 @@ describe("menu fuzzy search", () => {
     expect(searchMenuItems(menu, "", { saleGroupKind: "food" }).map((item) => item.id)).toEqual(["paneer-tikka", "masala-papad"]);
   });
 
+  it("does not reuse stale cached results after an import-style in-place array change", () => {
+    const mutableMenu = [...menu];
+    expect(searchMenuItems(mutableMenu, "new dish").map((item) => item.id)).toEqual([]);
+
+    mutableMenu.push({
+      id: "new-dish",
+      name: "New Dish",
+      active: true,
+      sale_group_name: "Food",
+      sale_group_kind: "food",
+      production_unit_name: "Kitchen",
+      variants: []
+    });
+
+    expect(searchMenuItems(mutableMenu, "new dish").map((item) => item.id)).toEqual(["new-dish"]);
+  });
+
   it("returns recent and popular quick picks without duplicates", () => {
     expect(
       rankMenuQuickPicks(menu, ["masala-papad", "paneer-tikka", "masala-papad"], [

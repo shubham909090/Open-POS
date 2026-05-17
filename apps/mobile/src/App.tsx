@@ -34,6 +34,7 @@ import { AppHeader, ConnectionBanner, DraftBar, ModeTabs, OnboardingScreen } fro
 import { BillingHistoryPanel, KitchenScreen, MenuScreen, TablePicker, TicketScreen } from "./components/screens";
 import type { ConnectionState, MobileOrderStateItem, OrderStateSaveMode, PaymentMethod, PrintMode, ViewMode } from "./lib/mobile-types";
 import { useDevicePairing } from "./hooks/use-device-pairing";
+import { MOBILE_REALTIME_REFRESH_DEBOUNCE_MS, MOBILE_REFRESH_INTERVAL_MS, nextConnectionAfterRefresh } from "./lib/connection-health";
 
 type HistoryEditPayloadItem =
   | { orderItemId?: string; menuItemId: string; menuItemVariantId?: string; quantity: number }
@@ -105,6 +106,9 @@ export default function App() {
   const [mode, setMode] = useState<ViewMode>("tables");
   const operationKeysRef = useRef<Record<string, string>>({});
   const knownKdsTicketIdsRef = useRef<Set<string>>(new Set());
+  const refreshInFlightRef = useRef(false);
+  const refreshQueuedRef = useRef(false);
+  const connectionFailuresRef = useRef(0);
 
   const client = useMemo(() => new HubClient(hubUrl, deviceToken), [deviceToken, hubUrl]);
   const selectedTable = bootstrap?.tables.find((table) => table.id === selectedTableId) ?? null;
@@ -166,7 +170,7 @@ export default function App() {
   useEffect(() => {
     if (initializing) return;
     void refresh();
-    const interval = setInterval(() => void refresh(false), 8_000);
+    const interval = setInterval(() => void refresh(false), MOBILE_REFRESH_INTERVAL_MS);
     return () => clearInterval(interval);
   }, [client, initializing, kitchenUnitId, selectedHistoryDayId, selectedTableId]);
 
@@ -178,7 +182,7 @@ export default function App() {
       refreshTimer = setTimeout(() => {
         refreshTimer = null;
         void refresh(false);
-      }, 150);
+      }, MOBILE_REALTIME_REFRESH_DEBOUNCE_MS);
     });
     return () => {
       if (refreshTimer) clearTimeout(refreshTimer);
@@ -191,19 +195,45 @@ export default function App() {
   }, [canBill, mode]);
 
   async function refresh(showSpinner = true) {
-    if (showSpinner) setLoading(true);
-    if (showSpinner) setConnection("checking");
+    if (refreshInFlightRef.current) {
+      refreshQueuedRef.current = true;
+      return;
+    }
+    refreshInFlightRef.current = true;
     try {
-      const isOnline = await client.health();
-      setConnection(isOnline ? "online" : "offline");
-      if (!isOnline) {
+      await runRefresh(showSpinner);
+    } finally {
+      refreshInFlightRef.current = false;
+      if (refreshQueuedRef.current) {
+        refreshQueuedRef.current = false;
+        void refresh(false);
+      }
+    }
+  }
+
+  async function runRefresh(showSpinner = true) {
+    if (showSpinner) setLoading(true);
+    if (showSpinner && !bootstrap) setConnection("checking");
+    try {
+      if (!deviceToken) {
+        const isOnline = await client.health();
+        setConnection(isOnline ? "checking" : "offline");
+        if (isOnline) return;
         setMessage("Hub is not reachable. Check Wi-Fi and hub address. Drafts stay on this phone.");
         return;
       }
 
-      const nextBootstrap = await client.bootstrap();
+      const [nextBootstrap, session] = await Promise.all([client.bootstrap(), client.me()]);
+      const healthy = nextConnectionAfterRefresh({
+        success: true,
+        previous: connection,
+        failures: connectionFailuresRef.current,
+        hasBootstrap: Boolean(bootstrap),
+        showSpinner
+      });
+      connectionFailuresRef.current = healthy.failures;
+      setConnection(healthy.connection);
       setBootstrap(nextBootstrap);
-      const session = await client.me();
       setDeviceNameState(session.name);
       setDeviceRoleState(session.role);
       if (session.role === "kitchen") {
@@ -249,8 +279,20 @@ export default function App() {
       setMessage(`Connected. Business day ${nextBootstrap.currentBusinessDay.business_date} is active.`);
       if (selectedTableId) await loadTableOrder(selectedTableId);
     } catch (error) {
-      setConnection("offline");
-      setMessage(error instanceof Error ? error.message : "Could not reach the hub.");
+      const next = nextConnectionAfterRefresh({
+        success: false,
+        previous: connection,
+        failures: connectionFailuresRef.current,
+        hasBootstrap: Boolean(bootstrap),
+        showSpinner
+      });
+      connectionFailuresRef.current = next.failures;
+      setConnection(next.connection);
+      setMessage(
+        next.shouldShowOfflineMessage
+          ? error instanceof Error ? error.message : "Could not reach the hub."
+          : "Connection hiccup. Keeping latest hub data while the phone reconnects."
+      );
     } finally {
       if (showSpinner) setLoading(false);
     }

@@ -16,6 +16,7 @@
     "package:win": "pnpm build && electron-builder --win nsis --x64",
     "package:dir": "pnpm build && electron-builder --dir",
     "lint": "pnpm --filter @gaurav-pos/shared build && tsc --noEmit",
+    "perf:load": "pnpm --filter @gaurav-pos/shared build && tsx scripts/hub-load-probe.ts",
     "test": "vitest run",
     "typecheck": "pnpm --filter @gaurav-pos/shared build && tsc --noEmit"
   },
