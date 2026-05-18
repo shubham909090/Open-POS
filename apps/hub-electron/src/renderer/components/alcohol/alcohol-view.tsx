@@ -46,10 +46,11 @@ export function AlcoholView({
       {alcohol.data && tab === "items" ? (
         <AlcoholItemsPanel
           bootstrap={bootstrap}
-          catalog={alcohol.data}
-          invalidate={invalidate}
-          setNotice={setNotice}
-        />
+	          catalog={alcohol.data}
+	          invalidate={invalidate}
+	          setNotice={setNotice}
+	          requestManagerApproval={requestManagerApproval}
+	        />
       ) : null}
       {alcohol.data && tab === "storage" ? (
         <AlcoholStoragePanel

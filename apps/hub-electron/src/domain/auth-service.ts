@@ -61,6 +61,24 @@ export class AuthService {
       .run();
   }
 
+  createAdminSession(token: string, name = "Admin session"): LocalDeviceSession {
+    const now = new Date().toISOString();
+    const id = `device-admin-session-${randomBytes(12).toString("base64url")}`;
+    this.db
+      .insert(localDevices)
+      .values({
+        id,
+        name,
+        role: "admin",
+        tokenHash: this.hash(token),
+        status: "active",
+        createdAt: now,
+        lastSeenAt: now
+      })
+      .run();
+    return { id, name, role: "admin" };
+  }
+
   lockAdminDevice(): void {
     const now = new Date().toISOString();
     const throwawayHash = this.hash(`locked-${randomBytes(32).toString("base64url")}`);
@@ -74,6 +92,17 @@ export class AuthService {
       })
       .where(eq(localDevices.id, "device-local-admin"))
       .run();
+  }
+
+  revokeToken(token: string | undefined): void {
+    if (!token) throw new DomainError("Missing device token", 401);
+    const now = new Date().toISOString();
+    const result = this.db
+      .update(localDevices)
+      .set({ status: "revoked", revokedAt: now, lastSeenAt: now })
+      .where(eq(localDevices.tokenHash, this.hash(token)))
+      .run();
+    if (result.changes === 0) throw new DomainError("Invalid or revoked device token", 401);
   }
 
   authenticate(token: string | undefined): LocalDeviceSession {

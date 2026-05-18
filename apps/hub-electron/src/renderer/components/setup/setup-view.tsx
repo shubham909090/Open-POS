@@ -639,9 +639,9 @@ export function SetupView({
         createTablePending={createTable.isPending}
         onCreateFloor={() => createFloor.mutate()}
         onCreateTable={() => createTable.mutate()}
-        invalidate={invalidate}
-        setNotice={setNotice}
-      />
+	        invalidate={invalidate}
+	        setNotice={setNotice}
+	      />
 
       <KitchensCountersCard
         bootstrap={bootstrap}
@@ -676,6 +676,7 @@ export function SetupView({
         onImportDishes={(csv) => importDishes.mutate(csv)}
         invalidate={invalidate}
         setNotice={setNotice}
+        requestManagerApproval={requestManagerApproval}
       />
 
       <DevicePairingCard

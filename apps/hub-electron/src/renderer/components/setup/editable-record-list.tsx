@@ -1,5 +1,5 @@
 import { type ReactNode, useState } from "react";
-import { Pencil, Trash2, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Pencil, Trash2, X } from "lucide-react";
 import { type NoticeSetter, messageOf } from "../../lib/format.js";
 import { EmptyState } from "../ui/empty-state.js";
 
@@ -15,6 +15,10 @@ export function EditableRecordList({
     active: boolean;
     onToggle: () => Promise<unknown>;
     onDelete: () => Promise<unknown>;
+    onMoveUp?: () => Promise<unknown>;
+    onMoveDown?: () => Promise<unknown>;
+    moveUpDisabled?: boolean;
+    moveDownDisabled?: boolean;
     editForm: (close: () => void) => ReactNode;
   }>;
 }) {
@@ -52,7 +56,7 @@ export function EditableRecordList({
       {visibleRows.map((row) => (
         <article
           key={row.id}
-          className={`record-row${editingId === row.id ? " editing" : ""}`}
+          className={`record-row${row.onMoveUp || row.onMoveDown ? " has-move-controls" : ""}${editingId === row.id ? " editing" : ""}`}
         >
           <div className="record-row-main">
             <div className="record-row-title">
@@ -63,6 +67,28 @@ export function EditableRecordList({
             </div>
             <span>{row.meta}</span>
           </div>
+          {row.onMoveUp || row.onMoveDown ? (
+            <div className="record-move-controls" aria-label={`Move ${row.title}`}>
+              <button
+                type="button"
+                className="record-action icon-only"
+                disabled={busyId === row.id || row.moveUpDisabled || !row.onMoveUp}
+                onClick={() => row.onMoveUp && void run(row.id, row.onMoveUp)}
+                aria-label={`Move ${row.title} up`}
+              >
+                <ArrowUp size={15} />
+              </button>
+              <button
+                type="button"
+                className="record-action icon-only"
+                disabled={busyId === row.id || row.moveDownDisabled || !row.onMoveDown}
+                onClick={() => row.onMoveDown && void run(row.id, row.onMoveDown)}
+                aria-label={`Move ${row.title} down`}
+              >
+                <ArrowDown size={15} />
+              </button>
+            </div>
+          ) : null}
           <div className="row-actions">
             <button
               type="button"

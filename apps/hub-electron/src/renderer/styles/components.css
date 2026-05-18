@@ -8,6 +8,10 @@
   grid-template-columns: minmax(260px, 1fr) auto;
 }
 
+.record-row.has-move-controls {
+  grid-template-columns: minmax(260px, 1fr) auto auto;
+}
+
 .record-row.editing {
   @apply border-accent bg-accent-soft;
 }
@@ -44,6 +48,14 @@
 
 .record-row .row-actions {
   @apply shrink-0 self-start;
+}
+
+.record-move-controls {
+  @apply flex shrink-0 items-center gap-1 self-start rounded-md border border-line bg-wash p-1;
+}
+
+.record-move-controls .record-action {
+  @apply min-h-8 w-8 px-0 shadow-none;
 }
 
 .record-action {
@@ -720,6 +732,10 @@
   @apply inline-flex min-h-8 items-center rounded-full border border-accent bg-accent-soft px-3 text-xs font-black uppercase text-accent-dark;
 }
 
+.state-editor-warning {
+  @apply m-0 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-900;
+}
+
 .state-editor-actions {
   @apply flex flex-wrap items-center justify-end gap-2;
 }
@@ -1117,6 +1133,7 @@
   }
 
   .record-row .row-actions,
+  .record-move-controls,
   .row-edit-actions {
     @apply justify-start;
   }

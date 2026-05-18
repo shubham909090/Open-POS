@@ -79,6 +79,16 @@
     @apply min-h-12 w-full;
   }
 
+  .update-package-card,
+  .update-action-groups {
+    grid-template-columns: 1fr;
+  }
+
+  .update-picker-actions,
+  .update-action-row {
+    @apply flex-col items-stretch;
+  }
+
   .printer-choice-button {
     grid-template-columns: auto minmax(0, 1fr);
   }

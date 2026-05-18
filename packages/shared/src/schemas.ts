@@ -134,25 +134,29 @@ export const updateSaleGroupSchema = z.object({
 export const createFloorSchema = z.object({
   name: z.string().trim().min(1).max(80),
   active: z.boolean().default(true),
+  sortOrder: z.number().int().min(0).optional(),
   customId: customIdSchema
 });
 
 export const updateFloorSchema = z.object({
   name: z.string().trim().min(1).max(80).optional(),
-  active: z.boolean().optional()
+  active: z.boolean().optional(),
+  sortOrder: z.number().int().min(0).optional()
 });
 
 export const createTableSchema = z.object({
   floorId: z.string().min(1),
   name: z.string().trim().min(1).max(40),
   active: z.boolean().default(true),
+  sortOrder: z.number().int().min(0).optional(),
   customId: customIdSchema
 });
 
 export const updateTableSchema = z.object({
   floorId: z.string().min(1).optional(),
   name: z.string().trim().min(1).max(40).optional(),
-  active: z.boolean().optional()
+  active: z.boolean().optional(),
+  sortOrder: z.number().int().min(0).optional()
 });
 
 export const createProductionUnitSchema = z.object({
@@ -199,6 +203,19 @@ export const updateMenuItemSchema = z.object({
   productionUnitId: z.string().min(1).nullable().optional(),
   saleGroupId: z.string().min(1).optional(),
   active: z.boolean().optional()
+});
+
+export const bulkDeleteMenuItemsSchema = z.object({
+  managerApproval: managerApprovalSchema.optional()
+});
+
+export const bulkDeleteAlcoholItemsSchema = z.object({
+  masterApproval: masterApprovalSchema.optional()
+});
+
+export const menuItemDeleteApprovalSchema = z.object({
+  managerApproval: managerApprovalSchema.optional(),
+  masterApproval: masterApprovalSchema.optional()
 });
 
 export const menuItemVariantSchema = z.object({
@@ -437,6 +454,9 @@ export type CreateProductionUnitInput = z.input<typeof createProductionUnitSchem
 export type UpdateProductionUnitInput = z.infer<typeof updateProductionUnitSchema>;
 export type CreateMenuItemInput = z.input<typeof createMenuItemSchema>;
 export type UpdateMenuItemInput = z.infer<typeof updateMenuItemSchema>;
+export type BulkDeleteMenuItemsInput = z.infer<typeof bulkDeleteMenuItemsSchema>;
+export type BulkDeleteAlcoholItemsInput = z.infer<typeof bulkDeleteAlcoholItemsSchema>;
+export type MenuItemDeleteApprovalInput = z.infer<typeof menuItemDeleteApprovalSchema>;
 export type ImportCsvInput = z.infer<typeof importCsvSchema>;
 export type ImportAlcoholCsvInput = z.infer<typeof importAlcoholCsvSchema>;
 export type CreateAlcoholItemInput = z.input<typeof createAlcoholItemSchema>;

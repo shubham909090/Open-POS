@@ -1,6 +1,7 @@
 import { formatInr } from "@gaurav-pos/shared";
 import { ChefHat, ClipboardList, Users } from "lucide-react";
 import type { Dispatch, SetStateAction } from "react";
+import type { ManagerApprovalRequest } from "../../hooks/use-manager-approval.js";
 import {
   hubApi,
   type Bootstrap,
@@ -37,10 +38,10 @@ export function FloorsTablesCard({
   createFloorPending,
   createTablePending,
   onCreateFloor,
-  onCreateTable,
-  invalidate,
-  setNotice,
-}: {
+	  onCreateTable,
+	  invalidate,
+	  setNotice,
+	}: {
   bootstrap: Bootstrap;
   activeFloors: Bootstrap["floors"];
   firstFloorId: string;
@@ -57,6 +58,52 @@ export function FloorsTablesCard({
   invalidate: SaveCallback;
   setNotice: NoticeSetter;
 }) {
+  const orderedFloors = bootstrap.floors;
+  const floorIndexById = new Map(orderedFloors.map((floor, index) => [floor.id, index]));
+  const tablesByFloor = new Map<string, Bootstrap["tables"]>();
+  for (const table of bootstrap.tables) {
+    const floorTables = tablesByFloor.get(table.floor_id) ?? [];
+    floorTables.push(table);
+    tablesByFloor.set(table.floor_id, floorTables);
+  }
+  const tableIndexKey = (tableId: string, floorId: string) => {
+    const floorTables = tablesByFloor.get(floorId) ?? [];
+    const index = floorTables.findIndex((table) => table.id === tableId);
+    return { floorTables, index };
+  };
+  const persistFloorOrder = async (nextFloors: Bootstrap["floors"]) => {
+    await Promise.all(nextFloors.map((floor, index) => hubApi.updateFloor(floor.id, { sortOrder: index })));
+    await invalidate();
+  };
+  const moveFloor = async (floorId: string, direction: -1 | 1) => {
+    const index = floorIndexById.get(floorId) ?? -1;
+    const targetIndex = index + direction;
+    if (index < 0 || targetIndex < 0 || targetIndex >= orderedFloors.length) return;
+    const nextFloors = [...orderedFloors];
+    const currentFloor = nextFloors[index];
+    const targetFloor = nextFloors[targetIndex];
+    if (!currentFloor || !targetFloor) return;
+    nextFloors[index] = targetFloor;
+    nextFloors[targetIndex] = currentFloor;
+    await persistFloorOrder(nextFloors);
+  };
+  const persistTableOrder = async (nextTables: Bootstrap["tables"]) => {
+    await Promise.all(nextTables.map((table, index) => hubApi.updateTable(table.id, { sortOrder: index })));
+    await invalidate();
+  };
+  const moveTable = async (tableId: string, floorId: string, direction: -1 | 1) => {
+    const { floorTables, index } = tableIndexKey(tableId, floorId);
+    const targetIndex = index + direction;
+    if (index < 0 || targetIndex < 0 || targetIndex >= floorTables.length) return;
+    const nextTables = [...floorTables];
+    const currentTable = nextTables[index];
+    const targetTable = nextTables[targetIndex];
+    if (!currentTable || !targetTable) return;
+    nextTables[index] = targetTable;
+    nextTables[targetIndex] = currentTable;
+    await persistTableOrder(nextTables);
+  };
+
   return (
     <SetupCard
       title="Floors And Tables"
@@ -120,48 +167,62 @@ export function FloorsTablesCard({
       </form>
       <EditableRecordList
         setNotice={setNotice}
-        rows={bootstrap.tables.map((table) => ({
-          id: table.id,
-          title: table.name,
-          meta: `${table.floor_name} · ${table.active ? table.status : "disabled"}`,
-          active: table.active,
-          onToggle: () =>
-            hubApi.updateTable(table.id, { active: !table.active }).then(invalidate),
-          onDelete: () => hubApi.deleteTable(table.id).then(invalidate),
-          editForm: (close) => (
-            <TableEditForm
-              table={table}
-              floors={activeFloors}
-              onSaved={async () => {
-                close();
-                await invalidate();
-              }}
-              setNotice={setNotice}
-            />
-          ),
-        }))}
+        rows={bootstrap.tables.map((table) => {
+          const { floorTables, index } = tableIndexKey(table.id, table.floor_id);
+          return {
+            id: table.id,
+            title: table.name,
+            meta: `${table.floor_name} · position ${index + 1} · ${table.active ? table.status : "disabled"}`,
+            active: table.active,
+            onMoveUp: () => moveTable(table.id, table.floor_id, -1),
+            onMoveDown: () => moveTable(table.id, table.floor_id, 1),
+            moveUpDisabled: index <= 0,
+            moveDownDisabled: index < 0 || index >= floorTables.length - 1,
+            onToggle: () =>
+              hubApi.updateTable(table.id, { active: !table.active }).then(invalidate),
+            onDelete: () => hubApi.deleteTable(table.id).then(invalidate),
+            editForm: (close) => (
+              <TableEditForm
+                table={table}
+                floors={activeFloors}
+                onSaved={async () => {
+                  close();
+                  await invalidate();
+                }}
+                setNotice={setNotice}
+              />
+            ),
+          };
+        })}
       />
       <EditableRecordList
         setNotice={setNotice}
-        rows={bootstrap.floors.map((floor) => ({
-          id: floor.id,
-          title: floor.name,
-          meta: floor.active ? "Floor active" : "Floor disabled",
-          active: floor.active,
-          onToggle: () =>
-            hubApi.updateFloor(floor.id, { active: !floor.active }).then(invalidate),
-          onDelete: () => hubApi.deleteFloor(floor.id).then(invalidate),
-          editForm: (close) => (
-            <FloorEditForm
-              floor={floor}
-              onSaved={async () => {
-                close();
-                await invalidate();
-              }}
-              setNotice={setNotice}
-            />
-          ),
-        }))}
+        rows={orderedFloors.map((floor) => {
+          const index = floorIndexById.get(floor.id) ?? -1;
+          return {
+            id: floor.id,
+            title: floor.name,
+            meta: `Position ${index + 1} · ${floor.active ? "Floor active" : "Floor disabled"}`,
+            active: floor.active,
+            onMoveUp: () => moveFloor(floor.id, -1),
+            onMoveDown: () => moveFloor(floor.id, 1),
+            moveUpDisabled: index <= 0,
+            moveDownDisabled: index < 0 || index >= orderedFloors.length - 1,
+            onToggle: () =>
+              hubApi.updateFloor(floor.id, { active: !floor.active }).then(invalidate),
+            onDelete: () => hubApi.deleteFloor(floor.id).then(invalidate),
+            editForm: (close) => (
+              <FloorEditForm
+                floor={floor}
+                onSaved={async () => {
+                  close();
+                  await invalidate();
+                }}
+                setNotice={setNotice}
+              />
+            ),
+          };
+        })}
       />
     </SetupCard>
   );
@@ -180,11 +241,11 @@ export function KitchensCountersCard({
   unitName: string;
   setUnitName: Dispatch<SetStateAction<string>>;
   createUnitPending: boolean;
-  onCreateUnit: () => void;
-  invalidate: SaveCallback;
-  setNotice: NoticeSetter;
-}) {
-  return (
+	  onCreateUnit: () => void;
+	  invalidate: SaveCallback;
+	  setNotice: NoticeSetter;
+	}) {
+	  return (
     <SetupCard
       title="Kitchens And Counters"
       done={bootstrap.productionUnits.some((unit) => unit.active)}
@@ -259,6 +320,7 @@ export function DishesCard({
   onImportDishes,
   invalidate,
   setNotice,
+  requestManagerApproval
 }: {
   bootstrap: Bootstrap;
   rawSetupDishItems: MenuItem[];
@@ -282,8 +344,23 @@ export function DishesCard({
   onImportDishes: (csv: string) => void;
   invalidate: SaveCallback;
   setNotice: NoticeSetter;
+  requestManagerApproval: ManagerApprovalRequest;
 }) {
-  return (
+  const deleteAllDishes = async () => {
+    const approval = await requestManagerApproval({
+      title: "Delete all dishes",
+      message: "Unused dishes will be deleted. Used dishes will be disabled so old bills remain safe.",
+      defaultReason: "Bulk delete dishes",
+      confirmLabel: "Delete dishes",
+      danger: true
+    }).catch(() => null);
+    if (!approval) return;
+    const result = await hubApi.bulkDeleteDishes({ ...approval, approvedBy: "manager" });
+    await invalidate();
+    setNotice({ tone: result.failed ? "bad" : "good", text: `${result.deleted} dishes deleted, ${result.disabled} disabled${result.failed ? `, ${result.failed} failed` : ""}.` });
+  };
+
+	  return (
     <SetupCard
       title="Dishes"
       done={rawSetupDishItems.some((item) => item.active)}
@@ -367,6 +444,9 @@ export function DishesCard({
           onChange={(event) => setDishListSearch(event.target.value)}
           placeholder="Search saved dishes"
         />
+        <button type="button" className="danger-link" disabled={rawSetupDishItems.length === 0} onClick={() => void deleteAllDishes()}>
+          Delete all dishes
+        </button>
       </div>
       <EditableRecordList
         setNotice={setNotice}
@@ -377,7 +457,17 @@ export function DishesCard({
           active: item.active,
           onToggle: () =>
             hubApi.updateDish(item.id, { active: !item.active }).then(invalidate),
-          onDelete: () => hubApi.deleteDish(item.id).then(invalidate),
+          onDelete: async () => {
+            const approval = await requestManagerApproval({
+              title: `Delete ${item.name}`,
+              message: "Unused dishes are deleted. Used dishes are disabled so old bills remain safe.",
+              defaultReason: "Delete dish",
+              confirmLabel: "Delete dish",
+              danger: true
+            });
+            await hubApi.deleteDish(item.id, { ...approval, approvedBy: "manager" });
+            await invalidate();
+          },
           editForm: (close) => (
             <DishEditForm
               item={item}

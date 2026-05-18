@@ -382,6 +382,86 @@ describe("Hub API auth and service flow", () => {
     database.close();
   });
 
+  it("keeps separate PIN-unlocked admin sessions active across devices", async () => {
+    const { app, database } = createTestServer();
+
+    await app.inject({
+      method: "PUT",
+      url: "/settings/manager-pin",
+      payload: { newPin: "4321", updatedBy: "owner" }
+    });
+    const upstairsUnlock = await app.inject({
+      method: "POST",
+      url: "/admin/session/unlock",
+      payload: { pin: "4321" }
+    });
+    const downstairsUnlock = await app.inject({
+      method: "POST",
+      url: "/admin/session/unlock",
+      payload: { pin: "4321" }
+    });
+    const upstairsToken = upstairsUnlock.json<{ token: string }>().token;
+    const downstairsToken = downstairsUnlock.json<{ token: string }>().token;
+
+    expect(upstairsToken).not.toBe(downstairsToken);
+    expect(await app.inject({ method: "GET", url: "/sync/bootstrap", headers: { "x-device-token": upstairsToken } })).toMatchObject({ statusCode: 200 });
+    expect(await app.inject({ method: "GET", url: "/sync/bootstrap", headers: { "x-device-token": downstairsToken } })).toMatchObject({ statusCode: 200 });
+
+    await app.inject({ method: "POST", url: "/admin/session/lock", headers: { "x-device-token": downstairsToken }, payload: {} });
+
+    expect(await app.inject({ method: "GET", url: "/sync/bootstrap", headers: { "x-device-token": downstairsToken } })).toMatchObject({ statusCode: 401 });
+    expect(await app.inject({ method: "GET", url: "/sync/bootstrap", headers: { "x-device-token": upstairsToken } })).toMatchObject({ statusCode: 200 });
+
+    await app.close();
+    database.close();
+  });
+
+  it("requires Manager PIN for bulk dish delete and Master PIN for bulk alcohol delete", async () => {
+    const { app, database } = createTestServer();
+    await setTestManagerPin(app);
+    await app.inject({
+      method: "PUT",
+      url: "/settings/master-pin",
+      headers: { "x-device-token": "test-admin-token" },
+      payload: { newPin: "9876", confirmPin: "9876", updatedBy: "owner" }
+    });
+
+    const dishWithoutPin = await app.inject({
+      method: "POST",
+      url: "/menu-items/bulk-delete",
+      headers: { "x-device-token": "test-admin-token" },
+      payload: {}
+    });
+    const dishWithPin = await app.inject({
+      method: "POST",
+      url: "/menu-items/bulk-delete",
+      headers: { "x-device-token": "test-admin-token" },
+      payload: { managerApproval: { pin: "1234", reason: "Bulk delete dishes", approvedBy: "manager" } }
+    });
+    const alcoholWithManagerPin = await app.inject({
+      method: "POST",
+      url: "/alcohol/items/bulk-delete",
+      headers: { "x-device-token": "test-admin-token" },
+      payload: { managerApproval: { pin: "1234", reason: "Wrong approval", approvedBy: "manager" } }
+    });
+    const alcoholWithMasterPin = await app.inject({
+      method: "POST",
+      url: "/alcohol/items/bulk-delete",
+      headers: { "x-device-token": "test-admin-token" },
+      payload: { masterApproval: { pin: "9876", reason: "Bulk delete alcohol", approvedBy: "owner" } }
+    });
+
+    expect(dishWithoutPin.statusCode).toBe(403);
+    expect(dishWithPin.statusCode).toBe(200);
+    expect(dishWithPin.json()).toMatchObject({ deleted: expect.any(Number), disabled: expect.any(Number), failed: 0, errors: [] });
+    expect(alcoholWithManagerPin.statusCode).toBe(403);
+    expect(alcoholWithMasterPin.statusCode).toBe(200);
+    expect(alcoholWithMasterPin.json()).toMatchObject({ deleted: expect.any(Number), disabled: expect.any(Number), failed: 0, errors: [] });
+
+    await app.close();
+    database.close();
+  });
+
   it("schedules a manager-approved full reset and restart", async () => {
     const root = mkdtempSync(join(tmpdir(), "gaurav-pos-api-reset-"));
     const requestRestart = vi.fn();

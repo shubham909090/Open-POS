@@ -243,6 +243,37 @@ describe("OrderService KOT lifecycle", () => {
     database.close();
   });
 
+  it("keeps a running table from being saved with zero active items", () => {
+    const { database, orderService } = createTestHub();
+    const order = orderService.submitOrder({
+      tableId: "table-t1",
+      captainId: "waiter-1",
+      pax: 1,
+      orderType: "dine_in",
+      printMode: "kot",
+      items: [{ menuItemId: "item-dal-fry", quantity: 1 }]
+    });
+
+    expect(() =>
+      orderService.updateOrderState(order.orderId, {
+        saveMode: "save_print",
+        items: []
+      })
+    ).toThrow("Running table must keep at least one item. Use Cancel order instead.");
+
+    expect(database.db.prepare("SELECT status FROM orders WHERE id = ?").get(order.orderId)).toEqual({ status: "open" });
+    expect(database.db.prepare("SELECT status, current_order_id FROM restaurant_tables WHERE id = 'table-t1'").get()).toEqual({
+      status: "occupied",
+      current_order_id: order.orderId
+    });
+    expect(database.db.prepare("SELECT quantity, status FROM order_items WHERE order_id = ?").get(order.orderId)).toEqual({
+      quantity: 1,
+      status: "active"
+    });
+
+    database.close();
+  });
+
   it("removes the local pending bill instead of saving a zero bill when all billed items are removed", () => {
     const { database, orderService } = createTestHub();
     orderService.setManagerPin({ newPin: "1234", updatedBy: "admin" });
@@ -812,6 +843,55 @@ describe("OrderService KOT lifecycle", () => {
     expect(database.db.prepare("SELECT active FROM restaurant_tables WHERE id = 'table-t1'").get()).toEqual({ active: 0 });
     orderService.updateTable("table-t1", { active: true });
     expect(database.db.prepare("SELECT active FROM restaurant_tables WHERE id = 'table-t1'").get()).toEqual({ active: 1 });
+
+    database.close();
+  });
+
+  it("orders floors and tables by saved sort order", () => {
+    const { database, orderService } = createTestHub();
+    const upstairs = orderService.createFloor({ name: "Upstairs", sortOrder: 10 });
+    const patio = orderService.createFloor({ name: "Patio", sortOrder: 20 });
+    orderService.createTable({ floorId: patio.id, name: "P2", sortOrder: 20 });
+    orderService.createTable({ floorId: patio.id, name: "P1", sortOrder: 10 });
+    orderService.updateFloor("floor-main", { sortOrder: 30 });
+    orderService.updateFloor(patio.id, { sortOrder: 0 });
+    orderService.updateFloor(upstairs.id, { sortOrder: 1 });
+
+    expect((orderService.listFloors() as Array<{ id: string }>).slice(0, 2).map((floor) => floor.id)).toEqual([patio.id, upstairs.id]);
+    expect(
+      (orderService.listTables() as Array<{ floor_id: string; name: string }>)
+        .filter((table) => table.floor_id === patio.id)
+        .map((table) => table.name)
+    ).toEqual(["P1", "P2"]);
+
+    database.close();
+  });
+
+  it("bulk removes dishes using safe delete semantics", () => {
+    const { database, orderService } = createTestHub();
+    orderService.setManagerPin({ newPin: "1234", updatedBy: "admin" });
+    const unusedDish = orderService.createMenuItem({ name: "Bulk Papad", pricePaise: 4000 });
+    const order = orderService.submitOrder({
+      tableId: "table-t1",
+      captainId: "waiter-1",
+      pax: 1,
+      orderType: "dine_in",
+      items: [{ menuItemId: "item-dal-fry", quantity: 1 }]
+    });
+    orderService.cancelOrder(order.orderId, {
+      reason: "Test cleanup",
+      requestedBy: "captain-1",
+      managerApproval: { pin: "1234", reason: "Test cleanup", approvedBy: "manager" }
+    });
+
+    const result = orderService.bulkRemoveMenuItems("dish", {
+      managerApproval: { pin: "1234", reason: "Bulk delete dishes", approvedBy: "manager" }
+    });
+
+    expect(result).toMatchObject({ deleted: 3, disabled: 1, failed: 0, errors: [] });
+    expect(database.db.prepare("SELECT COUNT(*) AS count FROM menu_items WHERE id = ?").get(unusedDish.id)).toEqual({ count: 0 });
+    expect(database.db.prepare("SELECT active FROM menu_items WHERE id = 'item-dal-fry'").get()).toEqual({ active: 0 });
+    expect(database.db.prepare("SELECT COUNT(*) AS count FROM menu_items WHERE sale_group_id = 'sg-alcohol'").get()).toEqual({ count: 0 });
 
     database.close();
   });
@@ -2174,6 +2254,80 @@ describe("OrderService KOT lifecycle", () => {
     database.close();
   });
 
+  it("bulk removes alcohol items only with Master PIN approval", () => {
+    const { database, orderService } = createTestHub();
+    orderService.setMasterPin({ newPin: "9876", confirmPin: "9876", updatedBy: "owner" });
+    const unusedLiquor = orderService.createAlcoholItem({
+      type: "plain_liquor",
+      name: "Bulk Delete Vodka",
+      productionUnitId: "unit-bar",
+      largeBottleMl: 750,
+      smallBottleMl: 180,
+      sealedLargeCount: 0,
+      openLargeMl: 0,
+      sealedSmallCount: 0,
+      variants: [{ label: "30 ml", kind: "shot", pricePaise: 10_000, volumeMl: 30, inventoryAction: "large_ml", sortOrder: 0, active: true }],
+      recipeIngredients: []
+    });
+    const stockedLiquor = orderService.createAlcoholItem({
+      type: "plain_liquor",
+      name: "Bulk Disable Opening Stock Rum",
+      productionUnitId: "unit-bar",
+      largeBottleMl: 750,
+      smallBottleMl: 180,
+      sealedLargeCount: 1,
+      openLargeMl: 120,
+      sealedSmallCount: 0,
+      variants: [{ label: "30 ml", kind: "shot", pricePaise: 10_000, volumeMl: 30, inventoryAction: "large_ml", sortOrder: 0, active: true }],
+      recipeIngredients: []
+    });
+    const usedLiquor = orderService.createAlcoholItem({
+      type: "plain_liquor",
+      name: "Bulk Disable Gin",
+      productionUnitId: "unit-bar",
+      largeBottleMl: 750,
+      smallBottleMl: 180,
+      sealedLargeCount: 0,
+      openLargeMl: 0,
+      sealedSmallCount: 0,
+      variants: [{ label: "30 ml", kind: "shot", pricePaise: 10_000, volumeMl: 30, inventoryAction: "large_ml", sortOrder: 0, active: true }],
+      recipeIngredients: []
+    });
+    orderService.createAlcoholItem({
+      type: "prepared_product",
+      name: "Bulk Gin Sour",
+      productionUnitId: "unit-bar",
+      largeBottleMl: 750,
+      smallBottleMl: 180,
+      sealedLargeCount: 0,
+      openLargeMl: 0,
+      sealedSmallCount: 0,
+      variants: [{ label: "Regular", kind: "default", pricePaise: 40_000, inventoryAction: "none", sortOrder: 0, active: true }],
+      recipeIngredients: [{ liquorMenuItemId: usedLiquor.id, mlPerUnit: 30 }]
+    });
+
+    expect(() =>
+      orderService.bulkRemoveMenuItems("alcohol", {
+        managerApproval: { pin: "1234", reason: "Wrong approval", approvedBy: "manager" }
+      })
+    ).toThrow("Master PIN is required for this action");
+
+    const result = orderService.bulkRemoveMenuItems("alcohol", {
+      masterApproval: { pin: "9876", reason: "Bulk delete alcohol", approvedBy: "owner" }
+    });
+
+    expect(result).toMatchObject({ deleted: 2, disabled: 2, failed: 0, errors: [] });
+    expect(database.db.prepare("SELECT COUNT(*) AS count FROM menu_items WHERE id = ?").get(unusedLiquor.id)).toEqual({ count: 0 });
+    expect(database.db.prepare("SELECT active FROM menu_items WHERE id = ?").get(usedLiquor.id)).toEqual({ active: 0 });
+    expect(database.db.prepare("SELECT active FROM menu_items WHERE id = ?").get(stockedLiquor.id)).toEqual({ active: 0 });
+    expect(database.db.prepare("SELECT sealed_large_count, open_large_ml FROM alcohol_stock_levels WHERE menu_item_id = ?").get(stockedLiquor.id)).toEqual({
+      sealed_large_count: 1,
+      open_large_ml: 120
+    });
+
+    database.close();
+  });
+
   it("preserves an alcohol variant when revising a printed bill", () => {
     const { database, orderService } = createTestHub();
     orderService.setManagerPin({ newPin: "1234", updatedBy: "admin" });
@@ -2301,6 +2455,7 @@ describe("OrderService KOT lifecycle", () => {
       orderType: "dine_in",
       items: [{ menuItemId: "item-dal-fry", quantity: 1 }]
     });
+    database.db.prepare("UPDATE restaurant_tables SET occupied_at = ? WHERE id = 'table-t1'").run("2026-05-18T10:00:00.000Z");
 
     const movement = orderService.moveTable(
       { fromTableId: "table-t1", toTableId: "table-t2", reason: "Guest moved outside" },
@@ -2313,8 +2468,9 @@ describe("OrderService KOT lifecycle", () => {
       status: "free",
       current_order_id: null
     });
-    expect(database.db.prepare("SELECT current_order_id FROM restaurant_tables WHERE id = 'table-t2'").get()).toEqual({
-      current_order_id: order.orderId
+    expect(database.db.prepare("SELECT current_order_id, occupied_at FROM restaurant_tables WHERE id = 'table-t2'").get()).toEqual({
+      current_order_id: order.orderId,
+      occupied_at: "2026-05-18T10:00:00.000Z"
     });
 
     database.close();
@@ -2407,17 +2563,19 @@ describe("OrderService KOT lifecycle", () => {
       items: [{ menuItemId: "item-dal-fry", quantity: 2 }]
     });
     const item = database.db.prepare("SELECT id FROM order_items WHERE order_id = ?").get(order.orderId) as { id: string };
+    database.db.prepare("UPDATE restaurant_tables SET occupied_at = ? WHERE id = 'table-t1'").run("2026-05-18T10:15:00.000Z");
 
     const movement = orderService.moveOrderItems(
-      { fromTableId: "table-t1", toTableId: "table-t2", reason: "Split table", items: [{ orderItemId: item.id, quantity: 1 }] },
+      { fromTableId: "table-t1", toTableId: "table-t2", reason: "Split table", items: [{ orderItemId: item.id, quantity: 2 }] },
       { id: "device-local-admin", name: "Local Admin", role: "admin" }
     );
 
     expect(movement.sourceKotIds).toHaveLength(1);
     expect(movement.targetKotIds).toHaveLength(1);
     expect(movement.printJobIds).toHaveLength(2);
-    expect(database.db.prepare("SELECT status, current_order_id FROM restaurant_tables WHERE id = 'table-t2'").get()).toMatchObject({
-      status: "occupied"
+    expect(database.db.prepare("SELECT status, current_order_id, occupied_at FROM restaurant_tables WHERE id = 'table-t2'").get()).toMatchObject({
+      status: "occupied",
+      occupied_at: "2026-05-18T10:15:00.000Z"
     });
     expect(
       database.db

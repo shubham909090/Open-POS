@@ -440,6 +440,84 @@
     grid-template-columns: minmax(240px, 360px) minmax(0, 1fr);
   }
 
+  .app-update-panel {
+    @apply grid gap-4;
+  }
+
+  .update-status-grid {
+    @apply grid gap-3;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  }
+
+  .update-status-card {
+    @apply grid min-w-0 gap-2 rounded-lg border border-line bg-white p-3;
+  }
+
+  .update-status-card > div {
+    @apply grid min-w-0 gap-1;
+  }
+
+  .update-status-card strong {
+    @apply min-w-0 text-base font-black leading-5 text-ink;
+  }
+
+  .update-status-card span:not(.record-status) {
+    @apply min-w-0 text-sm font-semibold leading-5 text-muted;
+  }
+
+  .update-status-card.ready {
+    @apply border-accent bg-accent-soft;
+  }
+
+  .update-status-card.warning {
+    @apply border-warning bg-warning-soft;
+  }
+
+  .update-package-card {
+    @apply grid gap-3 rounded-lg border border-line bg-white p-3;
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .update-package-card label {
+    @apply grid min-w-0 gap-1 text-sm font-bold text-muted;
+  }
+
+  .update-package-card label span {
+    @apply text-xs font-black uppercase tracking-normal text-muted;
+  }
+
+  .update-picker-actions,
+  .update-action-row {
+    @apply flex flex-wrap items-end gap-2;
+  }
+
+  .update-picker-actions {
+    @apply justify-end;
+  }
+
+  .update-action-groups {
+    @apply grid gap-3;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .update-action-card {
+    @apply grid min-w-0 gap-3 rounded-lg border border-line bg-white p-3;
+  }
+
+  .update-action-card.danger {
+    @apply border-danger bg-danger-soft;
+  }
+
+  .update-action-card > strong {
+    @apply text-sm font-black uppercase tracking-normal text-ink;
+  }
+
+  .update-action-row .utility-action,
+  .update-action-row .primary-button,
+  .update-action-row .danger-button {
+    @apply min-h-11 min-w-0 flex-1 px-3;
+  }
+
   .table-list {
     grid-auto-rows: minmax(120px, auto);
   }
@@ -500,13 +578,19 @@
 
   .table-tile.occupied,
   .table-tile.running {
-    @apply border-warning border-l-warning bg-warning-soft;
+    border-color: #d97706;
+    border-left-color: #b45309;
+    background: #fcd34d;
+    color: #1f1300;
   }
 
   .table-tile.billed,
   .table-tile.bill_printed,
   .table-tile.bill-printed {
-    @apply border-blue border-l-blue bg-blue-soft;
+    border-color: #16a34a;
+    border-left-color: #15803d;
+    background: #86efac;
+    color: #052e16;
   }
 
   .table-tile.needs_attention,
@@ -518,12 +602,16 @@
     @apply grid min-h-20 w-full content-between gap-2 rounded-none bg-transparent p-3 text-left text-ink hover:bg-black/[0.03];
   }
 
+  .table-tile-topline {
+    @apply flex min-w-0 items-start justify-between gap-2;
+  }
+
   .table-tile-heading {
-    @apply grid gap-0.5;
+    @apply grid min-w-0 gap-0.5;
   }
 
   .table-tile-heading strong {
-    @apply text-xl font-black leading-none;
+    @apply truncate text-xl font-black leading-none;
   }
 
   .table-tile-heading span,
@@ -532,12 +620,62 @@
     @apply text-xs font-bold uppercase text-muted;
   }
 
+  .table-tile.running .table-tile-heading span,
+  .table-tile.occupied .table-tile-heading span,
+  .table-tile.running .table-tile-total,
+  .table-tile.occupied .table-tile-total {
+    color: #5f3700;
+  }
+
+  .table-tile.bill-printed .table-tile-heading span,
+  .table-tile.bill_printed .table-tile-heading span,
+  .table-tile.billed .table-tile-heading span,
+  .table-tile.bill-printed .table-tile-total,
+  .table-tile.bill_printed .table-tile-total,
+  .table-tile.billed .table-tile-total {
+    color: #14532d;
+  }
+
   .table-tile-total {
-    @apply text-right text-sm text-ink;
+    @apply justify-self-end text-right text-sm text-ink;
+  }
+
+  .table-tile-duration {
+    @apply inline-flex h-7 shrink-0 items-center gap-1 rounded-full border border-black/15 bg-white/70 px-2 text-xs font-black leading-none text-ink shadow-sm;
+  }
+
+  .table-tile-duration svg {
+    @apply shrink-0;
+  }
+
+  .table-tile.running .table-tile-duration,
+  .table-tile.occupied .table-tile-duration {
+    border-color: #b45309;
+    background: #fffbeb;
+    color: #5f3700;
+  }
+
+  .table-tile.bill-printed .table-tile-duration,
+  .table-tile.bill_printed .table-tile-duration,
+  .table-tile.billed .table-tile-duration {
+    border-color: #15803d;
+    background: #f0fdf4;
+    color: #14532d;
   }
 
   .table-tile-actions {
     @apply grid grid-cols-2 border-t border-line;
+  }
+
+  .table-tile.running .table-tile-actions,
+  .table-tile.occupied .table-tile-actions {
+    border-top-color: #d97706;
+  }
+
+  .table-tile.bill-printed .table-tile-actions,
+  .table-tile.bill_printed .table-tile-actions,
+  .table-tile.billed .table-tile-actions {
+    border-top-color: #16a34a;
   }
 
   .table-tile-shortcut {
@@ -565,11 +703,11 @@
   }
 
   .state-dot.running::before {
-    @apply bg-warning;
+    background: #d97706;
   }
 
   .state-dot.billed::before {
-    @apply bg-blue;
+    background: #16a34a;
   }
 
   .ticket-workspace {
@@ -857,6 +995,14 @@
 
   .order-modal-header span {
     @apply text-xs font-bold uppercase text-muted;
+  }
+
+  .order-modal-kicker {
+    @apply flex min-w-0 flex-wrap items-center gap-2;
+  }
+
+  .order-modal-header .order-modal-duration {
+    @apply inline-flex min-h-6 items-center gap-1 rounded-full border border-line bg-white px-2 text-xs font-black normal-case text-ink;
   }
 
   .order-modal-header h2 {

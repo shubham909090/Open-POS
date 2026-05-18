@@ -1,46 +1,49 @@
 import {
+  type AdjustAlcoholStockInput,
+  type BillPrinterSlot,
+  type BulkDeleteAlcoholItemsInput,
+  type BulkDeleteMenuItemsInput,
   calculateLineTotal,
   calculateTaxComponents,
-  type TaxComponentAmount,
-  type AdjustAlcoholStockInput,
   type CancelOrderInput,
   type CancelOrderItemsInput,
   type CreateAlcoholItemInput,
-  type CreateSaleGroupInput,
   type CreateFloorInput,
   type CreateMenuItemInput,
   type CreateProductionUnitInput,
+  type CreateSaleGroupInput,
   type CreateTableInput,
   type DomainEvent,
-  type BillPrinterSlot,
+  type HistoryEditBillInput,
+  type HubConnectionSettingsInput,
+  type KotType,
   type ManagerApprovalInput,
   type ManagerPinInput,
-  type MasterApprovalInput,
-  type SetMasterPinInput,
-  type HistoryEditBillInput,
   type MarkNcBillInput,
-  type HubConnectionSettingsInput,
+  type MasterApprovalInput,
+  type MenuItemDeleteApprovalInput,
   type MoveOrderItemsInput,
   type MoveTableInput,
-  type KotType,
+  type PrintLayoutSettingsInput,
   type PrinterOutputMode,
   type ReprintBillInput,
   type ReprintKotInput,
   type ReviseBillInput,
   type RetryPrintJobInput,
+  type SetMasterPinInput,
   type SettleBillInput,
   type SubmitOrderInput,
-  type UpdateOrderStateInput,
+  type TaxComponentAmount,
   type TicketTemplateInput,
-  type PrintLayoutSettingsInput,
   type UpdateAlcoholItemInput,
-  type UpdateSaleGroupInput,
   type UpdateFloorInput,
   type UpdateKotStatusInput,
   type UpdateMenuItemInput,
+  type UpdateOrderStateInput,
   type UpdateProductionUnitInput,
-  type UpdateReceiptPrinterInput,
   type UpdateBillPrintersInput,
+  type UpdateReceiptPrinterInput,
+  type UpdateSaleGroupInput,
   type UpdateTableInput,
   type UserRole
 } from "@gaurav-pos/shared";
@@ -113,6 +116,7 @@ interface TableRow {
   name: string;
   status: string;
   current_order_id: string | null;
+  occupied_at?: string | null;
 }
 
 interface MenuItemRow {
@@ -373,6 +377,15 @@ interface TicketCreationResult {
   kotIds: string[];
   printJobIds: string[];
 }
+
+type BulkMenuDeleteKind = "dish" | "alcohol";
+type BulkMenuDeleteInput = Partial<BulkDeleteMenuItemsInput & BulkDeleteAlcoholItemsInput> | MenuItemDeleteApprovalInput;
+type BulkMenuDeleteResult = {
+  deleted: number;
+  disabled: number;
+  failed: number;
+  errors: Array<{ id: string; name?: string; message: string }>;
+};
 
 export class OrderService {
   constructor(private readonly orm: HubOrm) {}
@@ -970,9 +983,12 @@ export class OrderService {
         ...normalizedItems.map((item) => item.menuItemId).filter((id): id is string => Boolean(id)),
         ...previousItems.map((item) => item.menu_item_id).filter((id): id is string => Boolean(id))
       ]);
-      const changes = this.applyOrderItemDiff(orderId, normalizedItems, previousItems, menuById, now, true);
-      const activeItems = this.getOrderItems(orderId).filter((item) => item.quantity > 0 && item.status !== "cancelled");
-      const totals = this.calculateBillTotals(activeItems);
+	      const changes = this.applyOrderItemDiff(orderId, normalizedItems, previousItems, menuById, now, true);
+	      const activeItems = this.getOrderItems(orderId).filter((item) => item.quantity > 0 && item.status !== "cancelled");
+	      if (order.status !== "billed" && activeItems.length === 0) {
+	        throw new DomainError("Running table must keep at least one item. Use Cancel order instead.");
+	      }
+	      const totals = this.calculateBillTotals(activeItems);
       const shouldPrint = input.saveMode === "save_print";
       const tickets = shouldPrint
         ? this.createKotsForChanges(order, table, changes, now, false, false, order.status === "billed" ? input.managerApproval?.reason : undefined, undefined, undefined, true)
@@ -1127,10 +1143,10 @@ export class OrderService {
   listTables(): unknown[] {
     const rows = this.db
       .prepare(
-        `SELECT t.id, t.floor_id, f.name AS floor_name, t.name, t.active, t.status, t.current_order_id, t.occupied_at
+        `SELECT t.id, t.floor_id, f.name AS floor_name, t.name, t.active, t.sort_order, t.status, t.current_order_id, t.occupied_at
          FROM restaurant_tables t
          JOIN floors f ON f.id = t.floor_id
-         ORDER BY t.active DESC, f.name, t.name`
+         ORDER BY f.sort_order ASC, f.name ASC, t.sort_order ASC, t.name ASC`
       )
       .all() as Array<Record<string, unknown> & { current_order_id: string | null }>;
     const summaries = this.getCurrentOrderSummaries(rows.map((row) => row.current_order_id).filter((id): id is string => Boolean(id)));
@@ -1139,7 +1155,8 @@ export class OrderService {
       return {
         ...row,
         current_order_total_paise: summary?.totalPaise ?? 0,
-        sent_item_count: summary?.itemCount ?? 0
+        sent_item_count: summary?.itemCount ?? 0,
+        timer_ended_at: summary?.timerEndedAt ?? null
       };
     });
   }
@@ -1185,14 +1202,15 @@ export class OrderService {
   }
 
   listFloors(): unknown[] {
-    return this.db.prepare("SELECT id, name, active FROM floors ORDER BY active DESC, name").all();
+    return this.db.prepare("SELECT id, name, active, sort_order FROM floors ORDER BY sort_order ASC, name ASC").all();
   }
 
   createFloor(input: CreateFloorInput): { id: string } {
     const id = this.createEntityId("floor", input.customId, (candidate) =>
       Boolean(this.orm.select({ id: floors.id }).from(floors).where(eq(floors.id, candidate)).get())
     );
-    this.orm.insert(floors).values({ id, name: input.name, active: input.active ?? true }).run();
+    const sortOrder = input.sortOrder ?? this.nextFloorSortOrder();
+    this.orm.insert(floors).values({ id, name: input.name, active: input.active ?? true, sortOrder }).run();
     this.appendEvent("floor.created", "floor", id, { ...input, id });
     return { id };
   }
@@ -1200,7 +1218,11 @@ export class OrderService {
   updateFloor(id: string, input: UpdateFloorInput): { id: string } {
     const result = this.orm
       .update(floors)
-      .set({ ...(input.name !== undefined ? { name: input.name } : {}), ...(input.active !== undefined ? { active: input.active } : {}) })
+      .set({
+        ...(input.name !== undefined ? { name: input.name } : {}),
+        ...(input.active !== undefined ? { active: input.active } : {}),
+        ...(input.sortOrder !== undefined ? { sortOrder: input.sortOrder } : {})
+      })
       .where(eq(floors.id, id))
       .run();
     if (result.changes === 0) throw new DomainError("Floor not found", 404);
@@ -1225,6 +1247,7 @@ export class OrderService {
     const id = this.createEntityId("table", input.customId, (candidate) =>
       Boolean(this.orm.select({ id: restaurantTables.id }).from(restaurantTables).where(eq(restaurantTables.id, candidate)).get())
     );
+    const sortOrder = input.sortOrder ?? this.nextTableSortOrder(input.floorId);
     this.orm
       .insert(restaurantTables)
       .values({
@@ -1232,6 +1255,7 @@ export class OrderService {
         floorId: input.floorId,
         name: input.name,
         active: input.active ?? true,
+        sortOrder,
         status: "free",
         currentOrderId: null,
         occupiedAt: null
@@ -1243,12 +1267,17 @@ export class OrderService {
 
   updateTable(id: string, input: UpdateTableInput): { id: string } {
     if (input.floorId) this.requireFloor(input.floorId);
+    const currentTable = input.floorId && input.sortOrder === undefined
+      ? this.orm.select({ floorId: restaurantTables.floorId }).from(restaurantTables).where(eq(restaurantTables.id, id)).get()
+      : undefined;
+    const sortOrder = input.sortOrder ?? (input.floorId && currentTable?.floorId !== input.floorId ? this.nextTableSortOrder(input.floorId) : undefined);
     const result = this.orm
       .update(restaurantTables)
       .set({
         ...(input.floorId !== undefined ? { floorId: input.floorId } : {}),
         ...(input.name !== undefined ? { name: input.name } : {}),
-        ...(input.active !== undefined ? { active: input.active } : {})
+        ...(input.active !== undefined ? { active: input.active } : {}),
+        ...(sortOrder !== undefined ? { sortOrder } : {})
       })
       .where(eq(restaurantTables.id, id))
       .run();
@@ -1498,9 +1527,17 @@ export class OrderService {
   removeMenuItem(id: string): { id: string; deleted: boolean; active: boolean } {
     const usage = this.orm.select({ count: count() }).from(orderItems).where(eq(orderItems.menuItemId, id)).get()?.count ?? 0;
     const stockMovementUsage = this.orm.select({ count: count() }).from(alcoholStockMovements).where(eq(alcoholStockMovements.menuItemId, id)).get()?.count ?? 0;
+    const stockLevelUsage = this.db
+      .prepare(
+        `SELECT COUNT(*) AS count
+         FROM alcohol_stock_levels
+         WHERE menu_item_id = ?
+           AND (sealed_large_count != 0 OR open_large_ml != 0 OR sealed_small_count != 0)`
+      )
+      .get(id) as { count?: number } | undefined;
     const recipeUsage = this.orm.select({ count: count() }).from(alcoholRecipeIngredients).where(eq(alcoholRecipeIngredients.liquorMenuItemId, id)).get()?.count ?? 0;
     const recipeSnapshotUsage = this.countAlcoholRecipeSnapshotUsage(id);
-    if (usage > 0 || stockMovementUsage > 0 || recipeUsage > 0 || recipeSnapshotUsage > 0) {
+    if (usage > 0 || stockMovementUsage > 0 || (stockLevelUsage?.count ?? 0) > 0 || recipeUsage > 0 || recipeSnapshotUsage > 0) {
       this.setMenuItemActive(id, false);
       return { id, deleted: false, active: false };
     }
@@ -1513,6 +1550,54 @@ export class OrderService {
     if (result.changes === 0) throw new DomainError("Dish not found", 404);
     this.appendEvent("menu_item.deleted", "menu_item", id, { id });
     return { id, deleted: true, active: false };
+  }
+
+  removeMenuItemWithApproval(id: string, input: BulkMenuDeleteInput): { id: string; deleted: boolean; active: boolean } {
+    if (this.isAlcoholMenuItem(id)) {
+      this.verifyMasterApproval(input.masterApproval, "menu_item.delete_alcohol", "menu_item", id, input.masterApproval?.approvedBy ?? "owner");
+    } else {
+      this.verifyManagerApproval(input.managerApproval, "menu_item.delete_dish", "menu_item", id, input.managerApproval?.approvedBy ?? "manager");
+    }
+    return this.removeMenuItem(id);
+  }
+
+  bulkRemoveMenuItems(kind: BulkMenuDeleteKind, input: BulkMenuDeleteInput): BulkMenuDeleteResult {
+    if (kind === "alcohol") {
+      this.verifyMasterApproval(input.masterApproval, "menu_item.bulk_delete_alcohol", "menu_item", "alcohol", input.masterApproval?.approvedBy ?? "owner");
+    } else {
+      this.verifyManagerApproval(input.managerApproval, "menu_item.bulk_delete_dishes", "menu_item", "dish", input.managerApproval?.approvedBy ?? "manager");
+    }
+    const rows = this.db
+      .prepare(
+        kind === "alcohol"
+          ? `SELECT mi.id, mi.name
+             FROM menu_items mi
+             JOIN alcohol_profiles ap ON ap.menu_item_id = mi.id
+             ORDER BY mi.name`
+          : `SELECT mi.id, mi.name
+             FROM menu_items mi
+             JOIN sale_groups sg ON sg.id = mi.sale_group_id
+             WHERE sg.kind != 'alcohol'
+             ORDER BY mi.name`
+      )
+      .all() as Array<{ id: string; name: string }>;
+    const result: BulkMenuDeleteResult = { deleted: 0, disabled: 0, failed: 0, errors: [] };
+    for (const row of rows) {
+      try {
+        const removed = this.removeMenuItem(row.id);
+        if (removed.deleted) result.deleted += 1;
+        else result.disabled += 1;
+      } catch (error) {
+        result.failed += 1;
+        result.errors.push({ id: row.id, name: row.name, message: error instanceof Error ? error.message : "Could not remove item" });
+      }
+    }
+    this.appendEvent(kind === "alcohol" ? "menu_items.alcohol_bulk_removed" : "menu_items.dish_bulk_removed", "menu_item", kind, result);
+    return result;
+  }
+
+  private isAlcoholMenuItem(id: string): boolean {
+    return Boolean(this.orm.select({ menuItemId: alcoholProfiles.menuItemId }).from(alcoholProfiles).where(eq(alcoholProfiles.menuItemId, id)).get());
   }
 
   listAlcoholCatalog(): unknown {
@@ -2432,11 +2517,11 @@ export class OrderService {
       const now = new Date().toISOString();
       this.orm.update(orders).set({ tableId: toTable.id, updatedAt: now }).where(eq(orders.id, order.id)).run();
       this.freeTable(fromTable.id);
-      this.orm
-        .update(restaurantTables)
-        .set({ status: order.status === "billed" ? "billed" : "occupied", currentOrderId: order.id, occupiedAt: now })
-        .where(eq(restaurantTables.id, toTable.id))
-        .run();
+	      this.orm
+	        .update(restaurantTables)
+	        .set({ status: order.status === "billed" ? "billed" : "occupied", currentOrderId: order.id, occupiedAt: fromTable.occupied_at ?? now })
+	        .where(eq(restaurantTables.id, toTable.id))
+	        .run();
       const tickets = this.createKotsForChanges(
         order,
         { ...toTable, current_order_id: order.id, status: order.status === "billed" ? "billed" : "occupied" },
@@ -2551,15 +2636,20 @@ export class OrderService {
         movementPayload.push({ orderItemId: source.id, quantity: moveItem.quantity, name: source.name_snapshot });
       }
 
-      if (this.getOrderItems(fromOrder.id).every((item) => item.quantity === 0)) {
-        this.orm.update(orders).set({ status: "cancelled", updatedAt: now }).where(eq(orders.id, fromOrder.id)).run();
-        this.freeTable(fromTable.id);
-      }
-      this.orm
-        .update(restaurantTables)
-        .set({ status: "occupied", currentOrderId: toOrder.id, occupiedAt: sql`COALESCE(${restaurantTables.occupiedAt}, ${now})` })
-        .where(eq(restaurantTables.id, toTable.id))
-        .run();
+	      const sourceWillBeEmpty = this.getOrderItems(fromOrder.id).every((item) => item.quantity === 0);
+	      if (sourceWillBeEmpty) {
+	        this.orm.update(orders).set({ status: "cancelled", updatedAt: now }).where(eq(orders.id, fromOrder.id)).run();
+	        this.freeTable(fromTable.id);
+	      }
+	      this.orm
+	        .update(restaurantTables)
+	        .set({
+	          status: "occupied",
+	          currentOrderId: toOrder.id,
+	          occupiedAt: targetHadRunningOrder ? sql`COALESCE(${restaurantTables.occupiedAt}, ${now})` : sourceWillBeEmpty ? (fromTable.occupied_at ?? now) : now
+	        })
+	        .where(eq(restaurantTables.id, toTable.id))
+	        .run();
       const sourceTickets = this.createKotsForChanges(
         fromOrder,
         fromTable,
@@ -3115,7 +3205,7 @@ export class OrderService {
     };
   }
 
-  private getCurrentOrderSummaries(orderIds: string[]): Map<string, { totalPaise: number; itemCount: number }> {
+  private getCurrentOrderSummaries(orderIds: string[]): Map<string, { totalPaise: number; itemCount: number; timerEndedAt: string | null }> {
     const uniqueOrderIds = [...new Set(orderIds)];
     if (uniqueOrderIds.length === 0) return new Map();
     const placeholders = uniqueOrderIds.map(() => "?").join(",");
@@ -3128,13 +3218,25 @@ export class OrderService {
            AND quantity > 0`
       )
       .all(...uniqueOrderIds) as Array<{ order_id: string; unit_price_paise: number; quantity: number; tax_components_json: string }>;
-    const summaries = new Map<string, { totalPaise: number; itemCount: number }>();
+    const billedRows = this.db
+      .prepare(
+        `SELECT order_id, MAX(created_at) AS timer_ended_at
+         FROM bills
+         WHERE order_id IN (${placeholders})
+         GROUP BY order_id`
+      )
+      .all(...uniqueOrderIds) as Array<{ order_id: string; timer_ended_at: string | null }>;
+    const billedAtByOrder = new Map(billedRows.map((row) => [row.order_id, row.timer_ended_at]));
+    const summaries = new Map<string, { totalPaise: number; itemCount: number; timerEndedAt: string | null }>();
     for (const item of rows) {
       const lineSubtotal = calculateLineTotal(item.unit_price_paise, item.quantity);
-      const current = summaries.get(item.order_id) ?? { totalPaise: 0, itemCount: 0 };
+      const current = summaries.get(item.order_id) ?? { totalPaise: 0, itemCount: 0, timerEndedAt: billedAtByOrder.get(item.order_id) ?? null };
       current.totalPaise += lineSubtotal;
       current.itemCount += item.quantity;
       summaries.set(item.order_id, current);
+    }
+    for (const orderId of uniqueOrderIds) {
+      if (!summaries.has(orderId)) summaries.set(orderId, { totalPaise: 0, itemCount: 0, timerEndedAt: billedAtByOrder.get(orderId) ?? null });
     }
     return summaries;
   }
@@ -4423,7 +4525,8 @@ export class OrderService {
         id: restaurantTables.id,
         name: restaurantTables.name,
         status: restaurantTables.status,
-        current_order_id: restaurantTables.currentOrderId
+        current_order_id: restaurantTables.currentOrderId,
+        occupied_at: restaurantTables.occupiedAt
       })
       .from(restaurantTables)
       .where(eq(restaurantTables.id, tableId))
@@ -4435,6 +4538,18 @@ export class OrderService {
   private requireFloor(floorId: string): void {
     const floor = this.orm.select({ id: floors.id }).from(floors).where(eq(floors.id, floorId)).get();
     if (!floor) throw new DomainError("Floor not found", 404);
+  }
+
+  private nextFloorSortOrder(): number {
+    const row = this.db.prepare("SELECT COALESCE(MAX(sort_order), -1) + 1 AS next FROM floors").get() as { next?: number } | undefined;
+    return Number(row?.next ?? 0);
+  }
+
+  private nextTableSortOrder(floorId: string): number {
+    const row = this.db
+      .prepare("SELECT COALESCE(MAX(sort_order), -1) + 1 AS next FROM restaurant_tables WHERE floor_id = ?")
+      .get(floorId) as { next?: number } | undefined;
+    return Number(row?.next ?? 0);
   }
 
   private requireProductionUnit(productionUnitId: string): void {

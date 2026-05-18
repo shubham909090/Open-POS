@@ -105,6 +105,12 @@ export function TableWorkspace({
   const draftTotal = draft.reduce((total, item) => total + item.pricePaise * item.quantity, 0);
   const sentTotal = sentItems.reduce((total, item) => total + item.unit_price_paise * item.quantity, 0);
   const editableTotal = orderStateItems.reduce((total, item) => total + item.pricePaise * item.quantity, 0);
+  const activeOrderStateItemCount = orderStateItems.filter((item) => item.quantity > 0).length;
+  const orderStateGuardMessage =
+    data?.order && data.order.status !== "billed" && activeOrderStateItemCount === 0
+      ? "Running table must keep at least one item. Use Cancel order instead."
+      : null;
+  const canSaveOrderState = !orderStateGuardMessage;
   const orderStateMatches = searchMenuItems(bootstrap.menuItems, orderStateSearch, {}).slice(0, 8);
   const draftMatches = searchMenuItems(bootstrap.menuItems, draftSearch, {}).slice(0, 8);
   const draftMatchIds = draftMatches.map((item) => item.id).join("|");
@@ -312,8 +318,11 @@ export function TableWorkspace({
   const saveOrderState = useMutation({
     mutationFn: async (input: { saveMode: SaveMode; approval?: ManagerApproval }) => {
       const order = data?.order;
-      if (!order) throw new Error("No active order to update.");
-      if (input.saveMode === "save" && order.status !== "billed") {
+	      if (!order) throw new Error("No active order to update.");
+	      if (order.status !== "billed" && orderStateItems.every((item) => item.quantity <= 0)) {
+	        throw new Error("Running table must keep at least one item. Use Cancel order instead.");
+	      }
+	      if (input.saveMode === "save" && order.status !== "billed") {
         const ok = window.confirm("Save these table changes without printing a modification KOT/BOT?");
         if (!ok) throw new Error("Table changes were not saved.");
       }
@@ -345,8 +354,12 @@ export function TableWorkspace({
   });
 
   async function requestOrderStateSave(saveMode: SaveMode) {
-    const order = data?.order;
-    if (!order || saveOrderState.isPending || !hasOrderStateChanges) return;
+	    const order = data?.order;
+	    if (!order || saveOrderState.isPending || !hasOrderStateChanges) return;
+	    if (!canSaveOrderState) {
+	      setNotice({ tone: "bad", text: "Running table must keep at least one item. Use Cancel order instead." });
+	      return;
+	    }
     if (order.status === "billed") {
       const approval = await requestManagerApproval({
         title: "Approve billed table edit",
@@ -539,8 +552,10 @@ export function TableWorkspace({
           setOrderStateSearch={setOrderStateSearch}
           orderStateMatches={orderStateMatches}
           editableTotal={editableTotal}
-          hasOrderStateChanges={hasOrderStateChanges}
-          saveOrderStatePending={saveOrderState.isPending}
+	          hasOrderStateChanges={hasOrderStateChanges}
+	          canSaveOrderState={canSaveOrderState}
+	          orderStateGuardMessage={orderStateGuardMessage}
+	          saveOrderStatePending={saveOrderState.isPending}
           requestOrderStateSave={(saveMode) => void requestOrderStateSave(saveMode)}
           addStateMenuItem={addStateMenuItem}
           changeStateQty={changeStateQty}

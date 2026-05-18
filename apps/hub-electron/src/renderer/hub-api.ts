@@ -82,6 +82,7 @@ export interface Floor {
   id: string;
   name: string;
   active: boolean;
+  sort_order?: number;
 }
 
 export interface Table {
@@ -90,9 +91,11 @@ export interface Table {
   floor_name: string;
   name: string;
   active: boolean;
+  sort_order?: number;
   status: "free" | "occupied" | "billed" | string;
   current_order_id: string | null;
   occupied_at: string | null;
+  timer_ended_at?: string | null;
   current_order_total_paise: number;
   sent_item_count: number;
 }
@@ -474,6 +477,13 @@ export interface CsvImportResult {
   errors: Array<{ row: number; message: string }>;
 }
 
+export interface BulkDeleteResult {
+  deleted: number;
+  disabled: number;
+  failed: number;
+  errors: Array<{ id: string; name?: string; message: string }>;
+}
+
 let authToken = localStorage.getItem("deviceToken") || "dev-admin-token";
 
 declare global {
@@ -557,12 +567,12 @@ export const hubApi = {
   revokeDevice: (id: string) =>
     apiFetch<{ id: string }>(`/devices/${id}/revoke`, { method: "POST", body: JSON.stringify({ reason: "Revoked from hub setup" }) }),
   createFloor: (name: string) => apiFetch<{ id: string }>("/floors", { method: "POST", body: JSON.stringify({ name }) }),
-  updateFloor: (id: string, payload: { name?: string; active?: boolean }) =>
+  updateFloor: (id: string, payload: { name?: string; active?: boolean; sortOrder?: number }) =>
     apiFetch<{ id: string }>(`/floors/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
   deleteFloor: (id: string) => apiFetch<{ id: string; deleted: boolean }>(`/floors/${id}`, { method: "DELETE" }),
   createTable: (floorId: string, name: string) =>
     apiFetch<{ id: string }>("/tables", { method: "POST", body: JSON.stringify({ floorId, name, active: true }) }),
-  updateTable: (id: string, payload: { name?: string; active?: boolean; floorId?: string }) =>
+  updateTable: (id: string, payload: { name?: string; active?: boolean; floorId?: string; sortOrder?: number }) =>
     apiFetch<{ id: string }>(`/tables/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
   deleteTable: (id: string) => apiFetch<{ id: string; deleted: boolean }>(`/tables/${id}`, { method: "DELETE" }),
   createUnit: (name: string) =>
@@ -590,7 +600,10 @@ export const hubApi = {
     apiFetch<CsvImportResult>("/menu-items/import-csv", { method: "POST", body: JSON.stringify({ csv }) }),
   updateDish: (id: string, payload: { name?: string; pricePaise?: number; productionUnitId?: string | null; saleGroupId?: string; active?: boolean }) =>
     apiFetch<{ id: string }>(`/menu-items/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
-  deleteDish: (id: string) => apiFetch<{ id: string; deleted: boolean }>(`/menu-items/${id}`, { method: "DELETE" }),
+  deleteDish: (id: string, managerApproval: ManagerApprovalPayload["managerApproval"]) =>
+    apiFetch<{ id: string; deleted: boolean }>(`/menu-items/${id}`, { method: "DELETE", body: JSON.stringify({ managerApproval }) }),
+  bulkDeleteDishes: (managerApproval: ManagerApprovalPayload["managerApproval"]) =>
+    apiFetch<BulkDeleteResult>("/menu-items/bulk-delete", { method: "POST", body: JSON.stringify({ managerApproval }) }),
   setManagerPin: (payload: { currentPin?: string; newPin: string; updatedBy: string }) =>
     apiFetch<{ configured: boolean }>("/settings/manager-pin", { method: "PUT", body: JSON.stringify(payload) }),
   masterPinStatus: () => apiFetch<{ masterPinConfigured: boolean }>("/settings/master-pin/status"),
@@ -758,7 +771,10 @@ export const hubApi = {
     apiFetch<CsvImportResult>("/alcohol/items/import-csv", { method: "POST", body: JSON.stringify({ type, csv }) }),
   createAlcoholItem: (payload: unknown) => apiFetch<{ id: string }>("/alcohol/items", { method: "POST", body: JSON.stringify(payload) }),
   updateAlcoholItem: (id: string, payload: unknown) => apiFetch<{ id: string }>(`/alcohol/items/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
-  deleteAlcoholItem: (id: string) => apiFetch<{ id: string; deleted: boolean; active: boolean }>(`/menu-items/${id}`, { method: "DELETE" }),
+  deleteAlcoholItem: (id: string, masterApproval: MasterApprovalPayload["masterApproval"]) =>
+    apiFetch<{ id: string; deleted: boolean; active: boolean }>(`/menu-items/${id}`, { method: "DELETE", body: JSON.stringify({ masterApproval }) }),
+  bulkDeleteAlcoholItems: (masterApproval: MasterApprovalPayload["masterApproval"]) =>
+    apiFetch<BulkDeleteResult>("/alcohol/items/bulk-delete", { method: "POST", body: JSON.stringify({ masterApproval }) }),
   adjustAlcoholStock: (id: string, payload: unknown) => apiFetch<{ id: string }>(`/alcohol/stock/${id}/adjust`, { method: "POST", body: JSON.stringify(payload) }),
   updateKotStatus: (kotId: string, status: string) =>
     apiFetch<{ id: string }>(`/kot/${kotId}/status`, { method: "PATCH", body: JSON.stringify({ status }) }),

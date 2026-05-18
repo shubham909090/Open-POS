@@ -4,6 +4,7 @@ import { formatInr } from "@gaurav-pos/shared";
 import { Pencil, Plus, Trash2, X } from "lucide-react";
 import { hubApi, type AlcoholCatalog, type Bootstrap, type CsvImportResult } from "../../hub-api.js";
 import { type NoticeSetter, messageOf, rupeesToPaise } from "../../lib/format.js";
+import type { ManagerApprovalRequest } from "../../hooks/use-manager-approval.js";
 import { CsvImportBox } from "../ui/csv-import-box.js";
 import { AlcoholEditForm } from "./alcohol-edit-form.js";
 
@@ -22,11 +23,13 @@ export function AlcoholItemsPanel({
   catalog,
   invalidate,
   setNotice,
+  requestManagerApproval
 }: {
   bootstrap: Bootstrap;
   catalog: AlcoholCatalog;
   invalidate: () => Promise<void>;
   setNotice: NoticeSetter;
+  requestManagerApproval: ManagerApprovalRequest;
 }) {
   const [type, setType] = useState<"plain_liquor" | "prepared_product">(
     "plain_liquor",
@@ -138,14 +141,40 @@ export function AlcoholItemsPanel({
     },
     onError: (error) => setNotice({ tone: "bad", text: messageOf(error) }),
   });
-  const deleteItem = useMutation({
-    mutationFn: (id: string) => hubApi.deleteAlcoholItem(id),
-    onSuccess: async (result) => {
-      await invalidate();
-      setNotice({ tone: "good", text: result.deleted ? "Alcohol item deleted." : "Alcohol item disabled because it has history." });
-    },
-    onError: (error) => setNotice({ tone: "bad", text: messageOf(error) }),
-  });
+	  const deleteItem = useMutation({
+	    mutationFn: async (item: AlcoholCatalog["items"][number]) => {
+	      const approval = await requestManagerApproval({
+	        title: `Delete ${item.name}`,
+	        message: "Unused alcohol items are deleted. Used stock, recipe, or history items are disabled.",
+	        defaultReason: "Delete alcohol item",
+	        confirmLabel: "Delete alcohol",
+	        danger: true
+	      });
+	      return hubApi.deleteAlcoholItem(item.id, { ...approval, approvedBy: "owner" });
+	    },
+	    onSuccess: async (result) => {
+	      await invalidate();
+	      setNotice({ tone: "good", text: result.deleted ? "Alcohol item deleted." : "Alcohol item disabled because it has history." });
+	    },
+	    onError: (error) => setNotice({ tone: "bad", text: messageOf(error) }),
+	  });
+	  const bulkDelete = useMutation({
+	    mutationFn: async () => {
+	      const approval = await requestManagerApproval({
+	        title: "Delete all alcohol items",
+	        message: "Unused alcohol items will be deleted. Used stock, recipe, or history items will be disabled.",
+	        defaultReason: "Bulk delete alcohol",
+	        confirmLabel: "Delete alcohol",
+	        danger: true
+	      });
+	      return hubApi.bulkDeleteAlcoholItems({ ...approval, approvedBy: "owner" });
+	    },
+	    onSuccess: async (result) => {
+	      await invalidate();
+	      setNotice({ tone: result.failed ? "bad" : "good", text: `${result.deleted} alcohol items deleted, ${result.disabled} disabled${result.failed ? `, ${result.failed} failed` : ""}.` });
+	    },
+	    onError: (error) => setNotice({ tone: "bad", text: messageOf(error) }),
+	  });
   const importPlainLiquor = useMutation({
     mutationFn: (csv: string) => hubApi.importAlcoholCsv("plain_liquor", csv),
     onSuccess: async (result) => {
@@ -444,14 +473,17 @@ export function AlcoholItemsPanel({
           <h2>Alcohol Catalog</h2>
           <span>{filteredCatalogItems.length} of {catalog.items.length} items</span>
         </div>
-        <div className="setup-search-row">
-          <input
-            value={catalogSearch}
-            onChange={(event) => setCatalogSearch(event.target.value)}
-            placeholder="Search liquor, cocktails, variants, or counter"
-          />
-          {catalogSearchCapped ? <small>Showing first {filteredCatalogItems.length} matches. Keep typing to narrow.</small> : null}
-        </div>
+	        <div className="setup-search-row">
+	          <input
+	            value={catalogSearch}
+	            onChange={(event) => setCatalogSearch(event.target.value)}
+	            placeholder="Search liquor, cocktails, variants, or counter"
+	          />
+	          <button type="button" className="danger-link" disabled={catalog.items.length === 0 || bulkDelete.isPending} onClick={() => bulkDelete.mutate()}>
+	            Delete all alcohol
+	          </button>
+	          {catalogSearchCapped ? <small>Showing first {filteredCatalogItems.length} matches. Keep typing to narrow.</small> : null}
+	        </div>
         <div className="report-table-wrap alcohol-catalog-wrap">
           <table className="data-table alcohol-catalog-table">
             <thead>
@@ -507,9 +539,7 @@ export function AlcoholItemsPanel({
                     type="button"
                     className="secondary-inline compact danger"
                     disabled={deleteItem.isPending}
-                    onClick={() => {
-                      if (window.confirm(`Delete or disable ${item.name}?`)) deleteItem.mutate(item.id);
-                    }}
+	                    onClick={() => deleteItem.mutate(item)}
                     aria-label={`Delete ${item.name}`}
                   >
                     <Trash2 size={14} />

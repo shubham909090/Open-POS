@@ -7,48 +7,51 @@ import { networkInterfaces } from "node:os";
 import { fileURLToPath } from "node:url";
 import QRCode from "qrcode";
 import {
+  adjustAlcoholStockSchema,
+  billPrintDestinationSchema,
   cancelOrderSchema,
   cancelOrderItemsSchema,
-  adjustAlcoholStockSchema,
+  bulkDeleteAlcoholItemsSchema,
+  bulkDeleteMenuItemsSchema,
   createAlcoholItemSchema,
   createBackupSchema,
   createFloorSchema,
-  fullResetSchema,
   createMenuItemSchema,
-  importAlcoholCsvSchema,
-  importCsvSchema,
   createPairingCodeSchema,
   createProductionUnitSchema,
   createSaleGroupSchema,
   createTableSchema,
   exchangePairingCodeSchema,
-  billPrintDestinationSchema,
-	  hubConnectionSettingsSchema,
-	  historyEditBillSchema,
-	  managerPinSchema,
-	  managerPinUnlockSchema,
+  fullResetSchema,
+  historyEditBillSchema,
+  hubConnectionSettingsSchema,
+  importAlcoholCsvSchema,
+  importCsvSchema,
+  managerPinSchema,
+  managerPinUnlockSchema,
   markNcBillSchema,
+  menuItemDeleteApprovalSchema,
   moveOrderItemsSchema,
   moveTableSchema,
+  printLayoutSettingsSchema,
   reprintBillSchema,
   reprintKotSchema,
+  retryPrintJobSchema,
   revokeDeviceSchema,
   reviseBillSchema,
-	  retryPrintJobSchema,
-	  setMasterPinSchema,
+  scheduleRestoreSchema,
+  setMasterPinSchema,
   settleBillSchema,
-  printLayoutSettingsSchema,
-	  scheduleRestoreSchema,
-	  submitOrderSchema,
-	  ticketTemplateSchema,
-	  updateAlcoholItemSchema,
-	  updateFloorSchema,
-	  updateKotStatusSchema,
-	  updateMenuItemSchema,
-	  updateOrderStateSchema,
+  submitOrderSchema,
+  ticketTemplateSchema,
+  updateAlcoholItemSchema,
+  updateBillPrintersSchema,
+  updateFloorSchema,
+  updateKotStatusSchema,
+  updateMenuItemSchema,
+  updateOrderStateSchema,
   updatePrinterOutputModeSchema,
   updateProductionUnitSchema,
-  updateBillPrintersSchema,
   updateReceiptPrinterSchema,
   updateSaleGroupSchema,
   updateTableSchema,
@@ -423,17 +426,17 @@ export function createHubServer(input: {
 
   app.get("/health", async () => ({ ok: true }));
   app.get("/admin/session/status", async () => ({ managerPinConfigured: input.orderService.isManagerPinConfigured() }));
-  app.post("/admin/session/unlock", async (request) => {
-    const body = managerPinUnlockSchema.parse(request.body);
-    input.orderService.verifyManagerPinForSession(body.pin);
-    const token = `hub_admin_${randomBytes(32).toString("base64url")}`;
-    input.authService.seedAdminDevice(token);
-    return { token, role: "admin" };
-  });
-  app.post("/admin/session/lock", { preHandler: adminOnly }, async () => {
-    input.authService.lockAdminDevice();
-    return { locked: true };
-  });
+	  app.post("/admin/session/unlock", async (request) => {
+	    const body = managerPinUnlockSchema.parse(request.body);
+	    input.orderService.verifyManagerPinForSession(body.pin);
+	    const token = `hub_admin_${randomBytes(32).toString("base64url")}`;
+	    input.authService.createAdminSession(token, "Admin session");
+	    return { token, role: "admin" };
+	  });
+	  app.post("/admin/session/lock", { preHandler: adminOnly }, async (request) => {
+	    input.authService.revokeToken(getToken(request));
+	    return { locked: true };
+	  });
   app.post("/devices/pair/exchange", async (request) => {
     const attemptKey = request.ip || "unknown";
     assertPairingExchangeAllowed(attemptKey);
@@ -551,11 +554,16 @@ export function createHubServer(input: {
     input.eventBus.publish({ type: "menu_item.created", result });
     return result;
   });
-  app.post("/menu-items/import-csv", { preHandler: adminOnly }, async (request) => {
-    const result = input.orderService.importMenuItemsFromCsv(importCsvSchema.parse(request.body).csv);
-    input.eventBus.publish({ type: "menu_items.imported", result });
-    return result;
-  });
+	  app.post("/menu-items/import-csv", { preHandler: adminOnly }, async (request) => {
+	    const result = input.orderService.importMenuItemsFromCsv(importCsvSchema.parse(request.body).csv);
+	    input.eventBus.publish({ type: "menu_items.imported", result });
+	    return result;
+	  });
+	  app.post("/menu-items/bulk-delete", { preHandler: adminOnly }, async (request) => {
+	    const result = input.orderService.bulkRemoveMenuItems("dish", bulkDeleteMenuItemsSchema.parse(request.body ?? {}));
+	    input.eventBus.publish({ type: "menu_items.dish_bulk_removed", result });
+	    return result;
+	  });
   app.patch("/menu-items/:id/active", { preHandler: adminOnly }, async (request) => {
     const params = request.params as { id: string };
     const body = request.body as { active?: boolean };
@@ -563,12 +571,12 @@ export function createHubServer(input: {
     input.eventBus.publish({ type: "menu_item.active_changed", result });
     return result;
   });
-  app.delete("/menu-items/:id", { preHandler: adminOnly }, async (request) => {
-    const params = request.params as { id: string };
-    const result = input.orderService.removeMenuItem(params.id);
-    input.eventBus.publish({ type: "menu_item.removed", result });
-    return result;
-  });
+	  app.delete("/menu-items/:id", { preHandler: adminOnly }, async (request) => {
+	    const params = request.params as { id: string };
+	    const result = input.orderService.removeMenuItemWithApproval(params.id, menuItemDeleteApprovalSchema.parse(request.body ?? {}));
+	    input.eventBus.publish({ type: "menu_item.removed", result });
+	    return result;
+	  });
   app.patch("/menu-items/:id", { preHandler: adminOnly }, async (request) => {
     const params = request.params as { id: string };
     const result = input.orderService.updateMenuItem(params.id, updateMenuItemSchema.parse(request.body));
@@ -582,12 +590,17 @@ export function createHubServer(input: {
     input.eventBus.publish({ type: "alcohol_item.created", result });
     return result;
   });
-  app.post("/alcohol/items/import-csv", { preHandler: adminOnly }, async (request) => {
-    const body = importAlcoholCsvSchema.parse(request.body);
-    const result = input.orderService.importAlcoholItemsFromCsv(body.csv, body.type);
-    input.eventBus.publish({ type: "alcohol_items.imported", result });
-    return result;
-  });
+	  app.post("/alcohol/items/import-csv", { preHandler: adminOnly }, async (request) => {
+	    const body = importAlcoholCsvSchema.parse(request.body);
+	    const result = input.orderService.importAlcoholItemsFromCsv(body.csv, body.type);
+	    input.eventBus.publish({ type: "alcohol_items.imported", result });
+	    return result;
+	  });
+	  app.post("/alcohol/items/bulk-delete", { preHandler: adminOnly }, async (request) => {
+	    const result = input.orderService.bulkRemoveMenuItems("alcohol", bulkDeleteAlcoholItemsSchema.parse(request.body ?? {}));
+	    input.eventBus.publish({ type: "menu_items.alcohol_bulk_removed", result });
+	    return result;
+	  });
   app.patch("/alcohol/items/:id", { preHandler: adminOnly }, async (request) => {
     const params = request.params as { id: string };
     const result = input.orderService.updateAlcoholItem(params.id, updateAlcoholItemSchema.parse(request.body));

@@ -104,6 +104,27 @@ describe("hub table workspace send actions", () => {
     expect(screen.queryByText("Saved")).not.toBeNull();
   });
 
+  it("does not allow saving a running table edit with zero active items", async () => {
+    const { TableWorkspace, useHubStore } = await importWorkspace();
+    const setNotice = vi.fn();
+    tableOrderMock.mockResolvedValue(tableOrder(1));
+    useHubStore.setState({ selectedTableId: "table-t1", orderPanel: "sent", drafts: {} });
+
+    renderWorkspace(TableWorkspace, setNotice);
+
+    await screen.findByText("Edited total");
+    const row = screen.getByText("bhaji").closest(".line-row");
+    const minus = row?.querySelector("button");
+    expect(minus).not.toBeNull();
+    fireEvent.click(minus as HTMLButtonElement);
+
+    expect(await screen.findByText("Running table must keep at least one item. Use Cancel order instead.")).not.toBeNull();
+    expect((screen.getByRole("button", { name: /^Save$/ }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: /^Save$/ }));
+    expect(updateOrderStateMock).not.toHaveBeenCalled();
+    expect(setNotice).not.toHaveBeenCalledWith(expect.objectContaining({ text: expect.stringContaining("Table state saved") }));
+  });
+
   it("renders menu alcohol variants as one compact action group without Add text", async () => {
     const { MenuCard } = await import("../renderer/components/orders/menu-card.js");
     const onAdd = vi.fn();
@@ -155,11 +176,11 @@ function seedDraft(useHubStore: typeof import("../renderer/store.js").useHubStor
   });
 }
 
-function renderWorkspace(TableWorkspace: typeof import("../renderer/components/orders/table-workspace.js").TableWorkspace) {
-  return render(wrapWorkspace(TableWorkspace));
+function renderWorkspace(TableWorkspace: typeof import("../renderer/components/orders/table-workspace.js").TableWorkspace, setNotice = vi.fn()) {
+  return render(wrapWorkspace(TableWorkspace, setNotice));
 }
 
-function wrapWorkspace(TableWorkspace: typeof import("../renderer/components/orders/table-workspace.js").TableWorkspace) {
+function wrapWorkspace(TableWorkspace: typeof import("../renderer/components/orders/table-workspace.js").TableWorkspace, setNotice = vi.fn()) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   return (
     <QueryClientProvider client={client}>
@@ -179,7 +200,7 @@ function wrapWorkspace(TableWorkspace: typeof import("../renderer/components/ord
           printJobs: [],
           syncStatus: {}
         }}
-        setNotice={vi.fn()}
+        setNotice={setNotice}
         requestManagerApproval={vi.fn()}
       />
     </QueryClientProvider>

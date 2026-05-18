@@ -8,6 +8,7 @@ describe("hub orders view layout", () => {
     cleanup();
     vi.restoreAllMocks();
     vi.resetModules();
+    vi.useRealTimers();
   });
 
   it("collapses the menu by default and keeps the selected table workspace primary", async () => {
@@ -39,6 +40,17 @@ describe("hub orders view layout", () => {
     expect(container.querySelector(".order-modal-layout.menu-closed")).not.toBeNull();
     expect(screen.queryByPlaceholderText("Search dish")).toBeNull();
   });
+
+  it("shows a live table timer in hours and minutes", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-05-18T11:05:00.000Z"));
+    const { OrdersView, useHubStore } = await importOrdersView();
+    useHubStore.setState({ selectedTableId: null, orderPanel: "new", menuSearch: "", drafts: {} });
+
+    render(<OrdersView bootstrap={bootstrap()} setNotice={vi.fn()} requestManagerApproval={vi.fn()} />);
+
+    expect(screen.getByText("1h 5m")).not.toBeNull();
+  });
 });
 
 async function importOrdersView() {
@@ -63,9 +75,9 @@ function bootstrap(): Bootstrap {
         floor_name: "Main",
         name: "T1",
         active: true,
-        status: "running",
+        status: "occupied",
         current_order_id: "order-1",
-        occupied_at: "",
+        occupied_at: "2026-05-18T10:00:00.000Z",
         current_order_total_paise: 40_000,
         sent_item_count: 1
       }

@@ -9,8 +9,8 @@ Use this when preparing files for the restaurant.
 After a clean release, the Hub release folder should contain only:
 
 ```text
-apps/hub-electron/release/Gaurav POS Hub Setup 0.1.0.exe
-apps/hub-electron/release/Gaurav POS Hub-0.1.0.gpos-update.zip
+apps/hub-electron/release/Gaurav POS Hub Setup 0.1.1.exe
+apps/hub-electron/release/Gaurav POS Hub-0.1.1.gpos-update.zip
 ```
 
 Use the `.exe` for first-time install.
@@ -120,8 +120,8 @@ Only `better_sqlite3.node` should remain, and it must be Windows x64 `PE32+`.
 5. Rebuild the installer from corrected `win-unpacked`:
 
 ```bash
-rm -f "apps/hub-electron/release/Gaurav POS Hub Setup 0.1.0.exe" \
-  "apps/hub-electron/release/Gaurav POS Hub Setup 0.1.0.exe.blockmap" \
+rm -f "apps/hub-electron/release/Gaurav POS Hub Setup 0.1.1.exe" \
+  "apps/hub-electron/release/Gaurav POS Hub Setup 0.1.1.exe.blockmap" \
   apps/hub-electron/release/builder-debug.yml
 pnpm --filter @gaurav-pos/hub-electron exec electron-builder --win nsis --x64 --prepackaged release/win-unpacked
 ```
@@ -167,8 +167,8 @@ After the build, remove stale files so nobody chooses the wrong artifact.
 Keep only:
 
 ```text
-Gaurav POS Hub Setup 0.1.0.exe
-Gaurav POS Hub-0.1.0.gpos-update.zip
+Gaurav POS Hub Setup 0.1.1.exe
+Gaurav POS Hub-0.1.1.gpos-update.zip
 ```
 
 Delete old files such as:
@@ -186,8 +186,8 @@ On macOS/Linux:
 
 ```bash
 find apps/hub-electron/release -mindepth 1 -maxdepth 1 \
-  ! -name "Gaurav POS Hub Setup 0.1.0.exe" \
-  ! -name "Gaurav POS Hub-0.1.0.gpos-update.zip" \
+  ! -name "Gaurav POS Hub Setup 0.1.1.exe" \
+  ! -name "Gaurav POS Hub-0.1.1.gpos-update.zip" \
   -exec rm -rf {} +
 ```
 
@@ -195,8 +195,8 @@ On Windows PowerShell:
 
 ```powershell
 Get-ChildItem apps/hub-electron/release | Where-Object {
-  $_.Name -ne "Gaurav POS Hub Setup 0.1.0.exe" -and
-  $_.Name -ne "Gaurav POS Hub-0.1.0.gpos-update.zip"
+  $_.Name -ne "Gaurav POS Hub Setup 0.1.1.exe" -and
+  $_.Name -ne "Gaurav POS Hub-0.1.1.gpos-update.zip"
 } | Remove-Item -Recurse -Force
 ```
 
@@ -207,7 +207,7 @@ Update the file names when the app version changes.
 From `apps/hub-electron`, validate the update package:
 
 ```bash
-pnpm exec tsx -e "import { validateUpdatePackage } from './src/update/update-package.ts'; const r = validateUpdatePackage('./release/Gaurav POS Hub-0.1.0.gpos-update.zip', 0); console.log(r.manifest)"
+pnpm exec tsx -e "import { validateUpdatePackage } from './src/update/update-package.ts'; const r = validateUpdatePackage('./release/Gaurav POS Hub-0.1.1.gpos-update.zip', 0); console.log(r.manifest)"
 ```
 
 Expected important fields:
@@ -224,15 +224,15 @@ Also record hashes:
 
 ```bash
 shasum -a 256 \
-  "release/Gaurav POS Hub Setup 0.1.0.exe" \
-  "release/Gaurav POS Hub-0.1.0.gpos-update.zip"
+  "release/Gaurav POS Hub Setup 0.1.1.exe" \
+  "release/Gaurav POS Hub-0.1.1.gpos-update.zip"
 ```
 
 On Windows PowerShell:
 
 ```powershell
-Get-FileHash "release/Gaurav POS Hub Setup 0.1.0.exe" -Algorithm SHA256
-Get-FileHash "release/Gaurav POS Hub-0.1.0.gpos-update.zip" -Algorithm SHA256
+Get-FileHash "release/Gaurav POS Hub Setup 0.1.1.exe" -Algorithm SHA256
+Get-FileHash "release/Gaurav POS Hub-0.1.1.gpos-update.zip" -Algorithm SHA256
 ```
 
 ## Build Android Expo APK
@@ -252,14 +252,14 @@ Do not poll it manually unless you want to wait. Open the printed Expo URL later
 For a brand-new Hub machine:
 
 ```text
-Gaurav POS Hub Setup 0.1.0.exe
+Gaurav POS Hub Setup 0.1.1.exe
 Android APK from Expo
 ```
 
 For a Hub update:
 
 ```text
-Gaurav POS Hub-0.1.0.gpos-update.zip
+Gaurav POS Hub-0.1.1.gpos-update.zip
 Android APK from Expo, only if the mobile app changed
 ```
 

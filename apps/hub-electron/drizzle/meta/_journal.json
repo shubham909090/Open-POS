@@ -71,6 +71,20 @@
       "when": 1779130000000,
       "tag": "0009_kot_notes_print_style",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1779135000000,
+      "tag": "0010_floor_table_sort_order",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1779140000000,
+      "tag": "0011_bill_order_timer_index",
+      "breakpoints": true
     }
   ]
 }

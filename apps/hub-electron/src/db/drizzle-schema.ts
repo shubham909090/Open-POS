@@ -51,7 +51,8 @@ export const dailyReportSnapshots = sqliteTable(
 export const floors = sqliteTable("floors", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
-  active: integer("active", { mode: "boolean" }).notNull().default(true)
+  active: integer("active", { mode: "boolean" }).notNull().default(true),
+  sortOrder: integer("sort_order").notNull().default(0)
 });
 
 export const saleGroups = sqliteTable("sale_groups", {
@@ -72,6 +73,7 @@ export const restaurantTables = sqliteTable(
     floorId: text("floor_id").notNull().references(() => floors.id),
     name: text("name").notNull(),
     active: integer("active", { mode: "boolean" }).notNull().default(true),
+    sortOrder: integer("sort_order").notNull().default(0),
     status: text("status").notNull(),
     currentOrderId: text("current_order_id"),
     occupiedAt: text("occupied_at")
@@ -242,13 +244,15 @@ export const kotItems = sqliteTable("kot_items", {
   quantityDelta: integer("quantity_delta").notNull()
 });
 
-export const bills = sqliteTable("bills", {
-  id: text("id").primaryKey(),
-  billNumber: integer("bill_number").notNull().default(0),
-  orderId: text("order_id").notNull().references(() => orders.id),
-  status: text("status").notNull(),
-  subtotalPaise: integer("subtotal_paise").notNull(),
-  taxPaise: integer("tax_paise").notNull(),
+export const bills = sqliteTable(
+  "bills",
+  {
+    id: text("id").primaryKey(),
+    billNumber: integer("bill_number").notNull().default(0),
+    orderId: text("order_id").notNull().references(() => orders.id),
+    status: text("status").notNull(),
+    subtotalPaise: integer("subtotal_paise").notNull(),
+    taxPaise: integer("tax_paise").notNull(),
     totalPaise: integer("total_paise").notNull(),
     discountPaise: integer("discount_paise").notNull().default(0),
     tipPaise: integer("tip_paise").notNull().default(0),
@@ -262,7 +266,9 @@ export const bills = sqliteTable("bills", {
     printCount: integer("print_count").notNull().default(0),
     createdAt: text("created_at").notNull(),
     settledAt: text("settled_at")
-});
+  },
+  (table) => [index("idx_bills_order_created").on(table.orderId, table.createdAt)]
+);
 
 export const billRevisions = sqliteTable(
   "bill_revisions",

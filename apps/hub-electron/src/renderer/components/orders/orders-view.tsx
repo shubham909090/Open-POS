@@ -1,5 +1,5 @@
 import { formatInr, getTableDisplayState, searchMenuItems, tableDisplayClass, tableDisplayLabel, type SaleGroupKind } from "@gaurav-pos/shared";
-import { PanelLeftOpen, X } from "lucide-react";
+import { Clock3, PanelLeftOpen, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import type { NoticeSetter } from "../../lib/format.js";
 import type { ManagerApprovalRequest } from "../../hooks/use-manager-approval.js";
@@ -20,8 +20,10 @@ export function OrdersView({ bootstrap, setNotice, requestManagerApproval }: { b
   const addDraftItem = useHubStore((state) => state.addDraftItem);
   const [saleGroupFilter, setSaleGroupFilter] = useState<SaleGroupKind | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [nowMs, setNowMs] = useState(() => Date.now());
   const activeTables = bootstrap.tables.filter((table) => table.active);
   const selectedTable = activeTables.find((table) => table.id === selectedTableId) ?? null;
+  const selectedTableDuration = selectedTable ? formatTableDuration(selectedTable, nowMs) : null;
 
   const saleGroupKinds = Array.from(new Map(bootstrap.saleGroups.filter((group) => group.active).map((group) => [group.kind, group.name])).entries());
   const preferredSaleGroup = (["food", "beverage", "alcohol", "other"] as SaleGroupKind[]).find((kind) =>
@@ -57,6 +59,11 @@ export function OrdersView({ bootstrap, setNotice, requestManagerApproval }: { b
     if (selectedTable) setMenuOpen(false);
   }, [selectedTable?.id]);
 
+  useEffect(() => {
+    const interval = window.setInterval(() => setNowMs(Date.now()), 60_000);
+    return () => window.clearInterval(interval);
+  }, []);
+
   return (
     <div className="orders-grid tables-first">
       <section className="table-map panel">
@@ -82,6 +89,7 @@ export function OrdersView({ bootstrap, setNotice, requestManagerApproval }: { b
                   {floorTables.map((table) => {
                     const displayState = getTableDisplayState(table);
                     const isLiveTable = table.current_order_id && displayState !== "free";
+                    const duration = formatTableDuration(table, nowMs);
                     return (
                       <article
                         key={table.id}
@@ -92,9 +100,17 @@ export function OrdersView({ bootstrap, setNotice, requestManagerApproval }: { b
                         }
                       >
                         <button type="button" className="table-tile-main" onClick={() => openTablePanel(table.id, "new")}>
-                          <span className="table-tile-heading">
-                            <strong>{table.name}</strong>
-                            <span>{tableDisplayLabel(displayState)}</span>
+                          <span className="table-tile-topline">
+                            <span className="table-tile-heading">
+                              <strong>{table.name}</strong>
+                              <span>{tableDisplayLabel(displayState)}</span>
+                            </span>
+                            {duration ? (
+                              <span className="table-tile-duration" aria-label={`${table.name} open for ${duration}`}>
+                                <Clock3 size={13} />
+                                <span>{duration}</span>
+                              </span>
+                            ) : null}
                           </span>
                           {isLiveTable ? <b className="table-tile-total">{formatInr(table.current_order_total_paise)}</b> : null}
                         </button>
@@ -124,7 +140,15 @@ export function OrdersView({ bootstrap, setNotice, requestManagerApproval }: { b
           <section className="order-modal-card" role="dialog" aria-modal="true" aria-label={`${selectedTable.name} order workspace`}>
             <header className="order-modal-header">
               <div>
-                <span>{selectedTable.floor_name}</span>
+                <div className="order-modal-kicker">
+                  <span>{selectedTable.floor_name}</span>
+                  {selectedTableDuration ? (
+                    <span className="order-modal-duration" aria-label={`${selectedTable.name} open for ${selectedTableDuration}`}>
+                      <Clock3 size={13} />
+                      {selectedTableDuration}
+                    </span>
+                  ) : null}
+                </div>
                 <h2>{selectedTable.name}</h2>
               </div>
               <div className="order-modal-actions">
@@ -182,4 +206,16 @@ export function OrdersView({ bootstrap, setNotice, requestManagerApproval }: { b
       ) : null}
     </div>
   );
+}
+
+export function formatTableDuration(table: Pick<Bootstrap["tables"][number], "occupied_at" | "timer_ended_at" | "status">, nowMs = Date.now()): string | null {
+  if (!table.occupied_at) return null;
+  const startMs = new Date(table.occupied_at).getTime();
+  if (!Number.isFinite(startMs)) return null;
+  const displayState = getTableDisplayState(table);
+  const endMs = displayState === "bill_printed" && table.timer_ended_at ? new Date(table.timer_ended_at).getTime() : nowMs;
+  if (!Number.isFinite(endMs) || endMs < startMs) return "0m";
+  const minutes = Math.floor((endMs - startMs) / 60_000);
+  if (minutes < 60) return `${minutes}m`;
+  return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
 }

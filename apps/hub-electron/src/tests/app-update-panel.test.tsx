@@ -73,7 +73,7 @@ describe("AppUpdatePanel", () => {
     renderAppUpdatePanel(AppUpdatePanel, { setNotice });
 
     expect(await screen.findByText("App 0.1.0 · DB 10")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Choose" }));
+    fireEvent.click(screen.getByRole("button", { name: "Choose package" }));
 
     expect(await screen.findByText("Opening file picker...")).toBeTruthy();
     resolveChoice(null);
@@ -89,7 +89,7 @@ describe("AppUpdatePanel", () => {
     renderAppUpdatePanel(AppUpdatePanel, { setNotice });
 
     expect(await screen.findByText("App 0.1.0 · DB 10")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Choose" }));
+    fireEvent.click(screen.getByRole("button", { name: "Choose package" }));
 
     await waitFor(() => expect(setNotice).toHaveBeenCalledWith({ tone: "bad", text: "dialog failed" }));
   });

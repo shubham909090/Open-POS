@@ -89,9 +89,9 @@ export class HubDatabase {
           .run();
       }
 
-      this.orm.insert(schema.floors).values({ id: "floor-main", name: "Main", active: true }).onConflictDoNothing().run();
+      this.orm.insert(schema.floors).values({ id: "floor-main", name: "Main", active: true, sortOrder: 0 }).onConflictDoNothing().run();
 
-      for (const table of ["T1", "T2", "T3", "T4"]) {
+      for (const [index, table] of ["T1", "T2", "T3", "T4"].entries()) {
         this.orm
           .insert(schema.restaurantTables)
           .values({
@@ -99,6 +99,7 @@ export class HubDatabase {
             floorId: "floor-main",
             name: table,
             active: true,
+            sortOrder: index,
             status: "free"
           })
           .onConflictDoNothing()
