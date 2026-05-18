@@ -1,6 +1,11 @@
 import type { CurrentDaySummary, DailyReportDetail } from "./hub-client";
 
 type HistoryMetric = { label: string; value: string } | { label: string; valuePaise: number };
+type HistoryBill = NonNullable<CurrentDaySummary["billSummaries"]>[number];
+
+function newestBillsFirst(bills: HistoryBill[]): HistoryBill[] {
+  return [...bills].sort((left, right) => (right.billNumber ?? 0) - (left.billNumber ?? 0));
+}
 
 export function getBillingHistoryViewModel(
   currentSummary: CurrentDaySummary | null,
@@ -14,7 +19,7 @@ export function getBillingHistoryViewModel(
   if (selectedHistoryDayId) {
     return {
       label: selectedHistoryDetail?.business_date ?? "Older day",
-      bills: selectedHistoryDetail?.billSummaries ?? [],
+      bills: newestBillsFirst(selectedHistoryDetail?.billSummaries ?? []),
       metrics: selectedHistoryDetail
         ? [
             { label: "Sales", valuePaise: selectedHistoryDetail.final_sales_paise },
@@ -28,7 +33,7 @@ export function getBillingHistoryViewModel(
 
   return {
     label: currentSummary?.businessDay.business_date ?? "Today",
-    bills: currentSummary?.billSummaries ?? [],
+    bills: newestBillsFirst(currentSummary?.billSummaries ?? []),
     metrics: currentSummary
       ? [
           { label: "Sales", valuePaise: currentSummary.finalSalesPaise },

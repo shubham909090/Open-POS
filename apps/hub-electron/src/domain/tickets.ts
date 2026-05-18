@@ -3,6 +3,7 @@ import { formatPosDateTime } from "@gaurav-pos/shared";
 export interface KotTicketItem {
   name: string;
   quantityDelta: number;
+  note?: string | null;
 }
 
 export interface KotTicket {
@@ -80,7 +81,7 @@ interface TicketSectionStyle {
   bold: boolean;
   align: TicketAlign;
 }
-type TicketSection = "restaurantName" | "address" | "header" | "title" | "metadata" | "items" | "totals" | "notes" | "footer";
+type TicketSection = "restaurantName" | "address" | "header" | "title" | "metadata" | "items" | "totals" | "notes" | "itemNotes" | "footer";
 export type TicketSectionStyles = Partial<Record<TicketSection, TicketSectionStyle>>;
 export const PRINT_STYLE_MARKER = "\u001e";
 export const PRINT_LINE_MARKER = "\u001dline:";
@@ -336,6 +337,7 @@ function buildKotTicketLines(ticket: KotTicket): TicketLine[] {
   const titleAlign = sectionAlign(ticket.sectionStyles, "title", "center");
   const metadataAlign = sectionAlign(ticket.sectionStyles, "metadata", "left");
   const notesAlign = sectionAlign(ticket.sectionStyles, "notes", "left");
+  const itemNotesAlign = sectionAlign(ticket.sectionStyles, "itemNotes", "left");
   const footerAlign = sectionAlign(ticket.sectionStyles, "footer", ticket.footerAlign ?? "center");
   const lines = [
     ...(ticket.header ? [...sectionLines(alignTicketText(ticket.header, width, headerAlign), "header"), ...sectionLines(separator(width), "metadata")] : []),
@@ -351,7 +353,11 @@ function buildKotTicketLines(ticket: KotTicket): TicketLine[] {
 
   for (const item of ticket.items) {
     const sign = item.quantityDelta > 0 ? "+" : "";
-    lines.push(...sectionLines(wrapTicketText(`${sign}${item.quantityDelta} x ${item.name}`, width), "items"));
+    const quantityText = item.quantityDelta === 0 ? item.name : `${sign}${item.quantityDelta} x ${item.name}`;
+    lines.push(...sectionLines(wrapTicketText(quantityText, width), "items"));
+    if (item.note?.trim()) {
+      lines.push(...sectionLines(alignTicketText(wrapTicketText(item.note.trim(), width).join("\n"), width, itemNotesAlign), "itemNotes"));
+    }
   }
   if (ticket.footer) lines.push(...sectionLines(separator(width), "metadata"), ...sectionLines(alignTicketText(ticket.footer, width, footerAlign), "footer"));
 

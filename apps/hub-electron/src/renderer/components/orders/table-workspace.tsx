@@ -27,6 +27,7 @@ export type StateItem = {
   productionUnitId?: string | null;
   name: string;
   quantity: number;
+  note?: string;
 };
 
 export function TableWorkspace({
@@ -52,6 +53,7 @@ export function TableWorkspace({
   const addDraftItem = useHubStore((state) => state.addDraftItem);
   const addOpenDraftItem = useHubStore((state) => state.addOpenDraftItem);
   const changeDraftQty = useHubStore((state) => state.changeDraftQty);
+  const setDraftItemNote = useHubStore((state) => state.setDraftItemNote);
   const clearDraft = useHubStore((state) => state.clearDraft);
   const [guests, setGuests] = useState("2");
   const [openName, setOpenName] = useState("");
@@ -65,7 +67,6 @@ export function TableWorkspace({
   const [orderStateItems, setOrderStateItems] = useState<StateItem[]>([]);
   const [orderStateSearch, setOrderStateSearch] = useState("");
   const [draftSearch, setDraftSearch] = useState("");
-  const [kotNote, setKotNote] = useState("");
   const [billPrintIntent, setBillPrintIntent] = useState<"generate" | null>(null);
   const operationKeys = useOperationKeys();
   const draft = tableId ? Object.values(drafts[tableId] ?? {}) : [];
@@ -77,7 +78,7 @@ export function TableWorkspace({
   const data = tableOrder.data;
   const sentItems = (data?.items ?? []).filter((item) => item.status !== "cancelled" && item.quantity > 0);
   const sentItemsSignature = sentItems
-    .map((item) => [item.id, item.menu_item_id, item.menu_item_variant_id, item.name_snapshot, item.unit_price_paise, item.quantity, item.status].join(":"))
+    .map((item) => [item.id, item.menu_item_id, item.menu_item_variant_id, item.name_snapshot, item.unit_price_paise, item.quantity, item.note ?? "", item.status].join(":"))
     .join("|");
   const savedOrderStateSignature = getOrderStateSignature(sentItems.map((item) => ({
     orderItemId: item.id,
@@ -87,6 +88,7 @@ export function TableWorkspace({
     pricePaise: item.unit_price_paise,
     saleGroupId: item.sale_group_id,
     productionUnitId: item.production_unit_id,
+    note: item.note,
     quantity: item.quantity
   })));
   const draftOrderStateSignature = getOrderStateSignature(orderStateItems.map((item) => ({
@@ -97,6 +99,7 @@ export function TableWorkspace({
     pricePaise: item.pricePaise,
     saleGroupId: item.saleGroupId,
     productionUnitId: item.productionUnitId,
+    note: item.note,
     quantity: item.quantity
   })));
   const hasOrderStateChanges = Boolean(data?.order) && savedOrderStateSignature !== draftOrderStateSignature;
@@ -146,7 +149,6 @@ export function TableWorkspace({
         tableId,
         pax: Number(guests || 1),
         printMode,
-        note: kotNote.trim() || undefined,
         items: draft.map((item) =>
           item.openName
             ? {
@@ -154,16 +156,16 @@ export function TableWorkspace({
                 openPricePaise: item.pricePaise,
                 saleGroupId: item.saleGroupId ?? "sg-food",
                 productionUnitId: item.productionUnitId ?? null,
-                quantity: item.quantity
+                quantity: item.quantity,
+                note: item.note?.trim() || undefined
               }
-            : { menuItemId: item.menuItemId, menuItemVariantId: item.menuItemVariantId, quantity: item.quantity }
+            : { menuItemId: item.menuItemId, menuItemVariantId: item.menuItemVariantId, quantity: item.quantity, note: item.note?.trim() || undefined }
         )
       };
       return hubApi.submitOrder(payload, operationKeys.keyFor("orders-submit", payload));
     },
     onSuccess: async (_result, printMode) => {
       if (tableId) clearDraft(tableId);
-      setKotNote("");
       await refreshTable();
       setOrderPanel("sent");
       setNotice({
@@ -278,7 +280,8 @@ export function TableWorkspace({
       saleGroupId: item.sale_group_id,
       productionUnitId: item.production_unit_id,
       name: item.name_snapshot,
-      quantity: item.quantity
+      quantity: item.quantity,
+      note: item.note ?? ""
     })));
   }, [data?.order?.id, sentItemsSignature]);
 
@@ -291,6 +294,10 @@ export function TableWorkspace({
         return [{ ...item, quantity }];
       })
     );
+  };
+
+  const changeStateNote = (key: string, note: string) => {
+    setOrderStateItems((current) => current.map((item) => (item.key === key ? { ...item, note } : item)));
   };
 
   const addStateMenuItem = (menuItem: MenuItem, variantId?: string) => {
@@ -330,14 +337,15 @@ export function TableWorkspace({
         saveMode: input.saveMode,
         managerApproval: input.approval,
         items: orderStateItems.map((item) => item.menuItemId
-          ? { orderItemId: item.orderItemId, menuItemId: item.menuItemId, menuItemVariantId: item.menuItemVariantId, quantity: item.quantity }
+          ? { orderItemId: item.orderItemId, menuItemId: item.menuItemId, menuItemVariantId: item.menuItemVariantId, quantity: item.quantity, note: item.note?.trim() ?? "" }
           : {
               orderItemId: item.orderItemId,
               openName: item.openName ?? item.name,
               openPricePaise: item.pricePaise,
               saleGroupId: item.saleGroupId,
               productionUnitId: item.productionUnitId ?? null,
-              quantity: item.quantity
+              quantity: item.quantity,
+              note: item.note?.trim() ?? ""
             })
       };
       return hubApi.updateOrderState(order.id, payload, operationKeys.keyFor("order-state", { orderId: order.id, payload }));
@@ -410,15 +418,6 @@ export function TableWorkspace({
             <label className="guest-count-field">
               Guests
               <input value={guests} onChange={(event) => setGuests(event.target.value)} inputMode="numeric" />
-            </label>
-            <label className="kot-note-field">
-              Kitchen / bar note
-              <input
-                value={kotNote}
-                onChange={(event) => setKotNote(event.target.value)}
-                maxLength={500}
-                placeholder="Optional note for KOT/BOT only"
-              />
             </label>
             <div className="send-action-row">
               <button type="button" aria-label="KOT F3" disabled={!canSendDraft} onClick={() => sendDraft("kot")}>
@@ -538,7 +537,9 @@ export function TableWorkspace({
               quantity: item.quantity,
               amount: item.pricePaise * item.quantity,
               onMinus: () => changeDraftQty(tableId, item.lineKey, -1),
-              onPlus: () => changeDraftQty(tableId, item.lineKey, 1)
+              onPlus: () => changeDraftQty(tableId, item.lineKey, 1),
+              note: item.note ?? "",
+              onNoteChange: (note) => setDraftItemNote(tableId, item.lineKey, note)
             }))}
           />
         </div>
@@ -559,6 +560,7 @@ export function TableWorkspace({
           requestOrderStateSave={(saveMode) => void requestOrderStateSave(saveMode)}
           addStateMenuItem={addStateMenuItem}
           changeStateQty={changeStateQty}
+          changeStateNote={changeStateNote}
           transferOpen={transferOpen}
           setTransferOpen={setTransferOpen}
           transferMode={transferMode}

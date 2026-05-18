@@ -67,6 +67,7 @@ export interface HubOrder {
     name_snapshot: string;
     unit_price_paise: number;
     quantity: number;
+    note?: string | null;
     sale_group_id?: string;
     production_unit_id?: string | null;
     status: string;
@@ -170,7 +171,7 @@ export interface KdsTicket {
   status: "queued" | "preparing" | "ready" | "served" | "cancelled" | string;
   captain_id: string;
   note?: string | null;
-  items: Array<{ name_snapshot: string; quantity_delta: number }>;
+  items: Array<{ name_snapshot: string; quantity_delta: number; note_snapshot?: string | null }>;
 }
 
 export interface HubRealtimeEvent {

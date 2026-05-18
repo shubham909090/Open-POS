@@ -1043,7 +1043,15 @@
 }
 
 .kot-note {
-  @apply border-accent bg-accent-soft font-black text-accent-dark;
+  @apply rounded-md border border-accent bg-accent-soft px-2 py-1 font-black text-accent-dark;
+}
+
+.kot-card small.kot-note {
+  @apply mt-1 block w-fit text-xs leading-4;
+}
+
+.kot-card li.kot-note {
+  @apply list-none;
 }
 
 .kot-note-field {

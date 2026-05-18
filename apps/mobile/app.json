@@ -2,7 +2,7 @@
   "expo": {
     "name": "Gaurav POS Mobile",
     "slug": "gaurav-pos-mobile",
-    "version": "0.1.1",
+    "version": "0.1.2",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "assetBundlePatterns": [

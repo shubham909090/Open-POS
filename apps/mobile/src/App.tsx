@@ -54,7 +54,7 @@ export default function App() {
   const isWide = width >= 780;
   const contentWidth = Math.max(320, width - 32);
   const tablePanelWidth = isWide ? Math.min(360, Math.floor(contentWidth * 0.34)) : contentWidth;
-  const tableColumns = isWide && tablePanelWidth >= 340 ? 2 : 1;
+  const tableColumns = tablePanelWidth >= 320 ? 2 : 1;
   const tableGridGap = 12;
   const tableTileWidth = Math.floor((tablePanelWidth - 28 - tableGridGap * (tableColumns - 1)) / tableColumns);
 
@@ -106,7 +106,6 @@ export default function App() {
   const [kdsTickets, setKdsTickets] = useState<KdsTicket[]>([]);
   const [pax, setPax] = useState("2");
   const [items, setItems] = useState<OrderItemInput[]>([]);
-  const [kotNote, setKotNote] = useState("");
   const [menuSearch, setMenuSearch] = useState("");
   const [menuGroupFilter, setMenuGroupFilter] = useState<SaleGroupKind | null>(null);
   const [mode, setMode] = useState<ViewMode>("tables");
@@ -142,7 +141,7 @@ export default function App() {
         .map((item) => [item.sale_group_kind as SaleGroupKind, item.sale_group_name ?? item.sale_group_kind ?? "Other"])
     ).entries()
   );
-  const activeMenuGroup = menuGroupFilter ?? saleGroupFilters[0]?.[0] ?? null;
+  const activeMenuGroup = menuGroupFilter;
   const menuFilters = { saleGroupKind: activeMenuGroup ?? undefined };
   const visibleMenu = searchMenuItems(bootstrap?.menuItems ?? [], menuSearch, menuFilters).slice(0, 120);
   const activeKdsUnits = (bootstrap?.productionUnits ?? []).filter((unit) => unit.active !== false && unit.active !== 0 && unit.kds_enabled !== false && unit.kds_enabled !== 0);
@@ -391,6 +390,12 @@ export default function App() {
     void persistDraft(next);
   }
 
+  function changeItemNote(index: number, note: string) {
+    const next = items.map((item, itemIndex) => (itemIndex === index ? { ...item, note } : item));
+    setItems(next);
+    void persistDraft(next);
+  }
+
   function orderSummary() {
     return items
       .map((item) => {
@@ -436,15 +441,13 @@ export default function App() {
         pax: normalisePax(pax),
         orderType: "dine_in" as const,
         printMode,
-        note: kotNote.trim() || undefined,
         items
       };
-      const scope = { tableId: selectedTableId, items, pax: normalisePax(pax), printMode, note: kotNote.trim() };
+      const scope = { tableId: selectedTableId, items, pax: normalisePax(pax), printMode };
       await client.submitOrder(input, { idempotencyKey: operationKey("mobile-order", scope) });
       clearOperationKey("mobile-order", scope);
       await clearDraft(selectedTableId);
       setItems([]);
-      setKotNote("");
       await refresh(false);
       await loadTableOrder(selectedTableId);
       setMode("ticket");
@@ -856,7 +859,6 @@ export default function App() {
           selectedTableId={selectedTableId}
           draftTotal={draftTotal}
           tableTotal={tableTotal}
-          kotNote={kotNote}
           currentOrder={currentOrder}
           connection={connection}
           sending={sending}
@@ -867,8 +869,8 @@ export default function App() {
             setPax(clean);
             void persistDraft(items, clean);
           }}
-          onKotNoteChange={setKotNote}
           onChangeQty={changeQty}
+          onChangeItemNote={changeItemNote}
           onShiftTable={(tableId) => void shiftTable(tableId)}
           onShiftItem={(orderItemId, quantity, toTableId) => void shiftItem(orderItemId, quantity, toTableId)}
           onGenerateBill={() => void generateBillForSelectedTable()}

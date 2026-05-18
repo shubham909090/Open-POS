@@ -179,6 +179,7 @@ interface OrderItemRow {
   ticket_label_snapshot: string;
   tax_components_json: string;
   tax_paise: number;
+  note: string | null;
   is_open_item: boolean;
   status: string;
 }
@@ -313,6 +314,8 @@ interface KotItemChange {
   orderItemId: string | null;
   name: string;
   quantityDelta: number;
+  note?: string | null;
+  noteChanged?: boolean;
   productionUnitId: string | null;
   productionUnitName: string;
   printerHost: string | null;
@@ -359,6 +362,7 @@ interface RequestedOrderItem {
   saleGroupKind: string;
   ticketLabel: string;
   taxComponentsJson: string;
+  note: string | null;
   isOpenItem: boolean;
 }
 
@@ -579,8 +583,8 @@ export class OrderService {
       if (!kot) throw new DomainError("KOT not found", 404);
 
       const items = this.db
-        .prepare("SELECT name_snapshot, quantity_delta FROM kot_items WHERE kot_id = ?")
-        .all(kotId) as Array<{ name_snapshot: string; quantity_delta: number }>;
+        .prepare("SELECT name_snapshot, quantity_delta, note_snapshot FROM kot_items WHERE kot_id = ?")
+        .all(kotId) as Array<{ name_snapshot: string; quantity_delta: number; note_snapshot: string | null }>;
 
       const template = this.getPrintLayout("unit", kot.production_unit_id);
       const payload = renderKotTicketForPrint({
@@ -594,7 +598,8 @@ export class OrderService {
         note: kot.note,
         items: items.map((item) => ({
           name: item.name_snapshot,
-          quantityDelta: item.quantity_delta
+          quantityDelta: item.quantity_delta,
+          note: item.note_snapshot
         })),
         lineWidthChars: template.lineWidthChars,
         headerAlign: template.headerAlign,
@@ -896,7 +901,14 @@ export class OrderService {
     const fallback = this.defaultPrintLayout(scope, productionUnitId);
     if (!stored) return fallback;
     try {
-      return { ...fallback, ...(JSON.parse(stored) as Partial<PrintLayoutSettingsInput>), scope, productionUnitId };
+      const parsed = JSON.parse(stored) as Partial<PrintLayoutSettingsInput>;
+      return {
+        ...fallback,
+        ...parsed,
+        sectionStyles: { ...fallback.sectionStyles, ...(parsed.sectionStyles ?? {}) },
+        scope,
+        productionUnitId
+      };
     } catch {
       return fallback;
     }
@@ -905,7 +917,8 @@ export class OrderService {
   updatePrintLayout(input: PrintLayoutSettingsInput): PrintLayoutSettingsInput {
     if (input.scope === "unit" && !input.productionUnitId) throw new DomainError("Choose a kitchen or counter for this layout");
     if (input.scope === "unit" && input.productionUnitId) this.requireProductionUnit(input.productionUnitId);
-    const layout = { ...this.defaultPrintLayout(input.scope, input.productionUnitId), ...input };
+    const fallback = this.defaultPrintLayout(input.scope, input.productionUnitId);
+    const layout = { ...fallback, ...input, sectionStyles: { ...fallback.sectionStyles, ...input.sectionStyles } };
     this.upsertSetting(this.printLayoutKey(input.scope, input.productionUnitId), JSON.stringify(layout));
     this.appendEvent("print_layout.updated", "hub_setting", this.printLayoutKey(input.scope, input.productionUnitId), {
       scope: input.scope,
@@ -1178,7 +1191,7 @@ export class OrderService {
     return rows.map((row) => ({
       ...(row as Record<string, unknown>),
       items: this.db
-        .prepare("SELECT name_snapshot, quantity_delta FROM kot_items WHERE kot_id = ? ORDER BY id")
+        .prepare("SELECT name_snapshot, quantity_delta, note_snapshot FROM kot_items WHERE kot_id = ? ORDER BY id")
         .all((row as { id: string }).id)
     }));
   }
@@ -2590,7 +2603,7 @@ export class OrderService {
         if (target) {
           this.orm
             .update(orderItems)
-            .set({ quantity: target.quantity + moveItem.quantity, status: "active", updatedAt: now })
+            .set({ quantity: target.quantity + moveItem.quantity, note: this.combineItemNotes(target.note, source.note), status: "active", updatedAt: now })
             .where(eq(orderItems.id, target.id))
             .run();
         } else {
@@ -2616,6 +2629,7 @@ export class OrderService {
               ticketLabelSnapshot: source.ticket_label_snapshot,
               taxComponentsJson: source.tax_components_json,
               taxPaise: source.tax_paise,
+              note: source.note,
               isOpenItem: Boolean(source.is_open_item),
               status: "active",
               createdAt: now,
@@ -3050,6 +3064,7 @@ export class OrderService {
             saleGroupKind: preservePreviousSnapshot ? previous.sale_group_kind_snapshot : menuItem.sale_group_kind,
             ticketLabel: preservePreviousSnapshot ? previous.ticket_label_snapshot : menuItem.ticket_label,
             taxComponentsJson: preservePreviousSnapshot ? previous.tax_components_json : menuItem.tax_components_json,
+            note: this.normaliseItemNote(item.note),
             isOpenItem: preservePreviousSnapshot ? Boolean(previous.is_open_item) : false
           };
         }
@@ -3076,9 +3091,31 @@ export class OrderService {
           saleGroupKind: saleGroup.kind,
           ticketLabel: saleGroup.ticket_label,
           taxComponentsJson: saleGroup.tax_components_json,
+          note: this.normaliseItemNote(item.note),
           isOpenItem: true
         };
       });
+  }
+
+  private normaliseItemNote(note: string | null | undefined): string | null {
+    const trimmed = note?.trim();
+    return trimmed ? trimmed : null;
+  }
+
+  private combineItemNotes(first: string | null | undefined, second: string | null | undefined): string | null {
+    const parts = [first, second]
+      .flatMap((value) => (value ?? "").split(";"))
+      .map((value) => value.trim())
+      .filter(Boolean);
+    const unique: string[] = [];
+    const seen = new Set<string>();
+    for (const part of parts) {
+      const key = part.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      unique.push(part);
+    }
+    return unique.length ? unique.join("; ") : null;
   }
 
   private buildBillTicket(input: {
@@ -3108,7 +3145,7 @@ export class OrderService {
     const billPayments = this.db
       .prepare("SELECT method, amount_paise FROM payments WHERE bill_id = ? ORDER BY created_at, id")
       .all(input.bill.id) as Array<{ method: string; amount_paise: number }>;
-    const taxBreakdown = this.parseTaxBreakdown(input.bill.tax_breakdown_json);
+    const taxBreakdown = this.compactPrintableTaxBreakdown(billableItems);
     return {
       tableName: input.tableName,
 	      billId: String(input.bill.bill_number || input.bill.id),
@@ -3132,6 +3169,22 @@ export class OrderService {
       ncReason: input.ncReason ?? input.bill.nc_reason,
       ...this.billPrintLayout()
     };
+  }
+
+  private compactPrintableTaxBreakdown(items: OrderItemRow[]): TaxComponentAmount[] {
+    const taxByComponent = new Map<string, TaxComponentAmount>();
+    for (const item of items) {
+      if (item.sale_group_kind_snapshot === "alcohol") continue;
+      const lineSubtotal = calculateLineTotal(item.unit_price_paise, item.quantity);
+      const components = calculateTaxComponents(lineSubtotal, this.parseTaxComponents(item.tax_components_json));
+      for (const component of components) {
+        const key = `${component.name}:${component.rateBps}`;
+        const current = taxByComponent.get(key) ?? { name: component.name, rateBps: component.rateBps, amountPaise: 0 };
+        current.amountPaise += component.amountPaise;
+        taxByComponent.set(key, current);
+      }
+    }
+    return [...taxByComponent.values()];
   }
 
   private billPrintLayout(): Pick<
@@ -3986,6 +4039,7 @@ export class OrderService {
       const key = this.orderItemDiffKey(item, basePrevious);
       const current = requestedByKey.get(key);
       const previous = key === baseKey ? basePrevious : undefined;
+      const startingNote = current?.note ?? (cancelMissing ? null : previous?.note ?? null);
       requestedByKey.set(key, {
         itemKey: key,
         menuItemId: item.menuItemId,
@@ -4003,6 +4057,7 @@ export class OrderService {
         saleGroupKind: item.saleGroupKind,
         ticketLabel: item.ticketLabel,
         taxComponentsJson: item.taxComponentsJson,
+        note: this.combineItemNotes(startingNote, item.note),
         isOpenItem: item.isOpenItem
       });
     }
@@ -4023,6 +4078,8 @@ export class OrderService {
       const oldQuantity = previous?.quantity ?? 0;
       const newQuantity = requested?.quantity ?? 0;
       const delta = newQuantity - oldQuantity;
+      const nextNote = requested ? requested.note : previous?.note ?? null;
+      const noteChanged = (previous?.note ?? null) !== (nextNote ?? null);
       const unitPricePaise = requested?.unitPricePaise ?? previous?.unit_price_paise ?? menuItem?.price_paise ?? 0;
       const variantName = requested?.variantName ?? previous?.variant_name_snapshot ?? "";
       const variantVolumeMl = requested?.variantVolumeMl ?? previous?.variant_volume_ml ?? null;
@@ -4055,6 +4112,7 @@ export class OrderService {
             saleGroupKindSnapshot: saleGroupKind,
             ticketLabelSnapshot: ticketLabel,
             taxComponentsJson,
+            note: nextNote,
             isOpenItem
           })
           .where(eq(orderItems.id, previous.id))
@@ -4083,6 +4141,7 @@ export class OrderService {
             ticketLabelSnapshot: ticketLabel,
             taxComponentsJson,
             isOpenItem,
+            note: nextNote,
             status: "active",
             createdAt: now,
             updatedAt: now
@@ -4096,13 +4155,15 @@ export class OrderService {
           .run();
       }
 
-      if (delta !== 0 && productionUnitId) {
+      if ((delta !== 0 || noteChanged) && productionUnitId) {
         const unit = menuItem ? null : this.getUnit(productionUnitId);
         changes.push({
           menuItemId: menuItem?.id ?? null,
           orderItemId: changedOrderItemId,
           name: requested?.name ?? menuItem?.name ?? "Open item",
           quantityDelta: delta,
+          note: nextNote,
+          noteChanged,
           productionUnitId,
           productionUnitName: menuItem?.unit_name ?? unit?.name ?? "Kitchen",
           printerHost: menuItem?.printer_host ?? unit?.printer_host ?? null,
@@ -4155,6 +4216,7 @@ export class OrderService {
           saleGroupKind: item.saleGroupKind,
           ticketLabel: item.ticketLabel,
           taxComponentsJson: item.taxComponentsJson,
+          note: item.note,
           isOpenItem: item.isOpenItem
         })
       )
@@ -4175,7 +4237,7 @@ export class OrderService {
     printTickets = true,
     note?: string
   ): TicketCreationResult {
-    const meaningfulChanges = changes.filter((change) => change.quantityDelta !== 0 && change.productionUnitId);
+    const meaningfulChanges = changes.filter((change) => (change.quantityDelta !== 0 || change.noteChanged) && change.productionUnitId);
     if (meaningfulChanges.length === 0) return { kotIds: [], printJobIds: [] };
 
     const grouped = new Map<string, KotItemChange[]>();
@@ -4184,7 +4246,7 @@ export class OrderService {
         ? "cancelled"
         : change.quantityDelta > 0 && isNewOrder
           ? "new"
-          : change.quantityDelta > 0
+          : change.quantityDelta >= 0
             ? "modified"
             : "partial_cancel");
       const key = `${change.productionUnitId}:${type}:${change.ticketLabel}`;
@@ -4227,10 +4289,11 @@ export class OrderService {
             orderItemId: item.orderItemId,
             menuItemId: item.menuItemId,
             nameSnapshot: item.name,
-            quantityDelta: item.quantityDelta
+            quantityDelta: item.quantityDelta,
+            noteSnapshot: item.note?.trim() || null
           })
           .run();
-        ticketItems.push({ name: item.name, quantityDelta: item.quantityDelta });
+        ticketItems.push({ name: item.name, quantityDelta: item.quantityDelta, note: item.note });
       }
 
       const template = this.getPrintLayout("unit", productionUnitId);
@@ -4667,6 +4730,7 @@ export class OrderService {
       orderItemId: item.id,
       name: item.name_snapshot,
       quantityDelta,
+      note: item.note,
       productionUnitId: item.production_unit_id,
       productionUnitName: unit?.name ?? "Kitchen",
       printerHost: unit?.printer_host ?? null,
@@ -4697,6 +4761,7 @@ export class OrderService {
         ticket_label_snapshot: orderItems.ticketLabelSnapshot,
         tax_components_json: orderItems.taxComponentsJson,
         tax_paise: orderItems.taxPaise,
+        note: orderItems.note,
         is_open_item: orderItems.isOpenItem,
         status: orderItems.status
       })
@@ -4726,6 +4791,7 @@ export class OrderService {
         ticket_label_snapshot: orderItems.ticketLabelSnapshot,
         tax_components_json: orderItems.taxComponentsJson,
         tax_paise: orderItems.taxPaise,
+        note: orderItems.note,
         is_open_item: orderItems.isOpenItem,
         status: orderItems.status
       })
@@ -4786,6 +4852,7 @@ export class OrderService {
         ticket_label_snapshot: orderItems.ticketLabelSnapshot,
         tax_components_json: orderItems.taxComponentsJson,
         tax_paise: orderItems.taxPaise,
+        note: orderItems.note,
         is_open_item: orderItems.isOpenItem,
         status: orderItems.status
       })
@@ -4883,6 +4950,7 @@ export class OrderService {
         ticket_label_snapshot: orderItems.ticketLabelSnapshot,
         tax_components_json: orderItems.taxComponentsJson,
         tax_paise: orderItems.taxPaise,
+        note: orderItems.note,
         is_open_item: orderItems.isOpenItem,
         status: orderItems.status
       })
@@ -4963,6 +5031,7 @@ export class OrderService {
         items: { size: "normal", bold: false, align: "left" },
         totals: { size: "normal", bold: true, align: "left" },
         notes: { size: "normal", bold: true, align: "left" },
+        itemNotes: { size: "small", bold: false, align: "left" },
         footer: { size: "normal", bold: false, align: "center" }
       },
       topPaddingLines: 0,

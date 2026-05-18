@@ -15,6 +15,8 @@ export function LineItems({
     amount: number;
     onMinus?: () => void;
     onPlus?: () => void;
+    note?: string;
+    onNoteChange?: (note: string) => void;
     action?: ReactNode;
   }>;
   emptyTitle: string;
@@ -45,6 +47,19 @@ export function LineItems({
               </button>
             ) : null}
           </div>
+          {row.onNoteChange ? (
+            <details className="line-note-field" open={Boolean(row.note?.trim())}>
+              <summary>{row.note?.trim() ? "Edit item note" : "Add item note"}</summary>
+              <input
+                value={row.note ?? ""}
+                onChange={(event) => row.onNoteChange?.(event.target.value)}
+                maxLength={500}
+                placeholder="Kitchen/bar note"
+              />
+            </details>
+          ) : row.note ? (
+            <p className="line-note-text">{row.note}</p>
+          ) : null}
           {row.action ? <div className="line-row-action">{row.action}</div> : null}
         </article>
       ))}

@@ -76,8 +76,11 @@ function KitchenScreen({
                   ) : null}
                   {ticket.items.map((item, index) => (
                     <View key={`${ticket.id}-${index}`} style={styles.kotItemRow}>
-                      <Text style={styles.kotQty}>{Math.abs(item.quantity_delta)}x</Text>
-                      <Text style={styles.kotItemName}>{item.name_snapshot}</Text>
+                      <Text style={styles.kotQty}>{item.quantity_delta === 0 ? "" : `${Math.abs(item.quantity_delta)}x`}</Text>
+                      <View style={styles.flexText}>
+                        <Text style={styles.kotItemName}>{item.name_snapshot}</Text>
+                        {item.note_snapshot ? <Text style={styles.smallMuted}>{item.note_snapshot}</Text> : null}
+                      </View>
                     </View>
                   ))}
                 </View>

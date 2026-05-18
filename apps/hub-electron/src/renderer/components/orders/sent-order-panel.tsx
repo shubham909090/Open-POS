@@ -20,6 +20,7 @@ export function SentOrderPanel({
   requestOrderStateSave,
   addStateMenuItem,
   changeStateQty,
+  changeStateNote,
   transferOpen,
   setTransferOpen,
   transferMode,
@@ -51,6 +52,7 @@ export function SentOrderPanel({
   requestOrderStateSave: (saveMode: SaveMode) => void;
   addStateMenuItem: (menuItem: MenuItem, variantId?: string) => void;
   changeStateQty: (key: string, delta: number) => void;
+  changeStateNote: (key: string, note: string) => void;
   transferOpen: boolean;
   setTransferOpen: Dispatch<SetStateAction<boolean>>;
   transferMode: "table" | "items";
@@ -169,6 +171,8 @@ export function SentOrderPanel({
           amount: item.pricePaise * item.quantity,
           onMinus: () => changeStateQty(item.key, -1),
           onPlus: () => changeStateQty(item.key, 1),
+          note: item.note ?? "",
+          onNoteChange: (note) => changeStateNote(item.key, note),
         }))}
       />
       {data?.order ? (

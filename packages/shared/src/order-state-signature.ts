@@ -6,6 +6,7 @@ export interface OrderStateSignatureRow {
   pricePaise?: number | null;
   saleGroupId?: string | null;
   productionUnitId?: string | null;
+  note?: string | null;
   quantity: number;
 }
 
@@ -22,6 +23,7 @@ export function getOrderStateSignature(rows: OrderStateSignatureRow[]): string {
       const pricePaise = Number.isFinite(row.pricePaise ?? Number.NaN) ? Math.trunc(row.pricePaise ?? 0) : 0;
       const saleGroupId = clean(row.saleGroupId);
       const productionUnitId = clean(row.productionUnitId);
+      const note = clean(row.note);
       const identity = orderItemId
         ? `order:${orderItemId}`
         : `menu:${menuItemId}:${menuItemVariantId}:${openName}:${pricePaise}:${saleGroupId}:${productionUnitId}`;
@@ -35,6 +37,7 @@ export function getOrderStateSignature(rows: OrderStateSignatureRow[]): string {
           `price:${pricePaise}`,
           `group:${saleGroupId}`,
           `unit:${productionUnitId}`,
+          `note:${note}`,
           `qty:${quantity}`
         ].join("|")
       ];

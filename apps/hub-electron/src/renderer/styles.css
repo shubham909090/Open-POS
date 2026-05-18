@@ -1142,7 +1142,37 @@
   }
 
   .history-actions {
-    @apply flex flex-wrap justify-end gap-2;
+    @apply flex flex-col items-stretch gap-2;
+  }
+
+  .modified-pill {
+    border-color: #bfdbfe;
+    background: #eff6ff;
+    color: #1d4ed8;
+  }
+
+  .history-item-lines {
+    @apply space-y-1;
+  }
+
+  .history-item-lines span {
+    @apply block;
+  }
+
+  .line-note-field {
+    @apply col-span-full grid gap-2 rounded-md border border-dashed border-line bg-wash p-2;
+  }
+
+  .line-note-field summary {
+    @apply cursor-pointer text-[11px] font-black uppercase tracking-normal text-muted;
+  }
+
+  .line-note-field input {
+    @apply min-h-9 rounded-md border border-line bg-white px-3 py-2 text-sm font-semibold;
+  }
+
+  .line-note-text {
+    @apply col-span-full rounded-md border border-dashed border-line bg-wash px-3 py-2 text-sm font-semibold text-muted;
   }
 
   .history-edit-modal {

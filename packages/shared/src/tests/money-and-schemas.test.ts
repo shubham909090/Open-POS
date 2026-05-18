@@ -30,6 +30,7 @@ describe("shared order state signature", () => {
   it("marks quantity edits, existing removals, and real new items as dirty", () => {
     const base = getOrderStateSignature(saved);
     expect(getOrderStateSignature([{ ...saved[0]!, quantity: 3 }, saved[1]!])).not.toBe(base);
+    expect(getOrderStateSignature([{ ...saved[0]!, note: "No onion" }, saved[1]!])).not.toBe(base);
     expect(getOrderStateSignature([{ ...saved[0]!, quantity: 0 }, saved[1]!])).not.toBe(base);
     expect(getOrderStateSignature([...saved, { menuItemId: "item-3", pricePaise: 5_000, saleGroupId: "sg-food", quantity: 1 }])).not.toBe(base);
   });
@@ -51,6 +52,7 @@ describe("shared command schemas", () => {
     expect(input.orderType).toBe("dine_in");
     expect(input.printMode).toBe("kot_print");
     expect(submitOrderSchema.parse({ ...input, note: "Less spicy for kitchen" }).note).toBe("Less spicy for kitchen");
+    expect(submitOrderSchema.parse({ ...input, items: [{ menuItemId: "item-1", quantity: 1, note: "No onion" }] }).items[0]?.note).toBe("No onion");
     expect(submitOrderSchema.parse({ ...input, printMode: "kot" }).printMode).toBe("kot");
     expect(() => submitOrderSchema.parse({ ...input, printMode: "paperless" })).toThrow();
   });
@@ -97,6 +99,7 @@ describe("shared command schemas", () => {
     expect(styled.topPaddingLines).toBe(1);
     expect(styled.sectionStyles.restaurantName).toEqual({ size: "large", bold: true, align: "center" });
     expect(styled.sectionStyles.totals).toEqual({ size: "large", bold: true, align: "right" });
+    expect(styled.sectionStyles.itemNotes).toEqual({ size: "small", bold: false, align: "left" });
     expect(setMasterPinSchema.parse({ newPin: "9876", confirmPin: "9876", updatedBy: "owner" })).toMatchObject({ newPin: "9876" });
     expect(setMasterPinSchema.parse({ currentPin: "9876", newPin: "1111", confirmPin: "1111", updatedBy: "owner" })).toMatchObject({ currentPin: "9876", newPin: "1111" });
     expect(() => setMasterPinSchema.parse({ newPin: "9876", confirmPin: "1111", updatedBy: "owner" })).toThrow();

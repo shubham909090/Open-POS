@@ -252,8 +252,8 @@ export const styles = StyleSheet.create({
   floorTableHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 },
   tableGrid: { flexDirection: "row", flexWrap: "wrap", gap: 12 },
   tableTile: {
-    minHeight: 100,
-    padding: 14,
+    minHeight: 92,
+    padding: 12,
     borderWidth: 0,
     borderLeftWidth: 5,
     borderColor: palette.green,
@@ -269,8 +269,8 @@ export const styles = StyleSheet.create({
   busyTable: { borderColor: palette.amberBold, backgroundColor: palette.amberSoft },
   billedTable: { borderColor: palette.blueBill, backgroundColor: palette.blueBillSoft },
   selectedTable: { borderColor: palette.greenBold, backgroundColor: palette.greenSoft, shadowRadius: 10, elevation: 5 },
-  tableName: { fontSize: 24, fontWeight: "900", color: palette.ink },
-  tableStatus: { color: palette.green, fontWeight: "900", fontSize: 14 },
+  tableName: { fontSize: 20, fontWeight: "900", color: palette.ink },
+  tableStatus: { color: palette.green, fontWeight: "900", fontSize: 12 },
   tableStatusBusy: { color: palette.amberBold },
   tableStatusBilled: { color: palette.blueBill },
   kitchenPanel: { gap: 14 },
@@ -539,6 +539,7 @@ export const styles = StyleSheet.create({
     borderColor: palette.lineSoft,
     backgroundColor: palette.white,
     flexDirection: "row",
+    flexWrap: "wrap",
     justifyContent: "space-between",
     alignItems: "center",
     gap: 10
@@ -639,19 +640,41 @@ export const styles = StyleSheet.create({
   historyModifiedTag: {
     alignSelf: "flex-start",
     borderRadius: 999,
-    backgroundColor: palette.amberSoft,
+    backgroundColor: palette.blueBillSoft,
     borderWidth: 1,
-    borderColor: palette.amberLine,
-    color: palette.amberBold,
+    borderColor: "#bfdbfe",
+    color: palette.blueBill,
     fontSize: 11,
     fontWeight: "900",
     paddingHorizontal: 8,
     paddingVertical: 2
   },
   historyActionStack: { gap: 8, alignItems: "stretch" },
+  historyItemLines: { gap: 2, paddingVertical: 2 },
   historyPrintButton: {
     minHeight: 42,
     paddingHorizontal: 12
+  },
+  itemNoteInput: {
+    marginTop: 8,
+    minHeight: 40,
+    fontSize: 13,
+    flexBasis: "100%"
+  },
+  itemNoteButton: {
+    alignSelf: "flex-start",
+    marginTop: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: palette.line,
+    backgroundColor: palette.wash,
+    paddingHorizontal: 10,
+    paddingVertical: 6
+  },
+  itemNoteButtonText: {
+    color: palette.muted,
+    fontSize: 12,
+    fontWeight: "900"
   },
   historyEditStack: { gap: 10, paddingBottom: 6 },
   historyEditLine: {

@@ -210,6 +210,7 @@ export const orderItems = sqliteTable(
     ticketLabelSnapshot: text("ticket_label_snapshot").notNull().default("KOT"),
     taxComponentsJson: text("tax_components_json").notNull().default("[]"),
     taxPaise: integer("tax_paise").notNull().default(0),
+    note: text("note"),
     isOpenItem: integer("is_open_item", { mode: "boolean" }).notNull().default(false),
     status: text("status").notNull(),
     createdAt: text("created_at").notNull(),
@@ -241,7 +242,8 @@ export const kotItems = sqliteTable("kot_items", {
   orderItemId: text("order_item_id"),
   menuItemId: text("menu_item_id"),
   nameSnapshot: text("name_snapshot").notNull(),
-  quantityDelta: integer("quantity_delta").notNull()
+  quantityDelta: integer("quantity_delta").notNull(),
+  noteSnapshot: text("note_snapshot")
 });
 
 export const bills = sqliteTable(

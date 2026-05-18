@@ -949,6 +949,37 @@ describe("Hub API auth and service flow", () => {
     database.close();
   });
 
+  it("stores item notes on KDS tickets created by a KOT send", async () => {
+    const { app, database } = createTestServer();
+    const headers = { "x-device-token": "test-admin-token" };
+    await app.inject({
+      method: "POST",
+      url: "/orders/submit",
+      headers,
+      payload: {
+        tableId: "table-t1",
+        captainId: "waiter-1",
+        pax: 2,
+        orderType: "dine_in",
+        printMode: "kot",
+        items: [{ menuItemId: "item-dal-fry", quantity: 1, note: "No onion" }]
+      }
+    });
+
+    const kdsResponse = await app.inject({
+      method: "GET",
+      url: "/kds/unit-kitchen",
+      headers
+    });
+    const [ticket] = kdsResponse.json<Array<{ items: Array<{ name_snapshot: string; note_snapshot: string | null }> }>>();
+
+    expect(kdsResponse.statusCode).toBe(200);
+    expect(ticket?.items[0]).toMatchObject({ name_snapshot: "Dal Fry", note_snapshot: "No onion" });
+
+    await app.close();
+    database.close();
+  });
+
   it("saves order state without KDS for save and with KDS for save_print", async () => {
     const { app, database } = createTestServer();
     const headers = { "x-device-token": "test-admin-token" };
@@ -1692,8 +1723,9 @@ describe("Hub API auth and service flow", () => {
     expect(printResponse.json()).toEqual({ printed: 0, failed: 0 });
     const printJob = database.db.prepare("SELECT status, payload FROM print_jobs WHERE target_id = ?").get(bill.billId) as { status: string; payload: string };
     expect(printJob.status).toBe("printed");
-    expect(printJob.payload).toContain("Food CGST @ 2.5%: 4.50");
-    expect(printJob.payload).toContain("Food SGST @ 2.5%: 4.50");
+    expect(printJob.payload).toContain("CGST @ 2.5%: 4.50");
+    expect(printJob.payload).toContain("SGST @ 2.5%: 4.50");
+    expect(printJob.payload).not.toContain("Food CGST");
 
     await app.close();
     database.close();

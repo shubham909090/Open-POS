@@ -262,7 +262,7 @@ function ReportDetailPanels({ summary }: { summary: CloseSummary | DailyReportDe
     },
     onError: (error) => setEditError(error instanceof Error ? error.message : "Could not edit history bill."),
   });
-  const bills = summary.billSummaries ?? [];
+  const bills = [...(summary.billSummaries ?? [])].sort((left, right) => (right.billNumber ?? 0) - (left.billNumber ?? 0));
   const groups = summary.groupSummaries ?? [];
   const items = summary.itemSummaries ?? [];
   const payments = getPaymentTotals(summary, bills);
@@ -413,12 +413,12 @@ function ReportDetailPanels({ summary }: { summary: CloseSummary | DailyReportDe
                 <tr key={bill.billId}>
                   <td className="strong-cell">
                     #{bill.billNumber ?? bill.billId}
-                    {bill.modified ? <small>Modified</small> : bill.revisionNumber ? <small>rev {bill.revisionNumber}</small> : null}
+                    {bill.modified ? <small className="modified-pill">Modified</small> : bill.revisionNumber ? <small>rev {bill.revisionNumber}</small> : null}
                     {bill.isNc ? <small>NC</small> : null}
                   </td>
                   <td>{bill.tableName}</td>
                   <td><span className={`bill-status ${bill.status}`}>{bill.status}</span></td>
-                  <td className="wrap-cell">{bill.items?.length ? bill.items.map((item) => `${item.quantity} x ${item.name}`).join(", ") : "No item detail"}</td>
+                  <td className="wrap-cell history-item-lines">{bill.items?.length ? bill.items.map((item) => <span key={item.orderItemId}>{item.quantity} x {item.name}</span>) : "No item detail"}</td>
                   <td>{formatInr(bill.finalTotalPaise)}</td>
                   <td>{formatInr(bill.paidPaise)}</td>
                   <td className="wrap-cell">

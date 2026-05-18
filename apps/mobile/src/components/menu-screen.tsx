@@ -32,10 +32,10 @@ function MenuScreen({
   searchValue: string;
   virtualized: boolean;
   onSearchChange: (value: string) => void;
-  onSaleGroupChange: (value: SaleGroupKind) => void;
+  onSaleGroupChange: (value: SaleGroupKind | null) => void;
   onAddItem: (menuItemId: string, variantId?: string) => void;
 }) {
-  const activeLabel = saleGroupFilters.find(([kind]) => kind === selectedSaleGroup)?.[1] ?? "Best matches";
+  const activeLabel = selectedSaleGroup ? saleGroupFilters.find(([kind]) => kind === selectedSaleGroup)?.[1] ?? "Best matches" : "All";
   const sections = [
     { title: hasSearch ? "Best matches" : activeLabel, data: visibleMenu }
   ].filter((section) => section.data.length > 0);
@@ -61,6 +61,9 @@ function MenuScreen({
         />
       </View>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always" contentContainerStyle={styles.filterChips}>
+        <Pressable style={[styles.filterChip, selectedSaleGroup === null && styles.filterChipActive]} onPress={() => onSaleGroupChange(null)}>
+          <Text style={[styles.filterChipText, selectedSaleGroup === null && styles.filterChipTextActive]}>All</Text>
+        </Pressable>
         {saleGroupFilters.map(([kind, label]) => (
           <Pressable key={kind} style={[styles.filterChip, selectedSaleGroup === kind && styles.filterChipActive]} onPress={() => onSaleGroupChange(kind)}>
             <Text style={[styles.filterChipText, selectedSaleGroup === kind && styles.filterChipTextActive]}>{label}</Text>

@@ -15,6 +15,7 @@ export interface DraftItem {
   openName?: string;
   saleGroupId?: string;
   productionUnitId?: string | null;
+  note?: string;
 }
 
 interface HubUiState {
@@ -34,6 +35,7 @@ interface HubUiState {
   addDraftItem: (tableId: string, item: MenuItem, variantId?: string) => void;
   addOpenDraftItem: (tableId: string, item: Omit<DraftItem, "lineKey" | "menuItemId" | "quantity">) => void;
   changeDraftQty: (tableId: string, menuItemId: string, delta: number) => void;
+  setDraftItemNote: (tableId: string, lineKey: string, note: string) => void;
   clearDraft: (tableId: string) => void;
 }
 
@@ -110,6 +112,21 @@ export const useHubStore = create<HubUiState>((set) => ({
       if (nextQuantity === 0) delete nextTableDraft[menuItemId];
       else nextTableDraft[menuItemId] = { ...current, quantity: nextQuantity };
       return { drafts: { ...state.drafts, [tableId]: nextTableDraft } };
+    }),
+  setDraftItemNote: (tableId, lineKey, note) =>
+    set((state) => {
+      const tableDraft = state.drafts[tableId] ?? {};
+      const current = tableDraft[lineKey];
+      if (!current) return state;
+      return {
+        drafts: {
+          ...state.drafts,
+          [tableId]: {
+            ...tableDraft,
+            [lineKey]: { ...current, note }
+          }
+        }
+      };
     }),
   clearDraft: (tableId) =>
     set((state) => ({

@@ -25,15 +25,14 @@ function TicketScreen({
   floors,
   draftTotal,
   tableTotal,
-  kotNote,
   currentOrder,
   connection,
   sending,
   canShift,
   canBill,
   onPaxChange,
-  onKotNoteChange,
   onChangeQty,
+  onChangeItemNote,
   onShiftTable,
   onShiftItem,
   onGenerateBill,
@@ -55,15 +54,14 @@ function TicketScreen({
   floors: HubBootstrap["floors"];
   draftTotal: number;
   tableTotal: number;
-  kotNote: string;
   currentOrder: HubOrder | null;
   connection: ConnectionState;
   sending: boolean;
   canShift: boolean;
   canBill: boolean;
   onPaxChange: (value: string) => void;
-  onKotNoteChange: (value: string) => void;
   onChangeQty: (index: number, delta: number) => void;
+  onChangeItemNote: (index: number, note: string) => void;
   onShiftTable: (tableId: string) => void;
   onShiftItem: (orderItemId: string, quantity: number, toTableId: string) => void;
   onGenerateBill: () => void;
@@ -86,6 +84,8 @@ function TicketScreen({
   const [targetSearch, setTargetSearch] = useState("");
   const [stateItems, setStateItems] = useState<MobileOrderStateItem[]>([]);
   const [stateSearch, setStateSearch] = useState("");
+  const [openDraftNotes, setOpenDraftNotes] = useState<Set<number>>(new Set());
+  const [openStateNotes, setOpenStateNotes] = useState<Set<number>>(new Set());
   const [stateApprovalMode, setStateApprovalMode] = useState<OrderStateSaveMode | null>(null);
   const [approvalPin, setApprovalPin] = useState("");
   const [approvalReason, setApprovalReason] = useState("Billed table state edited");
@@ -100,7 +100,7 @@ function TicketScreen({
   const selectedItemShiftTarget = shiftTargets.find((table) => table.id === itemShiftTargetId) ?? null;
   const sentCount = sentItems.reduce((total, item) => total + item.quantity, 0);
   const sentItemsSignature = sentItems
-    .map((item) => [item.id, item.menu_item_id, item.menu_item_variant_id, item.name_snapshot, item.unit_price_paise, item.quantity, item.status].join(":"))
+    .map((item) => [item.id, item.menu_item_id, item.menu_item_variant_id, item.name_snapshot, item.unit_price_paise, item.quantity, item.note ?? "", item.status].join(":"))
     .join("|");
   const savedStateSignature = mobileSavedOrderStateSignature(sentItems);
   const draftStateSignature = mobileDraftOrderStateSignature(stateItems, menuItems);
@@ -125,6 +125,7 @@ function TicketScreen({
               unitPricePaise: item.unit_price_paise,
               saleGroupId: item.sale_group_id,
               productionUnitId: item.production_unit_id ?? null,
+              note: item.note ?? "",
               quantity: item.quantity
             }
           : {
@@ -133,6 +134,7 @@ function TicketScreen({
               openPricePaise: item.unit_price_paise,
               saleGroupId: item.sale_group_id ?? "sg-food",
               productionUnitId: item.production_unit_id ?? null,
+              note: item.note ?? "",
               quantity: item.quantity
             }
       )
@@ -160,6 +162,15 @@ function TicketScreen({
         .map((item, itemIndex) => (itemIndex === index ? { ...item, quantity: Math.max(0, item.quantity + delta) } : item))
         .filter((item) => Boolean(item.orderItemId) || item.quantity > 0)
     );
+  };
+  const changeStateNote = (index: number, note: string) => {
+    setStateItems((current) => current.map((item, itemIndex) => (itemIndex === index ? { ...item, note } : item)));
+  };
+  const showDraftNote = (index: number) => {
+    setOpenDraftNotes((current) => new Set(current).add(index));
+  };
+  const showStateNote = (index: number) => {
+    setOpenStateNotes((current) => new Set(current).add(index));
   };
   const addStateItem = (menuItemId: string, menuItemVariantId?: string) => {
     setStateItems((current) => {
@@ -250,19 +261,6 @@ function TicketScreen({
             keyboardType="number-pad"
             returnKeyType="done"
           />
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>Kitchen / bar note</Text>
-            <TextInput
-              value={kotNote}
-              onChangeText={onKotNoteChange}
-              maxLength={500}
-              placeholder="Optional note for KOT/BOT only"
-              placeholderTextColor={palette.muted}
-              returnKeyType="done"
-              multiline
-              style={[styles.input, styles.multilineInput]}
-            />
-          </View>
         </View>
       </CollapsibleSection>
 
@@ -309,6 +307,21 @@ function TicketScreen({
                       <Text style={styles.qtyText}>+</Text>
                     </Pressable>
                   </View>
+                  {item.note?.trim() || openDraftNotes.has(index) ? (
+                    <TextInput
+                      style={[styles.input, styles.itemNoteInput]}
+                      value={item.note ?? ""}
+                      onChangeText={(note) => onChangeItemNote(index, note)}
+                      maxLength={500}
+                      placeholder="Kitchen/bar note"
+                      placeholderTextColor={palette.muted}
+                      returnKeyType="done"
+                    />
+                  ) : (
+                    <Pressable style={styles.itemNoteButton} onPress={() => showDraftNote(index)}>
+                      <Text style={styles.itemNoteButtonText}>Add note</Text>
+                    </Pressable>
+                  )}
                 </View>
               );
             })}
@@ -382,6 +395,21 @@ function TicketScreen({
                           <Text style={styles.qtyText}>+</Text>
                         </Pressable>
                       </View>
+                      {item.note?.trim() || openStateNotes.has(index) ? (
+                        <TextInput
+                          style={[styles.input, styles.itemNoteInput]}
+                          value={item.note ?? ""}
+                          onChangeText={(note) => changeStateNote(index, note)}
+                          maxLength={500}
+                          placeholder="Kitchen/bar note"
+                          placeholderTextColor={palette.muted}
+                          returnKeyType="done"
+                        />
+                      ) : (
+                        <Pressable style={styles.itemNoteButton} onPress={() => showStateNote(index)}>
+                          <Text style={styles.itemNoteButtonText}>Add note</Text>
+                        </Pressable>
+                      )}
                     </View>
                   );
                 })

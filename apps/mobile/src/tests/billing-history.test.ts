@@ -17,7 +17,10 @@ const currentSummary = {
   cardPaymentsPaise: 10_000,
   onlinePaymentsPaise: 0,
   totalPaymentsPaise: 50_000,
-  billSummaries: [{ billId: "today-bill", orderId: "order-today", tableName: "T1", status: "paid", totalPaise: 50_000, discountPaise: 0, tipPaise: 0, finalTotalPaise: 50_000, paidPaise: 50_000, settledAt: null, payments: [] }]
+  billSummaries: [
+    { billId: "today-old", billNumber: 1, orderId: "order-today-1", tableName: "T1", status: "paid", totalPaise: 10_000, discountPaise: 0, tipPaise: 0, finalTotalPaise: 10_000, paidPaise: 10_000, settledAt: null, payments: [] },
+    { billId: "today-new", billNumber: 5, orderId: "order-today-5", tableName: "T5", status: "paid", totalPaise: 40_000, discountPaise: 0, tipPaise: 0, finalTotalPaise: 40_000, paidPaise: 40_000, settledAt: null, payments: [] }
+  ]
 };
 
 describe("mobile billing history view model", () => {
@@ -42,5 +45,11 @@ describe("mobile billing history view model", () => {
       { label: "Payments", valuePaise: 10_000 },
       { label: "Gross", valuePaise: 12_000 }
     ]);
+  });
+
+  it("shows newest bill first for today's history", () => {
+    const viewModel = getBillingHistoryViewModel(currentSummary, null, null);
+
+    expect(viewModel.bills.map((bill) => bill.billId)).toEqual(["today-new", "today-old"]);
   });
 });

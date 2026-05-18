@@ -96,7 +96,7 @@ export function PrintLayoutEditor({
         subtotalPaise: 44000,
         taxPaise: draft.showTaxBreakup ? 2200 : 0,
         totalPaise: 44000,
-        taxBreakdown: draft.showTaxBreakup ? [{ name: "Food CGST", rateBps: 250, amountPaise: 1100 }, { name: "Food SGST", rateBps: 250, amountPaise: 1100 }] : [],
+        taxBreakdown: draft.showTaxBreakup ? [{ name: "CGST", rateBps: 250, amountPaise: 1100 }, { name: "SGST", rateBps: 250, amountPaise: 1100 }] : [],
         payments: draft.showPaymentSplit ? [{ method: "cash", amountPaise: 44000 }] : []
       })
     : renderKotTicketForPrint({
@@ -107,8 +107,7 @@ export function PrintLayoutEditor({
         ticketLabel: "KOT",
         captainId: "Captain",
         createdAt: "2026-05-15T15:00:00.000Z",
-        note: "No onion",
-        items: [{ name: "Paneer Tikka", quantityDelta: 2 }],
+        items: [{ name: "Paneer Tikka", quantityDelta: 2, note: "No onion" }],
         header: draft.kotHeader,
         footer: draft.kotFooter,
         ...draft
@@ -123,7 +122,8 @@ export function PrintLayoutEditor({
     ["metadata", "Table / date"],
     ["items", "Item rows"],
     ["totals", "Totals"],
-    ["notes", "KOT notes"],
+    ["notes", "KOT general notes"],
+    ["itemNotes", "Item notes"],
     ["footer", "Footer"],
   ] as const;
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parsePrintStyleLine, PRINT_LINE_MARKER, renderBillTicket, renderBillTicketForPrint, renderKotTicket, stripPrintStyleMarkers } from "../domain/tickets.js";
+import { parsePrintStyleLine, PRINT_LINE_MARKER, renderBillTicket, renderBillTicketForPrint, renderKotTicket, renderKotTicketForPrint, stripPrintStyleMarkers } from "../domain/tickets.js";
 
 describe("ticket rendering", () => {
   it("keeps long itemized bill rows readable on thermal-width tickets", () => {
@@ -67,8 +67,8 @@ describe("ticket rendering", () => {
       totalPaise: 30000,
       lineWidthChars: 28,
       taxBreakdown: [
-        { name: "Food CGST", rateBps: 250, amountPaise: 750 },
-        { name: "Food SGST", rateBps: 250, amountPaise: 750 }
+        { name: "CGST", rateBps: 250, amountPaise: 750 },
+        { name: "SGST", rateBps: 250, amountPaise: 750 }
       ]
     });
     const firstVisibleColumns = payload
@@ -76,7 +76,7 @@ describe("ticket rendering", () => {
       .filter((line) => line.includes("CGST") || line.includes("SGST"))
       .map((line) => line.slice(0, 32));
 
-    expect(firstVisibleColumns).toEqual(["Food CGST @ 2.5%: 7.50", "Food SGST @ 2.5%: 7.50"]);
+    expect(firstVisibleColumns).toEqual(["CGST @ 2.5%: 7.50", "SGST @ 2.5%: 7.50"]);
     expect(payload).toContain("Subtotal              300.00");
     expect(payload).toContain("Total                 300.00");
     expect(payload).not.toContain("VAT");
@@ -158,7 +158,7 @@ describe("ticket rendering", () => {
     expect(payload).not.toContain("T00:");
   });
 
-  it("prints kitchen notes on KOT/BOT tickets only", () => {
+  it("prints item-level kitchen notes on KOT/BOT tickets only", () => {
     const kot = renderKotTicket({
       sequence: 7,
       type: "new",
@@ -167,8 +167,7 @@ describe("ticket rendering", () => {
       ticketLabel: "KOT",
       captainId: "Captain",
       createdAt: "2026-07-12T07:00:00.000Z",
-      note: "No onion, serve fast",
-      items: [{ name: "Paneer Tikka", quantityDelta: 1 }],
+      items: [{ name: "Paneer Tikka", quantityDelta: 1, note: "No onion, serve fast" }],
       lineWidthChars: 28
     });
     const bill = renderBillTicket({
@@ -181,8 +180,29 @@ describe("ticket rendering", () => {
       items: [{ name: "Paneer Tikka", quantity: 1, unitPricePaise: 26000, lineTotalPaise: 26000 }]
     });
 
-    expect(kot).toContain("Note: No onion, serve fast");
+    expect(kot).toContain("No onion, serve fast");
     expect(bill).not.toContain("No onion");
+  });
+
+  it("styles item notes separately from item rows", () => {
+    const payload = renderKotTicketForPrint({
+      sequence: 7,
+      type: "new",
+      tableName: "T3",
+      productionUnitName: "Kitchen",
+      ticketLabel: "KOT",
+      captainId: "Captain",
+      createdAt: "2026-07-12T07:00:00.000Z",
+      items: [{ name: "Paneer Tikka", quantityDelta: 1, note: "No onion" }],
+      sectionStyles: {
+        items: { size: "normal", bold: false, align: "left" },
+        itemNotes: { size: "small", bold: false, align: "left" }
+      },
+      lineWidthChars: 28
+    });
+    const noteLine = payload.split(/\r?\n/).map((line) => parsePrintStyleLine(line)).find((line) => line?.plainText.includes("No onion"));
+
+    expect(noteLine).toMatchObject({ size: "small", bold: false, align: "left" });
   });
 
   it("honors top padding and plain solid separators in preview text", () => {

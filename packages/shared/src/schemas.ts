@@ -34,6 +34,7 @@ export const orderItemInputSchema = z.object({
   menuItemId: z.string().min(1).optional(),
   menuItemVariantId: z.string().min(1).optional(),
   quantity: z.number().int().min(0),
+  note: z.string().trim().max(500).optional(),
   openName: z.string().trim().min(1).max(160).optional(),
   openPricePaise: z.number().int().min(1).optional(),
   saleGroupId: z.string().trim().min(1).optional(),
@@ -339,6 +340,7 @@ export const printSectionStylesSchema = z.object({
   items: printSectionStyleSchema.default({ size: "normal", bold: false, align: "left" }),
   totals: printSectionStyleSchema.default({ size: "normal", bold: true, align: "left" }),
   notes: printSectionStyleSchema.default({ size: "normal", bold: true, align: "left" }),
+  itemNotes: printSectionStyleSchema.default({ size: "small", bold: false, align: "left" }),
   footer: printSectionStyleSchema.default({ size: "normal", bold: false, align: "center" })
 });
 

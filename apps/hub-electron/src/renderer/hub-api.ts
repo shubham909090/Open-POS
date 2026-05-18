@@ -278,6 +278,7 @@ export interface OrderItem {
   sale_group_name_snapshot: string;
   sale_group_kind_snapshot: string;
   ticket_label_snapshot: "KOT" | "BOT";
+  note?: string | null;
   is_open_item?: boolean | number;
   status: string;
 }
@@ -467,7 +468,7 @@ export interface KdsTicket {
   status: string;
   captain_id: string;
   note?: string | null;
-  items: Array<{ name_snapshot: string; quantity_delta: number }>;
+  items: Array<{ name_snapshot: string; quantity_delta: number; note_snapshot?: string | null }>;
 }
 
 export interface CsvImportResult {
@@ -657,9 +658,9 @@ export const hubApi = {
 	      printMode?: "kot" | "kot_print";
         note?: string;
 	      items: Array<
-        | { menuItemId: string; quantity: number }
-        | { menuItemId: string; menuItemVariantId: string; quantity: number }
-        | { openName: string; openPricePaise: number; saleGroupId: string; productionUnitId?: string | null; quantity: number }
+        | { menuItemId: string; quantity: number; note?: string }
+        | { menuItemId: string; menuItemVariantId: string; quantity: number; note?: string }
+        | { openName: string; openPricePaise: number; saleGroupId: string; productionUnitId?: string | null; quantity: number; note?: string }
       >;
     },
     idempotencyKey?: string
@@ -675,8 +676,8 @@ export const hubApi = {
 	    payload: {
 	      saveMode: "save" | "save_print";
 	      items: Array<
-	        | { orderItemId?: string; menuItemId: string; menuItemVariantId?: string; quantity: number }
-	        | { orderItemId?: string; openName: string; openPricePaise: number; saleGroupId: string; productionUnitId?: string | null; quantity: number }
+	        | { orderItemId?: string; menuItemId: string; menuItemVariantId?: string; quantity: number; note?: string }
+	        | { orderItemId?: string; openName: string; openPricePaise: number; saleGroupId: string; productionUnitId?: string | null; quantity: number; note?: string }
 	      >;
 	      managerApproval?: { pin: string; reason: string; approvedBy: string };
 	    },

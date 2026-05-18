@@ -103,7 +103,8 @@ export function KitchenView({
                 {ticket.note ? <li className="kot-note">Note: {ticket.note}</li> : null}
                 {ticket.items.map((item, index) => (
                   <li key={`${item.name_snapshot}-${index}`}>
-                    {item.quantity_delta} x {item.name_snapshot}
+                    {item.quantity_delta === 0 ? item.name_snapshot : `${item.quantity_delta} x ${item.name_snapshot}`}
+                    {item.note_snapshot ? <small className="kot-note">Note: {item.note_snapshot}</small> : null}
                   </li>
                 ))}
               </ul>

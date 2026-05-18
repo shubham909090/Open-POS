@@ -385,9 +385,7 @@ function BillingHistoryPanel({
           <EmptyState title="No bills found" text="Pick another day or settle the first bill." compact />
         ) : (
           history.bills.map((historyBill) => {
-            const preview = historyBill.items?.length
-              ? historyBill.items.slice(0, 3).map((item) => `${item.quantity} x ${item.name}`).join(", ")
-              : "No item details";
+            const previewItems = historyBill.items?.length ? historyBill.items.slice(0, 6) : [];
             return (
               <View key={historyBill.billId} style={styles.historyRow}>
                 <View style={styles.flexText}>
@@ -397,7 +395,13 @@ function BillingHistoryPanel({
                   </View>
                   {historyBill.modified ? <Text style={styles.historyModifiedTag}>Modified</Text> : null}
                   <Text style={styles.historyMeta}>Table {historyBill.tableName} · paid Rs {formatRupees(historyBill.paidPaise)}</Text>
-                  <Text style={styles.muted} numberOfLines={2}>{preview}</Text>
+                  <View style={styles.historyItemLines}>
+                    {previewItems.length ? (
+                      previewItems.map((item) => <Text key={item.orderItemId ?? `${historyBill.billId}-${item.name}`} style={styles.muted}>{item.quantity} x {item.name}</Text>)
+                    ) : (
+                      <Text style={styles.muted}>No item details</Text>
+                    )}
+                  </View>
                   <Text style={styles.smallMuted}>
                     Subtotal Rs {formatRupees(historyBill.subtotalPaise ?? Math.max(0, historyBill.totalPaise - (historyBill.taxPaise ?? 0)))} · tax Rs {formatRupees(historyBill.taxPaise ?? 0)}
                     {historyBill.settledAt ? ` · ${formatPosDateTime(historyBill.settledAt)}` : ""}

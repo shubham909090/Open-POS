@@ -64,6 +64,7 @@ export interface OrderItemInput {
   saleGroupId?: string;
   productionUnitId?: string | null;
   unitPricePaise?: number;
+  note?: string;
 }
 
 export interface DomainEvent {

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { stripPrintStyleMarkers } from "../domain/tickets.js";
 import { createTestHub } from "./helpers.js";
 
 describe("OrderService KOT lifecycle", () => {
@@ -270,6 +271,155 @@ describe("OrderService KOT lifecycle", () => {
       quantity: 1,
       status: "active"
     });
+
+    database.close();
+  });
+
+  it("prints one compact GST pair for non-alcohol bill categories", () => {
+    const { database, orderService } = createTestHub();
+    const order = orderService.submitOrder({
+      tableId: "table-t1",
+      captainId: "waiter-1",
+      pax: 1,
+      orderType: "dine_in",
+      printMode: "kot",
+      items: [
+        { menuItemId: "item-dal-fry", quantity: 1 },
+        { menuItemId: "item-lassi", quantity: 1 }
+      ]
+    });
+    const bill = orderService.generateBill(order.orderId);
+    const printJob = database.db.prepare("SELECT payload FROM print_jobs WHERE target_id = ?").get(bill.billId) as { payload: string };
+
+    const plainPayload = stripPrintStyleMarkers(printJob.payload);
+    expect(plainPayload.match(/CGST @ 2\.5%/g)).toHaveLength(1);
+    expect(plainPayload.match(/SGST @ 2\.5%/g)).toHaveLength(1);
+    expect(plainPayload).toContain("CGST @ 2.5%: 6.75");
+    expect(plainPayload).toContain("SGST @ 2.5%: 6.75");
+    expect(plainPayload).not.toContain("Food CGST");
+    expect(plainPayload).not.toContain("Beverage SGST");
+
+    database.close();
+  });
+
+  it("stores merged item notes and prints them under KOT item rows", () => {
+    const { database, orderService } = createTestHub();
+    const order = orderService.submitOrder({
+      tableId: "table-t1",
+      captainId: "waiter-1",
+      pax: 1,
+      orderType: "dine_in",
+      printMode: "kot_print",
+      items: [
+        { menuItemId: "item-paneer-tikka", quantity: 1, note: "No onion" },
+        { menuItemId: "item-paneer-tikka", quantity: 1, note: "extra spicy" },
+        { menuItemId: "item-paneer-tikka", quantity: 1, note: "No onion" }
+      ]
+    });
+    const orderItem = database.db.prepare("SELECT quantity, note FROM order_items WHERE order_id = ?").get(order.orderId) as { quantity: number; note: string };
+    const printJob = database.db.prepare("SELECT payload FROM print_jobs WHERE target_type = 'KOT' ORDER BY created_at DESC LIMIT 1").get() as { payload: string };
+    const kotItem = database.db.prepare("SELECT quantity_delta, note_snapshot FROM kot_items ORDER BY id DESC LIMIT 1").get() as { quantity_delta: number; note_snapshot: string };
+
+    expect(orderItem).toEqual({ quantity: 3, note: "No onion; extra spicy" });
+    expect(kotItem).toEqual({ quantity_delta: 3, note_snapshot: "No onion; extra spicy" });
+    expect(printJob.payload).toContain("+3 x Paneer Tikka");
+    expect(printJob.payload).toContain("No onion; extra spicy");
+
+    database.close();
+  });
+
+  it("edits item notes on the existing order item without cancel and re-add deltas", () => {
+    const { database, orderService } = createTestHub();
+    const order = orderService.submitOrder({
+      tableId: "table-t1",
+      captainId: "waiter-1",
+      pax: 1,
+      orderType: "dine_in",
+      printMode: "kot",
+      items: [{ menuItemId: "item-paneer-tikka", quantity: 1, note: "No onion" }]
+    });
+    const originalItem = database.db.prepare("SELECT id FROM order_items WHERE order_id = ?").get(order.orderId) as { id: string };
+
+    orderService.updateOrderState(order.orderId, {
+      saveMode: "save_print",
+      items: [{ orderItemId: originalItem.id, menuItemId: "item-paneer-tikka", quantity: 1, note: "No onion; extra spicy" }]
+    });
+
+    const rows = database.db.prepare("SELECT id, quantity, note, status FROM order_items WHERE order_id = ? ORDER BY created_at").all(order.orderId);
+    const latestKotItem = database.db
+      .prepare(
+        `SELECT k.type, ki.quantity_delta, ki.note_snapshot
+         FROM kot_items ki
+         JOIN kots k ON k.id = ki.kot_id
+         WHERE k.order_id = ?
+         ORDER BY k.created_at DESC, ki.id DESC
+         LIMIT 1`
+      )
+      .get(order.orderId) as { type: string; quantity_delta: number; note_snapshot: string | null };
+
+    expect(rows).toEqual([{ id: originalItem.id, quantity: 1, note: "No onion; extra spicy", status: "active" }]);
+    expect(latestKotItem).toEqual({ type: "modified", quantity_delta: 0, note_snapshot: "No onion; extra spicy" });
+
+    database.close();
+  });
+
+  it("merges new notes into an existing running item when the same item is sent again", () => {
+    const { database, orderService } = createTestHub();
+    const order = orderService.submitOrder({
+      tableId: "table-t1",
+      captainId: "waiter-1",
+      pax: 1,
+      orderType: "dine_in",
+      printMode: "kot",
+      items: [{ menuItemId: "item-paneer-tikka", quantity: 1, note: "No onion" }]
+    });
+
+    orderService.submitOrder({
+      tableId: "table-t1",
+      captainId: "waiter-1",
+      pax: 1,
+      orderType: "dine_in",
+      printMode: "kot",
+      items: [{ menuItemId: "item-paneer-tikka", quantity: 1, note: "extra spicy" }]
+    });
+
+    const rows = database.db.prepare("SELECT quantity, note, status FROM order_items WHERE order_id = ?").all(order.orderId);
+    expect(rows).toEqual([{ quantity: 2, note: "No onion; extra spicy", status: "active" }]);
+
+    database.close();
+  });
+
+  it("clears item notes during sent-order edit and sends a note-only modified ticket", () => {
+    const { database, orderService } = createTestHub();
+    const order = orderService.submitOrder({
+      tableId: "table-t1",
+      captainId: "waiter-1",
+      pax: 1,
+      orderType: "dine_in",
+      printMode: "kot",
+      items: [{ menuItemId: "item-paneer-tikka", quantity: 1, note: "No onion" }]
+    });
+    const originalItem = database.db.prepare("SELECT id FROM order_items WHERE order_id = ?").get(order.orderId) as { id: string };
+
+    orderService.updateOrderState(order.orderId, {
+      saveMode: "save_print",
+      items: [{ orderItemId: originalItem.id, menuItemId: "item-paneer-tikka", quantity: 1, note: "" }]
+    });
+
+    const row = database.db.prepare("SELECT id, quantity, note, status FROM order_items WHERE id = ?").get(originalItem.id);
+    const latestKotItem = database.db
+      .prepare(
+        `SELECT k.type, ki.quantity_delta, ki.note_snapshot
+         FROM kot_items ki
+         JOIN kots k ON k.id = ki.kot_id
+         WHERE k.order_id = ?
+         ORDER BY k.created_at DESC, ki.id DESC
+         LIMIT 1`
+      )
+      .get(order.orderId) as { type: string; quantity_delta: number; note_snapshot: string | null };
+
+    expect(row).toEqual({ id: originalItem.id, quantity: 1, note: null, status: "active" });
+    expect(latestKotItem).toEqual({ type: "modified", quantity_delta: 0, note_snapshot: null });
 
     database.close();
   });

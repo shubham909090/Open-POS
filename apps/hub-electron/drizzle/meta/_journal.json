@@ -85,6 +85,13 @@
       "when": 1779140000000,
       "tag": "0011_bill_order_timer_index",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1779145000000,
+      "tag": "0012_item_level_kot_notes",
+      "breakpoints": true
     }
   ]
 }

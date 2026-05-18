@@ -11,6 +11,7 @@ export interface MobileOrderStateDraftItem {
   saleGroupId?: string;
   productionUnitId?: string | null;
   unitPricePaise?: number;
+  note?: string;
 }
 
 export function mobileSavedOrderStateSignature(sentItems: HubOrder["items"]): string {
@@ -23,6 +24,7 @@ export function mobileSavedOrderStateSignature(sentItems: HubOrder["items"]): st
       pricePaise: item.unit_price_paise,
       saleGroupId: item.sale_group_id,
       productionUnitId: item.production_unit_id,
+      note: item.note,
       quantity: item.quantity
     }))
   );
@@ -44,6 +46,7 @@ export function mobileDraftOrderStateSignature(
         pricePaise: item.unitPricePaise ?? item.openPricePaise ?? variant?.price_paise ?? menuItem?.price_paise ?? 0,
         saleGroupId: item.saleGroupId ?? menuItem?.sale_group_id,
         productionUnitId: item.productionUnitId ?? menuItem?.production_unit_id,
+        note: item.note,
         quantity: item.quantity
       };
     })
