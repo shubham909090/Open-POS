@@ -1,7 +1,30 @@
-import { app, BrowserWindow } from "electron";
+import { app, BrowserWindow, dialog, ipcMain } from "electron";
+import { existsSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { startHub } from "./runtime.js";
+import { runSqliteSelfTest } from "./self-test.js";
 
 let mainWindow: BrowserWindow | null = null;
+
+const selfTestOnly = process.argv.includes("--self-test-sqlite");
+if (selfTestOnly) {
+  try {
+    runSqliteSelfTest();
+    app.exit(0);
+  } catch (error) {
+    console.error(error);
+    app.exit(1);
+  }
+} else {
+  ipcMain.handle("updates:choose-package", async () => {
+    const result = await dialog.showOpenDialog({
+      title: "Choose Gaurav POS update package",
+      properties: ["openFile"],
+      filters: [{ name: "Gaurav POS Update", extensions: ["zip"] }]
+    });
+    return result.canceled ? null : (result.filePaths[0] ?? null);
+  });
+}
 
 async function createWindow() {
   const hub = await startHub({
@@ -11,6 +34,7 @@ async function createWindow() {
     }
   });
 
+  const preloadPath = fileURLToPath(new URL("./preload.js", import.meta.url));
   mainWindow = new BrowserWindow({
     width: 1440,
     height: 920,
@@ -19,7 +43,8 @@ async function createWindow() {
     title: "Gaurav POS Hub",
     webPreferences: {
       contextIsolation: true,
-      nodeIntegration: false
+      nodeIntegration: false,
+      ...(existsSync(preloadPath) ? { preload: preloadPath } : {})
     }
   });
 
@@ -29,9 +54,11 @@ async function createWindow() {
   });
 }
 
-app.whenReady().then(() => {
-  void createWindow();
-});
+if (!selfTestOnly) {
+  app.whenReady().then(() => {
+    void createWindow();
+  });
+}
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();

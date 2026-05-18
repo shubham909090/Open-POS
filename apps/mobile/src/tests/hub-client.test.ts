@@ -357,12 +357,20 @@ describe("HubClient", () => {
     expect(fetchMock).toHaveBeenNthCalledWith(
       1,
       "http://hub.local:3737/bills/order-1/generate",
-      expect.objectContaining({ method: "POST", headers: expect.objectContaining({ "Idempotency-Key": "generate-once" }) })
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({ "Idempotency-Key": "generate-once" }),
+        body: JSON.stringify({ printerSlot: "default" })
+      })
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       2,
       "http://hub.local:3737/bills/bill-1/print",
-      expect.objectContaining({ method: "POST", headers: expect.objectContaining({ "Idempotency-Key": "print-once" }) })
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({ "Idempotency-Key": "print-once" }),
+        body: JSON.stringify({ printerSlot: "default" })
+      })
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       3,
@@ -370,7 +378,7 @@ describe("HubClient", () => {
       expect.objectContaining({
         method: "POST",
         headers: expect.objectContaining({ "Idempotency-Key": "reprint-once" }),
-        body: JSON.stringify({ reason: "Customer copy", ...approval })
+        body: JSON.stringify({ reason: "Customer copy", ...approval, printerSlot: "default" })
       })
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
@@ -379,7 +387,7 @@ describe("HubClient", () => {
       expect.objectContaining({
         method: "POST",
         headers: expect.objectContaining({ "Idempotency-Key": "history-reprint-once" }),
-        body: JSON.stringify({})
+        body: JSON.stringify({ printerSlot: "default" })
       })
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
@@ -390,7 +398,8 @@ describe("HubClient", () => {
         headers: expect.objectContaining({ "Idempotency-Key": "history-edit-once" }),
         body: JSON.stringify({
           masterApproval: { pin: "9876", reason: "Owner history edit", approvedBy: "owner" },
-          items: [{ orderItemId: "order-item-1", menuItemId: "item-1", quantity: 2 }]
+          items: [{ orderItemId: "order-item-1", menuItemId: "item-1", quantity: 2 }],
+          printerSlot: "default"
         })
       })
     );
@@ -402,12 +411,25 @@ describe("HubClient", () => {
     expect(fetchMock).toHaveBeenNthCalledWith(
       7,
       "http://hub.local:3737/bills/bill-1/nc",
-      expect.objectContaining({ method: "POST", headers: expect.objectContaining({ "Idempotency-Key": "nc-once" }) })
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({ "Idempotency-Key": "nc-once" }),
+        body: JSON.stringify({ ...approval, printerSlot: "default" })
+      })
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       8,
       "http://hub.local:3737/bills/bill-1/settle",
-      expect.objectContaining({ method: "POST", headers: expect.objectContaining({ "Idempotency-Key": "settle-once" }) })
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({ "Idempotency-Key": "settle-once" }),
+        body: JSON.stringify({
+          discountType: "amount",
+          discountValue: 0,
+          tipPaise: 0,
+          payments: [{ method: "upi", amountPaise: 24200, reference: "captain note" }]
+        })
+      })
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       9,

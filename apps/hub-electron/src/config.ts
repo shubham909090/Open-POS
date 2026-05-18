@@ -7,6 +7,7 @@ export interface HubConfig {
   port: number;
   databasePath: string;
   backupDir: string;
+  updateDir: string;
   printerOutputModeDefault: "test" | "live";
   convexHttpUrl?: string;
   posSyncSecret?: string;
@@ -74,6 +75,7 @@ export function loadHubConfig(env = process.env): HubConfig {
     port: Number(source.HUB_PORT ?? 3737),
     databasePath: source.HUB_DATABASE_PATH ?? join(defaultAppDataRoot(source), "data", "hub.sqlite"),
     backupDir: source.HUB_BACKUP_DIR ?? join(defaultAppDataRoot(source), "data", "backups"),
+    updateDir: source.HUB_UPDATE_DIR ?? join(defaultAppDataRoot(source), "updates"),
     printerOutputModeDefault: source.HUB_PRINTER_DRY_RUN === "false" ? "live" : "test",
     convexHttpUrl: source.CONVEX_HTTP_URL ?? source.CONVEX_URL,
     posSyncSecret: source.POS_SYNC_SECRET,

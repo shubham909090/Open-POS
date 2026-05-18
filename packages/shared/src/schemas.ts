@@ -10,6 +10,7 @@ export const saleGroupKindSchema = z.enum(["food", "alcohol", "beverage", "other
 export const ticketLabelSchema = z.enum(["KOT", "BOT"]);
 export const orderPrintModeSchema = z.enum(["kot", "kot_print"]);
 export const orderStateSaveModeSchema = z.enum(["save", "save_print"]);
+export const billPrinterSlotSchema = z.enum(["default", "alternate"]);
 
 export const taxComponentSchema = z.object({
   name: z.string().trim().min(1).max(40),
@@ -265,6 +266,23 @@ export const updateReceiptPrinterSchema = z.object({
   printerPort: z.number().int().min(1).max(65535).default(9100)
 });
 
+export const billPrinterProfileSchema = updateReceiptPrinterSchema.extend({
+  label: z.string().trim().min(1).max(80).default("Bill printer")
+});
+
+export const updateBillPrintersSchema = z.object({
+  default: billPrinterProfileSchema,
+  alternate: billPrinterProfileSchema
+});
+
+export const billPrintDestinationSchema = z.object({
+  printerSlot: billPrinterSlotSchema.default("default")
+});
+
+export const reprintBillSchema = reprintKotSchema.extend({
+  printerSlot: billPrinterSlotSchema.default("default")
+});
+
 export const printActionSchema = z.object({
   mode: z.enum(["kot_only", "bill_only", "kot_and_bill"]).default("kot_only")
 });
@@ -340,11 +358,13 @@ export const reviseBillSchema = z.object({
 
 export const historyEditBillSchema = z.object({
   items: z.array(orderItemInputSchema).min(1),
-  masterApproval: masterApprovalSchema
+  masterApproval: masterApprovalSchema,
+  printerSlot: billPrinterSlotSchema.default("default")
 });
 
 export const markNcBillSchema = z.object({
-  managerApproval: managerApprovalSchema
+  managerApproval: managerApprovalSchema,
+  printerSlot: billPrinterSlotSchema.default("default")
 });
 
 export const moveTableSchema = z.object({
@@ -400,6 +420,7 @@ export type SubmitOrderInput = Omit<ParsedSubmitOrderInput, "printMode"> & { pri
 export type UpdateOrderStateInput = z.input<typeof updateOrderStateSchema>;
 export type SettleBillInput = z.input<typeof settleBillSchema>;
 export type ReprintKotInput = z.infer<typeof reprintKotSchema>;
+export type ReprintBillInput = z.input<typeof reprintBillSchema>;
 export type CancelOrderInput = z.infer<typeof cancelOrderSchema>;
 export type CancelOrderItemsInput = z.infer<typeof cancelOrderItemsSchema>;
 export type ManagerApprovalInput = z.infer<typeof managerApprovalSchema>;
@@ -421,12 +442,16 @@ export type ImportAlcoholCsvInput = z.infer<typeof importAlcoholCsvSchema>;
 export type CreateAlcoholItemInput = z.input<typeof createAlcoholItemSchema>;
 export type UpdateAlcoholItemInput = z.infer<typeof updateAlcoholItemSchema>;
 export type AdjustAlcoholStockInput = z.infer<typeof adjustAlcoholStockSchema>;
-export type HistoryEditBillInput = z.infer<typeof historyEditBillSchema>;
+export type HistoryEditBillInput = z.input<typeof historyEditBillSchema>;
 export type UpdateKotStatusInput = z.infer<typeof updateKotStatusSchema>;
 export type RetryPrintJobInput = z.infer<typeof retryPrintJobSchema>;
 export type PrinterOutputMode = z.infer<typeof printerOutputModeSchema>;
+export type BillPrinterSlot = z.infer<typeof billPrinterSlotSchema>;
 export type UpdatePrinterOutputModeInput = z.infer<typeof updatePrinterOutputModeSchema>;
 export type UpdateReceiptPrinterInput = z.infer<typeof updateReceiptPrinterSchema>;
+export type BillPrinterProfileInput = z.infer<typeof billPrinterProfileSchema>;
+export type UpdateBillPrintersInput = z.infer<typeof updateBillPrintersSchema>;
+export type BillPrintDestinationInput = z.infer<typeof billPrintDestinationSchema>;
 export type PrintActionInput = z.infer<typeof printActionSchema>;
 export type TicketTemplateInput = z.infer<typeof ticketTemplateSchema>;
 export type ManagerPinUnlockInput = z.infer<typeof managerPinUnlockSchema>;
@@ -434,7 +459,7 @@ export type HubConnectionSettingsInput = z.infer<typeof hubConnectionSettingsSch
 export type PrintLayoutScope = z.infer<typeof printLayoutScopeSchema>;
 export type PrintLayoutSettingsInput = z.infer<typeof printLayoutSettingsSchema>;
 export type ReviseBillInput = z.infer<typeof reviseBillSchema>;
-export type MarkNcBillInput = z.infer<typeof markNcBillSchema>;
+export type MarkNcBillInput = z.input<typeof markNcBillSchema>;
 export type MoveTableInput = z.infer<typeof moveTableSchema>;
 export type MoveOrderItemsInput = z.infer<typeof moveOrderItemsSchema>;
 export type CreatePairingCodeInput = z.infer<typeof createPairingCodeSchema>;

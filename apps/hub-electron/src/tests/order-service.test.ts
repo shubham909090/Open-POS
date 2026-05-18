@@ -193,7 +193,7 @@ describe("OrderService KOT lifecycle", () => {
     expect(firstBill).toMatchObject({ billNumber: 1, printJobId: expect.any(String) });
     expect(secondBill).toMatchObject({ billNumber: 2, printJobId: expect.any(String) });
     expect(database.db.prepare("SELECT bill_number, print_count FROM bills ORDER BY bill_number").all()).toEqual([
-      { bill_number: 1, print_count: 2 },
+      { bill_number: 1, print_count: 1 },
       { bill_number: 2, print_count: 1 }
     ]);
     const printJob = database.db.prepare("SELECT payload FROM print_jobs WHERE id = ?").get(firstBill.printJobId) as { payload: string };
@@ -871,6 +871,110 @@ describe("OrderService KOT lifecycle", () => {
     const printJob = database.db.prepare("SELECT payload FROM print_jobs WHERE target_id = ? ORDER BY created_at ASC LIMIT 1").get(bill.billId) as { payload: string };
     expect(printJob.payload.indexOf("Gaurav Restaurant")).toBeLessThan(printJob.payload.indexOf("Main Road, Indore"));
     expect(printJob.payload).toContain("Main Road, Indore");
+
+    database.close();
+  });
+
+  it("routes bill print actions to the selected alternate bill printer without changing KOT routing", () => {
+    const { database, orderService } = createTestHub();
+    orderService.setManagerPin({ newPin: "1234", updatedBy: "admin" });
+    orderService.updateBillPrinters({
+      default: {
+        label: "Main counter",
+        printerMode: "network",
+        printerHost: "192.168.1.70",
+        printerPort: 9100
+      },
+      alternate: {
+        label: "Downstairs",
+        printerMode: "network",
+        printerHost: "192.168.1.71",
+        printerPort: 9100
+      }
+    });
+
+    const printers = orderService.getBillPrinters();
+    expect(printers.default).toMatchObject({ label: "Main counter", configured: true });
+    expect(printers.alternate).toMatchObject({ label: "Downstairs", configured: true });
+
+    const order = orderService.submitOrder({
+      tableId: "table-t1",
+      captainId: "waiter-1",
+      pax: 1,
+      orderType: "dine_in",
+      items: [{ menuItemId: "item-dal-fry", quantity: 1 }]
+    });
+    const kotPrint = database.db.prepare("SELECT printer_host FROM print_jobs WHERE target_type = 'KOT' ORDER BY created_at DESC LIMIT 1").get() as {
+      printer_host: string;
+    };
+    expect(kotPrint.printer_host).not.toBe("192.168.1.71");
+
+    const bill = orderService.generateBill(order.orderId, "alternate");
+    expect(database.db.prepare("SELECT printer_host, printer_port FROM print_jobs WHERE id = ?").get(bill.printJobId)).toEqual({
+      printer_host: "192.168.1.71",
+      printer_port: 9100
+    });
+
+    const reprint = orderService.reprintBillFromHistory(bill.billId, "captain-1", "default");
+    expect(database.db.prepare("SELECT printer_host, printer_port FROM print_jobs WHERE id = ?").get(reprint.printJobId)).toEqual({
+      printer_host: "192.168.1.70",
+      printer_port: 9100
+    });
+
+    const printCountBeforeSettle = database.db.prepare("SELECT COUNT(*) AS count FROM print_jobs WHERE target_id = ?").get(bill.billId) as { count: number };
+    const receiptPrintCountBeforeSettle = database.db.prepare("SELECT print_count FROM bills WHERE id = ?").get(bill.billId) as { print_count: number };
+    const settlement = orderService.settleBill(bill.billId, { method: "cash", amountPaise: bill.totalPaise, receivedBy: "captain-1" });
+    expect(settlement.status).toBe("paid");
+    expect(settlement).not.toHaveProperty("printJobId");
+    expect(database.db.prepare("SELECT COUNT(*) AS count FROM print_jobs WHERE target_id = ?").get(bill.billId)).toEqual({ count: printCountBeforeSettle.count });
+    expect(database.db.prepare("SELECT print_count FROM bills WHERE id = ?").get(bill.billId)).toEqual(receiptPrintCountBeforeSettle);
+
+    const ncOrder = orderService.submitOrder({
+      tableId: "table-t2",
+      captainId: "waiter-1",
+      pax: 1,
+      orderType: "dine_in",
+      items: [{ menuItemId: "item-dal-fry", quantity: 1 }]
+    });
+    const ncBill = orderService.generateBill(ncOrder.orderId);
+    const nc = orderService.markBillNc(ncBill.billId, {
+      managerApproval: { pin: "1234", reason: "Staff meal", approvedBy: "manager" },
+      printerSlot: "alternate"
+    });
+    expect(database.db.prepare("SELECT printer_host, printer_port FROM print_jobs WHERE id = ?").get(nc.printJobId)).toEqual({
+      printer_host: "192.168.1.71",
+      printer_port: 9100
+    });
+
+    database.close();
+  });
+
+  it("rejects an incomplete alternate bill printer before creating the print job", () => {
+    const { database, orderService } = createTestHub();
+    orderService.updateBillPrinters({
+      default: {
+        label: "Main counter",
+        printerMode: "network",
+        printerHost: "192.168.1.70",
+        printerPort: 9100
+      },
+      alternate: {
+        label: "Downstairs",
+        printerMode: "network",
+        printerHost: "",
+        printerPort: 9100
+      }
+    });
+    const order = orderService.submitOrder({
+      tableId: "table-t1",
+      captainId: "waiter-1",
+      pax: 1,
+      orderType: "dine_in",
+      items: [{ menuItemId: "item-dal-fry", quantity: 1 }]
+    });
+
+    expect(() => orderService.generateBill(order.orderId, "alternate")).toThrow("Downstairs is not configured");
+    expect(database.db.prepare("SELECT COUNT(*) AS count FROM bills").get()).toEqual({ count: 0 });
 
     database.close();
   });

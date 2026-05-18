@@ -25,6 +25,51 @@ export interface BackupSummary {
   createdAt: string;
 }
 
+export interface UpdatePackageManifest {
+  schemaVersion: 1;
+  appId: string;
+  productName: string;
+  version: string;
+  platform: "win32";
+  arch: "x64";
+  electronVersion: string;
+  dbSchemaVersion: number;
+  minSourceDbSchemaVersion: number;
+  createdAt: string;
+  installer: { fileName: string; sha256: string; sizeBytes: number };
+  sqliteNative: { fileName: string; sha256: string; sizeBytes: number; format: "pe32plus-x64" };
+}
+
+export interface CachedUpdatePackage {
+  version: string;
+  packagePath: string;
+  installerPath: string;
+  manifest: UpdatePackageManifest;
+  cachedAt: string;
+  preUpdateBackupFileName?: string;
+  preUpdateBackupPath?: string;
+  preparedAt?: string;
+}
+
+export interface AppUpdateStatus {
+  appVersion: string;
+  dbSchemaVersion: number;
+  activeOrderCount: number;
+  baselineRegistered: boolean;
+  rollbackAvailable: boolean;
+  current?: CachedUpdatePackage;
+  pending?: CachedUpdatePackage;
+  previous?: CachedUpdatePackage;
+  recoveryScriptPath?: string;
+}
+
+export interface ValidatedUpdatePackage {
+  ok: true;
+  packagePath: string;
+  packageFileName: string;
+  manifest: UpdatePackageManifest;
+}
+
 export interface PosDay {
   id: string;
   business_date: string;
@@ -123,6 +168,22 @@ export interface SystemPrinterInfo {
   displayName: string;
   isDefault: boolean;
   status?: string;
+}
+
+export type BillPrinterSlot = "default" | "alternate";
+
+export interface BillPrinterProfile {
+  label: string;
+  printerMode: "system" | "network";
+  printerHost: string | null;
+  printerPort: number | null;
+  printerName: string | null;
+  configured: boolean;
+}
+
+export interface BillPrinters {
+  default: BillPrinterProfile;
+  alternate: BillPrinterProfile;
 }
 
 export interface Bootstrap {
@@ -415,6 +476,14 @@ export interface CsvImportResult {
 
 let authToken = localStorage.getItem("deviceToken") || "dev-admin-token";
 
+declare global {
+  interface Window {
+    gauravPos?: {
+      chooseUpdatePackage?: () => Promise<string | null>;
+    };
+  }
+}
+
 export function getAuthToken() {
   return authToken;
 }
@@ -461,6 +530,23 @@ export const hubApi = {
   createBackup: (label: string) => apiFetch<BackupSummary>("/backups", { method: "POST", body: JSON.stringify({ label }) }),
   scheduleRestore: (fileName: string) =>
     apiFetch<{ scheduled: true; restartRequired: true; backup: BackupSummary }>("/backups/restore", { method: "POST", body: JSON.stringify({ fileName }) }),
+  updateStatus: () => apiFetch<AppUpdateStatus>("/system/update/status"),
+  validateUpdatePackage: (packagePath: string) =>
+    apiFetch<ValidatedUpdatePackage>("/system/update/validate", { method: "POST", body: JSON.stringify({ packagePath }) }),
+  registerUpdateBaseline: (packagePath: string) =>
+    apiFetch<CachedUpdatePackage>("/system/update/register-baseline", { method: "POST", body: JSON.stringify({ packagePath }) }),
+  installUpdate: (packagePath: string, managerPin: string) =>
+    apiFetch<{ installing: true; backup: BackupSummary; package: CachedUpdatePackage; recoveryScriptPath: string }>("/system/update/install", {
+      method: "POST",
+      headers: { "x-manager-pin": managerPin },
+      body: JSON.stringify({ packagePath })
+    }),
+  rollbackUpdate: (managerPin: string) =>
+    apiFetch<{ rollingBack: true; package: CachedUpdatePackage }>("/system/update/rollback", {
+      method: "POST",
+      headers: { "x-manager-pin": managerPin },
+      body: JSON.stringify({})
+    }),
   alcoholStockMovements: () => apiFetch<AlcoholStockMovement[]>("/reports/alcohol-stock-movements?limit=100"),
   kds: (unitId: string) => apiFetch<KdsTicket[]>(`/kds/${unitId}`),
   devices: () => apiFetch<LocalDevice[]>("/devices"),
@@ -541,6 +627,9 @@ export const hubApi = {
   updateSaleGroup: (id: string, payload: { defaultProductionUnitId?: string | null; taxComponents?: Array<{ name: string; rateBps: number }>; ticketLabel?: "KOT" | "BOT"; active?: boolean }) =>
     apiFetch<{ id: string }>(`/sale-groups/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
   systemPrinters: (options: { refresh?: boolean } = {}) => apiFetch<SystemPrinterInfo[]>(`/system-printers${options.refresh ? "?refresh=1" : ""}`),
+  billPrinters: () => apiFetch<BillPrinters>("/settings/bill-printers"),
+  updateBillPrinters: (payload: { default: { label: string; printerMode: "system" | "network"; printerName?: string; printerHost?: string; printerPort: number }; alternate: { label: string; printerMode: "system" | "network"; printerName?: string; printerHost?: string; printerPort: number } }) =>
+    apiFetch<BillPrinters>("/settings/bill-printers", { method: "PUT", body: JSON.stringify(payload) }),
   receiptPrinter: () => apiFetch<{ printerMode?: "system" | "network"; printerHost: string | null; printerPort: number | null; printerName: string | null }>("/settings/receipt-printer"),
   updateReceiptPrinter: (payload: { printerMode: "system" | "network"; printerName?: string; printerHost?: string; printerPort: number }) =>
     apiFetch("/settings/receipt-printer", { method: "PUT", body: JSON.stringify(payload) }),
@@ -584,8 +673,13 @@ export const hubApi = {
 	      idempotencyKey,
 	      body: JSON.stringify(payload)
 	    }),
-	  generateBill: (orderId: string, idempotencyKey?: string) =>
-	    apiFetch<{ billId: string; billNumber: number; totalPaise: number; printJobId: string; processed?: PrintProcessSummary }>(`/bills/${orderId}/generate`, { method: "POST", idempotent: "bill-generate", idempotencyKey }),
+	  generateBill: (orderId: string, idempotencyKey?: string, printerSlot: BillPrinterSlot = "default") =>
+	    apiFetch<{ billId: string; billNumber: number; totalPaise: number; printJobId: string; processed?: PrintProcessSummary }>(`/bills/${orderId}/generate`, {
+        method: "POST",
+        idempotent: "bill-generate",
+        idempotencyKey,
+        body: JSON.stringify({ printerSlot })
+      }),
   settleBill: (
     billId: string,
     payload: {
@@ -594,7 +688,7 @@ export const hubApi = {
       tipPaise: number;
       payments: Array<{ method: "cash" | "upi" | "card" | "online"; amountPaise: number; reference?: string }>;
     },
-    idempotencyKey?: string
+    idempotencyKey?: string,
   ) =>
     apiFetch<{ billId: string; status: string; remainingPaise: number }>(`/bills/${billId}/settle`, {
       method: "POST",
@@ -602,8 +696,8 @@ export const hubApi = {
       idempotencyKey,
       body: JSON.stringify(payload)
     }),
-  printBill: (billId: string, idempotencyKey?: string) =>
-    apiFetch<{ printJobId: string; processed?: PrintProcessSummary }>(`/bills/${billId}/print`, { method: "POST", idempotent: "bill-print", idempotencyKey, body: JSON.stringify({}) }),
+  printBill: (billId: string, idempotencyKey?: string, printerSlot: BillPrinterSlot = "default") =>
+    apiFetch<{ printJobId: string; processed?: PrintProcessSummary }>(`/bills/${billId}/print`, { method: "POST", idempotent: "bill-print", idempotencyKey, body: JSON.stringify({ printerSlot }) }),
   reviseBill: (
     billId: string,
     payload: ManagerApprovalPayload & {
@@ -620,10 +714,10 @@ export const hubApi = {
       idempotencyKey,
       body: JSON.stringify(payload)
     }),
-  reprintBill: (billId: string, payload: ManagerApprovalPayload, idempotencyKey?: string) =>
-    apiFetch<{ printJobId: string; processed?: PrintProcessSummary }>(`/bills/${billId}/reprint`, { method: "POST", idempotent: "bill-reprint", idempotencyKey, body: JSON.stringify({ reason: payload.managerApproval.reason, ...payload }) }),
-  historyReprintBill: (billId: string, idempotencyKey?: string) =>
-    apiFetch<{ printJobId: string; processed?: PrintProcessSummary }>(`/bills/${billId}/history-reprint`, { method: "POST", idempotent: "bill-history-reprint", idempotencyKey, body: JSON.stringify({}) }),
+  reprintBill: (billId: string, payload: ManagerApprovalPayload, idempotencyKey?: string, printerSlot: BillPrinterSlot = "default") =>
+    apiFetch<{ printJobId: string; processed?: PrintProcessSummary }>(`/bills/${billId}/reprint`, { method: "POST", idempotent: "bill-reprint", idempotencyKey, body: JSON.stringify({ reason: payload.managerApproval.reason, ...payload, printerSlot }) }),
+  historyReprintBill: (billId: string, idempotencyKey?: string, printerSlot: BillPrinterSlot = "default") =>
+    apiFetch<{ printJobId: string; processed?: PrintProcessSummary }>(`/bills/${billId}/history-reprint`, { method: "POST", idempotent: "bill-history-reprint", idempotencyKey, body: JSON.stringify({ printerSlot }) }),
   historyEditBill: (
     billId: string,
     payload: MasterApprovalPayload & {
@@ -632,16 +726,17 @@ export const hubApi = {
         | { orderItemId?: string; openName: string; openPricePaise: number; saleGroupId: string; productionUnitId?: string | null; quantity: number }
       >;
     },
-    idempotencyKey?: string
+    idempotencyKey?: string,
+    printerSlot: BillPrinterSlot = "default"
   ) =>
     apiFetch<{ billId: string; revisionNumber: number; totalPaise: number; printJobId: string; processed?: PrintProcessSummary; modified: boolean }>(`/bills/${billId}/history-edit`, {
       method: "POST",
       idempotent: "bill-history-edit",
       idempotencyKey,
-      body: JSON.stringify(payload)
+      body: JSON.stringify({ ...payload, printerSlot })
     }),
-  markBillNc: (billId: string, payload: ManagerApprovalPayload, idempotencyKey?: string) =>
-    apiFetch<{ printJobId: string; processed?: PrintProcessSummary }>(`/bills/${billId}/nc`, { method: "POST", idempotent: "bill-nc", idempotencyKey, body: JSON.stringify(payload) }),
+  markBillNc: (billId: string, payload: ManagerApprovalPayload, idempotencyKey?: string, printerSlot: BillPrinterSlot = "default") =>
+    apiFetch<{ printJobId: string; processed?: PrintProcessSummary }>(`/bills/${billId}/nc`, { method: "POST", idempotent: "bill-nc", idempotencyKey, body: JSON.stringify({ ...payload, printerSlot }) }),
   cancelOrder: (orderId: string, payload: ManagerApprovalPayload) =>
     apiFetch<{ orderId: string; kotIds?: string[]; printJobIds?: string[]; processed?: PrintProcessSummary }>(`/orders/${orderId}/cancel`, {
       method: "POST",

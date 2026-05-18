@@ -33,7 +33,7 @@ import {
 import { palette, styles } from "./styles/app-styles";
 import { AppHeader, ConnectionBanner, DraftBar, ModeTabs, OnboardingScreen } from "./components/app-shell";
 import { BillingHistoryPanel, KitchenScreen, MenuScreen, TablePicker, TicketScreen } from "./components/screens";
-import type { ConnectionState, MobileOrderStateItem, OrderStateSaveMode, PaymentMethod, PrintMode, ViewMode } from "./lib/mobile-types";
+import type { BillPrinterSlot, ConnectionState, MobileOrderStateItem, OrderStateSaveMode, PaymentMethod, PrintMode, ViewMode } from "./lib/mobile-types";
 import { useDevicePairing } from "./hooks/use-device-pairing";
 import { MOBILE_REALTIME_REFRESH_DEBOUNCE_MS, MOBILE_REFRESH_INTERVAL_MS, nextConnectionAfterRefresh } from "./lib/connection-health";
 
@@ -511,6 +511,37 @@ export default function App() {
     }
   }
 
+  function describeBillPrinter(profile: { printerMode: "system" | "network"; printerName: string | null; printerHost: string | null; printerPort: number | null }): string {
+    if (profile.printerMode === "network") return profile.printerHost ? `${profile.printerHost}:${profile.printerPort ?? 9100}` : "Not configured";
+    return profile.printerName || "Not configured";
+  }
+
+  async function chooseBillPrinter(title: string): Promise<BillPrinterSlot | null> {
+    try {
+      const printers = await client.billPrinters();
+      const hasAnyPrinter = printers.default.configured || printers.alternate.configured;
+      if (!hasAnyPrinter) {
+        Alert.alert("Bill printer missing", "No bill printer is configured in Hub Setup.");
+        return null;
+      }
+      return await new Promise<BillPrinterSlot | null>((resolve) => {
+        const buttons = [
+          ...(printers.default.configured
+            ? [{ text: `${printers.default.label}\n${describeBillPrinter(printers.default)}`, onPress: () => resolve("default" as const) }]
+            : []),
+          ...(printers.alternate.configured
+            ? [{ text: `${printers.alternate.label}\n${describeBillPrinter(printers.alternate)}`, onPress: () => resolve("alternate" as const) }]
+            : []),
+          { text: "Cancel", style: "cancel" as const, onPress: () => resolve(null) }
+        ];
+        Alert.alert(title, printers.default.configured && printers.alternate.configured ? "Choose where to print this bill." : "Only one bill printer is configured.", buttons);
+      });
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not load bill printers.");
+      return null;
+    }
+  }
+
   async function generateBillForSelectedTable() {
     if (!currentOrder?.order || !selectedTableId) {
       setMessage("Send items first, then generate the bill.");
@@ -518,8 +549,10 @@ export default function App() {
     }
     try {
       setSending(true);
-      const scope = { orderId: currentOrder.order.id };
-      await client.generateBill(currentOrder.order.id, { idempotencyKey: operationKey("mobile-bill-generate", scope) });
+      const printerSlot = await chooseBillPrinter("Print bill where?");
+      if (!printerSlot) return;
+      const scope = { orderId: currentOrder.order.id, printerSlot };
+      await client.generateBill(currentOrder.order.id, { idempotencyKey: operationKey("mobile-bill-generate", scope), printerSlot });
       await refresh(false);
       await loadTableOrder(selectedTableId);
       setMessage("Bill generated and print queued for this table.");
@@ -566,9 +599,11 @@ export default function App() {
     }
     try {
       setSending(true);
+      const printerSlot = await chooseBillPrinter("Reprint bill where?");
+      if (!printerSlot) return;
       const payload = approvalPayload(pin, reason, deviceName);
-      const scope = { billId: currentOrder.bill.id, payload };
-      await client.reprintBill(currentOrder.bill.id, payload, { idempotencyKey: operationKey("mobile-bill-reprint", scope) });
+      const scope = { billId: currentOrder.bill.id, payload, printerSlot };
+      await client.reprintBill(currentOrder.bill.id, payload, { idempotencyKey: operationKey("mobile-bill-reprint", scope), printerSlot });
       clearOperationKey("mobile-bill-reprint", scope);
       setMessage("Bill reprint queued.");
     } catch (error) {
@@ -581,8 +616,11 @@ export default function App() {
   async function printHistoryBill(billId: string) {
     try {
       setSending(true);
-      await client.historyReprintBill(billId, { idempotencyKey: operationKey("mobile-history-reprint", { billId }) });
-      clearOperationKey("mobile-history-reprint", { billId });
+      const printerSlot = await chooseBillPrinter("Print bill where?");
+      if (!printerSlot) return;
+      const scope = { billId, printerSlot };
+      await client.historyReprintBill(billId, { idempotencyKey: operationKey("mobile-history-reprint", scope), printerSlot });
+      clearOperationKey("mobile-history-reprint", scope);
       setMessage("History bill print queued.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not print history bill.");
@@ -594,12 +632,14 @@ export default function App() {
   async function editHistoryBill(billId: string, items: HistoryEditPayloadItem[], masterPin: string): Promise<boolean> {
     try {
       setSending(true);
+      const printerSlot = await chooseBillPrinter("Print edited bill where?");
+      if (!printerSlot) return false;
       const payload = {
         masterApproval: { pin: masterPin, reason: "Owner history edit", approvedBy: deviceName || "owner" },
         items
       };
-      const scope = { billId, payload };
-      await client.historyEditBill(billId, payload, { idempotencyKey: operationKey("mobile-history-edit", scope) });
+      const scope = { billId, payload, printerSlot };
+      await client.historyEditBill(billId, payload, { idempotencyKey: operationKey("mobile-history-edit", scope), printerSlot });
       clearOperationKey("mobile-history-edit", scope);
       await refresh(false);
       if (selectedHistoryDayId) setSelectedHistoryDetail(await client.dailyReport(selectedHistoryDayId));
@@ -637,9 +677,11 @@ export default function App() {
     }
     try {
       setSending(true);
+      const printerSlot = await chooseBillPrinter("Print NC bill where?");
+      if (!printerSlot) return;
       const payload = approvalPayload(pin, reason, deviceName);
-      const scope = { billId: currentOrder.bill.id, payload };
-      await client.markBillNc(currentOrder.bill.id, payload, { idempotencyKey: operationKey("mobile-bill-nc", scope) });
+      const scope = { billId: currentOrder.bill.id, payload, printerSlot };
+      await client.markBillNc(currentOrder.bill.id, payload, { idempotencyKey: operationKey("mobile-bill-nc", scope), printerSlot });
       clearOperationKey("mobile-bill-nc", scope);
       await refresh(false);
       await loadTableOrder(selectedTableId);

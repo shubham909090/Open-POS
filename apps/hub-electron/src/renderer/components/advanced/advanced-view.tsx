@@ -1,6 +1,6 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { CloudDownload, Printer } from "lucide-react";
+import { CloudDownload, PackageCheck, Printer, RotateCcw, Upload } from "lucide-react";
 import { formatPosDateTime } from "@gaurav-pos/shared";
 import { hubApi, type Bootstrap } from "../../hub-api.js";
 import { type NoticeSetter, messageOf } from "../../lib/format.js";
@@ -314,6 +314,11 @@ export function AdvancedView({
         </div>
       </section>
 
+      <AppUpdatePanel
+        setNotice={setNotice}
+        requestManagerApproval={requestManagerApproval}
+      />
+
       <section className="panel danger-zone">
         <div className="panel-title">
           <h2>Danger zone</h2>
@@ -364,5 +369,150 @@ export function AdvancedView({
         </div>
       </section>
     </div>
+  );
+}
+
+function AppUpdatePanel({
+  setNotice,
+  requestManagerApproval,
+}: {
+  setNotice: NoticeSetter;
+  requestManagerApproval: ManagerApprovalRequest;
+}) {
+  const queryClient = useQueryClient();
+  const [packagePath, setPackagePath] = useState("");
+  const updateStatus = useQuery({ queryKey: ["app-update-status"], queryFn: hubApi.updateStatus });
+  const validatePackage = useMutation({
+    mutationFn: hubApi.validateUpdatePackage,
+    onSuccess: (result) => {
+      setNotice({ tone: "good", text: `Update package valid: ${result.manifest.version}` });
+    },
+    onError: (error) => setNotice({ tone: "bad", text: messageOf(error) })
+  });
+  const registerBaseline = useMutation({
+    mutationFn: hubApi.registerUpdateBaseline,
+    onSuccess: async (result) => {
+      await queryClient.invalidateQueries({ queryKey: ["app-update-status"] });
+      setNotice({ tone: "good", text: `Rollback baseline registered: ${result.version}` });
+    },
+    onError: (error) => setNotice({ tone: "bad", text: messageOf(error) })
+  });
+  const installUpdate = useMutation({
+    mutationFn: ({ path, pin }: { path: string; pin: string }) => hubApi.installUpdate(path, pin),
+    onSuccess: (result) => {
+      setNotice({ tone: "good", text: `Backup created: ${result.backup.fileName}. Installer opening now.` });
+    },
+    onError: (error) => setNotice({ tone: "bad", text: messageOf(error) })
+  });
+  const rollbackUpdate = useMutation({
+    mutationFn: hubApi.rollbackUpdate,
+    onSuccess: () => {
+      setNotice({ tone: "good", text: "Rollback restore scheduled. Previous installer opening now." });
+    },
+    onError: (error) => setNotice({ tone: "bad", text: messageOf(error) })
+  });
+  const busy = validatePackage.isPending || registerBaseline.isPending || installUpdate.isPending || rollbackUpdate.isPending;
+  const status = updateStatus.data;
+  const chosenPath = packagePath.trim();
+
+  async function choosePackage() {
+    const selected = await window.gauravPos?.chooseUpdatePackage?.();
+    if (selected) setPackagePath(selected);
+    else if (!window.gauravPos?.chooseUpdatePackage) {
+      const typed = window.prompt("Paste .gpos-update.zip path");
+      if (typed) setPackagePath(typed);
+    }
+  }
+
+  return (
+    <section className="panel">
+      <div className="panel-title">
+        <h2>App updates</h2>
+        <span>{status ? `App ${status.appVersion} · DB ${status.dbSchemaVersion}` : "Loading"}</span>
+      </div>
+      <div className="record-list compact-list">
+        <article className="record-row">
+          <div>
+            <strong>Rollback baseline</strong>
+            <span>{status?.baselineRegistered ? `Ready: ${status.current?.version}` : "Register current update package before installing newer builds"}</span>
+          </div>
+          <span className={status?.baselineRegistered ? "record-status active" : "record-status warning"}>
+            {status?.baselineRegistered ? "Ready" : "Missing"}
+          </span>
+        </article>
+        <article className="record-row">
+          <div>
+            <strong>Running orders</strong>
+            <span>{status?.activeOrderCount ?? 0} must be closed before update install</span>
+          </div>
+          <span className={(status?.activeOrderCount ?? 0) === 0 ? "record-status active" : "record-status warning"}>
+            {(status?.activeOrderCount ?? 0) === 0 ? "Clear" : "Blocked"}
+          </span>
+        </article>
+        {status?.previous ? (
+          <article className="record-row">
+            <div>
+              <strong>Rollback package</strong>
+              <span>{status.previous.version} · backup {status.previous.preUpdateBackupFileName ?? "missing"}</span>
+            </div>
+            <span className={status.rollbackAvailable ? "record-status active" : "record-status warning"}>
+              {status.rollbackAvailable ? "Available" : "Incomplete"}
+            </span>
+          </article>
+        ) : null}
+      </div>
+      <div className="inline-form">
+        <label>
+          Update package
+          <input value={packagePath} onChange={(event) => setPackagePath(event.target.value)} placeholder="Choose .gpos-update.zip" />
+        </label>
+        <button type="button" onClick={() => void choosePackage()}>
+          <Upload size={16} /> Choose
+        </button>
+      </div>
+      <div className="support-tool-actions utility-actions">
+        <button type="button" className="utility-action" disabled={!chosenPath || busy} onClick={() => validatePackage.mutate(chosenPath)}>
+          <PackageCheck size={18} /> Validate
+        </button>
+        <button type="button" className="utility-action" disabled={!chosenPath || busy} onClick={() => registerBaseline.mutate(chosenPath)}>
+          Register baseline
+        </button>
+        <button
+          type="button"
+          className="utility-action"
+          disabled={!chosenPath || busy || !status?.baselineRegistered || (status?.activeOrderCount ?? 0) > 0}
+          onClick={async () => {
+            const approval = await requestManagerApproval({
+              title: "Install app update",
+              defaultReason: "Install app update",
+              message: "The hub will create a database backup, open the installer, and close this app.",
+              confirmLabel: installUpdate.isPending ? "Installing..." : "Install update",
+              danger: true
+            }).catch(() => null);
+            if (approval) installUpdate.mutate({ path: chosenPath, pin: approval.pin });
+          }}
+        >
+          Install update
+        </button>
+        <button
+          type="button"
+          className="utility-action"
+          disabled={busy || !status?.rollbackAvailable}
+          onClick={async () => {
+            const approval = await requestManagerApproval({
+              title: "Rollback app update",
+              defaultReason: "Rollback app update",
+              message: "The hub will restore the pre-update database backup and open the previous installer.",
+              confirmLabel: rollbackUpdate.isPending ? "Rolling back..." : "Rollback",
+              danger: true
+            }).catch(() => null);
+            if (approval) rollbackUpdate.mutate(approval.pin);
+          }}
+        >
+          <RotateCcw size={18} /> Rollback
+        </button>
+      </div>
+      {updateStatus.error ? <p className="warning-text">{messageOf(updateStatus.error)}</p> : null}
+    </section>
   );
 }

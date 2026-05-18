@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 const submitOrderMock = vi.fn();
 const tableOrderMock = vi.fn();
 const updateOrderStateMock = vi.fn();
+const billPrintersMock = vi.fn();
 
 describe("hub table workspace send actions", () => {
   afterEach(() => {
@@ -15,6 +16,7 @@ describe("hub table workspace send actions", () => {
     submitOrderMock.mockReset();
     tableOrderMock.mockReset();
     updateOrderStateMock.mockReset();
+    billPrintersMock.mockReset();
   });
 
   it("shows KOT and Print and KOT buttons and sends the selected print mode", async () => {
@@ -116,8 +118,13 @@ describe("hub table workspace send actions", () => {
 });
 
 async function importWorkspace() {
+  billPrintersMock.mockResolvedValue({
+    default: { label: "Main bill printer", printerMode: "system", printerName: "EPSON", printerPort: 9100, configured: true },
+    alternate: { label: "Second bill printer", printerMode: "system", printerPort: 9100, configured: false }
+  });
   vi.doMock("../renderer/hub-api.js", () => ({
     hubApi: {
+      billPrinters: billPrintersMock,
       tableOrder: tableOrderMock.mockResolvedValue(null),
       submitOrder: submitOrderMock,
       updateOrderState: updateOrderStateMock

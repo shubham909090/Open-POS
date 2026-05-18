@@ -1,13 +1,15 @@
 import { formatInr, searchMenuItems } from "@gaurav-pos/shared";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
-import { hubApi, type MenuItem, type TableOrder } from "../../hub-api.js";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { hubApi, type BillPrinterSlot, type MenuItem, type TableOrder } from "../../hub-api.js";
 import { menuItemVariantOptions, messageOf, type NoticeSetter } from "../../lib/format.js";
 import type { ManagerApproval, ManagerApprovalRequest } from "../../hooks/use-manager-approval.js";
+import { useKeyboardListNavigation } from "../../hooks/use-keyboard-list-navigation.js";
 import { useOperationKeys } from "../../hooks/use-operation-keys.js";
 import { EmptyState } from "../ui/empty-state.js";
 import { Metric } from "../ui/metric.js";
 import { LineItems } from "./line-items.js";
+import { BillPrinterChooser } from "./bill-printer-chooser.js";
 
 export type RevisionItem = {
   key: string;
@@ -20,6 +22,13 @@ export type RevisionItem = {
   productionUnitId?: string | null;
   name: string;
   quantity: number;
+};
+
+type SettlePayload = {
+  discountType: "amount" | "percent";
+  discountValue: number;
+  tipPaise: number;
+  payments: Array<{ method: "cash" | "upi" | "card" | "online"; amountPaise: number; reference?: string }>;
 };
 
 export function BillingPanel({
@@ -52,12 +61,15 @@ export function BillingPanel({
   const [revisionAddMenuItemId, setRevisionAddMenuItemId] = useState("");
   const [revisionAddVariantId, setRevisionAddVariantId] = useState("");
   const [revisionSearch, setRevisionSearch] = useState("");
+  const [pendingReprintApproval, setPendingReprintApproval] = useState<ManagerApproval | null>(null);
+  const [pendingNcApproval, setPendingNcApproval] = useState<ManagerApproval | null>(null);
   const operationKeys = useOperationKeys();
   const pendingScopes = useRef<Record<string, unknown>>({});
   const bill = tableOrder?.bill;
   const revisionAddMenuItem = menuItems.find((menuItem) => menuItem.id === revisionAddMenuItemId);
   const revisionAddVariants = menuItemVariantOptions(revisionAddMenuItem);
   const revisionSearchItems = searchMenuItems(menuItems, revisionSearch);
+  const revisionSearchItemIds = revisionSearchItems.map((item) => item.id).join("|");
   const existingPaid = bill?.paid_paise ?? (tableOrder?.payments ?? []).reduce((total, payment) => total + payment.amount_paise, 0);
   const discountPaise = bill
     ? discountType === "percent"
@@ -71,15 +83,8 @@ export function BillingPanel({
   const overpaid = Math.max(0, existingPaid + newPaid - finalTotal);
 
   const settle = useMutation({
-    mutationFn: () => {
+    mutationFn: (payload: SettlePayload) => {
       if (!bill) throw new Error("Generate the bill before taking payment.");
-      const rows = (Object.entries(payments) as Array<[keyof typeof payments, string]>)
-        .map(([method, value]) => ({ method, amountPaise: Math.round(Number(value || 0) * 100), reference: reference || undefined }))
-        .filter((row) => row.amountPaise > 0);
-      if (rows.length === 0) throw new Error("Enter at least one payment.");
-      if (remaining > 0) throw new Error("Payment is less than the bill balance.");
-      if (overpaid > 0) throw new Error(`Payment is ${formatInr(overpaid)} more than the bill balance.`);
-      const payload = { discountType, discountValue: discountType === "percent" ? Number(discount || 0) : discountPaise, tipPaise, payments: rows };
       const scope = { billId: bill.id, existingPaid, payload };
       pendingScopes.current["bill-settle"] = scope;
       return hubApi.settleBill(bill.id, payload, operationKeys.keyFor("bill-settle", scope));
@@ -94,14 +99,38 @@ export function BillingPanel({
     },
     onError: (error) => setNotice({ tone: "bad", text: messageOf(error) })
   });
+
+  function requestSettle() {
+    if (!bill) {
+      setNotice({ tone: "bad", text: "Generate the bill before taking payment." });
+      return;
+    }
+    const rows = (Object.entries(payments) as Array<[keyof typeof payments, string]>)
+      .map(([method, value]) => ({ method, amountPaise: Math.round(Number(value || 0) * 100), reference: reference || undefined }))
+      .filter((row) => row.amountPaise > 0);
+    if (rows.length === 0) {
+      setNotice({ tone: "bad", text: "Enter at least one payment." });
+      return;
+    }
+    if (remaining > 0) {
+      setNotice({ tone: "bad", text: "Payment is less than the bill balance." });
+      return;
+    }
+    if (overpaid > 0) {
+      setNotice({ tone: "bad", text: `Payment is ${formatInr(overpaid)} more than the bill balance.` });
+      return;
+    }
+    const payload = { discountType, discountValue: discountType === "percent" ? Number(discount || 0) : discountPaise, tipPaise, payments: rows };
+    settle.mutate(payload);
+  }
   const canPunchBill = Boolean(bill && !settle.isPending && newPaid > 0 && remaining === 0 && overpaid === 0);
   const reprintBill = useMutation({
-    mutationFn: (approval: ManagerApproval) => {
+    mutationFn: (input: { approval: ManagerApproval; printerSlot: BillPrinterSlot }) => {
       if (!bill) throw new Error("Generate the bill first.");
-      const payload = { managerApproval: approval };
-      const scope = { billId: bill.id, payload };
+      const payload = { managerApproval: input.approval };
+      const scope = { billId: bill.id, payload, printerSlot: input.printerSlot };
       pendingScopes.current["bill-reprint"] = scope;
-      return hubApi.reprintBill(bill.id, payload, operationKeys.keyFor("bill-reprint", scope));
+      return hubApi.reprintBill(bill.id, payload, operationKeys.keyFor("bill-reprint", scope), input.printerSlot);
     },
     onSuccess: () => {
       if (pendingScopes.current["bill-reprint"]) operationKeys.clear("bill-reprint", pendingScopes.current["bill-reprint"]);
@@ -110,12 +139,12 @@ export function BillingPanel({
     onError: (error) => setNotice({ tone: "bad", text: messageOf(error) })
   });
   const markNc = useMutation({
-    mutationFn: (approval: ManagerApproval) => {
+    mutationFn: (input: { approval: ManagerApproval; printerSlot: BillPrinterSlot }) => {
       if (!bill) throw new Error("Generate the bill first.");
-      const payload = { managerApproval: approval };
-      const scope = { billId: bill.id, payload };
+      const payload = { managerApproval: input.approval };
+      const scope = { billId: bill.id, payload, printerSlot: input.printerSlot };
       pendingScopes.current["bill-nc"] = scope;
-      return hubApi.markBillNc(bill.id, payload, operationKeys.keyFor("bill-nc", scope));
+      return hubApi.markBillNc(bill.id, payload, operationKeys.keyFor("bill-nc", scope), input.printerSlot);
     },
     onSuccess: async () => {
       if (pendingScopes.current["bill-nc"]) operationKeys.clear("bill-nc", pendingScopes.current["bill-nc"]);
@@ -178,11 +207,11 @@ export function BillingPanel({
       if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
       if (event.key !== "F8") return;
       event.preventDefault();
-      settle.mutate();
+      requestSettle();
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [canPunchBill, settle]);
+  }, [canPunchBill, discountType, discountPaise, tipPaise, payments, reference, remaining, overpaid]);
 
   function openRevisionEditor() {
     const rows = (tableOrder?.items ?? [])
@@ -207,10 +236,9 @@ export function BillingPanel({
     setRevisionItems((current) => current.map((item) => item.key === key ? { ...item, quantity: Math.max(0, item.quantity + delta) } : item));
   }
 
-  function addRevisionDish() {
-    const item = revisionAddMenuItem;
-    if (!item) return;
-    const variant = revisionAddVariants.find((entry) => (entry.id ?? "") === revisionAddVariantId) ?? revisionAddVariants[0];
+  const addRevisionMenuItem = useCallback((item: MenuItem, requestedVariantId?: string) => {
+    const variants = menuItemVariantOptions(item);
+    const variant = variants.find((entry) => (entry.id ?? "") === (requestedVariantId ?? "")) ?? variants[0];
     const variantId = variant?.id;
     const lineName = variant && variant.kind !== "default" ? `${item.name} ${variant.label}` : item.name;
     setRevisionItems((current) => {
@@ -230,7 +258,29 @@ export function BillingPanel({
         }
       ];
     });
+  }, []);
+
+  function addRevisionDish() {
+    const item = revisionAddMenuItem;
+    if (!item) return;
+    addRevisionMenuItem(item, revisionAddVariantId);
   }
+
+  const addKeyboardRevisionItem = useCallback(
+    (item: MenuItem) => {
+      const variantId = menuItemVariantOptions(item)[0]?.id ?? "";
+      setRevisionAddMenuItemId(item.id);
+      setRevisionAddVariantId(variantId);
+      addRevisionMenuItem(item, variantId);
+    },
+    [addRevisionMenuItem]
+  );
+  const revisionKeyboard = useKeyboardListNavigation({
+    items: revisionSearchItems,
+    enabled: Boolean(revisionOpen && revisionSearch.trim()),
+    resetKey: `${revisionSearch}|${revisionSearchItemIds}`,
+    onCommit: addKeyboardRevisionItem
+  });
 
   if (!tableOrder?.order) {
     return <EmptyState title="No active order" description="Add dishes and send them before generating a bill." />;
@@ -300,7 +350,7 @@ export function BillingPanel({
           Split: {paymentEntries.map((entry) => `${entry.method.toUpperCase()} ${formatInr(entry.paise)}`).join(" + ")}
         </div>
       ) : null}
-      <button type="button" className="punch-button" disabled={!canPunchBill} onClick={() => settle.mutate()}>
+      <button type="button" className="punch-button" disabled={!canPunchBill} onClick={requestSettle}>
         <span>{settle.isPending ? "Punching..." : `Punch bill · ${remaining > 0 ? `${formatInr(remaining)} left` : "paid"}`}</span>
         <kbd>F8</kbd>
       </button>
@@ -316,7 +366,7 @@ export function BillingPanel({
               defaultReason: "Bill reprint",
               confirmLabel: reprintBill.isPending ? "Queueing..." : "Reprint bill"
             }).catch(() => null);
-            if (approval) reprintBill.mutate(approval);
+            if (approval) setPendingReprintApproval(approval);
           }}
         >
           {reprintBill.isPending ? "Queueing..." : "Reprint bill"}
@@ -333,7 +383,12 @@ export function BillingPanel({
             <button type="button" onClick={() => setRevisionOpen(false)}>Cancel</button>
           </div>
           <div className="revision-add-row">
-            <input value={revisionSearch} onChange={(event) => setRevisionSearch(event.target.value)} placeholder="Search dish to add" />
+            <input
+              value={revisionSearch}
+              onChange={(event) => setRevisionSearch(event.target.value)}
+              onKeyDown={revisionKeyboard.onKeyDown}
+              placeholder="Search dish to add"
+            />
             <select
               value={revisionAddMenuItemId}
               onChange={(event) => {
@@ -360,6 +415,25 @@ export function BillingPanel({
             ) : null}
             <button type="button" disabled={!revisionAddMenuItemId} onClick={addRevisionDish}>Add</button>
           </div>
+          {revisionSearch.trim() && revisionSearchItems.length ? (
+            <div className="revision-search-results">
+              {revisionSearchItems.map((item, index) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  className={`revision-search-result${revisionKeyboard.activeIndex === index ? " keyboard-active" : ""}`}
+                  onMouseEnter={() => revisionKeyboard.setActiveIndex(index)}
+                  onClick={() => addKeyboardRevisionItem(item)}
+                >
+                  <span>
+                    <strong>{item.name}</strong>
+                    <small>{item.sale_group_name ?? item.production_unit_name ?? "Menu item"}</small>
+                  </span>
+                  <b>{formatInr(menuItemVariantOptions(item)[0]?.price_paise ?? item.price_paise)}</b>
+                </button>
+              ))}
+            </div>
+          ) : null}
           <LineItems
             emptyTitle="No bill items"
             emptyText="Add at least one item before saving the revised bill."
@@ -403,11 +477,35 @@ export function BillingPanel({
             confirmLabel: markNc.isPending ? "Marking..." : "Mark NC bill",
             danger: true
           }).catch(() => null);
-          if (approval) markNc.mutate(approval);
+          if (approval) setPendingNcApproval(approval);
         }}
       >
         {markNc.isPending ? "Marking NC..." : "Mark NC bill"}
       </button>
+      <BillPrinterChooser
+        open={Boolean(pendingReprintApproval)}
+        title="Reprint bill where?"
+        busy={reprintBill.isPending}
+        onClose={() => setPendingReprintApproval(null)}
+        onChoose={(printerSlot) => {
+          if (!pendingReprintApproval) return;
+          const approval = pendingReprintApproval;
+          setPendingReprintApproval(null);
+          reprintBill.mutate({ approval, printerSlot });
+        }}
+      />
+      <BillPrinterChooser
+        open={Boolean(pendingNcApproval)}
+        title="Print NC bill where?"
+        busy={markNc.isPending}
+        onClose={() => setPendingNcApproval(null)}
+        onChoose={(printerSlot) => {
+          if (!pendingNcApproval) return;
+          const approval = pendingNcApproval;
+          setPendingNcApproval(null);
+          markNc.mutate({ approval, printerSlot });
+        }}
+      />
     </div>
   );
 }

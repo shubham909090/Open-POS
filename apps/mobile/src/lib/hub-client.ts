@@ -1,4 +1,5 @@
 import type { SubmitOrderInput } from "@gaurav-pos/shared";
+import type { BillPrinterSlot } from "./mobile-types";
 
 export interface HubBootstrap {
   currentBusinessDay: { id: string; business_date: string; period_start_at: string; period_end_at: string; status: string };
@@ -41,6 +42,20 @@ export interface HubDeviceSession {
   id: string;
   name: string;
   role: string;
+}
+
+export interface BillPrinterProfile {
+  label: string;
+  printerMode: "system" | "network";
+  printerHost: string | null;
+  printerPort: number | null;
+  printerName: string | null;
+  configured: boolean;
+}
+
+export interface BillPrinters {
+  default: BillPrinterProfile;
+  alternate: BillPrinterProfile;
 }
 
 export interface HubOrder {
@@ -186,6 +201,10 @@ export class HubClient {
     return this.request("/devices/me");
   }
 
+  async billPrinters(): Promise<BillPrinters> {
+    return this.request("/settings/bill-printers");
+  }
+
   async tableOrder(tableId: string): Promise<HubOrder | null> {
     return this.request(`/tables/${tableId}/order`);
   }
@@ -309,7 +328,8 @@ export class HubClient {
   async generateBill(orderId: string, options: RequestOptions = {}): Promise<{ billId: string; billNumber: number; totalPaise: number; printJobId: string }> {
     return this.request(`/bills/${orderId}/generate`, {
       method: "POST",
-      headers: { "Idempotency-Key": options.idempotencyKey ?? createIdempotencyKey("mobile-bill-generate") }
+      headers: { "Idempotency-Key": options.idempotencyKey ?? createIdempotencyKey("mobile-bill-generate") },
+      body: JSON.stringify({ printerSlot: options.printerSlot ?? "default" })
     });
   }
 
@@ -317,7 +337,7 @@ export class HubClient {
     return this.request(`/bills/${billId}/print`, {
       method: "POST",
       headers: { "Idempotency-Key": options.idempotencyKey ?? createIdempotencyKey("mobile-bill-print") },
-      body: JSON.stringify({})
+      body: JSON.stringify({ printerSlot: options.printerSlot ?? "default" })
     });
   }
 
@@ -325,7 +345,7 @@ export class HubClient {
     return this.request(`/bills/${billId}/history-reprint`, {
       method: "POST",
       headers: { "Idempotency-Key": options.idempotencyKey ?? createIdempotencyKey("mobile-bill-history-reprint") },
-      body: JSON.stringify({})
+      body: JSON.stringify({ printerSlot: options.printerSlot ?? "default" })
     });
   }
 
@@ -342,7 +362,7 @@ export class HubClient {
     return this.request(`/bills/${billId}/history-edit`, {
       method: "POST",
       headers: { "Idempotency-Key": options.idempotencyKey ?? createIdempotencyKey("mobile-bill-history-edit") },
-      body: JSON.stringify(input)
+      body: JSON.stringify({ ...input, printerSlot: options.printerSlot ?? "default" })
     });
   }
 
@@ -350,7 +370,7 @@ export class HubClient {
     return this.request(`/bills/${billId}/reprint`, {
       method: "POST",
       headers: { "Idempotency-Key": options.idempotencyKey ?? createIdempotencyKey("mobile-bill-reprint") },
-      body: JSON.stringify({ reason: input.managerApproval.reason, ...input })
+      body: JSON.stringify({ reason: input.managerApproval.reason, ...input, printerSlot: options.printerSlot ?? "default" })
     });
   }
 
@@ -375,7 +395,7 @@ export class HubClient {
     return this.request(`/bills/${billId}/nc`, {
       method: "POST",
       headers: { "Idempotency-Key": options.idempotencyKey ?? createIdempotencyKey("mobile-bill-nc") },
-      body: JSON.stringify(input)
+      body: JSON.stringify({ ...input, printerSlot: options.printerSlot ?? "default" })
     });
   }
 
@@ -469,6 +489,7 @@ export interface MasterApprovalPayload {
 
 export interface RequestOptions {
   idempotencyKey?: string;
+  printerSlot?: BillPrinterSlot;
 }
 
 function createIdempotencyKey(prefix: string): string {

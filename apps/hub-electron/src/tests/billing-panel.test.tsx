@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { TableOrder } from "../renderer/hub-api.js";
 
 const settleBillMock = vi.fn();
+const billPrintersMock = vi.fn();
 
 describe("hub billing shortcuts", () => {
   afterEach(() => {
@@ -12,6 +13,7 @@ describe("hub billing shortcuts", () => {
     vi.restoreAllMocks();
     vi.resetModules();
     settleBillMock.mockReset();
+    billPrintersMock.mockReset();
   });
 
   it("uses F8 to punch the visible bill only when payment is complete", async () => {
@@ -32,6 +34,7 @@ describe("hub billing shortcuts", () => {
       expect.objectContaining({ payments: [expect.objectContaining({ method: "cash", amountPaise: 50000 })] }),
       expect.any(String)
     ));
+    expect(screen.queryByText("Print paid bill where?")).toBeNull();
   });
 
   it("ignores F8 with modifier keys", async () => {
@@ -94,8 +97,13 @@ describe("hub billing shortcuts", () => {
 });
 
 async function importBillingPanel() {
+  billPrintersMock.mockResolvedValue({
+    default: { label: "Main bill printer", printerMode: "system", printerName: "EPSON", printerPort: 9100, configured: true },
+    alternate: { label: "Second bill printer", printerMode: "system", printerPort: 9100, configured: false }
+  });
   vi.doMock("../renderer/hub-api.js", () => ({
     hubApi: {
+      billPrinters: billPrintersMock,
       settleBill: settleBillMock,
       printBill: vi.fn(),
       reprintBill: vi.fn(),

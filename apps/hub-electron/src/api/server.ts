@@ -22,6 +22,7 @@ import {
   createSaleGroupSchema,
   createTableSchema,
   exchangePairingCodeSchema,
+  billPrintDestinationSchema,
 	  hubConnectionSettingsSchema,
 	  historyEditBillSchema,
 	  managerPinSchema,
@@ -29,6 +30,7 @@ import {
   markNcBillSchema,
   moveOrderItemsSchema,
   moveTableSchema,
+  reprintBillSchema,
   reprintKotSchema,
   revokeDeviceSchema,
   reviseBillSchema,
@@ -46,6 +48,7 @@ import {
 	  updateOrderStateSchema,
   updatePrinterOutputModeSchema,
   updateProductionUnitSchema,
+  updateBillPrintersSchema,
   updateReceiptPrinterSchema,
   updateSaleGroupSchema,
   updateTableSchema,
@@ -62,8 +65,14 @@ import { OrderService } from "../domain/order-service.js";
 import type { PrintJobService } from "../printing/print-job-service.js";
 import { listSystemPrinters } from "../printing/printer-discovery.js";
 import type { ConvexSyncBridge } from "../sync/convex-sync.js";
+import type { AppUpdateService } from "../update/app-update-service.js";
+import { z } from "zod";
 
 const hubFaviconSvg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="12" fill="#18181b"/><path fill="#fff" d="M17 17h30v7H17zM17 29h30v7H17zM17 41h20v7H17z"/><path fill="#0f766e" d="M42 41h5v7h-5z"/></svg>';
+
+const updatePackagePathSchema = z.object({
+  packagePath: z.string().trim().min(1)
+});
 
 export function isRealtimeEventVisibleForRole(event: unknown, role: UserRole): boolean {
   if (role === "admin" || role === "captain") return true;
@@ -202,6 +211,7 @@ function isPrivate172Address(address: string): boolean {
 export function createHubServer(input: {
   database: HubDatabase;
   backupService: BackupService;
+  appUpdateService?: AppUpdateService;
   authService: AuthService;
   orderService: OrderService;
   printJobService: PrintJobService;
@@ -221,6 +231,11 @@ export function createHubServer(input: {
       totals.skipped += result.skipped ? 1 : 0;
     }
     return totals;
+  }
+
+  function requireAppUpdateService() {
+    if (!input.appUpdateService) throw new DomainError("App updates are not configured", 503);
+    return input.appUpdateService;
   }
 
   const dedupeInFlight = <T>(state: { promise: Promise<T> | null }, run: () => Promise<T>) => {
@@ -582,6 +597,7 @@ export function createHubServer(input: {
     return result;
   });
   app.get("/settings/receipt-printer", { preHandler: captainOrAdmin }, async () => input.orderService.getReceiptPrinter());
+  app.get("/settings/bill-printers", { preHandler: captainOrAdmin }, async () => input.orderService.getBillPrinters());
   app.get("/settings/printer-mode", { preHandler: adminOnly }, async () => ({ mode: input.orderService.getPrinterOutputMode() }));
   app.put("/settings/printer-mode", { preHandler: adminOnly }, async (request) => {
     const result = input.orderService.updatePrinterOutputMode(updatePrinterOutputModeSchema.parse(request.body).mode);
@@ -594,6 +610,11 @@ export function createHubServer(input: {
   });
   app.put("/settings/receipt-printer", { preHandler: adminOnly }, async (request) => {
     const result = input.orderService.updateReceiptPrinter(updateReceiptPrinterSchema.parse(request.body));
+    input.eventBus.publish({ type: "receipt_printer.updated", result });
+    return result;
+  });
+  app.put("/settings/bill-printers", { preHandler: adminOnly }, async (request) => {
+    const result = input.orderService.updateBillPrinters(updateBillPrintersSchema.parse(request.body));
     input.eventBus.publish({ type: "receipt_printer.updated", result });
     return result;
   });
@@ -827,7 +848,7 @@ export function createHubServer(input: {
     const { result, replayed } = await withIdempotency(request, `bills.reprint.${params.billId}`, () =>
       input.orderService.reprintBill(
         params.billId,
-        reprintKotSchema.parse({ ...(request.body as Record<string, unknown>), requestedBy: session.name })
+        reprintBillSchema.parse({ ...(request.body as Record<string, unknown>), requestedBy: session.name })
       )
     );
     const processed = replayed ? undefined : await processCreatedPrintJobs([result.printJobId]);
@@ -838,8 +859,9 @@ export function createHubServer(input: {
   app.post("/bills/:billId/history-reprint", { preHandler: captainOrAdmin }, async (request) => {
     const params = request.params as { billId: string };
     const session = getSession(request);
+    const body = billPrintDestinationSchema.parse(request.body ?? {});
     const { result, replayed } = await withIdempotency(request, `bills.history-reprint.${params.billId}`, () =>
-      input.orderService.reprintBillFromHistory(params.billId, session.name)
+      input.orderService.reprintBillFromHistory(params.billId, session.name, body.printerSlot)
     );
     const processed = replayed ? undefined : await processCreatedPrintJobs([result.printJobId]);
     if (!replayed) input.eventBus.publish({ type: "bill.history_reprinted", result: { ...result, processed } });
@@ -849,8 +871,9 @@ export function createHubServer(input: {
   app.post("/bills/:billId/print", { preHandler: captainOrAdmin }, async (request) => {
     const params = request.params as { billId: string };
     const session = getSession(request);
+    const body = billPrintDestinationSchema.parse(request.body ?? {});
     const { result, replayed } = await withIdempotency(request, `bills.print.${params.billId}`, () =>
-      input.orderService.printBill(params.billId, session.name)
+      input.orderService.printBill(params.billId, session.name, body.printerSlot)
     );
     const processed = replayed ? undefined : await processCreatedPrintJobs([result.printJobId]);
     if (!replayed) input.eventBus.publish({ type: "bill.printed", result: { ...result, processed } });
@@ -888,8 +911,9 @@ export function createHubServer(input: {
 
 	  app.post("/bills/:orderId/generate", { preHandler: captainOrAdmin }, async (request) => {
 	    const params = request.params as { orderId: string };
+	    const body = billPrintDestinationSchema.parse(request.body ?? {});
 	    const { result, replayed } = await withIdempotency(request, `bills.generate.${params.orderId}`, () =>
-	      input.orderService.generateBill(params.orderId)
+	      input.orderService.generateBill(params.orderId, body.printerSlot)
 	    );
 	    const processed = replayed ? undefined : await processCreatedPrintJobs([result.printJobId]);
 	    if (!replayed) input.eventBus.publish({ type: "bill.generated", result: { ...result, processed } });
@@ -943,6 +967,26 @@ export function createHubServer(input: {
   app.post("/backups/restore", { preHandler: adminOnly }, async (request) => {
     const body = scheduleRestoreSchema.parse(request.body);
     return input.backupService.scheduleRestore(body.fileName);
+  });
+  app.get("/system/update/status", { preHandler: adminOnly }, async () => requireAppUpdateService().status());
+  app.post("/system/update/validate", { preHandler: adminOnly }, async (request) => {
+    const body = updatePackagePathSchema.parse(request.body);
+    return requireAppUpdateService().validatePackage(body.packagePath);
+  });
+  app.post("/system/update/register-baseline", { preHandler: adminOnly }, async (request) => {
+    const body = updatePackagePathSchema.parse(request.body);
+    return requireAppUpdateService().registerBaseline(body.packagePath);
+  });
+  app.post("/system/update/install", { preHandler: adminOnly }, async (request) => {
+    const body = updatePackagePathSchema.parse(request.body);
+    const managerPin = String(request.headers["x-manager-pin"] ?? "");
+    input.orderService.verifyManagerPinForSession(managerPin);
+    return requireAppUpdateService().installUpdate(body.packagePath);
+  });
+  app.post("/system/update/rollback", { preHandler: adminOnly }, async (request) => {
+    const managerPin = String(request.headers["x-manager-pin"] ?? "");
+    input.orderService.verifyManagerPinForSession(managerPin);
+    return requireAppUpdateService().rollback();
   });
   app.post("/system/full-reset", { preHandler: adminOnly }, async (request) => {
     const body = fullResetSchema.parse(request.body);

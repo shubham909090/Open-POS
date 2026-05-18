@@ -49,6 +49,9 @@ export class BackupService {
       const safetyPath = join(backupDir, `pre-restore-${BackupService.timestamp()}${BACKUP_EXTENSION}`);
       renameSync(databasePath, safetyPath);
     }
+    for (const path of BackupService.sqliteRuntimeFiles(databasePath).filter((path) => path !== databasePath)) {
+      rmSync(path, { force: true });
+    }
 
     copyFileSync(marker.backupPath, databasePath);
     rmSync(markerPath, { force: true });

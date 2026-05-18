@@ -16,12 +16,16 @@ export function MenuResultSection({
   items,
   selectedTableId,
   onAdd,
+  activeItemId,
+  onActiveItemIndexChange,
   emptyText
 }: {
   title: string;
   items: MenuItem[];
   selectedTableId: string;
   onAdd: (tableId: string, item: MenuItem, variantId?: string) => void;
+  activeItemId?: string;
+  onActiveItemIndexChange?: (index: number) => void;
   emptyText?: string;
 }) {
   return (
@@ -29,8 +33,14 @@ export function MenuResultSection({
       <h3>{title}</h3>
       {items.length ? (
         <div className="menu-grid">
-          {items.map((item) => (
-            <MenuCard key={item.id} item={item} onAdd={(variantId) => onAdd(selectedTableId, item, variantId)} />
+          {items.map((item, index) => (
+            <MenuCard
+              key={item.id}
+              active={activeItemId === item.id}
+              item={item}
+              onActive={() => onActiveItemIndexChange?.(index)}
+              onAdd={(variantId) => onAdd(selectedTableId, item, variantId)}
+            />
           ))}
         </div>
       ) : emptyText ? (
@@ -40,10 +50,20 @@ export function MenuResultSection({
   );
 }
 
-export function MenuCard({ item, onAdd }: { item: MenuItem; onAdd: (variantId?: string) => void }) {
+export function MenuCard({
+  item,
+  active = false,
+  onActive,
+  onAdd
+}: {
+  item: MenuItem;
+  active?: boolean;
+  onActive?: () => void;
+  onAdd: (variantId?: string) => void;
+}) {
   const variants = getMenuActionVariants(item);
   return (
-    <article className={`menu-card compact-menu-card category-${item.sale_group_kind ?? "other"}`}>
+    <article className={`menu-card compact-menu-card category-${item.sale_group_kind ?? "other"}${active ? " keyboard-active" : ""}`} onMouseEnter={onActive}>
       <CategoryBadge kind={item.sale_group_kind} />
       <div className="menu-card-main">
         <strong>{item.name}</strong>

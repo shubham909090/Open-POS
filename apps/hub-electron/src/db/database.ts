@@ -6,6 +6,8 @@ import { mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import * as schema from "./drizzle-schema.js";
 
+const APP_SCHEMA_SETTING = "app_db_schema_version";
+
 export type SqliteDatabase = Database.Database;
 export type HubOrm = BetterSQLite3Database<typeof schema> & { $client: SqliteDatabase };
 
@@ -26,6 +28,40 @@ export class HubDatabase {
   migrate(): void {
     const migrationsFolder = fileURLToPath(new URL("../../drizzle", import.meta.url));
     migrate(this.orm, { migrationsFolder });
+  }
+
+  assertCompatibleAppSchema(appSchemaVersion: number): void {
+    const storedVersion = this.getStoredAppSchemaVersion();
+    if (storedVersion !== null && storedVersion > appSchemaVersion) {
+      throw new Error(`This database was opened by a newer app schema (${storedVersion}). Install a newer Gaurav POS Hub build.`);
+    }
+  }
+
+  markAppSchemaVersion(appSchemaVersion: number): void {
+    const now = new Date().toISOString();
+    this.db
+      .prepare(
+        `INSERT INTO hub_settings (key, value, updated_at)
+         VALUES (?, ?, ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`
+      )
+      .run(APP_SCHEMA_SETTING, String(appSchemaVersion), now);
+  }
+
+  getStoredAppSchemaVersion(): number | null {
+    const table = this.db
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'hub_settings'")
+      .get() as { name: string } | undefined;
+    if (!table) return null;
+    const row = this.db.prepare("SELECT value FROM hub_settings WHERE key = ?").get(APP_SCHEMA_SETTING) as { value: string } | undefined;
+    if (!row) return null;
+    const version = Number(row.value);
+    return Number.isInteger(version) && version >= 0 ? version : null;
+  }
+
+  integrityCheck(): void {
+    const result = this.db.pragma("integrity_check", { simple: true });
+    if (result !== "ok") throw new Error("SQLite integrity check failed");
   }
 
   seedDemoData(): void {

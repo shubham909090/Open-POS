@@ -171,6 +171,26 @@
     @apply text-sm font-semibold leading-5 text-accent-dark;
   }
 
+  .printer-choice-list {
+    @apply grid gap-2;
+  }
+
+  .printer-choice-button {
+    @apply flex w-full items-center gap-3 rounded-lg border border-line bg-white p-3 text-left transition hover:border-accent hover:bg-accent-soft disabled:cursor-not-allowed disabled:opacity-60;
+  }
+
+  .printer-choice-button span {
+    @apply grid min-w-0 gap-1;
+  }
+
+  .printer-choice-button strong {
+    @apply truncate text-base font-black text-ink;
+  }
+
+  .printer-choice-button small {
+    @apply truncate text-xs font-semibold text-muted;
+  }
+
   .printer-output-panel {
     @apply border-warning bg-warning-soft;
   }
@@ -884,6 +904,10 @@
     @apply block text-xs font-semibold text-muted;
   }
 
+  .history-edit-search-row.keyboard-active {
+    @apply border-accent bg-accent-soft shadow-sm;
+  }
+
   .history-edit-qty,
   .history-edit-actions,
   .history-edit-footer {
@@ -896,6 +920,34 @@
 
   .history-edit-footer {
     @apply justify-end border-t border-line pt-3;
+  }
+
+  .revision-search-results {
+    @apply grid max-h-56 gap-2 overflow-auto rounded-lg border border-line bg-wash p-2;
+  }
+
+  .revision-search-result {
+    @apply flex min-w-0 items-center justify-between gap-3 rounded-md border border-line bg-white p-2 text-left text-ink shadow-sm hover:bg-accent-soft;
+  }
+
+  .revision-search-result span {
+    @apply grid min-w-0 gap-0.5;
+  }
+
+  .revision-search-result strong {
+    @apply min-w-0 text-sm font-black leading-5;
+  }
+
+  .revision-search-result small {
+    @apply min-w-0 text-xs font-semibold text-muted;
+  }
+
+  .revision-search-result b {
+    @apply shrink-0 text-sm font-black;
+  }
+
+  .revision-search-result.keyboard-active {
+    @apply border-accent bg-accent-soft shadow-sm;
   }
 
   .empty,

@@ -1,14 +1,16 @@
 import { formatInr, getOrderStateSignature, isTransferTargetTable, searchMenuItems } from "@gaurav-pos/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
-import { hubApi, type Bootstrap, type MenuItem } from "../../hub-api.js";
+import { useCallback, useEffect, useState } from "react";
+import { hubApi, type BillPrinterSlot, type Bootstrap, type MenuItem } from "../../hub-api.js";
 import { menuItemVariantOptions, messageOf, type NoticeSetter } from "../../lib/format.js";
 import type { ManagerApproval, ManagerApprovalRequest } from "../../hooks/use-manager-approval.js";
+import { useKeyboardListNavigation } from "../../hooks/use-keyboard-list-navigation.js";
 import { useOperationKeys } from "../../hooks/use-operation-keys.js";
 import { useHubStore } from "../../store.js";
 import { EmptyState } from "../ui/empty-state.js";
 import { LineItems } from "./line-items.js";
 import { BillingPanel } from "./billing-panel.js";
+import { BillPrinterChooser } from "./bill-printer-chooser.js";
 import { SentOrderPanel } from "./sent-order-panel.js";
 import { CategoryBadge, getMenuActionVariants, MenuItemActionGroup } from "./menu-card.js";
 
@@ -64,6 +66,7 @@ export function TableWorkspace({
   const [orderStateSearch, setOrderStateSearch] = useState("");
   const [draftSearch, setDraftSearch] = useState("");
   const [kotNote, setKotNote] = useState("");
+  const [billPrintIntent, setBillPrintIntent] = useState<"generate" | null>(null);
   const operationKeys = useOperationKeys();
   const draft = tableId ? Object.values(drafts[tableId] ?? {}) : [];
   const tableOrder = useQuery({
@@ -104,6 +107,23 @@ export function TableWorkspace({
   const editableTotal = orderStateItems.reduce((total, item) => total + item.pricePaise * item.quantity, 0);
   const orderStateMatches = searchMenuItems(bootstrap.menuItems, orderStateSearch, {}).slice(0, 8);
   const draftMatches = searchMenuItems(bootstrap.menuItems, draftSearch, {}).slice(0, 8);
+  const draftMatchIds = draftMatches.map((item) => item.id).join("|");
+  const addKeyboardDraftItem = useCallback(
+    (item: MenuItem) => {
+      if (!tableId) return;
+      const variant = getMenuActionVariants(item)[0];
+      if (!variant) return;
+      addDraftItem(tableId, item, variant.id || undefined);
+      setDraftSearch("");
+    },
+    [addDraftItem, tableId]
+  );
+  const draftKeyboard = useKeyboardListNavigation({
+    items: draftMatches,
+    enabled: Boolean(tableId && draftSearch.trim()),
+    resetKey: `${draftSearch}|${draftMatchIds}`,
+    onCommit: addKeyboardDraftItem
+  });
   const setTransferQuantity = (itemId: string, value: number, max: number) => {
     const next = Math.min(max, Math.max(0, Math.trunc(value || 0)));
     setShiftQuantities((current) => ({ ...current, [itemId]: next ? String(next) : "" }));
@@ -171,10 +191,10 @@ export function TableWorkspace({
   }, [canSendDraft, submitOrder]);
 
   const generateBill = useMutation({
-    mutationFn: () => {
+    mutationFn: (printerSlot: BillPrinterSlot) => {
       const orderId = data?.order?.id;
       if (!orderId) throw new Error("No active order to bill.");
-      return hubApi.generateBill(orderId, operationKeys.keyFor("bill-generate", { orderId }));
+      return hubApi.generateBill(orderId, operationKeys.keyFor("bill-generate", { orderId, printerSlot }), printerSlot);
     },
     onSuccess: async () => {
       await refreshTable();
@@ -412,17 +432,19 @@ export function TableWorkspace({
                 <input
                   value={draftSearch}
                   onChange={(event) => setDraftSearch(event.target.value)}
+                  onKeyDown={draftKeyboard.onKeyDown}
                   placeholder="Search menu item"
                 />
               </label>
               {draftSearch.trim() ? (
                 <div className="state-search-results">
-                  {draftMatches.map((item) => {
+                  {draftMatches.map((item, index) => {
                     const variants = getMenuActionVariants(item);
                     return (
                       <div
                         key={item.id}
-                        className={`state-search-row menu-card compact-menu-card category-${item.sale_group_kind ?? "other"}`}
+                        className={`state-search-row menu-card compact-menu-card category-${item.sale_group_kind ?? "other"}${draftKeyboard.activeIndex === index ? " keyboard-active" : ""}`}
+                        onMouseEnter={() => draftKeyboard.setActiveIndex(index)}
                       >
                         <CategoryBadge kind={item.sale_group_kind} className="state-search-icon" />
                         <div className="menu-card-main">
@@ -558,13 +580,23 @@ export function TableWorkspace({
           tableOrder={data}
           menuItems={bootstrap.menuItems}
           sentTotal={sentTotal}
-          generateBill={() => generateBill.mutate()}
+          generateBill={() => setBillPrintIntent("generate")}
           generating={generateBill.isPending || tableOrder.isFetching}
           onSettled={refreshTable}
           setNotice={setNotice}
           requestManagerApproval={requestManagerApproval}
         />
       ) : null}
+      <BillPrinterChooser
+        open={billPrintIntent === "generate"}
+        title="Print bill where?"
+        busy={generateBill.isPending}
+        onClose={() => setBillPrintIntent(null)}
+        onChoose={(printerSlot) => {
+          setBillPrintIntent(null);
+          generateBill.mutate(printerSlot);
+        }}
+      />
     </section>
   );
 }

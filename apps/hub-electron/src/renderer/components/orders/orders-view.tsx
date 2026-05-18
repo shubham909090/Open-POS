@@ -1,12 +1,13 @@
 import { formatInr, getTableDisplayState, searchMenuItems, tableDisplayClass, tableDisplayLabel, type SaleGroupKind } from "@gaurav-pos/shared";
 import { PanelLeftOpen, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { NoticeSetter } from "../../lib/format.js";
 import type { ManagerApprovalRequest } from "../../hooks/use-manager-approval.js";
+import { useKeyboardListNavigation } from "../../hooks/use-keyboard-list-navigation.js";
 import type { Bootstrap } from "../../hub-api.js";
 import { useHubStore, type OrderPanel } from "../../store.js";
 import { EmptyState } from "../ui/empty-state.js";
-import { MenuResultSection } from "./menu-card.js";
+import { getMenuActionVariants, MenuResultSection } from "./menu-card.js";
 import { TableWorkspace } from "./table-workspace.js";
 
 export function OrdersView({ bootstrap, setNotice, requestManagerApproval }: { bootstrap: Bootstrap; setNotice: NoticeSetter; requestManagerApproval: ManagerApprovalRequest }) {
@@ -30,6 +31,23 @@ export function OrdersView({ bootstrap, setNotice, requestManagerApproval }: { b
   const activeSaleGroup = saleGroupFilter ?? preferredSaleGroup ?? (saleGroupKinds[0]?.[0] as SaleGroupKind | undefined);
   const hasSearch = search.trim().length > 0;
   const activeItems = searchMenuItems(bootstrap.menuItems, search, { saleGroupKind: activeSaleGroup }).slice(0, 80);
+  const activeItemIds = activeItems.map((item) => item.id).join("|");
+  const addKeyboardMenuItem = useCallback(
+    (item: Bootstrap["menuItems"][number]) => {
+      if (!selectedTable) return;
+      const variant = getMenuActionVariants(item)[0];
+      if (!variant) return;
+      addDraftItem(selectedTable.id, item, variant.id || undefined);
+    },
+    [addDraftItem, selectedTable]
+  );
+  const menuKeyboard = useKeyboardListNavigation({
+    items: activeItems,
+    enabled: Boolean(selectedTable && menuOpen),
+    resetKey: `${search}|${activeSaleGroup ?? ""}|${activeItemIds}`,
+    onCommit: addKeyboardMenuItem
+  });
+  const activeKeyboardItemId = activeItems[menuKeyboard.activeIndex]?.id;
   const openTablePanel = (tableId: string, panel: OrderPanel) => {
     selectTable(tableId);
     setOrderPanel(panel);
@@ -125,7 +143,12 @@ export function OrdersView({ bootstrap, setNotice, requestManagerApproval }: { b
                   <div className="panel-title">
                     <h2>Menu</h2>
                     <div className="menu-browser-title-actions">
-                      <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search dish" />
+                      <input
+                        value={search}
+                        onChange={(event) => setSearch(event.target.value)}
+                        onKeyDown={menuKeyboard.onKeyDown}
+                        placeholder="Search dish"
+                      />
                     </div>
                   </div>
                   <div className="menu-filter-row" aria-label="Menu filters">
@@ -140,6 +163,8 @@ export function OrdersView({ bootstrap, setNotice, requestManagerApproval }: { b
                     items={activeItems}
                     selectedTableId={selectedTable.id}
                     onAdd={addDraftItem}
+                    activeItemId={activeKeyboardItemId}
+                    onActiveItemIndexChange={menuKeyboard.setActiveIndex}
                     emptyText={hasSearch ? "No dishes found. Check spelling or clear filters." : "No dishes found. Add active dishes in setup."}
                   />
                 </section>

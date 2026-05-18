@@ -1,5 +1,6 @@
 import { formatInr } from "@gaurav-pos/shared";
-import type { Dispatch, SetStateAction } from "react";
+import { useCallback, type Dispatch, type SetStateAction } from "react";
+import { useKeyboardListNavigation } from "../../hooks/use-keyboard-list-navigation.js";
 import type { Bootstrap, MenuItem, OrderItem, Table, TableOrder } from "../../hub-api.js";
 import { LineItems } from "./line-items.js";
 import { CategoryBadge, getMenuActionVariants, MenuItemActionGroup } from "./menu-card.js";
@@ -64,6 +65,22 @@ export function SentOrderPanel({
   cancelOrderPending: boolean;
   onCancelOrder: () => void;
 }) {
+  const orderStateMatchIds = orderStateMatches.map((item) => item.id).join("|");
+  const addKeyboardStateItem = useCallback(
+    (item: MenuItem) => {
+      const variant = getMenuActionVariants(item)[0];
+      if (!variant) return;
+      addStateMenuItem(item, variant.id || undefined);
+    },
+    [addStateMenuItem]
+  );
+  const orderStateKeyboard = useKeyboardListNavigation({
+    items: orderStateMatches,
+    enabled: Boolean(orderStateSearch.trim()),
+    resetKey: `${orderStateSearch}|${orderStateMatchIds}`,
+    onCommit: addKeyboardStateItem
+  });
+
   return (
     <div className="ticket-section">
       {data?.order ? (
@@ -101,17 +118,19 @@ export function SentOrderPanel({
               <input
                 value={orderStateSearch}
                 onChange={(event) => setOrderStateSearch(event.target.value)}
+                onKeyDown={orderStateKeyboard.onKeyDown}
                 placeholder="Search menu item"
               />
             </label>
             {orderStateSearch.trim() ? (
               <div className="state-search-results">
-                {orderStateMatches.map((item) => {
+                {orderStateMatches.map((item, index) => {
                   const variants = getMenuActionVariants(item);
                   return (
                     <div
                       key={item.id}
-                      className={`state-search-row menu-card compact-menu-card category-${item.sale_group_kind ?? "other"}`}
+                      className={`state-search-row menu-card compact-menu-card category-${item.sale_group_kind ?? "other"}${orderStateKeyboard.activeIndex === index ? " keyboard-active" : ""}`}
+                      onMouseEnter={() => orderStateKeyboard.setActiveIndex(index)}
                     >
                       <CategoryBadge kind={item.sale_group_kind} className="state-search-icon" />
                       <div className="menu-card-main">

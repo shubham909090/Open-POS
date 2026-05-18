@@ -1,11 +1,13 @@
-import { Fragment, useState } from "react";
+import { Fragment, useCallback, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { formatInr, formatPosDateTime } from "@gaurav-pos/shared";
-import { hubApi, type CloseSummary, type DailyReportDetail, type MenuItem } from "../../hub-api.js";
+import { hubApi, type BillPrinterSlot, type CloseSummary, type DailyReportDetail, type MenuItem } from "../../hub-api.js";
+import { useKeyboardListNavigation } from "../../hooks/use-keyboard-list-navigation.js";
 import { alcoholMovementSourceLabel, alcoholMovementDeltaText } from "../../lib/format.js";
 import { Dialog } from "../ui/dialog.js";
 import { EmptyState } from "../ui/empty-state.js";
 import { Metric } from "../ui/metric.js";
+import { BillPrinterChooser } from "../orders/bill-printer-chooser.js";
 
 const REPORT_PAGE_SIZE = 8;
 const DETAIL_PAGE_SIZE = 6;
@@ -211,14 +213,17 @@ function ReportDetailPanels({ summary }: { summary: CloseSummary | DailyReportDe
   const [search, setSearch] = useState("");
   const [masterPin, setMasterPin] = useState("");
   const [editError, setEditError] = useState<string | null>(null);
+  const [historyPrintBillId, setHistoryPrintBillId] = useState<string | null>(null);
+  const [historyEditPrintBill, setHistoryEditPrintBill] = useState<HistoryBill | null>(null);
   const bootstrap = useQuery({ queryKey: ["bootstrap"], queryFn: hubApi.bootstrap });
   const historyReprint = useMutation({
-    mutationFn: (billId: string) => hubApi.historyReprintBill(billId, `history-reprint-${billId}-${Date.now()}`)
+    mutationFn: (input: { billId: string; printerSlot: BillPrinterSlot }) =>
+      hubApi.historyReprintBill(input.billId, `history-reprint-${input.billId}-${Date.now()}`, input.printerSlot)
   });
   const historyEdit = useMutation({
-    mutationFn: (bill: HistoryBill) =>
+    mutationFn: (input: { bill: HistoryBill; printerSlot: BillPrinterSlot }) =>
       hubApi.historyEditBill(
-        bill.billId,
+        input.bill.billId,
         {
           masterApproval: { pin: masterPin, reason: "Owner history edit", approvedBy: "owner" },
           items: editItems
@@ -241,7 +246,8 @@ function ReportDetailPanels({ summary }: { summary: CloseSummary | DailyReportDe
                   }
             ),
         },
-        `history-edit-${bill.billId}-${Date.now()}`
+        `history-edit-${input.bill.billId}-${Date.now()}`,
+        input.printerSlot
       ),
     onSuccess: async () => {
       setEditingBill(null);
@@ -266,6 +272,7 @@ function ReportDetailPanels({ summary }: { summary: CloseSummary | DailyReportDe
         .filter((item) => item.name.toLowerCase().includes(search.trim().toLowerCase()))
         .slice(0, 6)
     : [];
+  const searchedMenuIds = searchedMenu.map((item) => item.id).join("|");
   const editTotal = editItems.reduce((total, item) => total + Math.max(0, item.quantity) * item.unitPricePaise, 0);
   const canSaveEdit = Boolean(editingBill && masterPin.trim().length >= 4 && editItems.some((item) => item.quantity > 0) && !historyEdit.isPending);
   const openHistoryEdit = (bill: HistoryBill) => {
@@ -294,7 +301,7 @@ function ReportDetailPanels({ summary }: { summary: CloseSummary | DailyReportDe
         .filter((item) => item.orderItemId || item.quantity > 0)
     );
   };
-  const addMenuItem = (item: MenuItem, variant?: NonNullable<MenuItem["variants"]>[number]) => {
+  const addMenuItem = useCallback((item: MenuItem, variant?: NonNullable<MenuItem["variants"]>[number]) => {
     const variantId = variant?.id ?? item.variants?.find((candidate) => candidate.kind === "default" && candidate.active)?.id ?? undefined;
     const price = variant?.price_paise ?? item.variants?.find((candidate) => candidate.id === variantId)?.price_paise ?? item.price_paise;
     const name = variant && variant.kind !== "default" ? `${item.name} ${variant.label}` : item.name;
@@ -316,7 +323,20 @@ function ReportDetailPanels({ summary }: { summary: CloseSummary | DailyReportDe
         },
       ];
     });
-  };
+  }, []);
+  const addKeyboardHistoryItem = useCallback(
+    (item: MenuItem) => {
+      const variant = (item.variants ?? []).find((candidate) => Boolean(candidate.active) && candidate.kind !== "default");
+      addMenuItem(item, variant);
+    },
+    [addMenuItem]
+  );
+  const historySearchKeyboard = useKeyboardListNavigation({
+    items: searchedMenu,
+    enabled: Boolean(search.trim()),
+    resetKey: `${search}|${searchedMenuIds}`,
+    onCommit: addKeyboardHistoryItem
+  });
 
   return (
     <div className="report-detail-grid">
@@ -412,7 +432,7 @@ function ReportDetailPanels({ summary }: { summary: CloseSummary | DailyReportDe
                         type="button"
                         className="secondary-button compact"
                         disabled={historyReprint.isPending}
-                        onClick={() => historyReprint.mutate(bill.billId)}
+                        onClick={() => setHistoryPrintBillId(bill.billId)}
                       >
                         {historyReprint.isPending ? "Printing..." : "Print"}
                       </button>
@@ -461,14 +481,23 @@ function ReportDetailPanels({ summary }: { summary: CloseSummary | DailyReportDe
             </div>
             <label>
               Search item to add
-              <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Type dish or liquor name" />
+              <input
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                onKeyDown={historySearchKeyboard.onKeyDown}
+                placeholder="Type dish or liquor name"
+              />
             </label>
             {searchedMenu.length ? (
               <div className="history-edit-search">
-                {searchedMenu.map((item) => {
+                {searchedMenu.map((item, index) => {
                   const variants = (item.variants ?? []).filter((variant) => variant.active && variant.kind !== "default");
                   return (
-                    <div key={item.id} className="history-edit-search-row">
+                    <div
+                      key={item.id}
+                      className={`history-edit-search-row${historySearchKeyboard.activeIndex === index ? " keyboard-active" : ""}`}
+                      onMouseEnter={() => historySearchKeyboard.setActiveIndex(index)}
+                    >
                       <strong>{item.name}</strong>
                       <div className="history-edit-actions">
                         {variants.length ? (
@@ -495,13 +524,38 @@ function ReportDetailPanels({ summary }: { summary: CloseSummary | DailyReportDe
             {editError ? <p className="warning-text">{editError}</p> : null}
             <div className="history-edit-footer">
               <button type="button" className="secondary-button" onClick={() => setEditingBill(null)}>Cancel</button>
-              <button type="button" className="danger-button" disabled={!canSaveEdit} onClick={() => historyEdit.mutate(editingBill)}>
+              <button type="button" className="danger-button" disabled={!canSaveEdit} onClick={() => setHistoryEditPrintBill(editingBill)}>
                 {historyEdit.isPending ? "Saving..." : "Save + Print"}
               </button>
             </div>
           </div>
         </Dialog>
       ) : null}
+
+      <BillPrinterChooser
+        open={Boolean(historyPrintBillId)}
+        title="Print bill where?"
+        busy={historyReprint.isPending}
+        onClose={() => setHistoryPrintBillId(null)}
+        onChoose={(printerSlot) => {
+          if (!historyPrintBillId) return;
+          const billId = historyPrintBillId;
+          setHistoryPrintBillId(null);
+          historyReprint.mutate({ billId, printerSlot });
+        }}
+      />
+      <BillPrinterChooser
+        open={Boolean(historyEditPrintBill)}
+        title="Print edited bill where?"
+        busy={historyEdit.isPending}
+        onClose={() => setHistoryEditPrintBill(null)}
+        onChoose={(printerSlot) => {
+          if (!historyEditPrintBill) return;
+          const bill = historyEditPrintBill;
+          setHistoryEditPrintBill(null);
+          historyEdit.mutate({ bill, printerSlot });
+        }}
+      />
 
       <section className="report-detail-card item-summary-panel">
         <div className="mini-title">

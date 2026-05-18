@@ -12,6 +12,7 @@ import {
   type CreateProductionUnitInput,
   type CreateTableInput,
   type DomainEvent,
+  type BillPrinterSlot,
   type ManagerApprovalInput,
   type ManagerPinInput,
   type MasterApprovalInput,
@@ -23,6 +24,7 @@ import {
   type MoveTableInput,
   type KotType,
   type PrinterOutputMode,
+  type ReprintBillInput,
   type ReprintKotInput,
   type ReviseBillInput,
   type RetryPrintJobInput,
@@ -38,6 +40,7 @@ import {
   type UpdateMenuItemInput,
   type UpdateProductionUnitInput,
   type UpdateReceiptPrinterInput,
+  type UpdateBillPrintersInput,
   type UpdateTableInput,
   type UserRole
 } from "@gaurav-pos/shared";
@@ -77,6 +80,20 @@ import { DomainError } from "./errors.js";
 import { makeId } from "./ids.js";
 import { renderBillTicketForPrint, renderKotTicketForPrint, type BillTicket, type KotTicketItem } from "./tickets.js";
 import { currentBusinessDayWindow } from "./business-day.js";
+
+type BillPrinterProfile = {
+  label: string;
+  printerMode: "system" | "network";
+  printerHost: string | null;
+  printerPort: number | null;
+  printerName: string | null;
+  configured: boolean;
+};
+
+type BillPrinterProfiles = {
+  default: BillPrinterProfile;
+  alternate: BillPrinterProfile;
+};
 
 const DEFAULT_TAX_COMPONENTS = [
   { name: "CGST", rateBps: 250 },
@@ -596,10 +613,10 @@ export class OrderService {
     return run();
   }
 
-  reprintBill(billId: string, input: ReprintKotInput): { printJobId: string } {
+  reprintBill(billId: string, input: ReprintBillInput): { printJobId: string } {
     const run = this.db.transaction(() => {
       this.verifyManagerApproval(input.managerApproval, "bill.reprint", "bill", billId, input.requestedBy);
-      const printJobId = this.enqueueBillReprint(billId, input.requestedBy, `REPRINT\nReason: ${input.reason}\nRequested by: ${input.requestedBy}\n`);
+      const printJobId = this.enqueueBillReprint(billId, input.requestedBy, `REPRINT\nReason: ${input.reason}\nRequested by: ${input.requestedBy}\n`, input.printerSlot ?? "default");
 
       this.appendEvent("bill.reprinted", "bill", billId, { ...input, printJobId });
       return { printJobId };
@@ -608,9 +625,9 @@ export class OrderService {
     return run();
   }
 
-  reprintBillFromHistory(billId: string, requestedBy: string): { printJobId: string } {
+  reprintBillFromHistory(billId: string, requestedBy: string, printerSlot: BillPrinterSlot = "default"): { printJobId: string } {
     const run = this.db.transaction(() => {
-      const printJobId = this.enqueueBillReprint(billId, requestedBy, "");
+      const printJobId = this.enqueueBillReprint(billId, requestedBy, "", printerSlot);
       this.appendEvent("bill.history_reprinted", "bill", billId, { billId, requestedBy, reason: "history_reprint", printJobId });
       return { printJobId };
     });
@@ -618,7 +635,7 @@ export class OrderService {
     return run();
   }
 
-  private enqueueBillReprint(billId: string, requestedBy: string, suffix: string): string {
+  private enqueueBillReprint(billId: string, requestedBy: string, suffix: string, printerSlot: BillPrinterSlot = "default"): string {
     const bill = this.db
       .prepare(
         `SELECT b.*, t.name AS table_name
@@ -661,7 +678,7 @@ export class OrderService {
       targetType: "BILL",
       targetId: billId,
       productionUnitId: null,
-      ...this.getReceiptPrinter(),
+      ...this.resolveBillPrinter(printerSlot),
       payload
     });
 
@@ -884,7 +901,7 @@ export class OrderService {
     return layout;
   }
 
-  generateBill(orderId: string): { billId: string; billNumber: number; totalPaise: number; printJobId: string } {
+  generateBill(orderId: string, printerSlot: BillPrinterSlot = "default"): { billId: string; billNumber: number; totalPaise: number; printJobId: string } {
     const run = this.db.transaction(() => {
       const order = this.requireEditableOrder(orderId);
       const table = this.requireTable(order.table_id);
@@ -924,7 +941,7 @@ export class OrderService {
         targetType: "BILL",
         targetId: billId,
         productionUnitId: null,
-        ...this.getReceiptPrinter(),
+        ...this.resolveBillPrinter(printerSlot),
         payload: renderBillTicketForPrint(this.buildBillTicket({ bill, tableName: table.name, createdAt: now }))
       });
       this.orm.update(bills).set({ printCount: sql`${bills.printCount} + 1` }).where(eq(bills.id, billId)).run();
@@ -1032,7 +1049,6 @@ export class OrderService {
       if (bill.status !== "pending") throw new DomainError("Bill is not pending");
 
       const order = this.requireOrderById(bill.order_id);
-      const table = this.requireTable(order.table_id);
       const now = new Date().toISOString();
       const discountPaise = input.discountValue === undefined ? bill.discount_paise : this.calculateDiscountPaise(bill.total_paise, input);
       const tipPaise = input.tipPaise === undefined ? (bill.tip_paise ?? 0) : input.tipPaise;
@@ -1086,8 +1102,7 @@ export class OrderService {
           tipPaise,
           finalTotalPaise,
           status: isPaid ? "paid" : "pending",
-          settledAt: isPaid ? now : null,
-          printCount: isPaid ? sql`${bills.printCount} + 1` : sql`${bills.printCount}`
+          settledAt: isPaid ? now : null
         })
         .where(eq(bills.id, billId))
         .run();
@@ -1096,23 +1111,6 @@ export class OrderService {
         this.deductAlcoholStockForPaidBill(billId, bill.order_id);
         this.orm.update(orders).set({ status: "paid", updatedAt: now }).where(eq(orders.id, bill.order_id)).run();
         this.freeTable(order.table_id);
-        const payload = renderBillTicketForPrint(
-          this.buildBillTicket({
-            bill,
-            tableName: table.name,
-            createdAt: now,
-            discountPaise,
-            tipPaise,
-            finalTotalPaise
-          })
-        );
-        this.enqueuePrintJob({
-          targetType: "BILL",
-          targetId: billId,
-          productionUnitId: null,
-          ...this.getReceiptPrinter(),
-          payload
-        });
         this.appendEvent("bill.settled", "bill", billId, { ...input, paidPaise, remainingPaise, finalTotalPaise });
       } else {
         this.appendEvent("payment.added", "bill", billId, { ...input, paidPaise, remainingPaise, finalTotalPaise });
@@ -1927,41 +1925,112 @@ export class OrderService {
   }
 
   getReceiptPrinter(): { printerMode: "system" | "network"; printerHost: string | null; printerPort: number | null; printerName: string | null } {
-    const mode = this.getSetting("receipt_printer_mode");
-    const host = this.getSetting("receipt_printer_host");
-    const port = this.getSetting("receipt_printer_port");
-    const name = this.getSetting("receipt_printer_name");
+    const profile = this.getBillPrinterProfile("default");
     return {
-      printerMode: mode === "network" ? "network" : "system",
-      printerHost: host || null,
-      printerPort: port ? Number(port) : null,
-      printerName: name || null
+      printerMode: profile.printerMode,
+      printerHost: profile.printerHost,
+      printerPort: profile.printerPort,
+      printerName: profile.printerName
+    };
+  }
+
+  getBillPrinters(): BillPrinterProfiles {
+    return {
+      default: this.getBillPrinterProfile("default"),
+      alternate: this.getBillPrinterProfile("alternate")
     };
   }
 
   updateReceiptPrinter(input: UpdateReceiptPrinterInput): UpdateReceiptPrinterInput {
     const now = new Date().toISOString();
+    const current = this.getBillPrinterProfile("default");
+    this.updateBillPrinterProfile("default", {
+      label: current.label,
+      printerMode: input.printerMode ?? "system",
+      printerName: input.printerName,
+      printerHost: input.printerHost,
+      printerPort: input.printerPort
+    }, now);
+    this.appendEvent("receipt_printer.updated", "hub_setting", "receipt_printer", input);
+    return input;
+  }
+
+  updateBillPrinters(input: UpdateBillPrintersInput): BillPrinterProfiles {
+    const now = new Date().toISOString();
     const run = this.db.transaction(() => {
-      const values = [
-        ["receipt_printer_mode", input.printerMode ?? "system"],
-        ["receipt_printer_name", input.printerName ?? ""],
-        ["receipt_printer_host", input.printerHost ?? ""],
-        ["receipt_printer_port", String(input.printerPort)]
-      ] as const;
-      for (const [key, value] of values) {
-        this.orm
-          .insert(hubSettings)
-          .values({ key, value, updatedAt: now })
-          .onConflictDoUpdate({
-            target: hubSettings.key,
-            set: { value, updatedAt: now }
-          })
-          .run();
-      }
+      this.updateBillPrinterProfile("default", input.default, now);
+      this.updateBillPrinterProfile("alternate", input.alternate, now);
       this.appendEvent("receipt_printer.updated", "hub_setting", "receipt_printer", input);
     });
     run();
-    return input;
+    return this.getBillPrinters();
+  }
+
+  private getBillPrinterProfile(slot: BillPrinterSlot): BillPrinterProfile {
+    const prefix = slot === "default" ? "receipt_printer" : "receipt_printer_alternate";
+    const defaultLabel = slot === "default" ? "Main bill printer" : "Second bill printer";
+    const mode = this.getSetting(`${prefix}_mode`);
+    const host = this.getSetting(`${prefix}_host`);
+    const port = this.getSetting(`${prefix}_port`);
+    const name = this.getSetting(`${prefix}_name`);
+    const label = this.getSetting(`${prefix}_label`) || defaultLabel;
+    const printerMode = mode === "network" ? "network" : "system";
+    const printerHost = host || null;
+    const printerName = name || null;
+    const printerPort = port ? Number(port) : null;
+    return {
+      label,
+      printerMode,
+      printerHost,
+      printerPort,
+      printerName,
+      configured: printerMode === "network" ? Boolean(printerHost) : Boolean(printerName)
+    };
+  }
+
+  private updateBillPrinterProfile(
+    slot: BillPrinterSlot,
+    input: { label?: string; printerMode?: "system" | "network"; printerName?: string | null; printerHost?: string; printerPort?: number },
+    updatedAt = new Date().toISOString()
+  ): void {
+    const prefix = slot === "default" ? "receipt_printer" : "receipt_printer_alternate";
+    const fallbackLabel = slot === "default" ? "Main bill printer" : "Second bill printer";
+    const values = [
+      [`${prefix}_label`, input.label || fallbackLabel],
+      [`${prefix}_mode`, input.printerMode ?? "system"],
+      [`${prefix}_name`, input.printerName ?? ""],
+      [`${prefix}_host`, input.printerHost ?? ""],
+      [`${prefix}_port`, String(input.printerPort ?? 9100)]
+    ] as const;
+    for (const [key, value] of values) {
+      this.orm
+        .insert(hubSettings)
+        .values({ key, value, updatedAt })
+        .onConflictDoUpdate({
+          target: hubSettings.key,
+          set: { value, updatedAt }
+        })
+        .run();
+    }
+  }
+
+  private resolveBillPrinter(slot: BillPrinterSlot = "default"): {
+    printerHost: string | null;
+    printerPort: number | null;
+    printerName: string | null;
+  } {
+    const profile = this.getBillPrinterProfile(slot);
+    if (!profile.configured) {
+      if (slot === "default" && this.getPrinterOutputMode() === "test") {
+        return { printerHost: null, printerPort: null, printerName: null };
+      }
+      throw new DomainError(`${profile.label} is not configured for bill printing`, 400);
+    }
+    return {
+      printerHost: profile.printerMode === "network" ? profile.printerHost : null,
+      printerPort: profile.printerMode === "network" ? profile.printerPort ?? 9100 : null,
+      printerName: profile.printerMode === "system" ? profile.printerName : null
+    };
   }
 
   getPrinterOutputMode(): PrinterOutputMode {
@@ -2238,7 +2307,7 @@ export class OrderService {
         targetType: "BILL",
         targetId: billId,
         productionUnitId: null,
-        ...this.getReceiptPrinter(),
+        ...this.resolveBillPrinter(input.printerSlot ?? "default"),
         payload: renderBillTicketForPrint(this.buildBillTicket({ bill: updatedBill, tableName: table.name, createdAt: now }))
       });
       this.orm.update(bills).set({ printCount: sql`${bills.printCount} + 1` }).where(eq(bills.id, billId)).run();
@@ -2281,7 +2350,7 @@ export class OrderService {
         targetType: "BILL",
         targetId: billId,
         productionUnitId: null,
-        ...this.getReceiptPrinter(),
+        ...this.resolveBillPrinter(input.printerSlot ?? "default"),
         payload: renderBillTicketForPrint(
           this.buildBillTicket({
             bill,
@@ -2299,7 +2368,7 @@ export class OrderService {
     return result;
   }
 
-  printBill(billId: string, requestedBy: string): { printJobId: string } {
+  printBill(billId: string, requestedBy: string, printerSlot: BillPrinterSlot = "default"): { printJobId: string } {
     const run = this.db.transaction(() => {
       const bill = this.getBillById(billId);
       if (!bill) throw new DomainError("Bill not found", 404);
@@ -2311,7 +2380,7 @@ export class OrderService {
         targetType: "BILL",
         targetId: billId,
         productionUnitId: null,
-        ...this.getReceiptPrinter(),
+        ...this.resolveBillPrinter(printerSlot),
         payload: renderBillTicketForPrint(
           this.buildBillTicket({
             bill,

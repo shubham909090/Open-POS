@@ -256,14 +256,28 @@ export class ConvexSyncBridge {
     }
 
     if (command.type === "receipt_printer.updated") {
-      this.upsertSetting("receipt_printer_mode", typeof payload.printerMode === "string" ? payload.printerMode : "system", db);
-      this.upsertSetting("receipt_printer_name", typeof payload.printerName === "string" ? payload.printerName : "", db);
-      this.upsertSetting("receipt_printer_host", typeof payload.printerHost === "string" ? payload.printerHost : "", db);
+      const defaultProfile = typeof payload.default === "object" && payload.default !== null ? (payload.default as Record<string, unknown>) : payload;
+      const alternateProfile = typeof payload.alternate === "object" && payload.alternate !== null ? (payload.alternate as Record<string, unknown>) : null;
+      this.upsertSetting("receipt_printer_label", typeof defaultProfile.label === "string" ? defaultProfile.label : "Main bill printer", db);
+      this.upsertSetting("receipt_printer_mode", typeof defaultProfile.printerMode === "string" ? defaultProfile.printerMode : "system", db);
+      this.upsertSetting("receipt_printer_name", typeof defaultProfile.printerName === "string" ? defaultProfile.printerName : "", db);
+      this.upsertSetting("receipt_printer_host", typeof defaultProfile.printerHost === "string" ? defaultProfile.printerHost : "", db);
       this.upsertSetting(
         "receipt_printer_port",
-        String(typeof payload.printerPort === "number" ? payload.printerPort : 9100),
+        String(typeof defaultProfile.printerPort === "number" ? defaultProfile.printerPort : 9100),
         db
       );
+      if (alternateProfile) {
+        this.upsertSetting("receipt_printer_alternate_label", typeof alternateProfile.label === "string" ? alternateProfile.label : "Second bill printer", db);
+        this.upsertSetting("receipt_printer_alternate_mode", typeof alternateProfile.printerMode === "string" ? alternateProfile.printerMode : "system", db);
+        this.upsertSetting("receipt_printer_alternate_name", typeof alternateProfile.printerName === "string" ? alternateProfile.printerName : "", db);
+        this.upsertSetting("receipt_printer_alternate_host", typeof alternateProfile.printerHost === "string" ? alternateProfile.printerHost : "", db);
+        this.upsertSetting(
+          "receipt_printer_alternate_port",
+          String(typeof alternateProfile.printerPort === "number" ? alternateProfile.printerPort : 9100),
+          db
+        );
+      }
     }
   }
 

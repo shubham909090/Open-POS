@@ -21,7 +21,7 @@ export function getRealtimeInvalidationKeys(event: RealtimeEvent): QueryKey[] {
   if (type.includes("menu_item") || type.includes("sale_group") || type.includes("production_unit") || type.startsWith("table.") || type.startsWith("floor.")) {
     return [["bootstrap"], ["alcohol"]];
   }
-  if (type.includes("printer") || type.includes("print_layout") || type.includes("ticket_template")) return [["bootstrap"], ["print-layouts"], ["receipt-printer"]];
+  if (type.includes("printer") || type.includes("print_layout") || type.includes("ticket_template")) return [["bootstrap"], ["print-layouts"], ["receipt-printer"], ["bill-printers"]];
   return [["bootstrap"]];
 }
 

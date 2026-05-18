@@ -1541,8 +1541,8 @@ describe("Hub API auth and service flow", () => {
       url: `/bills/${order.orderId}/generate`,
       headers
     });
-    const bill = billResponse.json<{ billId: string; totalPaise: number }>();
-    await app.inject({
+    const bill = billResponse.json<{ billId: string; totalPaise: number; processed: { printed: number; failed: number; skipped: number } }>();
+    const settleResponse = await app.inject({
       method: "POST",
       url: `/bills/${bill.billId}/settle`,
       headers,
@@ -1555,7 +1555,11 @@ describe("Hub API auth and service flow", () => {
     });
 
     expect(billResponse.statusCode).toBe(200);
-    expect(printResponse.json()).toEqual({ printed: 1, failed: 0 });
+    expect(bill.processed).toEqual({ printed: 1, failed: 0, skipped: 0 });
+    expect(settleResponse.json()).toMatchObject({ status: "paid" });
+    expect(settleResponse.json()).not.toHaveProperty("printJobId");
+    expect(settleResponse.json()).not.toHaveProperty("processed");
+    expect(printResponse.json()).toEqual({ printed: 0, failed: 0 });
     const printJob = database.db.prepare("SELECT status, payload FROM print_jobs WHERE target_id = ?").get(bill.billId) as { status: string; payload: string };
     expect(printJob.status).toBe("printed");
     expect(printJob.payload).toContain("Food CGST @ 2.5%: 4.50");
@@ -1820,7 +1824,7 @@ describe("Hub API auth and service flow", () => {
         managerApproval: { pin: "1234", reason: "Customer copy", approvedBy: "manager" }
       }
     });
-    await app.inject({
+    const settleResponse = await app.inject({
       method: "POST",
       url: `/bills/${bill.billId}/settle`,
       headers: captainHeaders,
@@ -1837,10 +1841,14 @@ describe("Hub API auth and service flow", () => {
     expect(repeatedPrintResponse.statusCode).toBe(400);
     expect(repeatedPrintResponse.json()).toMatchObject({ error: "Bill was already printed. Use manager-approved reprint." });
     expect(reprintResponse.statusCode).toBe(200);
+    expect(settleResponse.statusCode).toBe(200);
+    expect(settleResponse.json()).toMatchObject({ status: "paid" });
+    expect(settleResponse.json()).not.toHaveProperty("printJobId");
+    expect(settleResponse.json()).not.toHaveProperty("processed");
     expect(summaryResponse.statusCode).toBe(200);
     expect(summaryResponse.json()).toMatchObject({ paidBills: 1, unpaidBills: 0 });
     expect(database.db.prepare("SELECT COUNT(*) AS count FROM print_jobs WHERE target_type = 'BILL'").get()).toEqual({
-      count: 3
+      count: 2
     });
 
     await app.close();

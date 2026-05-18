@@ -38,6 +38,10 @@
   @apply border-line bg-wash text-muted;
 }
 
+.record-status.warning {
+  @apply border-warning bg-warning-soft text-warning;
+}
+
 .record-row .row-actions {
   @apply shrink-0 self-start;
 }
@@ -138,6 +142,16 @@
 
 .category-alcohol .menu-card-icon {
   @apply border-danger bg-danger-soft text-danger;
+}
+
+.compact-menu-card.keyboard-active,
+.state-search-row.keyboard-active {
+  @apply border-accent bg-accent-soft shadow-md;
+}
+
+.compact-menu-card.keyboard-active .menu-card-icon,
+.state-search-row.keyboard-active .menu-card-icon {
+  @apply border-accent bg-white text-accent-dark;
 }
 
 .alcohol-form {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { calculateLineTotal, calculateTax, formatCompactInr, formatInr } from "../money.js";
 import { getOrderStateSignature } from "../order-state-signature.js";
-import { createMenuItemSchema, createPairingCodeSchema, printLayoutSettingsSchema, setMasterPinSchema, submitOrderSchema, updateReceiptPrinterSchema } from "../schemas.js";
+import { billPrintDestinationSchema, billPrinterProfileSchema, createMenuItemSchema, createPairingCodeSchema, markNcBillSchema, printLayoutSettingsSchema, setMasterPinSchema, submitOrderSchema, updateReceiptPrinterSchema } from "../schemas.js";
 import { getTableDisplayState, isTransferTargetTable, tableDisplayClass, tableDisplayLabel } from "../table-state.js";
 
 describe("shared money helpers", () => {
@@ -59,6 +59,20 @@ describe("shared command schemas", () => {
     expect(updateReceiptPrinterSchema.parse({ printerName: "EPSON_TM_T88", printerPort: 9100 })).toMatchObject({
       printerMode: "system"
     });
+    expect(billPrinterProfileSchema.parse({ label: "Main bill", printerName: "EPSON_TM_T88" })).toMatchObject({
+      label: "Main bill",
+      printerMode: "system"
+    });
+    expect(billPrinterProfileSchema.parse({ label: "Second bill", printerMode: "network", printerHost: "192.168.1.70" })).toMatchObject({
+      printerMode: "network",
+      printerPort: 9100
+    });
+    expect(billPrintDestinationSchema.parse({}).printerSlot).toBe("default");
+    expect(billPrintDestinationSchema.parse({ printerSlot: "alternate" }).printerSlot).toBe("alternate");
+    expect(() => billPrintDestinationSchema.parse({ printerSlot: "kitchen" })).toThrow();
+    expect(markNcBillSchema.parse({
+      managerApproval: { pin: "1234", reason: "Staff meal", approvedBy: "manager" }
+    }).printerSlot).toBe("default");
     expect(createPairingCodeSchema.parse({ deviceName: "Captain phone", role: "captain" })).toMatchObject({ role: "captain" });
     expect(() => createPairingCodeSchema.parse({ deviceName: "Old role", role: "cashier" })).toThrow();
     expect(() => createPairingCodeSchema.parse({ deviceName: "Phone", role: "owner" })).toThrow();
