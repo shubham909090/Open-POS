@@ -761,7 +761,11 @@ export const hubApi = {
   updateKotStatus: (kotId: string, status: string) =>
     apiFetch<{ id: string }>(`/kot/${kotId}/status`, { method: "PATCH", body: JSON.stringify({ status }) }),
   processPrints: () => apiFetch<{ printed: number; failed: number }>("/print-jobs/process", { method: "POST" }),
-  testBillPrint: () => apiFetch<{ printJobId: string; processed: { printed: number; failed: number } }>("/print-jobs/test-bill", { method: "POST" }),
+  testBillPrint: (printerSlot: BillPrinterSlot = "default") =>
+    apiFetch<{ printJobId: string; processed: { printed: number; failed: number; error?: string } }>("/print-jobs/test-bill", {
+      method: "POST",
+      body: JSON.stringify({ printerSlot })
+    }),
   testKotPrint: () => apiFetch<{ printJobId: string; processed: { printed: number; failed: number } }>("/print-jobs/test-kot", { method: "POST" }),
   pullCloud: () => apiFetch<{ applied: number; failed?: number }>("/sync/pull", { method: "POST" }),
   requeueFailedSync: () => apiFetch<{ requeued: number }>("/sync/requeue-failed", { method: "POST" }),

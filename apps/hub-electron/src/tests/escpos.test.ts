@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { PRINT_STYLE_MARKER } from "../domain/tickets.js";
+import { PRINT_LINE_MARKER, PRINT_STYLE_MARKER } from "../domain/tickets.js";
 import { buildWindowsSystemPrintCommand, renderEscposPayload } from "../printing/escpos.js";
 
 describe("ESC/POS print payload", () => {
@@ -29,6 +29,9 @@ describe("ESC/POS print payload", () => {
     expect(command).toContain("$lines[$lines.Length - 1] -eq ''");
     expect(command).toContain("$plainBar = $payload.IndexOf([string]$plainMarker)");
     expect(command).toContain("$payload = $payload.Substring(0, $plainBar)");
+    expect(command).toContain("DrawLine([System.Drawing.Pens]::Black");
+    expect(command).toContain("$lineMarker = [char]29 + 'line:'");
+    expect(command).not.toContain(JSON.stringify(PRINT_LINE_MARKER));
   });
 
   it("applies styled ticket directives to ESC/POS payload", () => {
@@ -38,5 +41,11 @@ describe("ESC/POS print payload", () => {
     expect(payload.includes(Buffer.from([0x1b, 0x45, 0x01]))).toBe(true);
     expect(payload.includes(Buffer.from([0x1d, 0x21, 0x11]))).toBe(true);
     expect(payload.includes(Buffer.from("KOT #1", "utf8"))).toBe(true);
+  });
+
+  it("falls back to plain solid text lines for raw ESC/POS printers", () => {
+    const payload = renderEscposPayload(`${PRINT_LINE_MARKER}8\u001f________\n`);
+
+    expect(payload.includes(Buffer.from("________", "utf8"))).toBe(true);
   });
 });

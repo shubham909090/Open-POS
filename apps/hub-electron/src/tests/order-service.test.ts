@@ -851,7 +851,9 @@ describe("OrderService KOT lifecycle", () => {
     orderService.updatePrintLayout({
       ...orderService.getPrintLayout("receipt"),
       restaurantName: "Gaurav Restaurant",
-      restaurantAddress: "Main Road, Indore"
+      restaurantAddress: "Main Road, Indore",
+      billHeader: "Tax Invoice",
+      billFooter: "Thank you, visit again"
     });
 
     const order = orderService.submitOrder({
@@ -871,6 +873,8 @@ describe("OrderService KOT lifecycle", () => {
     const printJob = database.db.prepare("SELECT payload FROM print_jobs WHERE target_id = ? ORDER BY created_at ASC LIMIT 1").get(bill.billId) as { payload: string };
     expect(printJob.payload.indexOf("Gaurav Restaurant")).toBeLessThan(printJob.payload.indexOf("Main Road, Indore"));
     expect(printJob.payload).toContain("Main Road, Indore");
+    expect(printJob.payload).toContain("Tax Invoice");
+    expect(printJob.payload).toContain("Thank you, visit again");
 
     database.close();
   });
@@ -942,6 +946,33 @@ describe("OrderService KOT lifecycle", () => {
       printerSlot: "alternate"
     });
     expect(database.db.prepare("SELECT printer_host, printer_port FROM print_jobs WHERE id = ?").get(nc.printJobId)).toEqual({
+      printer_host: "192.168.1.71",
+      printer_port: 9100
+    });
+
+    database.close();
+  });
+
+  it("routes test bill printing to the selected alternate bill printer", () => {
+    const { database, orderService } = createTestHub();
+    orderService.updateBillPrinters({
+      default: {
+        label: "Main counter",
+        printerMode: "network",
+        printerHost: "192.168.1.70",
+        printerPort: 9100
+      },
+      alternate: {
+        label: "Downstairs",
+        printerMode: "network",
+        printerHost: "192.168.1.71",
+        printerPort: 9100
+      }
+    });
+
+    const testPrint = orderService.enqueueTestBillPrint("admin", "alternate");
+
+    expect(database.db.prepare("SELECT printer_host, printer_port FROM print_jobs WHERE id = ?").get(testPrint.printJobId)).toEqual({
       printer_host: "192.168.1.71",
       printer_port: 9100
     });

@@ -1507,6 +1507,56 @@ describe("Hub API auth and service flow", () => {
     database.close();
   });
 
+  it("routes alternate test bill prints through the API to the alternate bill printer", async () => {
+    const { app, database } = createTestServer();
+    const headers = { "x-device-token": "test-admin-token" };
+
+    await app.inject({
+      method: "PUT",
+      url: "/settings/bill-printers",
+      headers,
+      payload: {
+        default: { label: "Main counter", printerMode: "network", printerHost: "192.168.1.70", printerPort: 9100 },
+        alternate: { label: "Downstairs", printerMode: "network", printerHost: "192.168.1.71", printerPort: 9100 }
+      }
+    });
+    const response = await app.inject({
+      method: "POST",
+      url: "/print-jobs/test-bill",
+      headers,
+      payload: { printerSlot: "alternate" }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ processed: { printed: 1, failed: 0 } });
+    expect(database.db.prepare("SELECT printer_host, printer_port FROM print_jobs WHERE target_id = 'test-bill' ORDER BY created_at DESC LIMIT 1").get()).toEqual({
+      printer_host: "192.168.1.71",
+      printer_port: 9100
+    });
+
+    await app.close();
+    database.close();
+  });
+
+  it("returns the exact test bill print failure from the API", async () => {
+    const { app, database } = createFailingPrintTestServer();
+    const response = await app.inject({
+      method: "POST",
+      url: "/print-jobs/test-bill",
+      headers: { "x-device-token": "test-admin-token" }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ processed: { printed: 0, failed: 1, error: "printer offline" } });
+    expect(database.db.prepare("SELECT status, last_error FROM print_jobs WHERE target_id = 'test-bill' ORDER BY created_at DESC LIMIT 1").get()).toEqual({
+      status: "failed",
+      last_error: "printer offline"
+    });
+
+    await app.close();
+    database.close();
+  });
+
   it("configures receipt printer and processes bill print in test mode", async () => {
     const { app, database } = createTestServer();
     const headers = { "x-device-token": "test-admin-token" };

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parsePrintStyleLine, renderBillTicket, renderBillTicketForPrint, renderKotTicket, stripPrintStyleMarkers } from "../domain/tickets.js";
+import { parsePrintStyleLine, PRINT_LINE_MARKER, renderBillTicket, renderBillTicketForPrint, renderKotTicket, stripPrintStyleMarkers } from "../domain/tickets.js";
 
 describe("ticket rendering", () => {
   it("keeps long itemized bill rows readable on thermal-width tickets", () => {
@@ -46,7 +46,7 @@ describe("ticket rendering", () => {
       lineWidthChars: 42
     });
 
-    expect(payload).toContain("==========================================");
+    expect(payload).toContain("__________________________________________");
     expect(payload).toContain("            Gaurav Restaurant");
     expect(payload).toContain("            Main Road, Indore");
     expect(payload).toContain("               Tax Invoice");
@@ -185,7 +185,7 @@ describe("ticket rendering", () => {
     expect(bill).not.toContain("No onion");
   });
 
-  it("honors top padding and solid separators in print layout text", () => {
+  it("honors top padding and plain solid separators in preview text", () => {
     const payload = renderBillTicket({
       tableName: "T1",
       billId: "10",
@@ -199,8 +199,24 @@ describe("ticket rendering", () => {
     });
 
     expect(payload.startsWith("\n\n")).toBe(true);
-    expect(payload).toContain("============================");
+    expect(payload).toContain("____________________________");
+    expect(payload).not.toContain("============================");
     expect(payload).not.toContain("----------------------------");
+  });
+
+  it("marks separators for graphic line drawing in styled print payloads", () => {
+    const payload = renderBillTicketForPrint({
+      tableName: "T1",
+      billId: "10",
+      createdAt: "2026-05-17T12:35:00.000Z",
+      subtotalPaise: 10000,
+      taxPaise: 0,
+      totalPaise: 10000,
+      lineWidthChars: 28
+    });
+
+    expect(payload).toContain(`${PRINT_LINE_MARKER}28`);
+    expect(stripPrintStyleMarkers(payload)).toContain("____________________________");
   });
 
   it("uses section alignment settings in the actual ticket renderer", () => {

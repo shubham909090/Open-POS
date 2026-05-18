@@ -50,7 +50,7 @@ export class PrintJobService {
     return { printed, failed };
   }
 
-  async processOne(printJobId: string): Promise<{ printed: number; failed: number; skipped: boolean }> {
+  async processOne(printJobId: string): Promise<{ printed: number; failed: number; skipped: boolean; error?: string }> {
     const job = this.db
       .select({
         id: printJobs.id,
@@ -68,7 +68,7 @@ export class PrintJobService {
     return { ...(await this.processJobRow(job)), skipped: false };
   }
 
-  private async processJobRow(job: PrintJobRow): Promise<{ printed: number; failed: number }> {
+  private async processJobRow(job: PrintJobRow): Promise<{ printed: number; failed: number; error?: string }> {
     const mode = this.printerOutputMode();
     const adapter = mode === "test" ? this.testAdapter : this.liveAdapter;
     const now = new Date().toISOString();
@@ -107,7 +107,7 @@ export class PrintJobService {
         .where(eq(printJobs.id, job.id))
         .run();
       this.appendFailureEvent(job.id, message);
-      return { printed: 0, failed: 1 };
+      return { printed: 0, failed: 1, error: message };
     }
   }
 

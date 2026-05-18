@@ -113,7 +113,7 @@ export function PrintLayoutEditor({
         footer: draft.kotFooter,
         ...draft
       });
-  const previewLines = preview.split(/\r?\n/).map((line) => parsePrintStyleLine(line) ?? { text: line, size: "normal" as const, bold: false, align: "left" as const });
+  const previewLines = preview.split(/\r?\n/).map((line) => parsePrintStyleLine(line) ?? { text: line, size: "normal" as const, bold: false, align: "left" as const, graphicLine: false });
 
   const sectionStyleKeys = [
     ["restaurantName", "Restaurant name"],
@@ -440,7 +440,7 @@ export function PrintLayoutEditor({
         <div className="print-preview print-preview-styled">
           {previewLines.map((line, index) => (
             <div key={`${index}-${line.text}`} style={previewLineStyle(line)}>
-              {line.text || "\u00a0"}
+              {line.graphicLine ? "\u00a0" : line.text || "\u00a0"}
             </div>
           ))}
         </div>
@@ -449,7 +449,15 @@ export function PrintLayoutEditor({
   );
 }
 
-function previewLineStyle(line: { size: "small" | "normal" | "large"; bold: boolean; align: "left" | "center" | "right" }): CSSProperties {
+function previewLineStyle(line: { size: "small" | "normal" | "large"; bold: boolean; align: "left" | "center" | "right"; graphicLine?: boolean }): CSSProperties {
+  if (line.graphicLine) {
+    return {
+      borderTop: "1px solid currentColor",
+      height: 10,
+      margin: "4px 0",
+      opacity: 0.9
+    };
+  }
   return {
     fontSize: line.size === "large" ? 16 : line.size === "small" ? 11 : 13,
     fontWeight: line.bold ? 800 : 500,

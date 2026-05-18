@@ -936,7 +936,8 @@ export function createHubServer(input: {
   app.post("/print-jobs/process", { preHandler: captainOrAdmin }, async () => input.printJobService.processPending());
   app.post("/print-jobs/test-bill", { preHandler: captainOrAdmin }, async (request) => {
     const session = getSession(request);
-    const result = input.orderService.enqueueTestBillPrint(session.name);
+    const body = billPrintDestinationSchema.parse(request.body ?? {});
+    const result = input.orderService.enqueueTestBillPrint(session.name, body.printerSlot);
     const processed = await input.printJobService.processOne(result.printJobId);
     input.eventBus.publish({ type: "print_job.test_bill_queued", result });
     return { ...result, processed };

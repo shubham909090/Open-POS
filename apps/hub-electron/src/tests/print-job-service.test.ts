@@ -56,6 +56,28 @@ describe("PrintJobService", () => {
     database.close();
   });
 
+  it("returns the exact print failure message when processing one requested job", async () => {
+    const { database, orderService } = createTestHub();
+    orderService.updatePrinterOutputMode("live");
+    orderService.updateReceiptPrinter({
+      printerMode: "network",
+      printerHost: "192.168.1.70",
+      printerPort: 9100
+    });
+    const testJob = orderService.enqueueTestBillPrint("admin");
+    const service = new PrintJobService(database.orm, new FailingPrinterAdapter());
+
+    const result = await service.processOne(testJob.printJobId);
+
+    expect(result).toEqual({ printed: 0, failed: 1, skipped: false, error: "printer offline" });
+    expect(database.db.prepare("SELECT status, last_error FROM print_jobs WHERE id = ?").get(testJob.printJobId)).toEqual({
+      status: "failed",
+      last_error: "printer offline"
+    });
+
+    database.close();
+  });
+
   it("stops automatic retries after five failed print attempts", async () => {
     const { database, orderService } = createTestHub();
     orderService.updatePrinterOutputMode("live");

@@ -83,6 +83,7 @@ interface TicketSectionStyle {
 type TicketSection = "restaurantName" | "address" | "header" | "title" | "metadata" | "items" | "totals" | "notes" | "footer";
 export type TicketSectionStyles = Partial<Record<TicketSection, TicketSectionStyle>>;
 export const PRINT_STYLE_MARKER = "\u001e";
+export const PRINT_LINE_MARKER = "\u001dline:";
 const PRINT_STYLE_PLAIN_TEXT_SEPARATOR = "\u001f";
 
 export interface ParsedPrintStyleLine {
@@ -91,6 +92,7 @@ export interface ParsedPrintStyleLine {
   size: TicketTextSize;
   bold: boolean;
   align: TicketAlign;
+  graphicLine?: boolean;
 }
 
 interface TicketLine {
@@ -111,6 +113,9 @@ function resolvedSectionStyle(styles: TicketSectionStyles | undefined, section: 
 }
 
 function encodePrintStyleLine(line: TicketLine, styles: TicketSectionStyles | undefined, fallbackAlign: TicketAlign): string {
+  if (isSeparatorText(line.text)) {
+    return `${PRINT_LINE_MARKER}${line.text.length}${PRINT_STYLE_PLAIN_TEXT_SEPARATOR}${line.text}`;
+  }
   const style = resolvedSectionStyle(styles, line.section, fallbackAlign);
   const text = style.align === "left" ? line.text : line.text.trim();
   return `${PRINT_STYLE_MARKER}${style.size}:${style.bold ? "1" : "0"}:${style.align}|${text}${PRINT_STYLE_PLAIN_TEXT_SEPARATOR}${line.text}`;
@@ -121,6 +126,14 @@ function defaultPrintAlign(section: TicketSection): TicketAlign {
 }
 
 export function parsePrintStyleLine(line: string): ParsedPrintStyleLine | null {
+  if (line.startsWith(PRINT_LINE_MARKER)) {
+    const payload = line.slice(PRINT_LINE_MARKER.length);
+    const plainTextIndex = payload.indexOf(PRINT_STYLE_PLAIN_TEXT_SEPARATOR);
+    const widthRaw = plainTextIndex >= 0 ? payload.slice(0, plainTextIndex) : payload;
+    const width = Math.max(1, Math.min(64, Number(widthRaw) || DEFAULT_TICKET_LINE_WIDTH));
+    const plainText = plainTextIndex >= 0 ? payload.slice(plainTextIndex + PRINT_STYLE_PLAIN_TEXT_SEPARATOR.length) : separator(width);
+    return { text: plainText, plainText, size: "normal", bold: false, align: "left", graphicLine: true };
+  }
   if (!line.startsWith(PRINT_STYLE_MARKER)) return null;
   const separatorIndex = line.indexOf("|");
   if (separatorIndex < 0) return null;
@@ -147,7 +160,11 @@ function ticketWidth(value?: number): number {
 }
 
 function separator(width: number): string {
-  return "=".repeat(width);
+  return "_".repeat(width);
+}
+
+function isSeparatorText(text: string): boolean {
+  return /^_+$/.test(text);
 }
 
 function money(valuePaise: number): string {

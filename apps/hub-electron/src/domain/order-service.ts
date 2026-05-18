@@ -2050,16 +2050,13 @@ export class OrderService {
     return { mode };
   }
 
-  enqueueTestBillPrint(requestedBy: string): { printJobId: string } {
-    const receipt = this.getReceiptPrinter();
+  enqueueTestBillPrint(requestedBy: string, printerSlot: BillPrinterSlot = "default"): { printJobId: string } {
     const template = this.getPrintLayout("receipt");
     const printJobId = this.enqueuePrintJob({
       targetType: "BILL",
       targetId: "test-bill",
       productionUnitId: null,
-      printerHost: receipt.printerHost,
-      printerPort: receipt.printerPort,
-      printerName: receipt.printerName,
+      ...this.resolveBillPrinter(printerSlot),
       payload: renderBillTicketForPrint({
         tableName: "TEST",
         billId: "TEST-BILL",
@@ -3043,7 +3040,51 @@ export class OrderService {
       payments: billPayments.map((payment) => ({ method: payment.method, amountPaise: payment.amount_paise })),
       revisionNumber: input.bill.revision_number,
       ncReason: input.ncReason ?? input.bill.nc_reason,
-      ...this.getPrintLayout("receipt")
+      ...this.billPrintLayout()
+    };
+  }
+
+  private billPrintLayout(): Pick<
+    BillTicket,
+    | "restaurantName"
+    | "restaurantAddress"
+    | "taxRegistrationText"
+    | "lineWidthChars"
+    | "headerAlign"
+    | "footerAlign"
+    | "sectionStyles"
+    | "topPaddingLines"
+    | "feedLines"
+    | "showTable"
+    | "showDateTime"
+    | "showBillId"
+    | "showTaxBreakup"
+    | "showPaymentSplit"
+    | "showDiscountTip"
+    | "showNcReprintRevision"
+    | "header"
+    | "footer"
+  > {
+    const layout = this.getPrintLayout("receipt");
+    return {
+      restaurantName: layout.restaurantName,
+      restaurantAddress: layout.restaurantAddress,
+      taxRegistrationText: layout.taxRegistrationText,
+      lineWidthChars: layout.lineWidthChars,
+      headerAlign: layout.headerAlign,
+      footerAlign: layout.footerAlign,
+      sectionStyles: layout.sectionStyles,
+      topPaddingLines: layout.topPaddingLines,
+      feedLines: layout.feedLines,
+      showTable: layout.showTable,
+      showDateTime: layout.showDateTime,
+      showBillId: layout.showBillId,
+      showTaxBreakup: layout.showTaxBreakup,
+      showPaymentSplit: layout.showPaymentSplit,
+      showDiscountTip: layout.showDiscountTip,
+      showNcReprintRevision: layout.showNcReprintRevision,
+      header: layout.billHeader,
+      footer: layout.billFooter
     };
   }
 

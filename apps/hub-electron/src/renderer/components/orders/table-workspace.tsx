@@ -394,7 +394,7 @@ export function TableWorkspace({
       {orderPanel === "new" ? (
         <div className="ticket-section">
           <div className="guest-row">
-            <label>
+            <label className="guest-count-field">
               Guests
               <input value={guests} onChange={(event) => setGuests(event.target.value)} inputMode="numeric" />
             </label>

@@ -856,6 +856,19 @@
   @apply h-9 text-center;
 }
 
+.printer-test-actions {
+  @apply grid min-w-0 gap-2;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.printer-test-actions .utility-action {
+  @apply min-h-11 w-full min-w-0 justify-start px-3 text-left;
+}
+
+.printer-test-actions .utility-action svg {
+  @apply shrink-0;
+}
+
 .ticket-header,
 .ticket-header-actions,
 .guest-row,
@@ -901,23 +914,24 @@
 
 .guest-row {
   @apply grid items-end gap-3 rounded-lg border border-line bg-wash p-3;
-  grid-template-columns: minmax(96px, 132px) minmax(0, 1fr);
+  grid-template-columns: minmax(92px, 112px) minmax(260px, 1fr) minmax(282px, max-content);
 }
 
 .guest-row label {
   @apply min-w-0;
 }
 
-.guest-row label input {
+.guest-count-field input {
   @apply h-11 text-center text-base font-black;
 }
 
 .send-action-row {
-  @apply grid min-w-0 grid-cols-2 justify-end gap-2;
+  @apply grid min-w-0 justify-end gap-2;
+  grid-template-columns: 96px 174px;
 }
 
 .send-action-row button {
-  @apply min-h-11 min-w-0 bg-ink px-5 text-base font-black text-white hover:bg-accent-dark disabled:bg-muted disabled:text-white disabled:opacity-70;
+  @apply min-h-11 min-w-0 bg-ink px-3 text-sm font-black leading-5 text-white hover:bg-accent-dark disabled:bg-muted disabled:text-white disabled:opacity-70;
 }
 
 .send-action-row kbd {
@@ -966,7 +980,7 @@
 }
 
 .kot-note-field input {
-  @apply min-h-10 rounded-md border border-line bg-white px-3 text-base font-semibold text-ink outline-none focus:border-accent focus:ring-2 focus:ring-accent-soft;
+  @apply min-h-11 rounded-md border border-line bg-white px-3 text-left text-base font-semibold text-ink outline-none focus:border-accent focus:ring-2 focus:ring-accent-soft;
 }
 
 .secondary-inline.danger {
@@ -1026,6 +1040,15 @@
 }
 
 @media (max-width: 980px) {
+  .guest-row {
+    grid-template-columns: minmax(84px, 112px) minmax(0, 1fr);
+  }
+
+  .send-action-row {
+    grid-column: 1 / -1;
+    @apply justify-start;
+  }
+
   .reports-layout .report-detail-grid,
   .closed-report-row,
   .reports-layout .bill-history-row,

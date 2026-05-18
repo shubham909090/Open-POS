@@ -33,6 +33,8 @@
   .role-card-grid,
   .csv-import-grid,
   .printer-console,
+  .printer-pc-toolbar,
+  .printer-slot-head,
   .printer-fields-grid,
   .printer-fields-grid.network,
   .unit-edit-fields,
@@ -43,6 +45,38 @@
   .topbar,
   .panel-title {
     @apply items-start;
+  }
+
+  .printer-section-header,
+  .printer-pc-toolbar,
+  .printer-slot-head {
+    @apply flex-col items-stretch;
+  }
+
+  .printer-section-header button,
+  .printer-pc-toolbar button {
+    @apply w-full;
+  }
+
+  .guest-row,
+  .send-action-row {
+    grid-template-columns: 1fr;
+  }
+
+  .guest-row {
+    @apply items-stretch gap-2 p-2;
+  }
+
+  .guest-count-field,
+  .kot-note-field,
+  .send-action-row {
+    @apply w-full;
+  }
+
+  .guest-count-field input,
+  .kot-note-field input,
+  .send-action-row button {
+    @apply min-h-12 w-full;
   }
 
   .order-modal-backdrop {

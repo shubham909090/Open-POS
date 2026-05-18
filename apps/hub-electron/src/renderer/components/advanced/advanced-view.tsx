@@ -372,7 +372,7 @@ export function AdvancedView({
   );
 }
 
-function AppUpdatePanel({
+export function AppUpdatePanel({
   setNotice,
   requestManagerApproval,
 }: {
@@ -415,13 +415,24 @@ function AppUpdatePanel({
   const status = updateStatus.data;
   const chosenPath = packagePath.trim();
 
-  async function choosePackage() {
-    const selected = await window.gauravPos?.chooseUpdatePackage?.();
-    if (selected) setPackagePath(selected);
-    else if (!window.gauravPos?.chooseUpdatePackage) {
-      const typed = window.prompt("Paste .gpos-update.zip path");
-      if (typed) setPackagePath(typed);
+  async function choosePackage(): Promise<string | null> {
+    try {
+      const selected = await window.gauravPos?.chooseUpdatePackage?.();
+      if (selected) {
+        setPackagePath(selected);
+        return selected;
+      }
+    } catch (error) {
+      setNotice({ tone: "bad", text: messageOf(error) });
     }
+    if (!window.gauravPos?.chooseUpdatePackage) {
+      const typed = window.prompt("Paste .gpos-update.zip path");
+      if (typed) {
+        setPackagePath(typed);
+        return typed;
+      }
+    }
+    return null;
   }
 
   return (
@@ -480,8 +491,24 @@ function AppUpdatePanel({
         <button
           type="button"
           className="utility-action"
-          disabled={!chosenPath || busy || !status?.baselineRegistered || (status?.activeOrderCount ?? 0) > 0}
+          disabled={busy}
           onClick={async () => {
+            let path = chosenPath;
+            if (!path) {
+              path = (await choosePackage())?.trim() ?? "";
+            }
+            if (!path) {
+              setNotice({ tone: "bad", text: "Choose a .gpos-update.zip package first." });
+              return;
+            }
+            if (!status?.baselineRegistered) {
+              setNotice({ tone: "bad", text: "Register the current version as rollback baseline before installing updates." });
+              return;
+            }
+            if ((status?.activeOrderCount ?? 0) > 0) {
+              setNotice({ tone: "bad", text: `Close or settle ${status?.activeOrderCount ?? 0} running order(s) before installing update.` });
+              return;
+            }
             const approval = await requestManagerApproval({
               title: "Install app update",
               defaultReason: "Install app update",
@@ -489,7 +516,7 @@ function AppUpdatePanel({
               confirmLabel: installUpdate.isPending ? "Installing..." : "Install update",
               danger: true
             }).catch(() => null);
-            if (approval) installUpdate.mutate({ path: chosenPath, pin: approval.pin });
+            if (approval) installUpdate.mutate({ path, pin: approval.pin });
           }}
         >
           Install update

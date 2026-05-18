@@ -46,4 +46,17 @@ describe("hub renderer API", () => {
       })
     );
   });
+
+  it("sends the selected bill printer slot for test prints", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ printJobId: "print-1", processed: { printed: 1, failed: 0 } }), { status: 200 })
+    );
+    const { hubApi } = await import("../renderer/hub-api.js");
+
+    await hubApi.testBillPrint("alternate");
+
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("/print-jobs/test-bill");
+    expect(JSON.parse(String(init.body))).toEqual({ printerSlot: "alternate" });
+  });
 });
