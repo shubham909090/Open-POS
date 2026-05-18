@@ -1,5 +1,5 @@
 import AdmZip from "adm-zip";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
@@ -59,6 +59,43 @@ describe("AppUpdateService", () => {
     fixture.close();
   });
 
+  it("registers the current installer as the rollback baseline for first installs", () => {
+    const fixture = createFixture();
+    const launchInstaller = vi.fn();
+    const service = createService(fixture, { launchInstaller, sqliteNativePath: fixture.sqliteNativePath });
+    const installerPath = writeInstaller(fixture.root, "0.1.0");
+
+    const baseline = service.registerInstallerBaseline(installerPath);
+
+    expect(baseline.version).toBe("0.1.0");
+    expect(baseline.packagePath).toBe(baseline.installerPath);
+    expect(existsSync(baseline.installerPath)).toBe(true);
+    expect(service.status().baselineRegistered).toBe(true);
+    expect(launchInstaller).not.toHaveBeenCalled();
+
+    fixture.close();
+  });
+
+  it("rejects an installer baseline when the filename does not match the running version", () => {
+    const fixture = createFixture();
+    const service = createService(fixture, { sqliteNativePath: fixture.sqliteNativePath });
+
+    expect(() => service.registerInstallerBaseline(writeInstaller(fixture.root, "0.0.9"))).toThrow("does not match running app");
+
+    fixture.close();
+  });
+
+  it("returns a clean validation error when pasted installer path cannot be read", () => {
+    const fixture = createFixture();
+    const service = createService(fixture, { sqliteNativePath: fixture.sqliteNativePath });
+    const installerPath = join(fixture.root, "Gaurav POS Hub Setup 0.1.0.exe");
+    mkdirSync(installerPath);
+
+    expect(() => service.registerInstallerBaseline(installerPath)).toThrow("Current installer file could not be read");
+
+    fixture.close();
+  });
+
   it("schedules rollback restore and launches cached previous installer", async () => {
     const fixture = createFixture();
     const launchInstaller = vi.fn();
@@ -81,6 +118,8 @@ function createFixture() {
   const root = mkdtempSync(join(tmpdir(), "gpos-update-service-"));
   const databasePath = join(root, "hub.sqlite");
   const backupDir = join(root, "backups");
+  const sqliteNativePath = join(root, "better_sqlite3.node");
+  writeFileSync(sqliteNativePath, makePeNative());
   const database = new HubDatabase(databasePath);
   database.migrate();
   database.markAppSchemaVersion(currentDbSchemaVersion());
@@ -93,6 +132,7 @@ function createFixture() {
     root,
     database,
     databasePath,
+    sqliteNativePath,
     backupDir,
     backupService,
     orderService,
@@ -155,6 +195,12 @@ function writePackage(root: string, version: string, patch: PartialDeep<Record<s
   const packagePath = join(root, `Gaurav POS Hub ${version}.gpos-update.zip`);
   zip.writeZip(packagePath);
   return packagePath;
+}
+
+function writeInstaller(root: string, version: string) {
+  const installerPath = join(root, `Gaurav POS Hub Setup ${version}.exe`);
+  writeFileSync(installerPath, makeInstallerBytes(makePeNative()));
+  return installerPath;
 }
 
 function makePeNative() {

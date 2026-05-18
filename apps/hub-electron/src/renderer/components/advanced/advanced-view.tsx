@@ -381,6 +381,7 @@ export function AppUpdatePanel({
 }) {
   const queryClient = useQueryClient();
   const [packagePath, setPackagePath] = useState("");
+  const [chooserStatus, setChooserStatus] = useState("");
   const updateStatus = useQuery({ queryKey: ["app-update-status"], queryFn: hubApi.updateStatus });
   const validatePackage = useMutation({
     mutationFn: hubApi.validateUpdatePackage,
@@ -394,6 +395,14 @@ export function AppUpdatePanel({
     onSuccess: async (result) => {
       await queryClient.invalidateQueries({ queryKey: ["app-update-status"] });
       setNotice({ tone: "good", text: `Rollback baseline registered: ${result.version}` });
+    },
+    onError: (error) => setNotice({ tone: "bad", text: messageOf(error) })
+  });
+  const registerInstallerBaseline = useMutation({
+    mutationFn: hubApi.registerInstallerBaseline,
+    onSuccess: async (result) => {
+      await queryClient.invalidateQueries({ queryKey: ["app-update-status"] });
+      setNotice({ tone: "good", text: `Current installer baseline registered: ${result.version}` });
     },
     onError: (error) => setNotice({ tone: "bad", text: messageOf(error) })
   });
@@ -411,47 +420,55 @@ export function AppUpdatePanel({
     },
     onError: (error) => setNotice({ tone: "bad", text: messageOf(error) })
   });
-  const busy = validatePackage.isPending || registerBaseline.isPending || installUpdate.isPending || rollbackUpdate.isPending;
+  const busy = validatePackage.isPending || registerBaseline.isPending || registerInstallerBaseline.isPending || installUpdate.isPending || rollbackUpdate.isPending;
   const status = updateStatus.data;
   const chosenPath = packagePath.trim();
+  const chosenPathLower = chosenPath.toLowerCase();
+  const isUpdatePackagePath = chosenPathLower.endsWith(".gpos-update.zip");
+  const isInstallerPath = chosenPathLower.endsWith(".exe");
+  const pickerAvailable = Boolean(window.gauravPos?.chooseUpdatePackage);
 
-  async function choosePackage(): Promise<string | null> {
+  async function choosePackage(kind: "update" | "installer" = "update"): Promise<string | null> {
+    if (!window.gauravPos?.chooseUpdatePackage) {
+      setChooserStatus("File picker unavailable. Paste the path manually.");
+      return null;
+    }
+    setChooserStatus("Opening file picker...");
     try {
-      const selected = await window.gauravPos?.chooseUpdatePackage?.();
+      const selected = await window.gauravPos.chooseUpdatePackage(kind);
       if (selected) {
         setPackagePath(selected);
+        setChooserStatus("");
         return selected;
       }
+      setChooserStatus("");
+      setNotice({ tone: "bad", text: kind === "installer" ? "No installer selected." : "No package selected." });
     } catch (error) {
+      setChooserStatus("");
       setNotice({ tone: "bad", text: messageOf(error) });
-    }
-    if (!window.gauravPos?.chooseUpdatePackage) {
-      const typed = window.prompt("Paste .gpos-update.zip path");
-      if (typed) {
-        setPackagePath(typed);
-        return typed;
-      }
     }
     return null;
   }
 
   return (
-    <section className="panel">
+    <section className="panel app-update-panel">
       <div className="panel-title">
-        <h2>App updates</h2>
-        <span>{status ? `App ${status.appVersion} · DB ${status.dbSchemaVersion}` : "Loading"}</span>
+        <div>
+          <h2>App updates</h2>
+          <span>{status ? `App ${status.appVersion} · DB ${status.dbSchemaVersion}` : "Loading update status"}</span>
+        </div>
       </div>
-      <div className="record-list compact-list">
-        <article className="record-row">
+      <div className="update-status-grid">
+        <article className={status?.baselineRegistered ? "update-status-card ready" : "update-status-card warning"}>
           <div>
             <strong>Rollback baseline</strong>
-            <span>{status?.baselineRegistered ? `Ready: ${status.current?.version}` : "Register current update package before installing newer builds"}</span>
+            <span>{status?.baselineRegistered ? `Ready: ${status.current?.version}` : "Register the current .gpos-update.zip or installer .exe before installing newer builds"}</span>
           </div>
           <span className={status?.baselineRegistered ? "record-status active" : "record-status warning"}>
             {status?.baselineRegistered ? "Ready" : "Missing"}
           </span>
         </article>
-        <article className="record-row">
+        <article className={(status?.activeOrderCount ?? 0) === 0 ? "update-status-card ready" : "update-status-card warning"}>
           <div>
             <strong>Running orders</strong>
             <span>{status?.activeOrderCount ?? 0} must be closed before update install</span>
@@ -461,7 +478,7 @@ export function AppUpdatePanel({
           </span>
         </article>
         {status?.previous ? (
-          <article className="record-row">
+          <article className={status.rollbackAvailable ? "update-status-card ready" : "update-status-card warning"}>
             <div>
               <strong>Rollback package</strong>
               <span>{status.previous.version} · backup {status.previous.preUpdateBackupFileName ?? "missing"}</span>
@@ -472,72 +489,96 @@ export function AppUpdatePanel({
           </article>
         ) : null}
       </div>
-      <div className="inline-form">
+      <div className="update-package-card">
         <label>
-          Update package
-          <input value={packagePath} onChange={(event) => setPackagePath(event.target.value)} placeholder="Choose .gpos-update.zip" />
+          <span>Update package or current installer</span>
+          <input value={packagePath} onChange={(event) => setPackagePath(event.target.value)} placeholder="Paste .gpos-update.zip or current installer .exe path" />
         </label>
-        <button type="button" onClick={() => void choosePackage()}>
-          <Upload size={16} /> Choose
-        </button>
+        <div className="update-picker-actions">
+          <button type="button" onClick={() => void choosePackage()}>
+            <Upload size={16} /> Choose package
+          </button>
+          <button type="button" className="secondary-button" onClick={() => void choosePackage("installer")}>
+            Choose installer
+          </button>
+        </div>
       </div>
-      <div className="support-tool-actions utility-actions">
-        <button type="button" className="utility-action" disabled={!chosenPath || busy} onClick={() => validatePackage.mutate(chosenPath)}>
-          <PackageCheck size={18} /> Validate
-        </button>
-        <button type="button" className="utility-action" disabled={!chosenPath || busy} onClick={() => registerBaseline.mutate(chosenPath)}>
-          Register baseline
-        </button>
-        <button
-          type="button"
-          className="utility-action"
-          disabled={busy}
-          onClick={async () => {
-            let path = chosenPath;
-            if (!path) {
-              path = (await choosePackage())?.trim() ?? "";
-            }
-            if (!path) {
-              setNotice({ tone: "bad", text: "Choose a .gpos-update.zip package first." });
-              return;
-            }
-            if (!status?.baselineRegistered) {
-              setNotice({ tone: "bad", text: "Register the current version as rollback baseline before installing updates." });
-              return;
-            }
-            if ((status?.activeOrderCount ?? 0) > 0) {
-              setNotice({ tone: "bad", text: `Close or settle ${status?.activeOrderCount ?? 0} running order(s) before installing update.` });
-              return;
-            }
-            const approval = await requestManagerApproval({
-              title: "Install app update",
-              defaultReason: "Install app update",
-              message: "The hub will create a database backup, open the installer, and close this app.",
-              confirmLabel: installUpdate.isPending ? "Installing..." : "Install update",
-              danger: true
-            }).catch(() => null);
-            if (approval) installUpdate.mutate({ path, pin: approval.pin });
-          }}
-        >
-          Install update
-        </button>
-        <button
-          type="button"
-          className="utility-action"
-          disabled={busy || !status?.rollbackAvailable}
-          onClick={async () => {
-            const approval = await requestManagerApproval({
-              title: "Rollback app update",
-              defaultReason: "Rollback app update",
-              message: "The hub will restore the pre-update database backup and open the previous installer.",
-              confirmLabel: rollbackUpdate.isPending ? "Rolling back..." : "Rollback",
-              danger: true
-            }).catch(() => null);
-            if (approval) rollbackUpdate.mutate(approval.pin);
-          }}
-        >
-          <RotateCcw size={18} /> Rollback
-        </button>
+      {chooserStatus ? <p className="soft-note">{chooserStatus}</p> : null}
+      {!pickerAvailable ? <p className="soft-note">File picker unavailable. Paste the path manually.</p> : null}
+      <div className="update-action-groups">
+        <div className="update-action-card">
+          <strong>Check and register baseline</strong>
+          <div className="update-action-row">
+            <button type="button" className="utility-action" disabled={!isUpdatePackagePath || busy} onClick={() => validatePackage.mutate(chosenPath)}>
+              <PackageCheck size={18} /> Validate
+            </button>
+            <button type="button" className="utility-action" disabled={!isUpdatePackagePath || busy} onClick={() => registerBaseline.mutate(chosenPath)}>
+              Register package baseline
+            </button>
+            <button type="button" className="utility-action" disabled={!isInstallerPath || busy} onClick={() => registerInstallerBaseline.mutate(chosenPath)}>
+              Register current installer baseline
+            </button>
+          </div>
+        </div>
+        <div className="update-action-card danger">
+          <strong>Install or rollback</strong>
+          <div className="update-action-row">
+            <button
+              type="button"
+              className="primary-button"
+              disabled={busy}
+              onClick={async () => {
+                let path = chosenPath;
+                if (!path) {
+                  path = (await choosePackage())?.trim() ?? "";
+                }
+                if (!path) {
+                  setNotice({ tone: "bad", text: "Choose a .gpos-update.zip package first." });
+                  return;
+                }
+                if (!path.toLowerCase().endsWith(".gpos-update.zip")) {
+                  setNotice({ tone: "bad", text: "Install update requires a .gpos-update.zip package. Use the installer only for baseline registration." });
+                  return;
+                }
+                if (!status?.baselineRegistered) {
+                  setNotice({ tone: "bad", text: "Register the current version as rollback baseline before installing updates. Use the current .gpos-update.zip or the current installer .exe." });
+                  return;
+                }
+                if ((status?.activeOrderCount ?? 0) > 0) {
+                  setNotice({ tone: "bad", text: `Close or settle ${status?.activeOrderCount ?? 0} running order(s) before installing update.` });
+                  return;
+                }
+                const approval = await requestManagerApproval({
+                  title: "Install app update",
+                  defaultReason: "Install app update",
+                  message: "The hub will create a database backup, open the installer, and close this app.",
+                  confirmLabel: installUpdate.isPending ? "Installing..." : "Install update",
+                  danger: true
+                }).catch(() => null);
+                if (approval) installUpdate.mutate({ path, pin: approval.pin });
+              }}
+            >
+              Install update
+            </button>
+            <button
+              type="button"
+              className="danger-button"
+              disabled={busy || !status?.rollbackAvailable}
+              onClick={async () => {
+                const approval = await requestManagerApproval({
+                  title: "Rollback app update",
+                  defaultReason: "Rollback app update",
+                  message: "The hub will restore the pre-update database backup and open the previous installer.",
+                  confirmLabel: rollbackUpdate.isPending ? "Rolling back..." : "Rollback",
+                  danger: true
+                }).catch(() => null);
+                if (approval) rollbackUpdate.mutate(approval.pin);
+              }}
+            >
+              <RotateCcw size={18} /> Rollback
+            </button>
+          </div>
+        </div>
       </div>
       {updateStatus.error ? <p className="warning-text">{messageOf(updateStatus.error)}</p> : null}
     </section>

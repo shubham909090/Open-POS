@@ -1,9 +1,9 @@
 import AdmZip from "adm-zip";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, extname, join } from "node:path";
+import { basename, join } from "node:path";
 import { createRequire } from "node:module";
 import { z } from "zod";
 
@@ -129,13 +129,19 @@ export function validateInstallerContainsSQLiteNative(installerBytes: Buffer, ex
     const extractRoot = join(root, "extract");
     writeFileSync(installerPath, installerBytes);
     extractArchive(installerPath, extractRoot);
-    const embeddedNative = findEmbeddedSQLiteNative(extractRoot, 0);
+    const embeddedNative = readDirectEmbeddedSQLiteNative(extractRoot);
     if (!embeddedNative) throw new Error("Installer does not contain packaged SQLite native binary");
     if (sha256(embeddedNative) !== expectedSha256) throw new Error("Installer SQLite native binary does not match manifest");
     validateWindowsX64NativeModule(embeddedNative);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+}
+
+function readDirectEmbeddedSQLiteNative(root: string): Buffer | null {
+  const nativePath = join(root, ...INSTALLER_SQLITE_NATIVE_SUFFIX.split("/"));
+  if (!existsSync(nativePath)) return null;
+  return readFileSync(nativePath);
 }
 
 function extractArchive(archivePath: string, destination: string): void {
@@ -147,26 +153,4 @@ function extractArchive(archivePath: string, destination: string): void {
     const detail = (result.stderr || result.stdout || "").trim();
     throw new Error(`Could not inspect installer contents${detail ? `: ${detail}` : ""}`);
   }
-}
-
-function findEmbeddedSQLiteNative(root: string, depth: number): Buffer | null {
-  if (!existsSync(root)) return null;
-  for (const entry of readdirSync(root)) {
-    const path = join(root, entry);
-    const stats = statSync(path);
-    if (stats.isDirectory()) {
-      const found = findEmbeddedSQLiteNative(path, depth);
-      if (found) return found;
-      continue;
-    }
-    const normalized = path.replace(/\\/g, "/");
-    if (normalized.endsWith(INSTALLER_SQLITE_NATIVE_SUFFIX)) return readFileSync(path);
-    if (depth < 2 && [".7z", ".zip"].includes(extname(path).toLowerCase())) {
-      const nestedRoot = join(root, `__extract_${basename(path).replace(/[^0-9A-Za-z.-]/g, "_")}`);
-      extractArchive(path, nestedRoot);
-      const found = findEmbeddedSQLiteNative(nestedRoot, depth + 1);
-      if (found) return found;
-    }
-  }
-  return null;
 }

@@ -152,9 +152,14 @@ export function PrintLayoutEditor({
       </div>
       <div className="layout-editor">
         <form
-          className="template-form"
+          className="template-form print-layout-form"
           onSubmit={(event) => event.preventDefault()}
         >
+          <div className="print-layout-scope-card">
+            <span>Editing layout</span>
+            <strong>{scope === "receipt" ? "Cash counter bill" : units.find((unit) => unit.id === selectedUnitId)?.name ?? "Kitchen / counter ticket"}</strong>
+            <small>{scope === "receipt" ? "Bill receipt text, totals, payment and tax display." : "Kitchen/counter ticket text, notes and item formatting."}</small>
+          </div>
           <label>
             Layout for
             <select
@@ -310,89 +315,89 @@ export function PrintLayoutEditor({
               }
             />
           </label>
-          <div className="checkbox-grid">
-            <label>
+          <div className="print-toggle-grid">
+            <label className="print-toggle-card">
               <input
                 type="checkbox"
                 checked={draft.showTable}
                 onChange={(event) =>
                   update("showTable", event.target.checked)
                 }
-              />{" "}
-              Table
+              />
+              <span>Table</span>
             </label>
-            <label>
+            <label className="print-toggle-card">
               <input
                 type="checkbox"
                 checked={draft.showDateTime}
                 onChange={(event) =>
                   update("showDateTime", event.target.checked)
                 }
-              />{" "}
-              Date/time
+              />
+              <span>Date/time</span>
             </label>
-            <label>
+            <label className="print-toggle-card">
               <input
                 type="checkbox"
                 checked={draft.showTaxBreakup}
                 onChange={(event) =>
                   update("showTaxBreakup", event.target.checked)
                 }
-              />{" "}
-              Tax breakup
+              />
+              <span>Tax breakup</span>
             </label>
-            <label>
+            <label className="print-toggle-card">
               <input
                 type="checkbox"
                 checked={draft.showDiscountTip}
                 onChange={(event) =>
                   update("showDiscountTip", event.target.checked)
                 }
-              />{" "}
-              Discount/tip
+              />
+              <span>Discount/tip</span>
             </label>
-            <label>
+            <label className="print-toggle-card">
               <input
                 type="checkbox"
                 checked={draft.showPaymentSplit}
                 onChange={(event) =>
                   update("showPaymentSplit", event.target.checked)
                 }
-              />{" "}
-              Payment split
+              />
+              <span>Payment split</span>
             </label>
-            <label>
+            <label className="print-toggle-card">
               <input
                 type="checkbox"
                 checked={draft.showBillId}
                 onChange={(event) =>
                   update("showBillId", event.target.checked)
                 }
-              />{" "}
-              Bill/KOT number
+              />
+              <span>Bill/KOT number</span>
             </label>
-            <label>
+            <label className="print-toggle-card">
               <input
                 type="checkbox"
                 checked={draft.showCaptain}
                 onChange={(event) =>
                   update("showCaptain", event.target.checked)
                 }
-              />{" "}
-              Captain on KOT
+              />
+              <span>Captain on KOT</span>
             </label>
-            <label>
+            <label className="print-toggle-card">
               <input
                 type="checkbox"
                 checked={draft.showNcReprintRevision}
                 onChange={(event) =>
                   update("showNcReprintRevision", event.target.checked)
                 }
-              />{" "}
-              NC/reprint labels
+              />
+              <span>NC/reprint labels</span>
             </label>
           </div>
-          <details className="setup-subdetails">
+          <details className="setup-subdetails print-style-panel">
             <summary>
               <span>Section font controls</span>
               <small>Size, bold, and alignment</small>
@@ -403,20 +408,28 @@ export function PrintLayoutEditor({
                 return (
                   <div key={key} className="print-style-row">
                     <strong>{label}</strong>
-                    <select value={style.size} onChange={(event) => updateSectionStyle(key, { size: event.target.value as "small" | "normal" | "large" })}>
-                      <option value="small">Small</option>
-                      <option value="normal">Normal</option>
-                      <option value="large">Large</option>
-                    </select>
-                    <select value={style.align} onChange={(event) => updateSectionStyle(key, { align: event.target.value as "left" | "center" | "right" })}>
-                      <option value="left">Left</option>
-                      <option value="center">Center</option>
-                      <option value="right">Right</option>
-                    </select>
-                    <label className="inline-check">
-                      <input type="checkbox" checked={style.bold} onChange={(event) => updateSectionStyle(key, { bold: event.target.checked })} />
-                      Bold
-                    </label>
+                    <div className="print-style-fields">
+                      <label>
+                        <span>Size</span>
+                        <select value={style.size} onChange={(event) => updateSectionStyle(key, { size: event.target.value as "small" | "normal" | "large" })}>
+                          <option value="small">Small</option>
+                          <option value="normal">Normal</option>
+                          <option value="large">Large</option>
+                        </select>
+                      </label>
+                      <label>
+                        <span>Align</span>
+                        <select value={style.align} onChange={(event) => updateSectionStyle(key, { align: event.target.value as "left" | "center" | "right" })}>
+                          <option value="left">Left</option>
+                          <option value="center">Center</option>
+                          <option value="right">Right</option>
+                        </select>
+                      </label>
+                      <label className="inline-check print-bold-check">
+                        <input type="checkbox" checked={style.bold} onChange={(event) => updateSectionStyle(key, { bold: event.target.checked })} />
+                        Bold
+                      </label>
+                    </div>
                   </div>
                 );
               })}

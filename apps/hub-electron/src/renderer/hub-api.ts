@@ -479,7 +479,7 @@ let authToken = localStorage.getItem("deviceToken") || "dev-admin-token";
 declare global {
   interface Window {
     gauravPos?: {
-      chooseUpdatePackage?: () => Promise<string | null>;
+      chooseUpdatePackage?: (kind?: "update" | "installer") => Promise<string | null>;
     };
   }
 }
@@ -535,6 +535,8 @@ export const hubApi = {
     apiFetch<ValidatedUpdatePackage>("/system/update/validate", { method: "POST", body: JSON.stringify({ packagePath }) }),
   registerUpdateBaseline: (packagePath: string) =>
     apiFetch<CachedUpdatePackage>("/system/update/register-baseline", { method: "POST", body: JSON.stringify({ packagePath }) }),
+  registerInstallerBaseline: (installerPath: string) =>
+    apiFetch<CachedUpdatePackage>("/system/update/register-installer-baseline", { method: "POST", body: JSON.stringify({ installerPath }) }),
   installUpdate: (packagePath: string, managerPin: string) =>
     apiFetch<{ installing: true; backup: BackupSummary; package: CachedUpdatePackage; recoveryScriptPath: string }>("/system/update/install", {
       method: "POST",

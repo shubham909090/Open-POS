@@ -86,6 +86,7 @@
     "files": [
       "dist/**/*",
       "drizzle/**/*",
+      "preload.cjs",
       "package.json"
     ],
     "extraResources": [

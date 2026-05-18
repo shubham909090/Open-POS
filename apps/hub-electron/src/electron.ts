@@ -1,6 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain } from "electron";
-import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { chooseUpdateFile, type UpdateFileDialogKind } from "./electron-dialogs.js";
 import { startHub } from "./runtime.js";
 import { runSqliteSelfTest } from "./self-test.js";
 
@@ -16,13 +16,13 @@ if (selfTestOnly) {
     app.exit(1);
   }
 } else {
-  ipcMain.handle("updates:choose-package", async () => {
-    const result = await dialog.showOpenDialog({
-      title: "Choose Gaurav POS update package",
-      properties: ["openFile"],
-      filters: [{ name: "Gaurav POS Update", extensions: ["zip"] }]
-    });
-    return result.canceled ? null : (result.filePaths[0] ?? null);
+  ipcMain.handle("updates:choose-package", async (_event, kindRaw?: string) => {
+    const kind: UpdateFileDialogKind = kindRaw === "installer" ? "installer" : "update";
+    try {
+      return await chooseUpdateFile(dialog, mainWindow, kind);
+    } catch (error) {
+      throw new Error(error instanceof Error ? error.message : "Unable to open update file picker");
+    }
   });
 }
 
@@ -34,7 +34,7 @@ async function createWindow() {
     }
   });
 
-  const preloadPath = fileURLToPath(new URL("./preload.js", import.meta.url));
+  const preloadPath = fileURLToPath(new URL("../preload.cjs", import.meta.url));
   mainWindow = new BrowserWindow({
     width: 1440,
     height: 920,
@@ -44,7 +44,7 @@ async function createWindow() {
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
-      ...(existsSync(preloadPath) ? { preload: preloadPath } : {})
+      preload: preloadPath
     }
   });
 

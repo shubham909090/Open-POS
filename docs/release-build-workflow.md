@@ -25,6 +25,8 @@ Reason: the package command must run the packaged Windows app with `--self-test-
 
 If the build is attempted on macOS and the SQLite guard fails, do not use that package.
 
+Also verify that the Electron preload bridge is packaged. The app update file picker depends on `/preload.cjs` being present inside `app.asar`. If it is missing, the App Updates screen will fall back to pasted paths instead of opening the native file picker.
+
 ## Before Building
 
 From the repo root:
@@ -63,6 +65,100 @@ The command must validate:
 - packaged app passes `--self-test-sqlite`
 
 If any check fails, do not send the build.
+
+## Mac Cross-Build Warning
+
+macOS can produce a Windows `.exe`, but it may package the wrong SQLite native binary. We saw this happen: `better_sqlite3.node` inside `win-unpacked` was a macOS Mach-O file even though the app target was Windows.
+
+For a trusted restaurant build, prefer Windows x64 and `package:update`.
+
+If you must cross-build from macOS temporarily, do all of this before sending files:
+
+1. Build the Windows app:
+
+```bash
+pnpm --filter @gaurav-pos/hub-electron package:win
+```
+
+2. Check the packaged SQLite native:
+
+```bash
+file "apps/hub-electron/release/win-unpacked/resources/app.asar.unpacked/node_modules/better-sqlite3/build/Release/better_sqlite3.node"
+```
+
+It must say something like:
+
+```text
+PE32+ executable (DLL) (GUI) x86-64, for MS Windows
+```
+
+If it says `Mach-O`, `ELF`, `arm64`, or anything non-Windows, stop. Do not use that installer.
+
+3. Fetch the Electron Windows x64 prebuild for the exact Electron version and replace only `better_sqlite3.node`:
+
+```bash
+REPO_ROOT="$(pwd)"
+rm -rf .agent/tmp/better-sqlite3-electron-win32-x64
+mkdir -p .agent/tmp/better-sqlite3-electron-win32-x64
+cp node_modules/.pnpm/better-sqlite3@12.9.0/node_modules/better-sqlite3/package.json .agent/tmp/better-sqlite3-electron-win32-x64/package.json
+cd .agent/tmp/better-sqlite3-electron-win32-x64
+"$REPO_ROOT/node_modules/.pnpm/node_modules/.bin/prebuild-install" --runtime electron --target 38.8.6 --platform win32 --arch x64 --verbose
+cd "$REPO_ROOT"
+cp .agent/tmp/better-sqlite3-electron-win32-x64/build/Release/better_sqlite3.node \
+  apps/hub-electron/release/win-unpacked/resources/app.asar.unpacked/node_modules/better-sqlite3/build/Release/better_sqlite3.node
+```
+
+4. Remove any non-Windows test `.node` files from the packaged app:
+
+```bash
+rm -f apps/hub-electron/release/win-unpacked/resources/app.asar.unpacked/node_modules/better-sqlite3/build/Release/test_extension.node
+find apps/hub-electron/release/win-unpacked -name "*.node" -print -exec file {} \;
+```
+
+Only `better_sqlite3.node` should remain, and it must be Windows x64 `PE32+`.
+
+5. Rebuild the installer from corrected `win-unpacked`:
+
+```bash
+rm -f "apps/hub-electron/release/Gaurav POS Hub Setup 0.1.0.exe" \
+  "apps/hub-electron/release/Gaurav POS Hub Setup 0.1.0.exe.blockmap" \
+  apps/hub-electron/release/builder-debug.yml
+pnpm --filter @gaurav-pos/hub-electron exec electron-builder --win nsis --x64 --prepackaged release/win-unpacked
+```
+
+6. Create the `.gpos-update.zip` only after the native binary passes validation.
+
+## Preload Picker Validation
+
+The packaged app must contain the CommonJS preload bridge:
+
+```bash
+node_modules/.pnpm/node_modules/@electron/asar/bin/asar.js list \
+  "apps/hub-electron/release/win-unpacked/resources/app.asar" | rg "^/preload\\.cjs$|^/dist/electron\\.js$"
+```
+
+Expected:
+
+```text
+/dist/electron.js
+/preload.cjs
+```
+
+On macOS, you can build a local test app and verify the renderer bridge:
+
+```bash
+pnpm --filter @gaurav-pos/hub-electron build
+pnpm --filter @gaurav-pos/hub-electron exec electron-builder --mac dir
+```
+
+Launch the Mac app with a temporary DB and remote debugging, then verify:
+
+```text
+typeof window.gauravPos === "object"
+typeof window.gauravPos.chooseUpdatePackage === "function"
+```
+
+If that bridge is missing, the App Updates screen cannot open the native chooser and will ask for a pasted path.
 
 ## Clean Release Folder
 
@@ -121,6 +217,8 @@ platform: win32
 arch: x64
 sqliteNative.format: pe32plus-x64
 ```
+
+This validation opens the `.gpos-update.zip`, checks the manifest, verifies the installer hash, extracts the actual installer, and confirms the installer contains the same Windows x64 `better_sqlite3.node` hash recorded in the manifest.
 
 Also record hashes:
 
@@ -192,4 +290,3 @@ Open Hub -> App Updates -> Rollback -> recovery script restores DB backup -> pre
 - Do not use a package if SQLite validation fails.
 - Do not install an older app over a newer DB without using rollback.
 - Do not update during service while orders are open.
-

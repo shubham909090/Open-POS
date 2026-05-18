@@ -74,6 +74,10 @@ const updatePackagePathSchema = z.object({
   packagePath: z.string().trim().min(1)
 });
 
+const updateInstallerPathSchema = z.object({
+  installerPath: z.string().trim().min(1)
+});
+
 export function isRealtimeEventVisibleForRole(event: unknown, role: UserRole): boolean {
   if (role === "admin" || role === "captain") return true;
   const type = typeof event === "object" && event !== null && "type" in event ? String((event as { type?: unknown }).type ?? "") : "";
@@ -977,6 +981,10 @@ export function createHubServer(input: {
   app.post("/system/update/register-baseline", { preHandler: adminOnly }, async (request) => {
     const body = updatePackagePathSchema.parse(request.body);
     return requireAppUpdateService().registerBaseline(body.packagePath);
+  });
+  app.post("/system/update/register-installer-baseline", { preHandler: adminOnly }, async (request) => {
+    const body = updateInstallerPathSchema.parse(request.body);
+    return requireAppUpdateService().registerInstallerBaseline(body.installerPath);
   });
   app.post("/system/update/install", { preHandler: adminOnly }, async (request) => {
     const body = updatePackagePathSchema.parse(request.body);

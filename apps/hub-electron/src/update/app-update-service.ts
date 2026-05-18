@@ -1,14 +1,17 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { homedir, platform } from "node:os";
 import { basename, dirname, extname, join, resolve } from "node:path";
 import { spawn } from "node:child_process";
+import { readAppMetadata } from "../app-metadata.js";
 import type { BackupService, BackupSummary } from "../db/backup-service.js";
 import type { HubDatabase } from "../db/database.js";
 import { DomainError } from "../domain/errors.js";
 import type { UpdatePackageManifest } from "./update-package.js";
-import { validateUpdatePackage } from "./update-package.js";
+import { PACKAGED_SQLITE_NATIVE_PATH, UPDATE_APP_ID, sha256, validateInstallerContainsSQLiteNative, validateUpdatePackage, validateWindowsX64NativeModule } from "./update-package.js";
 
 const STATE_FILE = "app-update-state.json";
+const require = createRequire(import.meta.url);
 
 export interface CachedUpdatePackage {
   version: string;
@@ -59,6 +62,7 @@ export class AppUpdateService {
       appVersion: string;
       dbSchemaVersion: number;
       databasePath: string;
+      sqliteNativePath?: string;
       launchInstaller?: (installerPath: string) => Promise<void> | void;
       exitApp?: () => void;
     }
@@ -90,6 +94,59 @@ export class AppUpdateService {
       throw new DomainError(`Baseline package version ${validated.manifest.version} does not match running app ${this.input.appVersion}`, 400);
     }
     const cached = this.cachePackage(validated);
+    this.writeState({ ...this.readState(), current: cached });
+    return cached;
+  }
+
+  registerInstallerBaseline(installerPath: string): CachedUpdatePackage {
+    const expectedName = `Gaurav POS Hub Setup ${this.input.appVersion}.exe`;
+    if (basename(installerPath) !== expectedName) {
+      throw new DomainError(`Installer ${basename(installerPath)} does not match running app ${this.input.appVersion}`, 400);
+    }
+    const installerBytes = readBaselineFile(installerPath, "Current installer");
+    if (installerBytes.length < 2 || installerBytes.toString("ascii", 0, 2) !== "MZ") {
+      throw new DomainError("Current installer is not a Windows executable", 400);
+    }
+
+    let sqliteNativePath: string;
+    try {
+      sqliteNativePath = this.input.sqliteNativePath ?? resolveInstalledSqliteNativePath();
+    } catch {
+      throw new DomainError("Installed SQLite native binary is missing", 400);
+    }
+    const sqliteNativeBytes = readBaselineFile(sqliteNativePath, "Installed SQLite native binary");
+    try {
+      validateWindowsX64NativeModule(sqliteNativeBytes);
+      validateInstallerContainsSQLiteNative(installerBytes, sha256(sqliteNativeBytes));
+    } catch (error) {
+      throw new DomainError(error instanceof Error ? error.message : "Current installer SQLite validation failed", 400);
+    }
+
+    const metadata = readAppMetadata();
+    const manifest: UpdatePackageManifest = {
+      schemaVersion: 1,
+      appId: UPDATE_APP_ID,
+      productName: metadata.productName,
+      version: this.input.appVersion,
+      platform: "win32",
+      arch: "x64",
+      electronVersion: metadata.electronVersion,
+      dbSchemaVersion: this.input.dbSchemaVersion,
+      minSourceDbSchemaVersion: 0,
+      createdAt: new Date().toISOString(),
+      installer: {
+        fileName: expectedName,
+        sha256: sha256(installerBytes),
+        sizeBytes: installerBytes.length
+      },
+      sqliteNative: {
+        fileName: PACKAGED_SQLITE_NATIVE_PATH,
+        sha256: sha256(sqliteNativeBytes),
+        sizeBytes: sqliteNativeBytes.length,
+        format: "pe32plus-x64"
+      }
+    };
+    const cached = this.cacheInstallerBaseline(installerPath, manifest);
     this.writeState({ ...this.readState(), current: cached });
     return cached;
   }
@@ -140,6 +197,20 @@ export class AppUpdateService {
       packagePath,
       installerPath,
       manifest: validated.manifest,
+      cachedAt: new Date().toISOString()
+    };
+  }
+
+  private cacheInstallerBaseline(sourceInstallerPath: string, manifest: UpdatePackageManifest): CachedUpdatePackage {
+    const cacheRoot = this.safeCacheRoot(manifest.version);
+    mkdirSync(cacheRoot, { recursive: true });
+    const installerPath = join(cacheRoot, manifest.installer.fileName);
+    copyFileSync(sourceInstallerPath, installerPath);
+    return {
+      version: manifest.version,
+      packagePath: installerPath,
+      installerPath,
+      manifest,
       cachedAt: new Date().toISOString()
     };
   }
@@ -248,4 +319,18 @@ function psQuote(value: string): string {
 
 function separator(): string {
   return process.platform === "win32" ? "\\" : "/";
+}
+
+function readBaselineFile(path: string, label: string): Buffer {
+  if (!existsSync(path)) throw new DomainError(`${label} file is missing`, 400);
+  try {
+    return readFileSync(path);
+  } catch (error) {
+    const detail = error instanceof Error ? `: ${error.message}` : "";
+    throw new DomainError(`${label} file could not be read${detail}`, 400);
+  }
+}
+
+function resolveInstalledSqliteNativePath(): string {
+  return require.resolve("better-sqlite3/build/Release/better_sqlite3.node");
 }

@@ -47,6 +47,7 @@ export function SetupView({
   const [hubPublicUrl, setHubPublicUrl] = useState(bootstrap.setup?.hubConnection?.hubPublicUrl ?? "");
   const [connectionEditing, setConnectionEditing] = useState(!bootstrap.setup?.hubConnection?.configured);
   const [printerEditing, setPrinterEditing] = useState(false);
+  const [systemPrintersLoading, setSystemPrintersLoading] = useState(false);
   const firstFloorId = bootstrap.floors.find((floor) => floor.active)?.id ?? bootstrap.floors[0]?.id ?? "";
   const activeFloors = bootstrap.floors.filter((floor) => floor.active);
   const dishSaleGroups = bootstrap.saleGroups.filter((group) => group.active && group.kind !== "alcohol");
@@ -136,8 +137,17 @@ export function SetupView({
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ["bootstrap"] });
   const refreshSystemPrinters = async () => {
-    const printers = await hubApi.systemPrinters({ refresh: true });
-    queryClient.setQueryData(["system-printers"], printers);
+    if (systemPrintersLoading) return;
+    setSystemPrintersLoading(true);
+    try {
+      const printers = await hubApi.systemPrinters({ refresh: true });
+      queryClient.setQueryData(["system-printers"], printers);
+      setNotice({ tone: "good", text: `${printers.length} PC printers loaded.` });
+    } catch (error) {
+      setNotice({ tone: "bad", text: messageOf(error) });
+    } finally {
+      setSystemPrintersLoading(false);
+    }
   };
   const invalidatePrinter = async () => {
     await queryClient.invalidateQueries({ queryKey: ["bill-printers"] });
@@ -432,9 +442,10 @@ export function SetupView({
                       type="button"
                       className="secondary-button"
                       onClick={() => void refreshSystemPrinters()}
-                      disabled={systemPrinters.isFetching}
+                      disabled={systemPrintersLoading}
+                      aria-busy={systemPrintersLoading}
                     >
-                      {systemPrinters.isFetching ? "Loading..." : "Load PC printers"}
+                      {systemPrintersLoading ? "Loading PC printers..." : "Load PC printers"}
                     </button>
                   </div>
                 ) : null}

@@ -61,6 +61,17 @@ describe("update package validation", () => {
     rmSync(root, { recursive: true, force: true });
   });
 
+  it("rejects installers with a good decoy SQLite native outside the real packaged path", () => {
+    const root = mkdtempSync(join(tmpdir(), "gpos-update-decoy-native-"));
+    const sqliteBytes = makePeNative(0x8664);
+    const installerBytes = makeInstallerBytes(makePeNative(0xaa64), sqliteBytes);
+    const packagePath = writePackage(root, {}, { sqliteBytes, installerBytes });
+
+    expect(() => validateUpdatePackage(packagePath, 10)).toThrow("Installer SQLite native binary does not match manifest");
+
+    rmSync(root, { recursive: true, force: true });
+  });
+
   it("rejects missing or non-Windows SQLite native binaries", () => {
     expect(() => validateWindowsX64NativeModule(Buffer.from("not-a-pe"))).toThrow("not a Windows PE");
     expect(() => validateWindowsX64NativeModule(makePeNative(0x8664, 0x10b))).toThrow("not PE32+");
@@ -135,9 +146,14 @@ function makePeNative(machine: number, optionalMagic = 0x20b) {
   return bytes;
 }
 
-function makeInstallerBytes(sqliteBytes: Buffer) {
+function makeInstallerBytes(sqliteBytes: Buffer, decoySqliteBytes?: Buffer) {
   const installer = new AdmZip();
   installer.addFile("resources/app.asar.unpacked/node_modules/better-sqlite3/build/Release/better_sqlite3.node", sqliteBytes);
+  if (decoySqliteBytes) {
+    const decoy = new AdmZip();
+    decoy.addFile("resources/app.asar.unpacked/node_modules/better-sqlite3/build/Release/better_sqlite3.node", decoySqliteBytes);
+    installer.addFile("decoy-good-native.zip", decoy.toBuffer());
+  }
   return Buffer.concat([Buffer.from("MZ".padEnd(1024, "\0"), "binary"), installer.toBuffer()]);
 }
 

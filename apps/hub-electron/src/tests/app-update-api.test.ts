@@ -1,5 +1,5 @@
 import AdmZip from "adm-zip";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
@@ -58,12 +58,32 @@ describe("app update API", () => {
 
     await fixture.close();
   });
+
+  it("registers the current installer baseline through the API", async () => {
+    const fixture = createFixture();
+    const installerPath = writeInstaller(fixture.root, "0.1.0");
+
+    const response = await fixture.app.inject({
+      method: "POST",
+      url: "/system/update/register-installer-baseline",
+      headers: { "x-device-token": "test-admin-token" },
+      payload: { installerPath }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json<{ version: string }>().version).toBe("0.1.0");
+    expect(fixture.updateService.status().baselineRegistered).toBe(true);
+
+    await fixture.close();
+  });
 });
 
 function createFixture() {
   const root = mkdtempSync(join(tmpdir(), "gpos-update-api-"));
   const databasePath = join(root, "hub.sqlite");
   const backupDir = join(root, "backups");
+  const sqliteNativePath = join(root, "better_sqlite3.node");
+  writeFileSync(sqliteNativePath, makePeNative());
   const database = new HubDatabase(databasePath);
   database.migrate();
   database.markAppSchemaVersion(currentDbSchemaVersion());
@@ -79,6 +99,7 @@ function createFixture() {
     appVersion: "0.1.0",
     dbSchemaVersion: currentDbSchemaVersion(),
     databasePath,
+    sqliteNativePath,
     launchInstaller: vi.fn(),
     exitApp: () => undefined
   });
@@ -148,6 +169,12 @@ function writePackage(root: string, version: string) {
   const packagePath = join(root, `Gaurav POS Hub ${version}.gpos-update.zip`);
   zip.writeZip(packagePath);
   return packagePath;
+}
+
+function writeInstaller(root: string, version: string) {
+  const installerPath = join(root, `Gaurav POS Hub Setup ${version}.exe`);
+  writeFileSync(installerPath, makeInstallerBytes(makePeNative()));
+  return installerPath;
 }
 
 function makePeNative() {

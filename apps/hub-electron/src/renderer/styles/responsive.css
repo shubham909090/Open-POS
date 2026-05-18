@@ -79,6 +79,15 @@
     @apply min-h-12 w-full;
   }
 
+  .printer-choice-button {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .printer-choice-button b {
+    grid-column: 2;
+    @apply w-fit;
+  }
+
   .order-modal-backdrop {
     @apply p-2;
   }
