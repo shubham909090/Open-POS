@@ -2,6 +2,8 @@
 
 This guide explains how the Gaurav POS Hub app should be installed the first time, updated later, and rolled back safely if something goes wrong.
 
+For the repeatable build commands used to create the `.exe`, `.gpos-update.zip`, and Android APK, see [Release Build Workflow](./release-build-workflow.md).
+
 ## What The System Protects
 
 The Hub app uses a local SQLite database. That database is precious because it contains the restaurant's real local data.
@@ -153,4 +155,3 @@ Rollback:
 ```text
 rollback button -> wait for app exit -> restore old DB backup -> run old installer
 ```
-
