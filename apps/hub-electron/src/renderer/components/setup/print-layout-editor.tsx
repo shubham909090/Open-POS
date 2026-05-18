@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { type CSSProperties, useEffect, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { formatInr } from "@gaurav-pos/shared";
+import { parsePrintStyleLine, renderBillTicketForPrint, renderKotTicketForPrint } from "../../../domain/tickets.js";
 import { type NoticeSetter, messageOf } from "../../lib/format.js";
 import type { ManagerApprovalRequest } from "../../hooks/use-manager-approval.js";
 import {
@@ -8,6 +8,8 @@ import {
   type PrintLayoutSettings,
   type ProductionUnit,
 } from "../../hub-api.js";
+
+const defaultSectionStyle = { size: "normal", bold: false, align: "left" } as const;
 
 export function PrintLayoutEditor({
   layouts,
@@ -79,31 +81,64 @@ export function PrintLayoutEditor({
     setDraft((current) => (current ? { ...current, [key]: value } : current));
   };
 
-  const preview = [
-    draft.restaurantName,
-    scope === "receipt" ? draft.restaurantAddress : "",
-    draft.billHeader || draft.kotHeader,
-    scope === "receipt" && draft.showBillId
-      ? "BILL TEST-BILL"
-      : "KOT #1 NEW",
-    draft.showTable ? "Table: T1" : "",
-    draft.showDateTime ? "Time: 15 May 2026, 8:30 PM" : "",
-    "--------------------------------",
-    scope === "receipt"
-      ? "Paneer Tikka  2 x ₹220.00 = ₹440.00"
-      : "+2 Paneer Tikka",
-    scope === "receipt" ? `Subtotal: ${formatInr(44000)}` : "",
-    scope === "receipt" && draft.showTaxBreakup
-      ? `CGST: ${formatInr(1100)}\nSGST: ${formatInr(1100)}`
-      : "",
-    scope === "receipt" ? `Total: ${formatInr(46200)}` : "",
-    scope === "receipt" && draft.showPaymentSplit
-      ? `Payments\nCASH: ${formatInr(30000)}\nUPI: ${formatInr(16200)}`
-      : "",
-    draft.billFooter || draft.kotFooter,
-  ]
-    .filter(Boolean)
-    .join("\n");
+  const preview = scope === "receipt"
+    ? renderBillTicketForPrint({
+        ...draft,
+        tableName: "T1",
+        billId: "TEST-BILL",
+        createdAt: "2026-05-15T15:00:00.000Z",
+        restaurantName: draft.restaurantName,
+        restaurantAddress: draft.restaurantAddress,
+        taxRegistrationText: draft.taxRegistrationText,
+        header: draft.billHeader,
+        footer: draft.billFooter,
+        items: [{ name: "Paneer Tikka", quantity: 2, unitPricePaise: 22000, lineTotalPaise: 44000 }],
+        subtotalPaise: 44000,
+        taxPaise: draft.showTaxBreakup ? 2200 : 0,
+        totalPaise: 44000,
+        taxBreakdown: draft.showTaxBreakup ? [{ name: "Food CGST", rateBps: 250, amountPaise: 1100 }, { name: "Food SGST", rateBps: 250, amountPaise: 1100 }] : [],
+        payments: draft.showPaymentSplit ? [{ method: "cash", amountPaise: 44000 }] : []
+      })
+    : renderKotTicketForPrint({
+        sequence: 1,
+        type: "new",
+        tableName: "T1",
+        productionUnitName: units.find((unit) => unit.id === selectedUnitId)?.name ?? "Kitchen",
+        ticketLabel: "KOT",
+        captainId: "Captain",
+        createdAt: "2026-05-15T15:00:00.000Z",
+        note: "No onion",
+        items: [{ name: "Paneer Tikka", quantityDelta: 2 }],
+        header: draft.kotHeader,
+        footer: draft.kotFooter,
+        ...draft
+      });
+  const previewLines = preview.split(/\r?\n/).map((line) => parsePrintStyleLine(line) ?? { text: line, size: "normal" as const, bold: false, align: "left" as const });
+
+  const sectionStyleKeys = [
+    ["restaurantName", "Restaurant name"],
+    ["address", "Address"],
+    ["header", "Header"],
+    ["title", "Bill / KOT title"],
+    ["metadata", "Table / date"],
+    ["items", "Item rows"],
+    ["totals", "Totals"],
+    ["notes", "KOT notes"],
+    ["footer", "Footer"],
+  ] as const;
+
+  const updateSectionStyle = (
+    key: keyof PrintLayoutSettings["sectionStyles"],
+    patch: Partial<PrintLayoutSettings["sectionStyles"][string]>,
+  ) => {
+    setDraft((current) => current ? {
+      ...current,
+      sectionStyles: {
+        ...current.sectionStyles,
+        [key]: { ...(current.sectionStyles[key] ?? defaultSectionStyle), ...patch }
+      }
+    } : current);
+  };
 
   return (
     <section className="sub-panel">
@@ -191,6 +226,18 @@ export function PrintLayoutEditor({
               <option value="center">Center</option>
               <option value="left">Left</option>
             </select>
+          </label>
+          <label>
+            Top blank lines
+            <input
+              type="number"
+              min={0}
+              max={6}
+              value={draft.topPaddingLines}
+              onChange={(event) =>
+                update("topPaddingLines", Number(event.target.value))
+              }
+            />
           </label>
           <label>
             Blank lines after print
@@ -345,6 +392,36 @@ export function PrintLayoutEditor({
               NC/reprint labels
             </label>
           </div>
+          <details className="setup-subdetails">
+            <summary>
+              <span>Section font controls</span>
+              <small>Size, bold, and alignment</small>
+            </summary>
+            <div className="print-style-grid">
+              {sectionStyleKeys.map(([key, label]) => {
+                const style = draft.sectionStyles[key] ?? defaultSectionStyle;
+                return (
+                  <div key={key} className="print-style-row">
+                    <strong>{label}</strong>
+                    <select value={style.size} onChange={(event) => updateSectionStyle(key, { size: event.target.value as "small" | "normal" | "large" })}>
+                      <option value="small">Small</option>
+                      <option value="normal">Normal</option>
+                      <option value="large">Large</option>
+                    </select>
+                    <select value={style.align} onChange={(event) => updateSectionStyle(key, { align: event.target.value as "left" | "center" | "right" })}>
+                      <option value="left">Left</option>
+                      <option value="center">Center</option>
+                      <option value="right">Right</option>
+                    </select>
+                    <label className="inline-check">
+                      <input type="checkbox" checked={style.bold} onChange={(event) => updateSectionStyle(key, { bold: event.target.checked })} />
+                      Bold
+                    </label>
+                  </div>
+                );
+              })}
+            </div>
+          </details>
           <button
             type="button"
             disabled={save.isPending}
@@ -360,8 +437,24 @@ export function PrintLayoutEditor({
             Save layout
           </button>
         </form>
-        <pre className="print-preview">{preview}</pre>
+        <div className="print-preview print-preview-styled">
+          {previewLines.map((line, index) => (
+            <div key={`${index}-${line.text}`} style={previewLineStyle(line)}>
+              {line.text || "\u00a0"}
+            </div>
+          ))}
+        </div>
       </div>
     </section>
   );
+}
+
+function previewLineStyle(line: { size: "small" | "normal" | "large"; bold: boolean; align: "left" | "center" | "right" }): CSSProperties {
+  return {
+    fontSize: line.size === "large" ? 16 : line.size === "small" ? 11 : 13,
+    fontWeight: line.bold ? 800 : 500,
+    lineHeight: line.size === "large" ? "22px" : line.size === "small" ? "15px" : "18px",
+    textAlign: line.align,
+    whiteSpace: "pre"
+  };
 }

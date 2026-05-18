@@ -47,6 +47,7 @@ export const submitOrderSchema = z.object({
   pax: z.number().int().min(1).max(99).default(1),
   orderType: z.enum(["dine_in", "takeaway"]).default("dine_in"),
   printMode: orderPrintModeSchema.default("kot_print"),
+  note: z.string().trim().max(500).optional(),
   items: z.array(orderItemInputSchema).min(1)
 });
 
@@ -102,6 +103,7 @@ export const managerPinSchema = z.object({
 });
 
 export const setMasterPinSchema = z.object({
+  currentPin: z.string().trim().min(4).max(32).optional(),
   newPin: z.string().trim().min(4).max(32),
   confirmPin: z.string().trim().min(4).max(32),
   updatedBy: z.string().trim().min(1).max(120)
@@ -286,6 +288,24 @@ export const hubConnectionSettingsSchema = z.object({
 });
 
 export const printLayoutScopeSchema = z.enum(["default", "receipt", "unit"]);
+export const printTextSizeSchema = z.enum(["small", "normal", "large"]);
+export const printAlignSchema = z.enum(["left", "center", "right"]);
+export const printSectionStyleSchema = z.object({
+  size: printTextSizeSchema.default("normal"),
+  bold: z.boolean().default(false),
+  align: printAlignSchema.default("left")
+});
+export const printSectionStylesSchema = z.object({
+  restaurantName: printSectionStyleSchema.default({ size: "large", bold: true, align: "center" }),
+  address: printSectionStyleSchema.default({ size: "normal", bold: false, align: "center" }),
+  header: printSectionStyleSchema.default({ size: "normal", bold: false, align: "center" }),
+  title: printSectionStyleSchema.default({ size: "normal", bold: true, align: "center" }),
+  metadata: printSectionStyleSchema.default({ size: "normal", bold: false, align: "left" }),
+  items: printSectionStyleSchema.default({ size: "normal", bold: false, align: "left" }),
+  totals: printSectionStyleSchema.default({ size: "normal", bold: true, align: "left" }),
+  notes: printSectionStyleSchema.default({ size: "normal", bold: true, align: "left" }),
+  footer: printSectionStyleSchema.default({ size: "normal", bold: false, align: "center" })
+});
 
 export const printLayoutSettingsSchema = z.object({
   scope: printLayoutScopeSchema,
@@ -300,6 +320,8 @@ export const printLayoutSettingsSchema = z.object({
   lineWidthChars: z.number().int().min(24).max(64).default(28),
   headerAlign: z.enum(["left", "center"]).default("center"),
   footerAlign: z.enum(["left", "center"]).default("center"),
+  sectionStyles: printSectionStylesSchema.default({}),
+  topPaddingLines: z.number().int().min(0).max(6).default(0),
   feedLines: z.number().int().min(1).max(8).default(3),
   showTable: z.boolean().default(true),
   showCaptain: z.boolean().default(true),

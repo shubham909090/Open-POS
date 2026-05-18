@@ -142,17 +142,17 @@ function MenuItemRow({
   const categoryTone = categoryToneFor(menuItem.sale_group_kind);
   const hasMultipleVariants = activeVariants.length > 1;
   return (
-    <View style={[styles.menuItem, hasMultipleVariants ? styles.menuItemStacked : styles.menuItemInline]}>
+    <View style={[styles.menuItem, styles.menuItemInline, hasMultipleVariants && styles.menuItemVariantRow]}>
       <View style={styles.menuIdentity}>
         <View style={[styles.menuCategoryIcon, { backgroundColor: categoryTone.soft }]}>
           <Text style={[styles.menuCategoryIconText, { color: categoryTone.ink }]}>{categoryTone.icon}</Text>
         </View>
         <View style={styles.menuText}>
-          <Text style={styles.menuName} numberOfLines={1}>{menuItem.name}</Text>
+          <Text style={styles.menuName} numberOfLines={2}>{menuItem.name}</Text>
           <Text style={[styles.muted, { color: categoryTone.ink }]} numberOfLines={1}>{menuItem.sale_group_name ?? menuItem.production_unit_name ?? "Menu"}</Text>
         </View>
       </View>
-      <View style={hasMultipleVariants ? styles.variantStack : styles.menuPriceBlock}>
+      <View style={hasMultipleVariants ? styles.variantStripBlock : styles.menuPriceBlock}>
         {activeVariants.length === 0 ? (
           <Text style={styles.muted}>Unavailable</Text>
         ) : activeVariants.length === 1 ? (
@@ -163,13 +163,13 @@ function MenuItemRow({
             </Pressable>
           </View>); })()
         ) : (
-          <View style={styles.variantWrap}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always" contentContainerStyle={styles.variantWrap}>
             {activeVariants.map((variant) => (
               <Pressable key={variant.id || menuItem.id} style={styles.variantChip} onPress={() => onAddItem(menuItem.id, variant.id || undefined)}>
                 <Text style={styles.variantPrice} numberOfLines={1}>{formatMobileMenuActionLabel({ kind: variant.kind, label: variant.label, pricePaise: variant.price_paise })}</Text>
               </Pressable>
             ))}
-          </View>
+          </ScrollView>
         )}
       </View>
     </View>

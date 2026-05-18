@@ -154,6 +154,7 @@ export interface KdsTicket {
   table_name: string;
   status: "queued" | "preparing" | "ready" | "served" | "cancelled" | string;
   captain_id: string;
+  note?: string | null;
   items: Array<{ name_snapshot: string; quantity_delta: number }>;
 }
 

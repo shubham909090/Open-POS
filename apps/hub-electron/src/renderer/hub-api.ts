@@ -170,6 +170,8 @@ export interface PrintLayoutSettings {
   lineWidthChars: number;
   headerAlign: "left" | "center";
   footerAlign: "left" | "center";
+  sectionStyles: Record<string, { size: "small" | "normal" | "large"; bold: boolean; align: "left" | "center" | "right" }>;
+  topPaddingLines: number;
   feedLines: number;
   showTable: boolean;
   showCaptain: boolean;
@@ -400,6 +402,7 @@ export interface KdsTicket {
   table_name: string;
   status: string;
   captain_id: string;
+  note?: string | null;
   items: Array<{ name_snapshot: string; quantity_delta: number }>;
 }
 
@@ -503,7 +506,7 @@ export const hubApi = {
   setManagerPin: (payload: { currentPin?: string; newPin: string; updatedBy: string }) =>
     apiFetch<{ configured: boolean }>("/settings/manager-pin", { method: "PUT", body: JSON.stringify(payload) }),
   masterPinStatus: () => apiFetch<{ masterPinConfigured: boolean }>("/settings/master-pin/status"),
-  setMasterPin: (payload: { newPin: string; confirmPin: string; updatedBy: string }) =>
+  setMasterPin: (payload: { currentPin?: string; newPin: string; confirmPin: string; updatedBy: string }) =>
     apiFetch<{ configured: boolean }>("/settings/master-pin", { method: "PUT", body: JSON.stringify(payload) }),
   hubConnection: (managerPin?: string) =>
     apiFetch<HubConnectionSettings>(`/settings/hub-connection${managerPin ? "?reveal=1" : ""}`, {
@@ -548,6 +551,7 @@ export const hubApi = {
 	      tableId: string;
 	      pax: number;
 	      printMode?: "kot" | "kot_print";
+        note?: string;
 	      items: Array<
         | { menuItemId: string; quantity: number }
         | { menuItemId: string; menuItemVariantId: string; quantity: number }
@@ -657,6 +661,7 @@ export const hubApi = {
     apiFetch<CsvImportResult>("/alcohol/items/import-csv", { method: "POST", body: JSON.stringify({ type, csv }) }),
   createAlcoholItem: (payload: unknown) => apiFetch<{ id: string }>("/alcohol/items", { method: "POST", body: JSON.stringify(payload) }),
   updateAlcoholItem: (id: string, payload: unknown) => apiFetch<{ id: string }>(`/alcohol/items/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
+  deleteAlcoholItem: (id: string) => apiFetch<{ id: string; deleted: boolean; active: boolean }>(`/menu-items/${id}`, { method: "DELETE" }),
   adjustAlcoholStock: (id: string, payload: unknown) => apiFetch<{ id: string }>(`/alcohol/stock/${id}/adjust`, { method: "POST", body: JSON.stringify(payload) }),
   updateKotStatus: (kotId: string, status: string) =>
     apiFetch<{ id: string }>(`/kot/${kotId}/status`, { method: "PATCH", body: JSON.stringify({ status }) }),

@@ -854,6 +854,14 @@
     @apply max-w-full overflow-auto whitespace-pre-wrap rounded-lg border border-line bg-white p-3 font-mono text-xs;
   }
 
+  .print-preview-styled {
+    @apply whitespace-pre bg-white;
+  }
+
+  .setup-search-row small {
+    @apply text-xs font-semibold text-muted;
+  }
+
   .history-actions {
     @apply flex flex-wrap justify-end gap-2;
   }

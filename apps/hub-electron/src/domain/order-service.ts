@@ -75,7 +75,7 @@ import {
 } from "../db/drizzle-schema.js";
 import { DomainError } from "./errors.js";
 import { makeId } from "./ids.js";
-import { renderBillTicket, renderKotTicket, type BillTicket, type KotTicketItem } from "./tickets.js";
+import { renderBillTicketForPrint, renderKotTicketForPrint, type BillTicket, type KotTicketItem } from "./tickets.js";
 import { currentBusinessDayWindow } from "./business-day.js";
 
 const DEFAULT_TAX_COMPONENTS = [
@@ -383,7 +383,7 @@ export class OrderService {
         ...previousItems.map((item) => item.menu_item_id).filter((id): id is string => Boolean(id))
       ]);
       const changes = this.applyOrderItemDiff(order.id, normalizedItems, previousItems, menuById, now);
-      const tickets = this.createKotsForChanges(order, table, changes, now, isNewOrder, false, undefined, undefined, undefined, (input.printMode ?? "kot_print") !== "kot");
+      const tickets = this.createKotsForChanges(order, table, changes, now, isNewOrder, false, undefined, undefined, undefined, (input.printMode ?? "kot_print") !== "kot", input.note);
 
       this.orm
         .update(orders)
@@ -536,6 +536,7 @@ export class OrderService {
             type: KotType;
             sequence: number;
             created_at: string;
+            note: string | null;
             captain_id: string;
             table_name: string;
             unit_name: string;
@@ -552,7 +553,7 @@ export class OrderService {
         .all(kotId) as Array<{ name_snapshot: string; quantity_delta: number }>;
 
       const template = this.getPrintLayout("unit", kot.production_unit_id);
-      const payload = renderKotTicket({
+      const payload = renderKotTicketForPrint({
         sequence: kot.sequence,
         type: "reprint",
         tableName: kot.table_name,
@@ -560,6 +561,7 @@ export class OrderService {
         captainId: kot.captain_id,
         createdAt: new Date().toISOString(),
         reason: input.reason,
+        note: kot.note,
         items: items.map((item) => ({
           name: item.name_snapshot,
           quantityDelta: item.quantity_delta
@@ -567,6 +569,8 @@ export class OrderService {
         lineWidthChars: template.lineWidthChars,
         headerAlign: template.headerAlign,
         footerAlign: template.footerAlign,
+        sectionStyles: template.sectionStyles,
+        topPaddingLines: template.topPaddingLines,
         feedLines: template.feedLines,
         showTable: template.showTable,
         showCaptain: template.showCaptain,
@@ -645,7 +649,7 @@ export class OrderService {
 
     if (!bill) throw new DomainError("Bill not found", 404);
 
-    const payload = `${renderBillTicket(
+    const payload = `${renderBillTicketForPrint(
       this.buildBillTicket({
         bill,
         tableName: bill.table_name,
@@ -735,9 +739,17 @@ export class OrderService {
 
   setMasterPin(input: SetMasterPinInput): { configured: boolean } {
     const currentHash = this.getSetting("master_pin_hash");
-    if (currentHash) throw new DomainError("Master PIN is already configured", 409);
+    if (currentHash) {
+      this.verifyMasterApproval(
+        input.currentPin ? { pin: input.currentPin, reason: "Master PIN changed", approvedBy: input.updatedBy } : undefined,
+        "master_pin.update",
+        "hub_setting",
+        "master_pin",
+        input.updatedBy
+      );
+    }
     this.upsertSetting("master_pin_hash", this.hashManagerPin(input.newPin));
-    this.appendEvent("master_pin.created", "hub_setting", "master_pin", { updatedBy: input.updatedBy });
+    this.appendEvent(currentHash ? "master_pin.updated" : "master_pin.created", "hub_setting", "master_pin", { updatedBy: input.updatedBy });
     return { configured: true };
   }
 
@@ -913,7 +925,7 @@ export class OrderService {
         targetId: billId,
         productionUnitId: null,
         ...this.getReceiptPrinter(),
-        payload: renderBillTicket(this.buildBillTicket({ bill, tableName: table.name, createdAt: now }))
+        payload: renderBillTicketForPrint(this.buildBillTicket({ bill, tableName: table.name, createdAt: now }))
       });
       this.orm.update(bills).set({ printCount: sql`${bills.printCount} + 1` }).where(eq(bills.id, billId)).run();
 
@@ -1084,7 +1096,7 @@ export class OrderService {
         this.deductAlcoholStockForPaidBill(billId, bill.order_id);
         this.orm.update(orders).set({ status: "paid", updatedAt: now }).where(eq(orders.id, bill.order_id)).run();
         this.freeTable(order.table_id);
-        const payload = renderBillTicket(
+        const payload = renderBillTicketForPrint(
           this.buildBillTicket({
             bill,
             tableName: table.name,
@@ -1137,7 +1149,7 @@ export class OrderService {
   listKds(productionUnitId: string): unknown[] {
     const rows = this.db
       .prepare(
-        `SELECT k.id, k.order_id, k.production_unit_id, k.sequence, k.type, k.status, k.reason, k.created_at,
+        `SELECT k.id, k.order_id, k.production_unit_id, k.sequence, k.type, k.status, k.reason, k.note, k.created_at,
           t.name AS table_name, o.captain_id
          FROM kots k
          JOIN orders o ON o.id = k.order_id
@@ -1979,7 +1991,7 @@ export class OrderService {
       printerHost: receipt.printerHost,
       printerPort: receipt.printerPort,
       printerName: receipt.printerName,
-      payload: renderBillTicket({
+      payload: renderBillTicketForPrint({
         tableName: "TEST",
         billId: "TEST-BILL",
         items: [{ name: "Test item", quantity: 1, unitPricePaise: 100, lineTotalPaise: 100 }],
@@ -1994,6 +2006,8 @@ export class OrderService {
         lineWidthChars: template.lineWidthChars,
         headerAlign: template.headerAlign,
         footerAlign: template.footerAlign,
+        sectionStyles: template.sectionStyles,
+        topPaddingLines: template.topPaddingLines,
         feedLines: template.feedLines,
         showTable: template.showTable,
         showDateTime: template.showDateTime,
@@ -2027,7 +2041,7 @@ export class OrderService {
       printerHost: unit?.printer_host ?? null,
       printerPort: unit?.printer_port ?? null,
       printerName: unit?.printer_name ?? null,
-      payload: renderKotTicket({
+      payload: renderKotTicketForPrint({
         sequence: 0,
         type: "test",
         tableName: "TEST",
@@ -2039,6 +2053,8 @@ export class OrderService {
         lineWidthChars: template.lineWidthChars,
         headerAlign: template.headerAlign,
         footerAlign: template.footerAlign,
+        sectionStyles: template.sectionStyles,
+        topPaddingLines: template.topPaddingLines,
         feedLines: template.feedLines,
         showTable: template.showTable,
         showCaptain: template.showCaptain,
@@ -2223,7 +2239,7 @@ export class OrderService {
         targetId: billId,
         productionUnitId: null,
         ...this.getReceiptPrinter(),
-        payload: renderBillTicket(this.buildBillTicket({ bill: updatedBill, tableName: table.name, createdAt: now }))
+        payload: renderBillTicketForPrint(this.buildBillTicket({ bill: updatedBill, tableName: table.name, createdAt: now }))
       });
       this.orm.update(bills).set({ printCount: sql`${bills.printCount} + 1` }).where(eq(bills.id, billId)).run();
       this.refreshDailyReportSnapshot(order.pos_day_id, now);
@@ -2266,7 +2282,7 @@ export class OrderService {
         targetId: billId,
         productionUnitId: null,
         ...this.getReceiptPrinter(),
-        payload: renderBillTicket(
+        payload: renderBillTicketForPrint(
           this.buildBillTicket({
             bill,
             tableName: table.name,
@@ -2296,7 +2312,7 @@ export class OrderService {
         targetId: billId,
         productionUnitId: null,
         ...this.getReceiptPrinter(),
-        payload: renderBillTicket(
+        payload: renderBillTicketForPrint(
           this.buildBillTicket({
             bill,
             tableName: table.name,
@@ -3944,7 +3960,8 @@ export class OrderService {
     reason?: string,
     typeOverride?: KotType,
     sequenceOrderId?: string,
-    printTickets = true
+    printTickets = true,
+    note?: string
   ): TicketCreationResult {
     const meaningfulChanges = changes.filter((change) => change.quantityDelta !== 0 && change.productionUnitId);
     if (meaningfulChanges.length === 0) return { kotIds: [], printJobIds: [] };
@@ -3982,6 +3999,7 @@ export class OrderService {
 	          sequence,
 	          ticketLabel,
 	          reason: reason ?? null,
+          note: note?.trim() || null,
           createdAt: now
         })
         .run();
@@ -4004,7 +4022,7 @@ export class OrderService {
       }
 
       const template = this.getPrintLayout("unit", productionUnitId);
-      const payload = renderKotTicket({
+      const payload = renderKotTicketForPrint({
         sequence,
         type,
         tableName: table.name,
@@ -4012,11 +4030,14 @@ export class OrderService {
         captainId: order.captain_id,
         createdAt: now,
         reason,
+        note,
         items: ticketItems,
         ticketLabel,
         lineWidthChars: template.lineWidthChars,
         headerAlign: template.headerAlign,
         footerAlign: template.footerAlign,
+        sectionStyles: template.sectionStyles,
+        topPaddingLines: template.topPaddingLines,
         feedLines: template.feedLines,
         showTable: template.showTable,
         showCaptain: template.showCaptain,
@@ -4708,6 +4729,18 @@ export class OrderService {
       lineWidthChars: Number(this.getSetting("ticket_line_width_chars") ?? 28),
       headerAlign: "center",
       footerAlign: "center",
+      sectionStyles: {
+        restaurantName: { size: "large", bold: true, align: "center" },
+        address: { size: "normal", bold: false, align: "center" },
+        header: { size: "normal", bold: false, align: "center" },
+        title: { size: "normal", bold: true, align: "center" },
+        metadata: { size: "normal", bold: false, align: "left" },
+        items: { size: "normal", bold: false, align: "left" },
+        totals: { size: "normal", bold: true, align: "left" },
+        notes: { size: "normal", bold: true, align: "left" },
+        footer: { size: "normal", bold: false, align: "center" }
+      },
+      topPaddingLines: 0,
       feedLines: 3,
       showTable: true,
       showCaptain: true,

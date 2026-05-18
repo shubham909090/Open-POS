@@ -1,7 +1,7 @@
 import { useMutation } from "@tanstack/react-query";
 import { Fragment, useState } from "react";
 import { formatInr } from "@gaurav-pos/shared";
-import { Pencil, Plus, X } from "lucide-react";
+import { Pencil, Plus, Trash2, X } from "lucide-react";
 import { hubApi, type AlcoholCatalog, type Bootstrap, type CsvImportResult } from "../../hub-api.js";
 import { type NoticeSetter, messageOf, rupeesToPaise } from "../../lib/format.js";
 import { CsvImportBox } from "../ui/csv-import-box.js";
@@ -50,6 +50,7 @@ export function AlcoholItemsPanel({
     Array<{ liquorMenuItemId: string; mlPerUnit: string }>
   >([]);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [catalogSearch, setCatalogSearch] = useState("");
   const [plainImportResult, setPlainImportResult] = useState<CsvImportResult | null>(null);
   const [productImportResult, setProductImportResult] = useState<CsvImportResult | null>(null);
   const plainLiquors = catalog.items.filter(
@@ -137,6 +138,14 @@ export function AlcoholItemsPanel({
     },
     onError: (error) => setNotice({ tone: "bad", text: messageOf(error) }),
   });
+  const deleteItem = useMutation({
+    mutationFn: (id: string) => hubApi.deleteAlcoholItem(id),
+    onSuccess: async (result) => {
+      await invalidate();
+      setNotice({ tone: "good", text: result.deleted ? "Alcohol item deleted." : "Alcohol item disabled because it has history." });
+    },
+    onError: (error) => setNotice({ tone: "bad", text: messageOf(error) }),
+  });
   const importPlainLiquor = useMutation({
     mutationFn: (csv: string) => hubApi.importAlcoholCsv("plain_liquor", csv),
     onSuccess: async (result) => {
@@ -169,6 +178,18 @@ export function AlcoholItemsPanel({
           (value) => rupeesToPaise(value) > 0,
         )
       : rupeesToPaise(productPrice) > 0);
+  const catalogNeedle = catalogSearch.trim().toLowerCase();
+  const matchedCatalogItems = catalog.items.filter((item) => {
+      if (!catalogNeedle) return true;
+      return [
+        item.name,
+        item.type === "plain_liquor" ? "plain liquor" : "prepared product",
+        item.production_unit_name,
+        ...(item.variants ?? []).map((variant) => variant.label)
+      ].filter(Boolean).some((part) => String(part).toLowerCase().includes(catalogNeedle));
+    });
+  const filteredCatalogItems = catalogNeedle ? matchedCatalogItems.slice(0, 150) : matchedCatalogItems;
+  const catalogSearchCapped = Boolean(catalogNeedle && matchedCatalogItems.length > filteredCatalogItems.length);
 
   return (
     <div className="alcohol-layout">
@@ -421,7 +442,15 @@ export function AlcoholItemsPanel({
       <section className="panel">
         <div className="panel-title">
           <h2>Alcohol Catalog</h2>
-          <span>{catalog.items.length} items</span>
+          <span>{filteredCatalogItems.length} of {catalog.items.length} items</span>
+        </div>
+        <div className="setup-search-row">
+          <input
+            value={catalogSearch}
+            onChange={(event) => setCatalogSearch(event.target.value)}
+            placeholder="Search liquor, cocktails, variants, or counter"
+          />
+          {catalogSearchCapped ? <small>Showing first {filteredCatalogItems.length} matches. Keep typing to narrow.</small> : null}
         </div>
         <div className="report-table-wrap alcohol-catalog-wrap">
           <table className="data-table alcohol-catalog-table">
@@ -435,7 +464,7 @@ export function AlcoholItemsPanel({
               </tr>
             </thead>
             <tbody>
-          {catalog.items.map((item) => (
+          {filteredCatalogItems.map((item) => (
             <Fragment key={item.id}>
               <tr>
                 <td className="strong-cell">{item.name}</td>
@@ -473,6 +502,17 @@ export function AlcoholItemsPanel({
                   >
                     <Pencil size={14} />
                     Edit
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary-inline compact danger"
+                    disabled={deleteItem.isPending}
+                    onClick={() => {
+                      if (window.confirm(`Delete or disable ${item.name}?`)) deleteItem.mutate(item.id);
+                    }}
+                    aria-label={`Delete ${item.name}`}
+                  >
+                    <Trash2 size={14} />
                   </button>
                 </td>
               </tr>

@@ -926,6 +926,39 @@
   @apply m-3;
 }
 
+.print-style-grid {
+  @apply grid gap-2;
+}
+
+.print-style-row {
+  @apply grid items-center gap-2 rounded-md border border-line bg-panel p-2;
+  grid-template-columns: minmax(120px, 1fr) minmax(88px, auto) minmax(96px, auto) auto;
+}
+
+.print-style-row select {
+  @apply min-h-9 rounded-md border border-line bg-white px-2 text-sm font-semibold;
+}
+
+.inline-check {
+  @apply inline-flex items-center gap-2 text-sm font-bold text-ink;
+}
+
+.kot-note {
+  @apply border-accent bg-accent-soft font-black text-accent-dark;
+}
+
+.kot-note-field {
+  @apply grid gap-1 text-sm font-bold text-muted;
+}
+
+.kot-note-field input {
+  @apply min-h-10 rounded-md border border-line bg-white px-3 text-base font-semibold text-ink outline-none focus:border-accent focus:ring-2 focus:ring-accent-soft;
+}
+
+.secondary-inline.danger {
+  @apply border-danger bg-danger-soft text-danger hover:bg-danger hover:text-white;
+}
+
 .csv-import-details > :not(summary),
 .csv-import-details .csv-import-box {
   @apply m-0;

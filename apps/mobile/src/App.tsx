@@ -19,6 +19,7 @@ import {
   View
 } from "react-native";
 import { CameraView } from "expo-camera";
+import { setAudioModeAsync, useAudioPlayer } from "expo-audio";
 import { getTableDisplayState, searchMenuItems, type OrderItemInput, type SaleGroupKind } from "@gaurav-pos/shared";
 import { HubClient, type CurrentDaySummary, type DailyReportDetail, type DailyReportRow, type HubBootstrap, type HubOrder, type KdsTicket } from "./lib/hub-client";
 import { clearDraft, getDeviceToken, getHubUrl, loadDraft, saveDraft } from "./lib/draft-store";
@@ -40,11 +41,15 @@ type HistoryEditPayloadItem =
   | { orderItemId?: string; menuItemId: string; menuItemVariantId?: string; quantity: number }
   | { orderItemId?: string; openName: string; openPricePaise: number; saleGroupId: string; productionUnitId?: string | null; quantity: number };
 
+const POS_CHIME_SOURCE =
+  "data:audio/wav;base64,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";
+
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
 export default function App() {
+  const chimePlayer = useAudioPlayer(POS_CHIME_SOURCE, { updateInterval: 1000 });
   const { width } = useWindowDimensions();
   const isWide = width >= 780;
   const contentWidth = Math.max(320, width - 32);
@@ -101,11 +106,12 @@ export default function App() {
   const [kdsTickets, setKdsTickets] = useState<KdsTicket[]>([]);
   const [pax, setPax] = useState("2");
   const [items, setItems] = useState<OrderItemInput[]>([]);
+  const [kotNote, setKotNote] = useState("");
   const [menuSearch, setMenuSearch] = useState("");
   const [menuGroupFilter, setMenuGroupFilter] = useState<SaleGroupKind | null>(null);
   const [mode, setMode] = useState<ViewMode>("tables");
   const operationKeysRef = useRef<Record<string, string>>({});
-  const knownKdsTicketIdsRef = useRef<Set<string>>(new Set());
+  const knownKdsTicketIdsRef = useRef<{ unitId: string; ids: Set<string>; initialized: boolean }>({ unitId: "", ids: new Set(), initialized: false });
   const refreshInFlightRef = useRef(false);
   const refreshQueuedRef = useRef(false);
   const connectionFailuresRef = useRef(0);
@@ -175,6 +181,10 @@ export default function App() {
   }, [client, initializing, kitchenUnitId, selectedHistoryDayId, selectedTableId]);
 
   useEffect(() => {
+    void setAudioModeAsync({ playsInSilentMode: true, interruptionMode: "mixWithOthers" }).catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
     if (initializing || !deviceToken) return;
     let refreshTimer: ReturnType<typeof setTimeout> | null = null;
     const unsubscribe = client.subscribeRealtime(() => {
@@ -240,7 +250,7 @@ export default function App() {
         const kitchenUnits = nextBootstrap.productionUnits.filter((unit) => unit.active !== false && unit.active !== 0 && unit.kds_enabled !== false && unit.kds_enabled !== 0);
         const nextUnitId = kitchenUnits.some((unit) => unit.id === kitchenUnitId) ? kitchenUnitId : kitchenUnits[0]?.id ?? "";
         const nextTickets = nextUnitId ? await client.kds(nextUnitId) : [];
-        chimeForNewKdsTickets(nextTickets);
+        chimeForNewKdsTickets(nextUnitId, nextTickets);
         setKitchenUnitId(nextUnitId);
         setCurrentSummary(null);
         setDailyReports([]);
@@ -322,15 +332,16 @@ export default function App() {
   }
 
   function notifyChime() {
+    void chimePlayer.seekTo(0).then(() => chimePlayer.play()).catch(() => undefined);
     Vibration.vibrate([0, 180, 80, 180]);
   }
 
-  function chimeForNewKdsTickets(nextTickets: KdsTicket[]) {
-    const previous = knownKdsTicketIdsRef.current;
-    const hasPrevious = previous.size > 0;
+  function chimeForNewKdsTickets(unitId: string, nextTickets: KdsTicket[]) {
+    const previous = knownKdsTicketIdsRef.current.unitId === unitId ? knownKdsTicketIdsRef.current.ids : new Set<string>();
+    const initialized = knownKdsTicketIdsRef.current.unitId === unitId && knownKdsTicketIdsRef.current.initialized;
     const nextIds = new Set(nextTickets.map((ticket) => ticket.id));
-    if (hasPrevious && nextTickets.some((ticket) => !previous.has(ticket.id))) notifyChime();
-    knownKdsTicketIdsRef.current = nextIds;
+    if (initialized && nextTickets.some((ticket) => !previous.has(ticket.id))) notifyChime();
+    knownKdsTicketIdsRef.current = { unitId, ids: nextIds, initialized: Boolean(unitId) };
   }
 
   async function selectTable(tableId: string) {
@@ -425,13 +436,15 @@ export default function App() {
         pax: normalisePax(pax),
         orderType: "dine_in" as const,
         printMode,
+        note: kotNote.trim() || undefined,
         items
       };
-      const scope = { tableId: selectedTableId, items, pax: normalisePax(pax), printMode };
+      const scope = { tableId: selectedTableId, items, pax: normalisePax(pax), printMode, note: kotNote.trim() };
       await client.submitOrder(input, { idempotencyKey: operationKey("mobile-order", scope) });
       clearOperationKey("mobile-order", scope);
       await clearDraft(selectedTableId);
       setItems([]);
+      setKotNote("");
       await refresh(false);
       await loadTableOrder(selectedTableId);
       setMode("ticket");
@@ -723,7 +736,7 @@ export default function App() {
     try {
       setLoading(true);
       const tickets = await client.kds(unitId);
-      chimeForNewKdsTickets(tickets);
+      chimeForNewKdsTickets(unitId, tickets);
       setKdsTickets(tickets);
       setMessage("Kitchen tickets refreshed.");
     } catch (error) {
@@ -801,6 +814,7 @@ export default function App() {
           selectedTableId={selectedTableId}
           draftTotal={draftTotal}
           tableTotal={tableTotal}
+          kotNote={kotNote}
           currentOrder={currentOrder}
           connection={connection}
           sending={sending}
@@ -811,6 +825,7 @@ export default function App() {
             setPax(clean);
             void persistDraft(items, clean);
           }}
+          onKotNoteChange={setKotNote}
           onChangeQty={changeQty}
           onShiftTable={(tableId) => void shiftTable(tableId)}
           onShiftItem={(orderItemId, quantity, toTableId) => void shiftItem(orderItemId, quantity, toTableId)}

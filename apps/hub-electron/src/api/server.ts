@@ -606,8 +606,9 @@ export function createHubServer(input: {
 	  });
 	  app.get("/settings/master-pin/status", { preHandler: adminOnly }, async () => ({ masterPinConfigured: input.orderService.isMasterPinConfigured() }));
 	  app.put("/settings/master-pin", { preHandler: adminOnly }, async (request) => {
+	    const wasConfigured = input.orderService.isMasterPinConfigured();
 	    const result = input.orderService.setMasterPin(setMasterPinSchema.parse(request.body));
-	    input.eventBus.publish({ type: "master_pin.created", result });
+	    input.eventBus.publish({ type: wasConfigured ? "master_pin.updated" : "master_pin.created", result });
 	    return result;
 	  });
   app.get("/settings/hub-connection", { preHandler: adminOnly }, async (request) => {
@@ -791,7 +792,7 @@ export function createHubServer(input: {
     return { ...result, processed };
 	  });
 
-  app.post("/orders/:id/state", { preHandler: orderRole }, async (request) => {
+  app.post("/orders/:id/state", { preHandler: captainOrAdmin }, async (request) => {
     const params = request.params as { id: string };
     const { result, replayed } = await withIdempotency(request, `orders.state.${params.id}`, () =>
       input.orderService.updateOrderState(params.id, updateOrderStateSchema.parse(request.body))

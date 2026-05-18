@@ -16,9 +16,20 @@ export function AlcoholStoragePanel({
   setNotice: NoticeSetter;
   requestManagerApproval: ManagerApprovalRequest;
 }) {
+  const [search, setSearch] = useState("");
+  const visibleRows = rows.filter((row) => {
+    const needle = search.trim().toLowerCase();
+    if (!needle) return true;
+    return row.name.toLowerCase().includes(needle);
+  });
   return (
     <div className="storage-list">
-      {rows.map((row) => (
+      {rows.length > 8 ? (
+        <div className="setup-search-row">
+          <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search liquor stock" />
+        </div>
+      ) : null}
+      {visibleRows.map((row) => (
         <AlcoholStorageCard
           key={row.id}
           row={row}
@@ -32,6 +43,8 @@ export function AlcoholStoragePanel({
           title="No liquor stock yet"
           description="Add plain liquor from the Items tab first."
         />
+      ) : rows.length > 0 && visibleRows.length === 0 ? (
+        <EmptyState title="No matching stock" description="Clear search or try another liquor name." />
       ) : null}
     </div>
   );

@@ -163,6 +163,7 @@ describe("HubClient", () => {
       pax: 2,
       orderType: "dine_in",
       printMode: "kot",
+      note: "Less spicy",
       items: [{ menuItemId: "item-1", quantity: 1 }]
     });
 
@@ -174,7 +175,7 @@ describe("HubClient", () => {
           "x-device-token": "captain-token",
           "Idempotency-Key": expect.stringMatching(/^mobile-order-/)
         }),
-        body: expect.stringContaining('"printMode":"kot"')
+        body: expect.stringContaining('"note":"Less spicy"')
       })
     );
   });

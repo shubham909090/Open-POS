@@ -50,6 +50,7 @@ describe("shared command schemas", () => {
 
     expect(input.orderType).toBe("dine_in");
     expect(input.printMode).toBe("kot_print");
+    expect(submitOrderSchema.parse({ ...input, note: "Less spicy for kitchen" }).note).toBe("Less spicy for kitchen");
     expect(submitOrderSchema.parse({ ...input, printMode: "kot" }).printMode).toBe("kot");
     expect(() => submitOrderSchema.parse({ ...input, printMode: "paperless" })).toThrow();
   });
@@ -63,7 +64,7 @@ describe("shared command schemas", () => {
     expect(() => createPairingCodeSchema.parse({ deviceName: "Phone", role: "owner" })).toThrow();
   });
 
-  it("validates narrow receipt widths and one-time master PIN input", () => {
+  it("validates narrow receipt widths, section print styles, and changeable master PIN input", () => {
     expect(printLayoutSettingsSchema.parse({ scope: "receipt", restaurantAddress: "Main Road, Indore" }).restaurantAddress).toBe("Main Road, Indore");
     expect(printLayoutSettingsSchema.parse({ scope: "receipt", lineWidthChars: 25 }).lineWidthChars).toBe(25);
     expect(printLayoutSettingsSchema.parse({ scope: "receipt", lineWidthChars: 28 }).lineWidthChars).toBe(28);
@@ -71,7 +72,19 @@ describe("shared command schemas", () => {
     expect(printLayoutSettingsSchema.parse({ scope: "receipt", lineWidthChars: 42 }).lineWidthChars).toBe(42);
     expect(printLayoutSettingsSchema.parse({ scope: "receipt", lineWidthChars: 48 }).lineWidthChars).toBe(48);
     expect(() => printLayoutSettingsSchema.parse({ scope: "receipt", lineWidthChars: 20 })).toThrow();
+    const styled = printLayoutSettingsSchema.parse({
+      scope: "receipt",
+      topPaddingLines: 1,
+      sectionStyles: {
+        restaurantName: { size: "large", bold: true, align: "center" },
+        totals: { size: "large", bold: true, align: "right" }
+      }
+    });
+    expect(styled.topPaddingLines).toBe(1);
+    expect(styled.sectionStyles.restaurantName).toEqual({ size: "large", bold: true, align: "center" });
+    expect(styled.sectionStyles.totals).toEqual({ size: "large", bold: true, align: "right" });
     expect(setMasterPinSchema.parse({ newPin: "9876", confirmPin: "9876", updatedBy: "owner" })).toMatchObject({ newPin: "9876" });
+    expect(setMasterPinSchema.parse({ currentPin: "9876", newPin: "1111", confirmPin: "1111", updatedBy: "owner" })).toMatchObject({ currentPin: "9876", newPin: "1111" });
     expect(() => setMasterPinSchema.parse({ newPin: "9876", confirmPin: "1111", updatedBy: "owner" })).toThrow();
   });
 

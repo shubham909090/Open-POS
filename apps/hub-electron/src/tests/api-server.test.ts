@@ -496,6 +496,12 @@ describe("Hub API auth and service flow", () => {
     });
     const order = orderResponse.json<{ orderId: string }>();
     const orderRow = database.db.prepare("SELECT captain_id, created_by_role FROM orders WHERE id = ?").get(order.orderId);
+    const waiterStateEditResponse = await app.inject({
+      method: "POST",
+      url: `/orders/${order.orderId}/state`,
+      headers: { "x-device-token": device.token },
+      payload: { saveMode: "save", items: [{ menuItemId: "item-dal-fry", quantity: 2 }] }
+    });
     const settleResponse = await app.inject({
       method: "POST",
       url: "/bills/not-real/settle",
@@ -537,6 +543,7 @@ describe("Hub API auth and service flow", () => {
     expect(meResponse.json()).toMatchObject({ name: "Waiter phone", role: "waiter" });
     expect(orderResponse.statusCode).toBe(200);
     expect(orderRow).toEqual({ captain_id: "Waiter phone", created_by_role: "waiter" });
+    expect(waiterStateEditResponse.statusCode).toBe(403);
     expect(settleResponse.statusCode).toBe(403);
     expect(waiterTableOrderResponse.statusCode).toBe(200);
     expect(waiterTableOrder.bill).toBeNull();
@@ -755,7 +762,7 @@ describe("Hub API auth and service flow", () => {
     database.close();
   });
 
-  it("creates a master PIN once and edits paid history bills through owner approval", async () => {
+  it("creates and changes master PIN before editing paid history bills through owner approval", async () => {
     const { app, database } = createTestServer();
     const headers = { "x-device-token": "test-admin-token" };
     const orderResponse = await app.inject({
@@ -776,11 +783,17 @@ describe("Hub API auth and service flow", () => {
       headers,
       payload: { newPin: "9876", confirmPin: "9876", updatedBy: "owner" }
     });
-    const secondCreate = await app.inject({
+    const missingCurrentChange = await app.inject({
       method: "PUT",
       url: "/settings/master-pin",
       headers,
       payload: { newPin: "1111", confirmPin: "1111", updatedBy: "owner" }
+    });
+    const changed = await app.inject({
+      method: "PUT",
+      url: "/settings/master-pin",
+      headers,
+      payload: { currentPin: "9876", newPin: "1111", confirmPin: "1111", updatedBy: "owner" }
     });
     const badEdit = await app.inject({
       method: "POST",
@@ -797,14 +810,15 @@ describe("Hub API auth and service flow", () => {
       headers,
       payload: {
         items: [{ menuItemId: "item-dal-fry", quantity: 2 }],
-        masterApproval: { pin: "9876", reason: "Owner history edit", approvedBy: "owner" }
+        masterApproval: { pin: "1111", reason: "Owner history edit", approvedBy: "owner" }
       }
     });
 
     expect(initialStatus.json()).toEqual({ masterPinConfigured: false });
     expect(created.statusCode).toBe(200);
     expect(created.json()).toEqual({ configured: true });
-    expect(secondCreate.statusCode).toBe(409);
+    expect(missingCurrentChange.statusCode).toBe(403);
+    expect(changed.statusCode).toBe(200);
     expect(badEdit.statusCode).toBe(403);
     expect(edited.statusCode).toBe(200);
     expect(edited.json()).toMatchObject({
@@ -817,6 +831,39 @@ describe("Hub API auth and service flow", () => {
     });
     expect(database.db.prepare("SELECT amount_paise FROM payments WHERE bill_id = ?").get(bill.billId)).toEqual({ amount_paise: 36_000 });
     expect(database.db.prepare("SELECT COUNT(*) AS count FROM event_log WHERE type = 'bill.history_edited'").get()).toEqual({ count: 1 });
+
+    await app.close();
+    database.close();
+  });
+
+  it("stores order notes on KDS tickets created by a KOT send", async () => {
+    const { app, database } = createTestServer();
+    const headers = { "x-device-token": "test-admin-token" };
+    await app.inject({
+      method: "POST",
+      url: "/orders/submit",
+      headers,
+      payload: {
+        tableId: "table-t1",
+        captainId: "waiter-1",
+        pax: 2,
+        orderType: "dine_in",
+        printMode: "kot",
+        note: "Less spicy, serve together",
+        items: [{ menuItemId: "item-dal-fry", quantity: 1 }]
+      }
+    });
+
+    const kdsResponse = await app.inject({
+      method: "GET",
+      url: "/kds/unit-kitchen",
+      headers
+    });
+    const [ticket] = kdsResponse.json<Array<{ note: string; items: Array<{ name_snapshot: string }> }>>();
+
+    expect(kdsResponse.statusCode).toBe(200);
+    expect(ticket).toMatchObject({ note: "Less spicy, serve together" });
+    expect(ticket?.items[0]).toMatchObject({ name_snapshot: "Dal Fry" });
 
     await app.close();
     database.close();

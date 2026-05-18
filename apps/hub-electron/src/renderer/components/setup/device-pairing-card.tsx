@@ -55,10 +55,16 @@ export function DevicePairingCard({
   const [deviceName, setDeviceName] = useState("");
   const [role, setRole] = useState<Role>("waiter");
   const [pairing, setPairing] = useState<PairingCodeResult | null>(null);
+  const [deviceSearch, setDeviceSearch] = useState("");
 
   const activeDevices = devices.filter(
     (device) => device.id !== "device-local-admin" && device.status !== "revoked",
   );
+  const visibleDevices = activeDevices.filter((device) => {
+    const needle = deviceSearch.trim().toLowerCase();
+    if (!needle) return true;
+    return [device.name, device.role, device.status].some((part) => part.toLowerCase().includes(needle));
+  });
 
   const createPairing = useMutation({
     mutationFn: async () => {
@@ -177,13 +183,18 @@ export function DevicePairingCard({
         {loading ? (
           <p className="text-sm text-muted">Loading paired devices...</p>
         ) : null}
+        {activeDevices.length > 12 ? (
+          <div className="setup-search-row">
+            <input value={deviceSearch} onChange={(event) => setDeviceSearch(event.target.value)} placeholder="Search paired devices" />
+          </div>
+        ) : null}
         {!loading && activeDevices.length === 0 ? (
           <EmptyState
             title="No phones paired yet"
             description="Create a QR code above, then scan it from the Android app."
           />
         ) : null}
-        {activeDevices.map((device) => (
+        {visibleDevices.map((device) => (
           <article key={device.id} className="record-row">
             <div>
               <strong>{device.name}</strong>

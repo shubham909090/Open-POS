@@ -20,6 +20,7 @@ export function AdvancedView({
 }) {
   const queryClient = useQueryClient();
   const [newPin, setNewPin] = useState("");
+  const [currentMasterPin, setCurrentMasterPin] = useState("");
   const [newMasterPin, setNewMasterPin] = useState("");
   const [confirmMasterPin, setConfirmMasterPin] = useState("");
   const [resetPhrase, setResetPhrase] = useState("");
@@ -89,17 +90,19 @@ export function AdvancedView({
   const saveMasterPin = useMutation({
     mutationFn: () =>
       hubApi.setMasterPin({
+        currentPin: masterPinConfigured ? currentMasterPin : undefined,
         newPin: newMasterPin,
         confirmPin: confirmMasterPin,
         updatedBy: "admin",
       }),
     onSuccess: async () => {
+      setCurrentMasterPin("");
       setNewMasterPin("");
       setConfirmMasterPin("");
       await queryClient.invalidateQueries({ queryKey: ["bootstrap"] });
       setNotice({
         tone: "good",
-        text: "Master PIN created. It cannot be changed without DB reset.",
+        text: masterPinConfigured ? "Master PIN changed." : "Master PIN created.",
       });
     },
     onError: (error) => setNotice({ tone: "bad", text: messageOf(error) }),
@@ -162,19 +165,30 @@ export function AdvancedView({
           className="manager-pin-form"
           onSubmit={(event) => {
             event.preventDefault();
-            if (!masterPinConfigured && newMasterPin.length >= 4 && newMasterPin === confirmMasterPin) saveMasterPin.mutate();
+            if ((!masterPinConfigured || currentMasterPin.length >= 4) && newMasterPin.length >= 4 && newMasterPin === confirmMasterPin) saveMasterPin.mutate();
           }}
         >
           <input className="sr-only" name="username" tabIndex={-1} autoComplete="username" value="owner" readOnly aria-hidden="true" />
+          {masterPinConfigured ? (
+            <label>
+              Current Master PIN
+              <input
+                value={currentMasterPin}
+                onChange={(event) => setCurrentMasterPin(event.target.value)}
+                type="password"
+                autoComplete="current-password"
+                placeholder="Current owner PIN"
+              />
+            </label>
+          ) : null}
           <label>
-            Master PIN
+            {masterPinConfigured ? "New Master PIN" : "Master PIN"}
             <input
               value={newMasterPin}
               onChange={(event) => setNewMasterPin(event.target.value)}
               type="password"
               autoComplete="new-password"
-              disabled={masterPinConfigured}
-              placeholder={masterPinConfigured ? "Configured" : "Owner-only PIN"}
+              placeholder="Owner-only PIN"
             />
           </label>
           <label>
@@ -184,17 +198,16 @@ export function AdvancedView({
               onChange={(event) => setConfirmMasterPin(event.target.value)}
               type="password"
               autoComplete="new-password"
-              disabled={masterPinConfigured}
             />
           </label>
           <button
             type="submit"
-            disabled={masterPinConfigured || newMasterPin.length < 4 || newMasterPin !== confirmMasterPin || saveMasterPin.isPending}
+            disabled={(masterPinConfigured && currentMasterPin.length < 4) || newMasterPin.length < 4 || newMasterPin !== confirmMasterPin || saveMasterPin.isPending}
           >
-            {masterPinConfigured ? "Master PIN set" : saveMasterPin.isPending ? "Saving..." : "Create Master PIN"}
+            {saveMasterPin.isPending ? "Saving..." : masterPinConfigured ? "Change Master PIN" : "Create Master PIN"}
           </button>
           <p className="soft-note">
-            Used for old bill edits and sensitive liquor stock corrections. Create once; reset database to change it.
+            Used for old bill edits and sensitive liquor stock corrections. Changing it requires the current Master PIN.
           </p>
         </form>
       </section>

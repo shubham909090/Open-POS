@@ -20,6 +20,14 @@ export function EditableRecordList({
 }) {
   const [busyId, setBusyId] = useState("");
   const [editingId, setEditingId] = useState("");
+  const [search, setSearch] = useState("");
+  const needle = search.trim().toLowerCase();
+  const matchedRows = rows.filter((row) => {
+      if (!needle) return true;
+      return [row.title, row.meta].some((part) => part.toLowerCase().includes(needle));
+    });
+  const visibleRows = needle ? matchedRows.slice(0, 150) : matchedRows;
+  const searchCapped = Boolean(needle && matchedRows.length > visibleRows.length);
 
   async function run(id: string, action: () => Promise<unknown>) {
     setBusyId(id);
@@ -35,7 +43,13 @@ export function EditableRecordList({
 
   return (
     <div className="record-list">
-      {rows.map((row) => (
+      {rows.length > 12 ? (
+        <div className="setup-search-row">
+          <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search saved records" />
+          {searchCapped ? <small>Showing first {visibleRows.length} matches. Keep typing to narrow.</small> : null}
+        </div>
+      ) : null}
+      {visibleRows.map((row) => (
         <article
           key={row.id}
           className={`record-row${editingId === row.id ? " editing" : ""}`}
@@ -88,6 +102,11 @@ export function EditableRecordList({
         <EmptyState
           title="Nothing added yet"
           description="Saved records appear here immediately."
+        />
+      ) : rows.length > 0 && visibleRows.length === 0 ? (
+        <EmptyState
+          title="No matches"
+          description="Clear search or try another name."
         />
       ) : null}
     </div>

@@ -64,6 +64,13 @@
       "when": 1779046000000,
       "tag": "0008_inclusive_tax_master_pin",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1779130000000,
+      "tag": "0009_kot_notes_print_style",
+      "breakpoints": true
     }
   ]
 }

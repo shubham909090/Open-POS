@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { renderBillTicket, renderKotTicket } from "../domain/tickets.js";
+import { parsePrintStyleLine, renderBillTicket, renderBillTicketForPrint, renderKotTicket, stripPrintStyleMarkers } from "../domain/tickets.js";
 
 describe("ticket rendering", () => {
   it("keeps long itemized bill rows readable on thermal-width tickets", () => {
@@ -46,7 +46,7 @@ describe("ticket rendering", () => {
       lineWidthChars: 42
     });
 
-    expect(payload).toContain("------------------------------------------");
+    expect(payload).toContain("==========================================");
     expect(payload).toContain("            Gaurav Restaurant");
     expect(payload).toContain("            Main Road, Indore");
     expect(payload).toContain("               Tax Invoice");
@@ -156,6 +156,96 @@ describe("ticket rendering", () => {
     expect(payload).toContain("+2 x Whisky 30 ml");
     expect(payload).not.toContain("Reason:");
     expect(payload).not.toContain("T00:");
+  });
+
+  it("prints kitchen notes on KOT/BOT tickets only", () => {
+    const kot = renderKotTicket({
+      sequence: 7,
+      type: "new",
+      tableName: "T3",
+      productionUnitName: "Kitchen",
+      ticketLabel: "KOT",
+      captainId: "Captain",
+      createdAt: "2026-07-12T07:00:00.000Z",
+      note: "No onion, serve fast",
+      items: [{ name: "Paneer Tikka", quantityDelta: 1 }],
+      lineWidthChars: 28
+    });
+    const bill = renderBillTicket({
+      tableName: "T3",
+      billId: "9",
+      createdAt: "2026-07-12T07:00:00.000Z",
+      subtotalPaise: 26000,
+      taxPaise: 0,
+      totalPaise: 26000,
+      items: [{ name: "Paneer Tikka", quantity: 1, unitPricePaise: 26000, lineTotalPaise: 26000 }]
+    });
+
+    expect(kot).toContain("Note: No onion, serve fast");
+    expect(bill).not.toContain("No onion");
+  });
+
+  it("honors top padding and solid separators in print layout text", () => {
+    const payload = renderBillTicket({
+      tableName: "T1",
+      billId: "10",
+      createdAt: "2026-05-17T12:35:00.000Z",
+      restaurantName: "Gaurav Restaurant",
+      subtotalPaise: 10000,
+      taxPaise: 0,
+      totalPaise: 10000,
+      topPaddingLines: 2,
+      lineWidthChars: 28
+    });
+
+    expect(payload.startsWith("\n\n")).toBe(true);
+    expect(payload).toContain("============================");
+    expect(payload).not.toContain("----------------------------");
+  });
+
+  it("uses section alignment settings in the actual ticket renderer", () => {
+    const payload = renderBillTicket({
+      tableName: "T1",
+      billId: "10",
+      createdAt: "2026-05-17T12:35:00.000Z",
+      restaurantName: "Gaurav Restaurant",
+      restaurantAddress: "Main Road",
+      subtotalPaise: 10000,
+      taxPaise: 0,
+      totalPaise: 10000,
+      lineWidthChars: 28,
+      sectionStyles: {
+        restaurantName: { size: "large", bold: true, align: "right" },
+        address: { size: "normal", bold: false, align: "left" },
+        title: { size: "normal", bold: true, align: "left" }
+      }
+    });
+
+    const lines = payload.split("\n");
+    expect(lines[0]).toBe("           Gaurav Restaurant");
+    expect(lines[1]).toBe("Main Road");
+    expect(lines[2]).toBe("BILL 10");
+  });
+
+  it("keeps styled print alignment raw while preserving padded text for plain system fallback", () => {
+    const payload = renderBillTicketForPrint({
+      tableName: "T1",
+      billId: "10",
+      createdAt: "2026-05-17T12:35:00.000Z",
+      restaurantName: "Gaurav Restaurant",
+      subtotalPaise: 10000,
+      taxPaise: 0,
+      totalPaise: 10000,
+      lineWidthChars: 28,
+      sectionStyles: {
+        restaurantName: { size: "large", bold: true, align: "center" }
+      }
+    });
+    const firstLine = payload.split("\n")[0] ?? "";
+    const parsed = parsePrintStyleLine(firstLine);
+
+    expect(parsed).toMatchObject({ text: "Gaurav Restaurant", plainText: "     Gaurav Restaurant", align: "center" });
+    expect(stripPrintStyleMarkers(payload).split("\n")[0]).toBe("     Gaurav Restaurant");
   });
 
   it("prints compact bill item variants without default labels or duplicate volumes", async () => {

@@ -25,12 +25,14 @@ function TicketScreen({
   floors,
   draftTotal,
   tableTotal,
+  kotNote,
   currentOrder,
   connection,
   sending,
   canShift,
   canBill,
   onPaxChange,
+  onKotNoteChange,
   onChangeQty,
   onShiftTable,
   onShiftItem,
@@ -53,12 +55,14 @@ function TicketScreen({
   floors: HubBootstrap["floors"];
   draftTotal: number;
   tableTotal: number;
+  kotNote: string;
   currentOrder: HubOrder | null;
   connection: ConnectionState;
   sending: boolean;
   canShift: boolean;
   canBill: boolean;
   onPaxChange: (value: string) => void;
+  onKotNoteChange: (value: string) => void;
   onChangeQty: (index: number, delta: number) => void;
   onShiftTable: (tableId: string) => void;
   onShiftItem: (orderItemId: string, quantity: number, toTableId: string) => void;
@@ -246,6 +250,19 @@ function TicketScreen({
             keyboardType="number-pad"
             returnKeyType="done"
           />
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>Kitchen / bar note</Text>
+            <TextInput
+              value={kotNote}
+              onChangeText={onKotNoteChange}
+              maxLength={500}
+              placeholder="Optional note for KOT/BOT only"
+              placeholderTextColor={palette.muted}
+              returnKeyType="done"
+              multiline
+              style={[styles.input, styles.multilineInput]}
+            />
+          </View>
         </View>
       </CollapsibleSection>
 
@@ -302,6 +319,18 @@ function TicketScreen({
       <CollapsibleSection title={`Already Sent (${sentCount})`} subtitle={sentCount > 0 ? `Rs ${formatRupees(sentItems.reduce((t, i) => t + i.unit_price_paise * i.quantity, 0))}` : undefined} expanded={expandedSections.has("sent")} onToggle={() => toggleSection("sent")} accentColor={sentCount > 0 ? palette.amber : undefined}>
         {sentItems.length === 0 ? (
           <Text style={styles.smallMuted}>Nothing has been sent for this table yet.</Text>
+        ) : !canBill && !canShift ? (
+          <View style={styles.ticketList}>
+            {sentItems.map((item) => (
+              <View key={item.id} style={styles.ticketLine}>
+                <View style={styles.ticketText}>
+                  <Text style={styles.ticketName} numberOfLines={2}>{item.name_snapshot}</Text>
+                  <Text style={styles.muted}>Rs {formatRupees(item.unit_price_paise)} each</Text>
+                </View>
+                <Text style={styles.qtyValue}>{item.quantity}x</Text>
+              </View>
+            ))}
+          </View>
         ) : (
           <View style={styles.stateEditor}>
             <View style={styles.sectionHeaderRow}>

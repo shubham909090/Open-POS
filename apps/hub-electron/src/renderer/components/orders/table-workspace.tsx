@@ -63,6 +63,7 @@ export function TableWorkspace({
   const [orderStateItems, setOrderStateItems] = useState<StateItem[]>([]);
   const [orderStateSearch, setOrderStateSearch] = useState("");
   const [draftSearch, setDraftSearch] = useState("");
+  const [kotNote, setKotNote] = useState("");
   const operationKeys = useOperationKeys();
   const draft = tableId ? Object.values(drafts[tableId] ?? {}) : [];
   const tableOrder = useQuery({
@@ -119,6 +120,7 @@ export function TableWorkspace({
         tableId,
         pax: Number(guests || 1),
         printMode,
+        note: kotNote.trim() || undefined,
         items: draft.map((item) =>
           item.openName
             ? {
@@ -135,6 +137,7 @@ export function TableWorkspace({
     },
     onSuccess: async (_result, printMode) => {
       if (tableId) clearDraft(tableId);
+      setKotNote("");
       await refreshTable();
       setOrderPanel("sent");
       setNotice({
@@ -374,6 +377,15 @@ export function TableWorkspace({
             <label>
               Guests
               <input value={guests} onChange={(event) => setGuests(event.target.value)} inputMode="numeric" />
+            </label>
+            <label className="kot-note-field">
+              Kitchen / bar note
+              <input
+                value={kotNote}
+                onChange={(event) => setKotNote(event.target.value)}
+                maxLength={500}
+                placeholder="Optional note for KOT/BOT only"
+              />
             </label>
             <div className="send-action-row">
               <button type="button" aria-label="KOT F3" disabled={!canSendDraft} onClick={() => sendDraft("kot")}>

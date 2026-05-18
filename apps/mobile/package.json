@@ -20,6 +20,7 @@
     "@gaurav-pos/shared": "workspace:*",
     "@react-native-async-storage/async-storage": "^2.2.0",
     "expo": "^55.0.24",
+    "expo-audio": "55.0.14",
     "expo-camera": "^55.0.18",
     "expo-system-ui": "~55.0.18",
     "react": "^19.2.0",

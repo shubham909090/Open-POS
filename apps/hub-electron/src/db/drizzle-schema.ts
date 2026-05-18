@@ -227,6 +227,7 @@ export const kots = sqliteTable(
     sequence: integer("sequence").notNull(),
     ticketLabel: text("ticket_label").notNull().default("KOT"),
     reason: text("reason"),
+    note: text("note"),
     createdAt: text("created_at").notNull()
   },
   (table) => [index("idx_kots_unit_status").on(table.productionUnitId, table.status)]
