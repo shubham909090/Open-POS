@@ -6,6 +6,8 @@ import type { TableOrder } from "../renderer/hub-api.js";
 
 const settleBillMock = vi.fn();
 const billPrintersMock = vi.fn();
+const generateBillMock = vi.fn();
+const requestManagerApprovalMock = vi.fn();
 
 describe("hub billing shortcuts", () => {
   afterEach(() => {
@@ -14,6 +16,8 @@ describe("hub billing shortcuts", () => {
     vi.resetModules();
     settleBillMock.mockReset();
     billPrintersMock.mockReset();
+    generateBillMock.mockReset();
+    requestManagerApprovalMock.mockReset();
   });
 
   it("uses F8 to punch the visible bill only when payment is complete", async () => {
@@ -94,6 +98,75 @@ describe("hub billing shortcuts", () => {
 
     expect(screen.queryByLabelText("Split payment breakdown")).toBeNull();
   });
+
+  it("lets discount be entered before bill generation and sends it with generate bill", async () => {
+    const { BillingPanel } = await importBillingPanel();
+    renderBillingPanel(BillingPanel, { bill: null });
+
+    fireEvent.change(screen.getByLabelText("Discount amount"), { target: { value: "25" } });
+    fireEvent.click(screen.getByRole("button", { name: "Generate bill" }));
+
+    expect(generateBillMock).toHaveBeenCalledWith(expect.objectContaining({
+      discountType: "amount",
+      discountValue: 2500,
+      tipPaise: 0
+    }));
+  });
+
+  it("auto-fills remaining split amount on focus without locking the field", async () => {
+    const { BillingPanel } = await importBillingPanel();
+    const { container } = renderBillingPanel(BillingPanel);
+
+    const paymentInputs = Array.from(container.querySelectorAll<HTMLInputElement>(".payment-grid input"));
+    fireEvent.change(paymentInputs[0]!, { target: { value: "200" } });
+    fireEvent.focus(paymentInputs[1]!);
+    expect(paymentInputs[1]!.value).toBe("300");
+
+    fireEvent.change(paymentInputs[1]!, { target: { value: "250" } });
+    expect(paymentInputs[1]!.value).toBe("250");
+  });
+
+  it("shows a local return calculator without changing payment amounts", async () => {
+    const { BillingPanel } = await importBillingPanel();
+    const { container } = renderBillingPanel(BillingPanel);
+
+    fireEvent.change(screen.getByLabelText("Received amount"), { target: { value: "1000" } });
+
+    expect(screen.getByText("Return ₹500.00")).toBeTruthy();
+    const paymentInputs = Array.from(container.querySelectorAll<HTMLInputElement>(".payment-grid input"));
+    expect(paymentInputs.every((input) => input.value === "0")).toBe(true);
+  });
+
+  it("uses Enter to request reprint only while the bill reprint button is visible", async () => {
+    const { BillingPanel } = await importBillingPanel();
+    requestManagerApprovalMock.mockResolvedValue({ pin: "1234", reason: "Bill reprint", approvedBy: "manager" });
+
+    renderBillingPanel(BillingPanel);
+
+    expect(screen.getByRole("button", { name: /Reprint bill/i })).toBeTruthy();
+    fireEvent.keyDown(window, { key: "Enter" });
+
+    await waitFor(() => expect(requestManagerApprovalMock).toHaveBeenCalledWith(expect.objectContaining({
+      title: "Approve bill reprint",
+      defaultReason: "Bill reprint"
+    })));
+  });
+
+  it("does not use Enter for reprint when the bill button is hidden or a form control has focus", async () => {
+    const { BillingPanel } = await importBillingPanel();
+    requestManagerApprovalMock.mockResolvedValue({ pin: "1234", reason: "Bill reprint", approvedBy: "manager" });
+
+    renderBillingPanel(BillingPanel, { bill: null });
+    fireEvent.keyDown(window, { key: "Enter" });
+    expect(requestManagerApprovalMock).not.toHaveBeenCalled();
+
+    cleanup();
+    renderBillingPanel(BillingPanel);
+    const noteInput = screen.getByPlaceholderText("UPI ref, card slip, or captain note");
+    fireEvent.keyDown(noteInput, { key: "Enter" });
+
+    expect(requestManagerApprovalMock).not.toHaveBeenCalled();
+  });
 });
 
 async function importBillingPanel() {
@@ -142,11 +215,11 @@ function renderBillingPanel(
         tableOrder={tableOrder}
         menuItems={[]}
         sentTotal={50000}
-        generateBill={vi.fn()}
+        generateBill={generateBillMock}
         generating={false}
         onSettled={vi.fn().mockResolvedValue(undefined)}
         setNotice={vi.fn()}
-        requestManagerApproval={vi.fn()}
+        requestManagerApproval={requestManagerApprovalMock}
       />
     </QueryClientProvider>
   );

@@ -167,6 +167,8 @@ export function SentOrderPanel({
           id: item.key,
           title: item.name,
           meta: `${formatInr(item.pricePaise)} each`,
+          saleGroupKind: item.saleGroupKind,
+          saleGroupName: item.saleGroupName,
           quantity: item.quantity,
           amount: item.pricePaise * item.quantity,
           onMinus: () => changeStateQty(item.key, -1),

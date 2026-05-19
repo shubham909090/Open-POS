@@ -881,6 +881,7 @@ describe("Hub API auth and service flow", () => {
       headers,
       payload: {
         items: [{ menuItemId: "item-dal-fry", quantity: 2 }],
+        payments: [{ method: "cash", amountPaise: 36_000 }],
         masterApproval: { pin: "1234", reason: "Owner history edit", approvedBy: "owner" }
       }
     });
@@ -890,6 +891,10 @@ describe("Hub API auth and service flow", () => {
       headers,
       payload: {
         items: [{ menuItemId: "item-dal-fry", quantity: 2 }],
+        payments: [
+          { method: "upi", amountPaise: 20_000, reference: "UPI-edited" },
+          { method: "card", amountPaise: 16_000, reference: "UPI-edited" }
+        ],
         masterApproval: { pin: "1111", reason: "Owner history edit", approvedBy: "owner" }
       }
     });
@@ -909,7 +914,10 @@ describe("Hub API auth and service flow", () => {
       modified: true,
       processed: { printed: 1, failed: 0, skipped: 0 }
     });
-    expect(database.db.prepare("SELECT amount_paise FROM payments WHERE bill_id = ?").get(bill.billId)).toEqual({ amount_paise: 36_000 });
+    expect(database.db.prepare("SELECT method, amount_paise, reference FROM payments WHERE bill_id = ? ORDER BY method").all(bill.billId)).toEqual([
+      { method: "card", amount_paise: 16_000, reference: "UPI-edited" },
+      { method: "upi", amount_paise: 20_000, reference: "UPI-edited" }
+    ]);
     expect(database.db.prepare("SELECT COUNT(*) AS count FROM event_log WHERE type = 'bill.history_edited'").get()).toEqual({ count: 1 });
 
     await app.close();

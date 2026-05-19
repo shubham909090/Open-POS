@@ -1,6 +1,7 @@
 import { formatInr } from "@gaurav-pos/shared";
 import type { ReactNode } from "react";
 import { EmptyState } from "../ui/empty-state.js";
+import { CategoryBadge } from "./menu-card.js";
 
 export function LineItems({
   rows,
@@ -11,6 +12,8 @@ export function LineItems({
     id: string;
     title: string;
     meta: string;
+    saleGroupKind?: string;
+    saleGroupName?: string;
     quantity: number;
     amount: number;
     onMinus?: () => void;
@@ -30,8 +33,13 @@ export function LineItems({
       {rows.map((row) => (
         <article key={row.id} className="line-row">
           <div className="line-main">
-            <strong>{row.title}</strong>
-            <span>{row.meta}</span>
+            <div className="line-title-row">
+              {row.saleGroupKind ? <CategoryBadge kind={row.saleGroupKind} className="line-category-icon" /> : null}
+              <div className="line-title-copy">
+                <strong>{row.title}</strong>
+                <span>{row.saleGroupName ? `${row.saleGroupName} · ${row.meta}` : row.meta}</span>
+              </div>
+            </div>
           </div>
           <strong className="line-amount">{formatInr(row.amount)}</strong>
           <div className={row.onMinus || row.onPlus ? "qty-cluster" : "qty-cluster qty-readonly"}>

@@ -23,6 +23,7 @@ import {
   createTableSchema,
   exchangePairingCodeSchema,
   fullResetSchema,
+  generateBillSchema,
   historyEditBillSchema,
   hubConnectionSettingsSchema,
   importAlcoholCsvSchema,
@@ -928,9 +929,9 @@ export function createHubServer(input: {
 
 	  app.post("/bills/:orderId/generate", { preHandler: captainOrAdmin }, async (request) => {
 	    const params = request.params as { orderId: string };
-	    const body = billPrintDestinationSchema.parse(request.body ?? {});
+	    const body = generateBillSchema.parse(request.body ?? {});
 	    const { result, replayed } = await withIdempotency(request, `bills.generate.${params.orderId}`, () =>
-	      input.orderService.generateBill(params.orderId, body.printerSlot)
+	      input.orderService.generateBill(params.orderId, body.printerSlot, body)
 	    );
 	    const processed = replayed ? undefined : await processCreatedPrintJobs([result.printJobId]);
 	    if (!replayed) input.eventBus.publish({ type: "bill.generated", result: { ...result, processed } });

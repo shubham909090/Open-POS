@@ -76,6 +76,12 @@ export const settleBillSchema = z.object({
   payments: z.array(paymentInputSchema).optional()
 });
 
+export const billAdjustmentSchema = z.object({
+  discountType: z.enum(["amount", "percent"]).optional(),
+  discountValue: z.number().min(0).optional(),
+  tipPaise: z.number().int().min(0).optional()
+});
+
 export const reprintKotSchema = z.object({
   reason: z.string().trim().min(3).max(500),
   requestedBy: z.string().min(1),
@@ -297,8 +303,13 @@ export const billPrintDestinationSchema = z.object({
   printerSlot: billPrinterSlotSchema.default("default")
 });
 
+export const generateBillSchema = billPrintDestinationSchema.merge(billAdjustmentSchema);
+
 export const reprintBillSchema = reprintKotSchema.extend({
-  printerSlot: billPrinterSlotSchema.default("default")
+  printerSlot: billPrinterSlotSchema.default("default"),
+  discountType: z.enum(["amount", "percent"]).optional(),
+  discountValue: z.number().min(0).optional(),
+  tipPaise: z.number().int().min(0).optional()
 });
 
 export const printActionSchema = z.object({
@@ -378,12 +389,19 @@ export const reviseBillSchema = z.object({
 export const historyEditBillSchema = z.object({
   items: z.array(orderItemInputSchema).min(1),
   masterApproval: masterApprovalSchema,
-  printerSlot: billPrinterSlotSchema.default("default")
+  printerSlot: billPrinterSlotSchema.default("default"),
+  discountType: z.enum(["amount", "percent"]).optional(),
+  discountValue: z.number().min(0).optional(),
+  tipPaise: z.number().int().min(0).optional(),
+  payments: z.array(paymentInputSchema).optional()
 });
 
 export const markNcBillSchema = z.object({
   managerApproval: managerApprovalSchema,
-  printerSlot: billPrinterSlotSchema.default("default")
+  printerSlot: billPrinterSlotSchema.default("default"),
+  discountType: z.enum(["amount", "percent"]).optional(),
+  discountValue: z.number().min(0).optional(),
+  tipPaise: z.number().int().min(0).optional()
 });
 
 export const moveTableSchema = z.object({
@@ -438,6 +456,8 @@ type ParsedSubmitOrderInput = z.infer<typeof submitOrderSchema>;
 export type SubmitOrderInput = Omit<ParsedSubmitOrderInput, "printMode"> & { printMode?: ParsedSubmitOrderInput["printMode"] };
 export type UpdateOrderStateInput = z.input<typeof updateOrderStateSchema>;
 export type SettleBillInput = z.input<typeof settleBillSchema>;
+export type BillAdjustmentInput = z.input<typeof billAdjustmentSchema>;
+export type GenerateBillInput = z.input<typeof generateBillSchema>;
 export type ReprintKotInput = z.infer<typeof reprintKotSchema>;
 export type ReprintBillInput = z.input<typeof reprintBillSchema>;
 export type CancelOrderInput = z.infer<typeof cancelOrderSchema>;

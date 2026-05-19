@@ -1,7 +1,7 @@
 import { formatInr, getOrderStateSignature, isTransferTargetTable, searchMenuItems } from "@gaurav-pos/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useState } from "react";
-import { hubApi, type BillPrinterSlot, type Bootstrap, type MenuItem } from "../../hub-api.js";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { hubApi, type BillAdjustmentPayload, type BillPrinterSlot, type Bootstrap, type MenuItem } from "../../hub-api.js";
 import { menuItemVariantOptions, messageOf, type NoticeSetter } from "../../lib/format.js";
 import type { ManagerApproval, ManagerApprovalRequest } from "../../hooks/use-manager-approval.js";
 import { useKeyboardListNavigation } from "../../hooks/use-keyboard-list-navigation.js";
@@ -25,6 +25,8 @@ export type StateItem = {
   openName?: string;
   pricePaise: number;
   saleGroupId: string;
+  saleGroupName?: string;
+  saleGroupKind?: string;
   productionUnitId?: string | null;
   name: string;
   quantity: number;
@@ -69,9 +71,13 @@ export function TableWorkspace({
   const [orderStateSearch, setOrderStateSearch] = useState("");
   const [draftSearch, setDraftSearch] = useState("");
   const [billPrintIntent, setBillPrintIntent] = useState<"generate" | null>(null);
+  const [pendingBillAdjustments, setPendingBillAdjustments] = useState<BillAdjustmentPayload>({});
   const [saveWithoutPrintOpen, setSaveWithoutPrintOpen] = useState(false);
+  const draftSearchInputRef = useRef<HTMLInputElement | null>(null);
   const operationKeys = useOperationKeys();
   const draft = tableId ? Object.values(drafts[tableId] ?? {}) : [];
+  const menuById = useMemo(() => new Map(bootstrap.menuItems.map((item) => [item.id, item])), [bootstrap.menuItems]);
+  const saleGroupById = useMemo(() => new Map(bootstrap.saleGroups.map((group) => [group.id, group])), [bootstrap.saleGroups]);
   const tableOrder = useQuery({
     queryKey: ["tableOrder", tableId],
     queryFn: () => hubApi.tableOrder(tableId as string),
@@ -200,11 +206,16 @@ export function TableWorkspace({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [canSendDraft, submitOrder]);
 
+  useEffect(() => {
+    if (!tableId || orderPanel !== "new" || billPrintIntent || saveWithoutPrintOpen) return;
+    draftSearchInputRef.current?.focus();
+  }, [billPrintIntent, orderPanel, saveWithoutPrintOpen, tableId]);
+
   const generateBill = useMutation({
     mutationFn: (printerSlot: BillPrinterSlot) => {
       const orderId = data?.order?.id;
       if (!orderId) throw new Error("No active order to bill.");
-      return hubApi.generateBill(orderId, operationKeys.keyFor("bill-generate", { orderId, printerSlot }), printerSlot);
+      return hubApi.generateBill(orderId, operationKeys.keyFor("bill-generate", { orderId, printerSlot, pendingBillAdjustments }), printerSlot, pendingBillAdjustments);
     },
     onSuccess: async () => {
       await refreshTable();
@@ -280,6 +291,8 @@ export function TableWorkspace({
       openName: item.menu_item_id ? undefined : item.name_snapshot,
       pricePaise: item.unit_price_paise,
       saleGroupId: item.sale_group_id,
+      saleGroupName: item.sale_group_name_snapshot,
+      saleGroupKind: item.sale_group_kind_snapshot,
       productionUnitId: item.production_unit_id,
       name: item.name_snapshot,
       quantity: item.quantity,
@@ -316,6 +329,8 @@ export function TableWorkspace({
         menuItemVariantId: resolvedVariantId,
         pricePaise: variant?.price_paise ?? menuItem.price_paise,
         saleGroupId: menuItem.sale_group_id,
+        saleGroupName: menuItem.sale_group_name,
+        saleGroupKind: menuItem.sale_group_kind,
         productionUnitId: menuItem.production_unit_id,
         name: lineName,
         quantity: 1
@@ -441,6 +456,7 @@ export function TableWorkspace({
               <label className="state-search-field">
                 <span>Add dish</span>
                 <input
+                  ref={draftSearchInputRef}
                   value={draftSearch}
                   onChange={(event) => setDraftSearch(event.target.value)}
                   onKeyDown={draftKeyboard.onKeyDown}
@@ -493,6 +509,8 @@ export function TableWorkspace({
                 name: openName.trim(),
                 pricePaise,
                 saleGroupId: openGroup,
+                saleGroupName: saleGroupById.get(openGroup)?.name,
+                saleGroupKind: saleGroupById.get(openGroup)?.kind,
                 productionUnitId: openUnit || null
               });
               setOpenName("");
@@ -533,6 +551,8 @@ export function TableWorkspace({
               id: item.lineKey,
               title: item.variantLabel ? `${item.name} ${item.variantLabel}` : item.name,
               meta: `${formatInr(item.pricePaise)} each`,
+              saleGroupKind: item.saleGroupKind ?? menuById.get(item.menuItemId)?.sale_group_kind ?? saleGroupById.get(item.saleGroupId ?? "")?.kind,
+              saleGroupName: item.saleGroupName ?? menuById.get(item.menuItemId)?.sale_group_name ?? saleGroupById.get(item.saleGroupId ?? "")?.name,
               quantity: item.quantity,
               amount: item.pricePaise * item.quantity,
               onMinus: () => changeDraftQty(tableId, item.lineKey, -1),
@@ -596,7 +616,10 @@ export function TableWorkspace({
           tableOrder={data}
           menuItems={bootstrap.menuItems}
           sentTotal={sentTotal}
-          generateBill={() => setBillPrintIntent("generate")}
+          generateBill={(adjustments) => {
+            setPendingBillAdjustments(adjustments);
+            setBillPrintIntent("generate");
+          }}
           generating={generateBill.isPending || tableOrder.isFetching}
           onSettled={refreshTable}
           setNotice={setNotice}

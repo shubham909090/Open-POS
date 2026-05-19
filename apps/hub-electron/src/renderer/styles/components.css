@@ -1175,17 +1175,42 @@
 }
 
 @media (max-width: 720px) {
+  .change-helper-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .change-helper-row strong {
+    @apply justify-start;
+  }
+
+  .history-edit-row,
+  .history-edit-search-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .history-edit-qty,
+  .history-edit-actions {
+    @apply justify-start;
+  }
+
   .line-row {
+    grid-template-areas:
+      "main qty"
+      "amount qty"
+      "note note"
+      "action action";
     grid-template-columns: minmax(0, 1fr) auto;
   }
 
   .line-amount {
     @apply col-start-1 justify-self-start;
+    grid-area: amount;
   }
 
   .qty-cluster {
     @apply row-span-2;
-    grid-column: 2;
+    grid-area: qty;
+    grid-column: auto;
   }
 
   .reports-layout .report-metrics {

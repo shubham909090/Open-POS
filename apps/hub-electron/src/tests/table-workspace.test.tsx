@@ -31,6 +31,26 @@ describe("hub table workspace send actions", () => {
     await waitFor(() => expect(submitOrderMock).toHaveBeenCalledWith(expect.objectContaining({ printMode: "kot" }), expect.any(String)));
   });
 
+  it("focuses the inline add-dish search when a table opens on new order", async () => {
+    const { TableWorkspace, useHubStore } = await importWorkspace();
+    useHubStore.setState({ selectedTableId: "table-t1", orderPanel: "new", drafts: {} });
+
+    renderWorkspace(TableWorkspace);
+
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByPlaceholderText("Search menu item")));
+  });
+
+  it("does not steal focus for sent-item editor when a table opens outside new order", async () => {
+    const { TableWorkspace, useHubStore } = await importWorkspace();
+    tableOrderMock.mockResolvedValue(tableOrder(1));
+    useHubStore.setState({ selectedTableId: "table-t1", orderPanel: "sent", drafts: {} });
+
+    renderWorkspace(TableWorkspace);
+
+    await screen.findByText("Edited total");
+    expect(document.activeElement).not.toBe(screen.getByPlaceholderText("Search menu item"));
+  });
+
   it("uses F6 for Print and KOT only when send buttons are visible and enabled", async () => {
     const { TableWorkspace, useHubStore } = await importWorkspace();
     submitOrderMock.mockResolvedValue({ orderId: "order-1", kotIds: ["kot-1"], printJobIds: ["print-1"] });
@@ -153,6 +173,23 @@ describe("hub table workspace send actions", () => {
     expect(setNotice).not.toHaveBeenCalledWith(expect.objectContaining({ text: expect.stringContaining("Table state saved") }));
   });
 
+  it("shows category icons on new draft and sent item rows", async () => {
+    const { TableWorkspace, useHubStore } = await importWorkspace();
+    tableOrderMock.mockResolvedValue(tableOrder(1));
+    seedDraft(useHubStore);
+
+    const { container, rerender } = renderWorkspace(TableWorkspace);
+
+    expect(await screen.findByText("Dal Fry")).not.toBeNull();
+    expect(container.querySelector(".line-category-icon svg")).not.toBeNull();
+
+    useHubStore.setState({ orderPanel: "sent" });
+    rerender(wrapWorkspace(TableWorkspace));
+
+    expect(await screen.findByText("bhaji")).not.toBeNull();
+    expect(container.querySelector(".line-category-icon svg")).not.toBeNull();
+  });
+
   it("renders menu alcohol variants as one compact action group without Add text", async () => {
     const { MenuCard } = await import("../renderer/components/orders/menu-card.js");
     const onAdd = vi.fn();
@@ -197,6 +234,9 @@ function seedDraft(useHubStore: typeof import("../renderer/store.js").useHubStor
           menuItemId: "item-dal-fry",
           name: "Dal Fry",
           pricePaise: 18000,
+          saleGroupId: "sg-food",
+          saleGroupName: "Food",
+          saleGroupKind: "food",
           quantity: 1
         }
       }

@@ -764,6 +764,117 @@ describe("OrderService KOT lifecycle", () => {
     database.close();
   });
 
+  it("prints generated and reprinted bills with the latest saved discount amount", () => {
+    const { database, orderService } = createTestHub();
+    orderService.setManagerPin({ newPin: "1234", updatedBy: "admin" });
+    const order = orderService.submitOrder({
+      tableId: "table-t1",
+      captainId: "waiter-1",
+      pax: 1,
+      orderType: "dine_in",
+      items: [{ menuItemId: "item-dal-fry", quantity: 2 }]
+    });
+
+    const bill = orderService.generateBill(order.orderId, "default", {
+      discountType: "percent",
+      discountValue: 10
+    });
+
+    const firstPrint = database.db.prepare("SELECT payload FROM print_jobs WHERE id = ?").get(bill.printJobId) as { payload: string };
+    expect(stripPrintStyleMarkers(firstPrint.payload)).toContain("Discount              -36.00");
+    expect(database.db.prepare("SELECT discount_paise, final_total_paise FROM bills WHERE id = ?").get(bill.billId)).toEqual({
+      discount_paise: 3600,
+      final_total_paise: 32400
+    });
+    expect(database.db.prepare("SELECT discount_paise, final_total_paise FROM bill_revisions WHERE bill_id = ? AND revision_number = 1").get(bill.billId)).toEqual({
+      discount_paise: 3600,
+      final_total_paise: 32400
+    });
+
+    const reprint = orderService.reprintBill(bill.billId, {
+      requestedBy: "captain-1",
+      reason: "Updated discount",
+      managerApproval: { pin: "1234", reason: "Updated discount", approvedBy: "manager" },
+      discountType: "amount",
+      discountValue: 5000
+    });
+
+    const reprintJob = database.db.prepare("SELECT payload FROM print_jobs WHERE id = ?").get(reprint.printJobId) as { payload: string };
+    expect(stripPrintStyleMarkers(reprintJob.payload)).toContain("Discount              -50.00");
+    expect(database.db.prepare("SELECT discount_paise, final_total_paise FROM bills WHERE id = ?").get(bill.billId)).toEqual({
+      discount_paise: 5000,
+      final_total_paise: 31000
+    });
+
+    database.close();
+  });
+
+  it("does not let manager-approved reprints change paid bill financials", () => {
+    const { database, orderService } = createTestHub();
+    orderService.setManagerPin({ newPin: "1234", updatedBy: "admin" });
+    const order = orderService.submitOrder({
+      tableId: "table-t1",
+      captainId: "waiter-1",
+      pax: 1,
+      orderType: "dine_in",
+      items: [{ menuItemId: "item-dal-fry", quantity: 2 }]
+    });
+    const bill = orderService.generateBill(order.orderId);
+    orderService.settleBill(bill.billId, {
+      receivedBy: "captain-1",
+      payments: [{ method: "cash", amountPaise: bill.totalPaise }]
+    });
+
+    expect(() =>
+      orderService.reprintBill(bill.billId, {
+        requestedBy: "captain-1",
+        reason: "Late discount",
+        managerApproval: { pin: "1234", reason: "Late discount", approvedBy: "manager" },
+        discountType: "amount",
+        discountValue: 5000
+      })
+    ).toThrow("Paid bill discounts can only be changed from Order History with Master PIN");
+    expect(database.db.prepare("SELECT discount_paise, final_total_paise FROM bills WHERE id = ?").get(bill.billId)).toEqual({
+      discount_paise: 0,
+      final_total_paise: bill.totalPaise
+    });
+
+    database.close();
+  });
+
+  it("does not let pending bill adjustments fall below already recorded payments", () => {
+    const { database, orderService } = createTestHub();
+    orderService.setManagerPin({ newPin: "1234", updatedBy: "admin" });
+    const order = orderService.submitOrder({
+      tableId: "table-t1",
+      captainId: "waiter-1",
+      pax: 1,
+      orderType: "dine_in",
+      items: [{ menuItemId: "item-dal-fry", quantity: 2 }]
+    });
+    const bill = orderService.generateBill(order.orderId);
+    orderService.settleBill(bill.billId, {
+      receivedBy: "captain-1",
+      payments: [{ method: "cash", amountPaise: 10_000 }]
+    });
+
+    expect(() =>
+      orderService.reprintBill(bill.billId, {
+        requestedBy: "captain-1",
+        reason: "Too much discount",
+        managerApproval: { pin: "1234", reason: "Too much discount", approvedBy: "manager" },
+        discountType: "amount",
+        discountValue: 30_000
+      })
+    ).toThrow("Recorded payments exceed adjusted bill total");
+    expect(database.db.prepare("SELECT discount_paise, final_total_paise FROM bills WHERE id = ?").get(bill.billId)).toEqual({
+      discount_paise: 0,
+      final_total_paise: bill.totalPaise
+    });
+
+    database.close();
+  });
+
   it("supports manual split payments with discount and tip", () => {
     const { database, orderService } = createTestHub();
 
@@ -1393,6 +1504,8 @@ describe("OrderService KOT lifecycle", () => {
     const bill = orderService.generateBill(order.orderId);
     expect(bill.totalPaise).toBe(20_000);
     const ncBill = orderService.markBillNc(bill.billId, {
+      discountType: "amount",
+      discountValue: 5_000,
       managerApproval: { pin: "1234", reason: "Owner tasting", approvedBy: "manager" }
     });
     const ncPrintJob = database.db.prepare("SELECT payload FROM print_jobs WHERE id = ?").get(ncBill.printJobId) as { payload: string };
@@ -1400,6 +1513,7 @@ describe("OrderService KOT lifecycle", () => {
 	    expect(ncPrintJob.payload).toContain("Open Bar");
 	    expect(ncPrintJob.payload).toContain("2");
 	    expect(ncPrintJob.payload).toContain("200.00");
+	    expect(stripPrintStyleMarkers(ncPrintJob.payload)).toContain("Discount              -50.00");
 	    expect(ncPrintJob.payload).not.toContain("VAT");
     expect(ncPrintJob.payload).not.toContain("₹");
     expect(ncPrintJob.payload).toContain("NC Reason: Owner tasting");
@@ -1531,26 +1645,50 @@ describe("OrderService KOT lifecycle", () => {
 
     const edited = orderService.editHistoryBill(bill.billId, {
       items: [{ menuItemId: "item-dal-fry", quantity: 2 }],
+      discountType: "amount",
+      discountValue: 5000,
+      payments: [
+        { method: "upi", amountPaise: 20_000, reference: "UPI-edited" },
+        { method: "card", amountPaise: 11_000, reference: "UPI-edited" }
+      ],
       masterApproval: { pin: "9876", reason: "Owner history edit", approvedBy: "owner" }
     });
 
     expect(edited).toMatchObject({ billId: bill.billId, revisionNumber: 2, totalPaise: 36_000, printJobId: expect.any(String), modified: true });
-    expect(database.db.prepare("SELECT status, total_paise, final_total_paise, revision_number FROM bills WHERE id = ?").get(bill.billId)).toEqual({
+    expect(database.db.prepare("SELECT status, total_paise, discount_paise, final_total_paise, revision_number FROM bills WHERE id = ?").get(bill.billId)).toEqual({
       status: "paid",
       total_paise: 36_000,
-      final_total_paise: 36_000,
+      discount_paise: 5_000,
+      final_total_paise: 31_000,
       revision_number: 2
     });
-    expect(database.db.prepare("SELECT amount_paise FROM payments WHERE bill_id = ?").get(bill.billId)).toEqual({ amount_paise: 36_000 });
+    expect(database.db.prepare("SELECT method, amount_paise, reference FROM payments WHERE bill_id = ? ORDER BY method").all(bill.billId)).toEqual([
+      { method: "card", amount_paise: 11_000, reference: "UPI-edited" },
+      { method: "upi", amount_paise: 20_000, reference: "UPI-edited" }
+    ]);
     const summary = orderService.getCurrentBusinessDaySummary() as {
       finalSalesPaise: number;
-      billSummaries?: Array<{ finalTotalPaise: number; paidPaise: number; revisionNumber: number; modified: boolean }>;
+      upiPaymentsPaise: number;
+      cardPaymentsPaise: number;
+      billSummaries?: Array<{ finalTotalPaise: number; paidPaise: number; revisionNumber: number; modified: boolean; payments: Array<{ method: string; amountPaise: number; reference: string | null }> }>;
     };
-    expect(summary.finalSalesPaise).toBe(36_000);
-    expect(summary.billSummaries?.[0]).toMatchObject({ finalTotalPaise: 36_000, paidPaise: 36_000, revisionNumber: 2, modified: true });
+    expect(summary.finalSalesPaise).toBe(31_000);
+    expect(summary.upiPaymentsPaise).toBe(20_000);
+    expect(summary.cardPaymentsPaise).toBe(11_000);
+    expect(summary.billSummaries?.[0]).toMatchObject({
+      finalTotalPaise: 31_000,
+      paidPaise: 31_000,
+      revisionNumber: 2,
+      modified: true,
+      payments: [
+        { method: "upi", amountPaise: 20_000, reference: "UPI-edited" },
+        { method: "card", amountPaise: 11_000, reference: "UPI-edited" }
+      ]
+    });
     const printJob = database.db.prepare("SELECT payload FROM print_jobs WHERE id = ?").get(edited.printJobId) as { payload: string };
     expect(printJob.payload).toContain("Dal Fry");
     expect(printJob.payload).toContain("360.00");
+    expect(stripPrintStyleMarkers(printJob.payload)).toContain("Discount              -50.00");
     expect(printJob.payload).toContain("Modified");
     expect(printJob.payload).not.toContain("REPRINT");
 
@@ -1617,7 +1755,7 @@ describe("OrderService KOT lifecycle", () => {
     database.close();
   });
 
-  it("preserves paid bill payment split proportions when a history edit changes the total", () => {
+  it("replaces paid bill payment split exactly when a history edit changes the total", () => {
     const { database, orderService } = createTestHub();
     orderService.setMasterPin({ newPin: "9876", confirmPin: "9876", updatedBy: "owner" });
     const order = orderService.submitOrder({
@@ -1639,21 +1777,66 @@ describe("OrderService KOT lifecycle", () => {
 
     orderService.editHistoryBill(bill.billId, {
       items: [{ menuItemId: "item-dal-fry", quantity: 2 }],
+      payments: [
+        { method: "upi", amountPaise: 20_000, reference: "UPI-2" },
+        { method: "card", amountPaise: 16_000, reference: "UPI-2" }
+      ],
       masterApproval: { pin: "9876", reason: "Owner history edit", approvedBy: "owner" }
     });
 
     const summary = orderService.getCurrentBusinessDaySummary() as {
       cashPaymentsPaise: number;
       upiPaymentsPaise: number;
+      cardPaymentsPaise: number;
       billSummaries?: Array<{ paidPaise: number; payments: Array<{ method: string; amountPaise: number; reference: string | null }> }>;
     };
-    expect(summary.cashPaymentsPaise).toBe(20_000);
-    expect(summary.upiPaymentsPaise).toBe(16_000);
+    expect(summary.cashPaymentsPaise).toBe(0);
+    expect(summary.upiPaymentsPaise).toBe(20_000);
+    expect(summary.cardPaymentsPaise).toBe(16_000);
     expect(summary.billSummaries?.[0]?.paidPaise).toBe(36_000);
     expect([...(summary.billSummaries?.[0]?.payments ?? [])].sort((a, b) => a.method.localeCompare(b.method))).toEqual([
-      { method: "cash", amountPaise: 20_000, reference: null },
-      { method: "upi", amountPaise: 16_000, reference: "UPI-1" }
+      { method: "card", amountPaise: 16_000, reference: "UPI-2" },
+      { method: "upi", amountPaise: 20_000, reference: "UPI-2" }
     ]);
+
+    database.close();
+  });
+
+  it("rejects paid history payment edits when the split is not exact", () => {
+    const { database, orderService } = createTestHub();
+    orderService.setMasterPin({ newPin: "9876", confirmPin: "9876", updatedBy: "owner" });
+    const order = orderService.submitOrder({
+      tableId: "table-t1",
+      captainId: "waiter-1",
+      pax: 1,
+      orderType: "dine_in",
+      printMode: "kot",
+      items: [{ menuItemId: "item-dal-fry", quantity: 1 }]
+    });
+    const bill = orderService.generateBill(order.orderId);
+    orderService.settleBill(bill.billId, {
+      receivedBy: "captain-1",
+      payments: [{ method: "cash", amountPaise: bill.totalPaise }]
+    });
+
+    expect(() =>
+      orderService.editHistoryBill(bill.billId, {
+        items: [{ menuItemId: "item-dal-fry", quantity: 2 }],
+        payments: [{ method: "upi", amountPaise: 35_900 }],
+        masterApproval: { pin: "9876", reason: "Owner history edit", approvedBy: "owner" }
+      })
+    ).toThrow("History edit payments must exactly match the edited bill total");
+    expect(() =>
+      orderService.editHistoryBill(bill.billId, {
+        items: [{ menuItemId: "item-dal-fry", quantity: 2 }],
+        payments: [{ method: "upi", amountPaise: 36_100 }],
+        masterApproval: { pin: "9876", reason: "Owner history edit", approvedBy: "owner" }
+      })
+    ).toThrow("History edit payments must exactly match the edited bill total");
+    expect(database.db.prepare("SELECT method, amount_paise FROM payments WHERE bill_id = ?").get(bill.billId)).toEqual({
+      method: "cash",
+      amount_paise: bill.totalPaise
+    });
 
     database.close();
   });
@@ -1686,6 +1869,7 @@ describe("OrderService KOT lifecycle", () => {
 
     orderService.editHistoryBill(bill.billId, {
       items: [{ menuItemId: "item-dal-fry", quantity: 2 }],
+      payments: [{ method: "cash", amountPaise: 36_000 }],
       masterApproval: { pin: "9876", reason: "Owner history edit", approvedBy: "owner" }
     });
     const detail = orderService.getDailyReport(day.pos_day_id) as {
@@ -1732,6 +1916,7 @@ describe("OrderService KOT lifecycle", () => {
 
     orderService.editHistoryBill(bill.billId, {
       items: [{ menuItemId: whisky.id, menuItemVariantId: shot.id, quantity: 2 }],
+      payments: [{ method: "cash", amountPaise: 20_000 }],
       masterApproval: { pin: "9876", reason: "Owner history edit", approvedBy: "owner" }
     });
 
@@ -1772,6 +1957,7 @@ describe("OrderService KOT lifecycle", () => {
 
     orderService.editHistoryBill(bill.billId, {
       items: [{ menuItemId: "item-dal-fry", quantity: 1 }],
+      payments: [{ method: "cash", amountPaise: 18_000 }],
       masterApproval: { pin: "9876", reason: "Owner history edit", approvedBy: "owner" }
     });
 

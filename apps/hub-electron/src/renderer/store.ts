@@ -14,6 +14,8 @@ export interface DraftItem {
   quantity: number;
   openName?: string;
   saleGroupId?: string;
+  saleGroupName?: string;
+  saleGroupKind?: string;
   productionUnitId?: string | null;
   note?: string;
 }
@@ -72,6 +74,9 @@ export const useHubStore = create<HubUiState>((set) => ({
               menuItemVariantId: variant?.id,
               name: item.name,
               variantLabel: variant?.kind === "default" ? undefined : variant?.label,
+              saleGroupId: item.sale_group_id,
+              saleGroupName: item.sale_group_name,
+              saleGroupKind: item.sale_group_kind,
               pricePaise: variant?.price_paise ?? item.price_paise,
               quantity: (current?.quantity ?? 0) + 1
             }
@@ -95,6 +100,8 @@ export const useHubStore = create<HubUiState>((set) => ({
               openName: item.name,
               pricePaise: item.pricePaise,
               saleGroupId: item.saleGroupId,
+              saleGroupName: item.saleGroupName,
+              saleGroupKind: item.saleGroupKind,
               productionUnitId: item.productionUnitId ?? null,
               quantity: 1
             }

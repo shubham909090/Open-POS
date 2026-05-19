@@ -51,6 +51,71 @@ describe("hub orders view layout", () => {
 
     expect(screen.getByText("1h 5m")).not.toBeNull();
   });
+
+  it("marks only free tables with local unsent drafts as draft warning tiles", async () => {
+    const { OrdersView, useHubStore } = await importOrdersView();
+    const data = bootstrap();
+    const firstTable = data.tables[0];
+    if (!firstTable) throw new Error("Expected table fixture");
+    data.tables[0] = {
+      ...firstTable,
+      status: "free",
+      current_order_id: null,
+      occupied_at: null,
+      current_order_total_paise: 0,
+      sent_item_count: 0
+    };
+    useHubStore.setState({
+      selectedTableId: null,
+      orderPanel: "new",
+      menuSearch: "",
+      drafts: {
+        "table-t1": {
+          "item-whisky:v30": {
+            lineKey: "item-whisky:v30",
+            menuItemId: "item-whisky",
+            menuItemVariantId: "v30",
+            name: "Imported Whisky",
+            pricePaise: 4_000,
+            quantity: 2
+          }
+        }
+      }
+    });
+
+    const { container } = render(<OrdersView bootstrap={data} setNotice={vi.fn()} requestManagerApproval={vi.fn()} />);
+
+    expect(screen.getByText("Draft 2 items")).not.toBeNull();
+    expect(screen.getByText("₹80.00")).not.toBeNull();
+    expect(container.querySelector(".table-tile.draft-warning")).not.toBeNull();
+  });
+
+  it("keeps running table color higher priority than local unsent draft warning", async () => {
+    const { OrdersView, useHubStore } = await importOrdersView();
+    useHubStore.setState({
+      selectedTableId: null,
+      orderPanel: "new",
+      menuSearch: "",
+      drafts: {
+        "table-t1": {
+          "item-whisky:v30": {
+            lineKey: "item-whisky:v30",
+            menuItemId: "item-whisky",
+            menuItemVariantId: "v30",
+            name: "Imported Whisky",
+            pricePaise: 4_000,
+            quantity: 1
+          }
+        }
+      }
+    });
+
+    const { container } = render(<OrdersView bootstrap={bootstrap()} setNotice={vi.fn()} requestManagerApproval={vi.fn()} />);
+
+    expect(screen.getByText("Running")).not.toBeNull();
+    expect(container.querySelector(".table-tile.running")).not.toBeNull();
+    expect(container.querySelector(".table-tile.draft-warning")).toBeNull();
+  });
 });
 
 async function importOrdersView() {

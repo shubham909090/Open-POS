@@ -1,7 +1,7 @@
 import { formatInr, searchMenuItems } from "@gaurav-pos/shared";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { hubApi, type BillPrinterSlot, type MenuItem, type TableOrder } from "../../hub-api.js";
+import { hubApi, type BillAdjustmentPayload, type BillPrinterSlot, type MenuItem, type TableOrder } from "../../hub-api.js";
 import { menuItemVariantOptions, messageOf, type NoticeSetter } from "../../lib/format.js";
 import type { ManagerApproval, ManagerApprovalRequest } from "../../hooks/use-manager-approval.js";
 import { useKeyboardListNavigation } from "../../hooks/use-keyboard-list-navigation.js";
@@ -31,6 +31,11 @@ type SettlePayload = {
   payments: Array<{ method: "cash" | "upi" | "card" | "online"; amountPaise: number; reference?: string }>;
 };
 
+function isHotkeyTypingTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  return Boolean(target.closest("input,select,textarea,button,a,[contenteditable='true'],[role='button']"));
+}
+
 export function BillingPanel({
   tableOrder,
   menuItems,
@@ -44,7 +49,7 @@ export function BillingPanel({
   tableOrder?: TableOrder | null;
   menuItems: MenuItem[];
   sentTotal: number;
-  generateBill: () => void;
+  generateBill: (adjustments: BillAdjustmentPayload) => void;
   generating: boolean;
   onSettled: () => Promise<void>;
   setNotice: NoticeSetter;
@@ -54,6 +59,7 @@ export function BillingPanel({
   const [discountType, setDiscountType] = useState<"amount" | "percent">("amount");
   const [discount, setDiscount] = useState("0");
   const [tip, setTip] = useState("0");
+  const [receivedAmount, setReceivedAmount] = useState("");
   const [reference, setReference] = useState("");
   const [payments, setPayments] = useState({ cash: "0", upi: "0", card: "0", online: "0" });
   const [revisionOpen, setRevisionOpen] = useState(false);
@@ -62,6 +68,7 @@ export function BillingPanel({
   const [revisionAddVariantId, setRevisionAddVariantId] = useState("");
   const [revisionSearch, setRevisionSearch] = useState("");
   const [pendingReprintApproval, setPendingReprintApproval] = useState<ManagerApproval | null>(null);
+  const [reprintApprovalOpen, setReprintApprovalOpen] = useState(false);
   const [pendingNcApproval, setPendingNcApproval] = useState<ManagerApproval | null>(null);
   const operationKeys = useOperationKeys();
   const pendingScopes = useRef<Record<string, unknown>>({});
@@ -71,16 +78,25 @@ export function BillingPanel({
   const revisionSearchItems = searchMenuItems(menuItems, revisionSearch);
   const revisionSearchItemIds = revisionSearchItems.map((item) => item.id).join("|");
   const existingPaid = bill?.paid_paise ?? (tableOrder?.payments ?? []).reduce((total, payment) => total + payment.amount_paise, 0);
-  const discountPaise = bill
-    ? discountType === "percent"
-      ? Math.round((bill.total_paise * Math.min(100, Number(discount || 0))) / 100)
-      : Math.round(Number(discount || 0) * 100)
-    : 0;
+  const billBaseTotal = bill?.total_paise ?? sentTotal;
+  const discountPaise = discountType === "percent"
+    ? Math.round((billBaseTotal * Math.min(100, Number(discount || 0))) / 100)
+    : Math.round(Number(discount || 0) * 100);
   const tipPaise = Math.round(Number(tip || 0) * 100);
-  const finalTotal = bill ? Math.max(0, bill.total_paise - discountPaise + tipPaise) : 0;
+  const finalTotal = Math.max(0, billBaseTotal - discountPaise + tipPaise);
   const newPaid = Object.values(payments).reduce((total, value) => total + Math.round(Number(value || 0) * 100), 0);
   const remaining = Math.max(0, finalTotal - existingPaid - newPaid);
   const overpaid = Math.max(0, existingPaid + newPaid - finalTotal);
+  const changeDuePaise = Math.max(0, Math.round(Number(receivedAmount || 0) * 100) - Math.max(0, finalTotal - existingPaid));
+
+  const billAdjustments = useCallback(
+    (): BillAdjustmentPayload => ({
+      discountType,
+      discountValue: discountType === "percent" ? Number(discount || 0) : discountPaise,
+      tipPaise
+    }),
+    [discountType, discount, discountPaise, tipPaise]
+  );
 
   const settle = useMutation({
     mutationFn: (payload: SettlePayload) => {
@@ -127,7 +143,7 @@ export function BillingPanel({
   const reprintBill = useMutation({
     mutationFn: (input: { approval: ManagerApproval; printerSlot: BillPrinterSlot }) => {
       if (!bill) throw new Error("Generate the bill first.");
-      const payload = { managerApproval: input.approval };
+      const payload = { managerApproval: input.approval, ...billAdjustments() };
       const scope = { billId: bill.id, payload, printerSlot: input.printerSlot };
       pendingScopes.current["bill-reprint"] = scope;
       return hubApi.reprintBill(bill.id, payload, operationKeys.keyFor("bill-reprint", scope), input.printerSlot);
@@ -138,10 +154,22 @@ export function BillingPanel({
     },
     onError: (error) => setNotice({ tone: "bad", text: messageOf(error) })
   });
+  const canRequestReprint = Boolean(bill && !reprintBill.isPending && !reprintApprovalOpen && !pendingReprintApproval && !pendingNcApproval);
+  const requestReprint = useCallback(async () => {
+    if (!canRequestReprint) return;
+    setReprintApprovalOpen(true);
+    const approval = await requestManagerApproval({
+      title: "Approve bill reprint",
+      defaultReason: "Bill reprint",
+      confirmLabel: reprintBill.isPending ? "Queueing..." : "Reprint bill"
+    }).catch(() => null);
+    setReprintApprovalOpen(false);
+    if (approval) setPendingReprintApproval(approval);
+  }, [canRequestReprint, reprintBill.isPending, requestManagerApproval]);
   const markNc = useMutation({
     mutationFn: (input: { approval: ManagerApproval; printerSlot: BillPrinterSlot }) => {
       if (!bill) throw new Error("Generate the bill first.");
-      const payload = { managerApproval: input.approval };
+      const payload = { managerApproval: input.approval, ...billAdjustments() };
       const scope = { billId: bill.id, payload, printerSlot: input.printerSlot };
       pendingScopes.current["bill-nc"] = scope;
       return hubApi.markBillNc(bill.id, payload, operationKeys.keyFor("bill-nc", scope), input.printerSlot);
@@ -197,6 +225,16 @@ export function BillingPanel({
     setPayments((current) => ({ ...current, [method]: String(rest / 100) }));
   }
 
+  function fillRemainingOnFocus(method: keyof typeof payments) {
+    if (Number(payments[method] || 0) > 0) return;
+    const otherTotal = (Object.entries(payments) as Array<[keyof typeof payments, string]>)
+      .filter(([key]) => key !== method)
+      .reduce((total, [, value]) => total + Math.round(Number(value || 0) * 100), 0);
+    if (otherTotal <= 0) return;
+    const rest = Math.max(0, finalTotal - existingPaid - otherTotal);
+    setPayments((current) => ({ ...current, [method]: String(rest / 100) }));
+  }
+
   const paymentEntries = (["cash", "upi", "card", "online"] as const)
     .map((method) => ({ method, paise: Math.round(Number(payments[method] || 0) * 100) }))
     .filter((entry) => entry.paise > 0);
@@ -212,6 +250,26 @@ export function BillingPanel({
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [canPunchBill, discountType, discountPaise, tipPaise, payments, reference, remaining, overpaid]);
+
+  useEffect(() => {
+    if (!canRequestReprint) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+      if (event.key !== "Enter") return;
+      if (isHotkeyTypingTarget(event.target)) return;
+      event.preventDefault();
+      void requestReprint();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [canRequestReprint, requestReprint]);
+
+  useEffect(() => {
+    if (!bill) return;
+    setDiscountType("amount");
+    setDiscount(String((bill.discount_paise ?? 0) / 100));
+    setTip(String((bill.tip_paise ?? 0) / 100));
+  }, [bill?.id]);
 
   function openRevisionEditor() {
     const rows = (tableOrder?.items ?? [])
@@ -286,14 +344,41 @@ export function BillingPanel({
     return <EmptyState title="No active order" description="Add dishes and send them before generating a bill." />;
   }
 
+  const adjustmentControls = (
+    <section className="bill-adjustments">
+      <div className="mini-title">
+        <strong>Bill adjustments</strong>
+        <span>Discount {formatInr(discountPaise)} · tip {formatInr(tipPaise)}</span>
+      </div>
+      <div className="adjust-grid">
+        <label>
+          Discount
+          <span className="split-input">
+            <select value={discountType} onChange={(event) => setDiscountType(event.target.value as "amount" | "percent")}>
+              <option value="amount">Rs</option>
+              <option value="percent">%</option>
+            </select>
+            <input aria-label="Discount amount" value={discount} onChange={(event) => setDiscount(event.target.value)} inputMode="decimal" />
+          </span>
+        </label>
+        <label>
+          Tip
+          <input aria-label="Tip amount" value={tip} onChange={(event) => setTip(event.target.value)} inputMode="decimal" />
+        </label>
+      </div>
+    </section>
+  );
+
   if (!bill) {
     return (
-      <div className="bill-start">
-        <div>
-          <span>Current table total</span>
-          <strong>{formatInr(sentTotal)}</strong>
+      <div className="bill-start bill-start-with-adjustments">
+        <div className="bill-metrics">
+          <Metric label="Current table total" value={formatInr(sentTotal)} />
+          <Metric label="Discount" value={formatInr(discountPaise)} />
+          <Metric label="Final bill" value={formatInr(finalTotal)} />
         </div>
-        <button type="button" disabled={sentTotal <= 0 || generating} onClick={generateBill}>
+        {adjustmentControls}
+        <button type="button" disabled={sentTotal <= 0 || generating} onClick={() => generateBill(billAdjustments())}>
           {generating ? "Generating..." : "Generate bill"}
         </button>
       </div>
@@ -308,39 +393,43 @@ export function BillingPanel({
         <Metric label="Balance" value={formatInr(Math.max(0, finalTotal - existingPaid))} />
       </div>
       {bill.revision_number ? <p className="text-sm text-muted">Bill revision {bill.revision_number}{bill.is_nc ? ` · NC: ${bill.nc_reason ?? ""}` : ""}</p> : null}
-      <div className="adjust-grid">
-        <label>
-          Discount
-          <span className="split-input">
-            <select value={discountType} onChange={(event) => setDiscountType(event.target.value as "amount" | "percent")}>
-              <option value="amount">Rs</option>
-              <option value="percent">%</option>
-            </select>
-            <input value={discount} onChange={(event) => setDiscount(event.target.value)} inputMode="decimal" />
-          </span>
-        </label>
-        <label>
-          Tip
-          <input value={tip} onChange={(event) => setTip(event.target.value)} inputMode="decimal" />
-        </label>
-      </div>
-      <div className="quick-pay">
-        <button type="button" onClick={() => fillFull("cash")}>Full cash</button>
-        <button type="button" onClick={() => fillFull("upi")}>Full UPI</button>
-        <button type="button" onClick={() => fillFull("card")}>Full card</button>
-        <button type="button" onClick={() => fillFull("online")}>Full online</button>
-      </div>
-      <div className="payment-grid">
-        {(["cash", "upi", "card", "online"] as const).map((method) => (
-          <label key={method}>
-            {method.toUpperCase()}
-            <span className="payment-input-row">
-              <input value={payments[method]} onChange={(event) => setPayments((current) => ({ ...current, [method]: event.target.value }))} inputMode="decimal" />
-              <button type="button" className="fill-rest-btn" onClick={() => fillRemaining(method)} disabled={remaining <= 0} aria-label={`Fill remaining into ${method}`}>Rest</button>
-            </span>
+      {adjustmentControls}
+      <section className="bill-payment-section">
+        <div className="mini-title">
+          <strong>Payment</strong>
+          <span>{formatInr(remaining)} left</span>
+        </div>
+        <div className="quick-pay">
+          <button type="button" onClick={() => fillFull("cash")}>Full cash</button>
+          <button type="button" onClick={() => fillFull("upi")}>Full UPI</button>
+          <button type="button" onClick={() => fillFull("card")}>Full card</button>
+          <button type="button" onClick={() => fillFull("online")}>Full online</button>
+        </div>
+        <div className="payment-grid">
+          {(["cash", "upi", "card", "online"] as const).map((method) => (
+            <label key={method}>
+              {method.toUpperCase()}
+              <span className="payment-input-row">
+                <input value={payments[method]} onFocus={() => fillRemainingOnFocus(method)} onChange={(event) => setPayments((current) => ({ ...current, [method]: event.target.value }))} inputMode="decimal" />
+                <button type="button" className="fill-rest-btn" onClick={() => fillRemaining(method)} disabled={remaining <= 0} aria-label={`Fill remaining into ${method}`}>Rest</button>
+              </span>
+            </label>
+          ))}
+        </div>
+      </section>
+      <section className={`change-helper ${changeDuePaise > 0 ? "good" : ""}`}>
+        <div className="mini-title">
+          <strong>Change</strong>
+          <span>Balance {formatInr(Math.max(0, finalTotal - existingPaid))}</span>
+        </div>
+        <div className="change-helper-row">
+          <label>
+            Received amount
+            <input aria-label="Received amount" value={receivedAmount} onChange={(event) => setReceivedAmount(event.target.value)} inputMode="decimal" placeholder="0" />
           </label>
-        ))}
-      </div>
+          <strong>{`Return ${formatInr(changeDuePaise)}`}</strong>
+        </div>
+      </section>
       <label>
         Payment note
         <input value={reference} onChange={(event) => setReference(event.target.value)} placeholder="UPI ref, card slip, or captain note" />
@@ -355,21 +444,15 @@ export function BillingPanel({
         <kbd>F8</kbd>
       </button>
       {overpaid > 0 ? <p className="text-sm text-muted">Payment is {formatInr(overpaid)} more than the balance.</p> : null}
-      <div className="flex flex-wrap gap-2">
+      <div className="reprint-action-row">
         <button
           type="button"
-          className="secondary-button"
-          disabled={reprintBill.isPending}
-          onClick={async () => {
-            const approval = await requestManagerApproval({
-              title: "Approve bill reprint",
-              defaultReason: "Bill reprint",
-              confirmLabel: reprintBill.isPending ? "Queueing..." : "Reprint bill"
-            }).catch(() => null);
-            if (approval) setPendingReprintApproval(approval);
-          }}
+          className="secondary-button reprint-bill-button"
+          disabled={!canRequestReprint}
+          onClick={() => { void requestReprint(); }}
         >
-          {reprintBill.isPending ? "Queueing..." : "Reprint bill"}
+          <span>{reprintBill.isPending ? "Queueing..." : "Reprint bill"}</span>
+          <kbd>Enter</kbd>
         </button>
       </div>
       {!revisionOpen ? (

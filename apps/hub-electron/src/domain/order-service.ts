@@ -1,5 +1,6 @@
 import {
   type AdjustAlcoholStockInput,
+  type BillAdjustmentInput,
   type BillPrinterSlot,
   type BulkDeleteAlcoholItemsInput,
   type BulkDeleteMenuItemsInput,
@@ -634,6 +635,7 @@ export class OrderService {
   reprintBill(billId: string, input: ReprintBillInput): { printJobId: string } {
     const run = this.db.transaction(() => {
       this.verifyManagerApproval(input.managerApproval, "bill.reprint", "bill", billId, input.requestedBy);
+      this.applyBillAdjustments(billId, input, input.requestedBy, "pending_only");
       const printJobId = this.enqueueBillReprint(billId, input.requestedBy, `REPRINT\nReason: ${input.reason}\nRequested by: ${input.requestedBy}\n`, input.printerSlot ?? "default");
 
       this.appendEvent("bill.reprinted", "bill", billId, { ...input, printJobId });
@@ -927,7 +929,7 @@ export class OrderService {
     return layout;
   }
 
-  generateBill(orderId: string, printerSlot: BillPrinterSlot = "default"): { billId: string; billNumber: number; totalPaise: number; printJobId: string } {
+  generateBill(orderId: string, printerSlot: BillPrinterSlot = "default", input: BillAdjustmentInput = {}): { billId: string; billNumber: number; totalPaise: number; finalTotalPaise: number; printJobId: string } {
     const run = this.db.transaction(() => {
       const order = this.requireEditableOrder(orderId);
       const table = this.requireTable(order.table_id);
@@ -935,6 +937,9 @@ export class OrderService {
       if (items.length === 0) throw new DomainError("Cannot bill an empty order");
 
       const totals = this.calculateBillTotals(items);
+      const discountPaise = input.discountValue === undefined ? 0 : this.calculateDiscountPaise(totals.totalPaise, input);
+      const tipPaise = input.tipPaise ?? 0;
+      const finalTotalPaise = Math.max(0, totals.totalPaise - discountPaise + tipPaise);
       const billId = makeId("bill");
       const billNumber = this.nextBillNumber();
       const now = new Date().toISOString();
@@ -949,9 +954,9 @@ export class OrderService {
           subtotalPaise: totals.subtotalPaise,
           taxPaise: totals.taxPaise,
           totalPaise: totals.totalPaise,
-          discountPaise: 0,
-          tipPaise: 0,
-          finalTotalPaise: totals.totalPaise,
+          discountPaise,
+          tipPaise,
+          finalTotalPaise,
           taxBreakdownJson: JSON.stringify(totals.taxBreakdown),
           revisionNumber: 1,
           createdAt: now
@@ -960,7 +965,11 @@ export class OrderService {
 
       this.orm.update(orders).set({ status: "billed", updatedAt: now }).where(eq(orders.id, orderId)).run();
       this.orm.update(restaurantTables).set({ status: "billed" }).where(eq(restaurantTables.id, table.id)).run();
-      this.recordBillRevision(billId, 1, totals, "Initial bill", "captain", now);
+      this.recordBillRevision(billId, 1, totals, "Initial bill", "captain", now, {
+        discountPaise,
+        tipPaise,
+        finalTotalPaise
+      });
       const bill = this.getBillById(billId);
       if (!bill) throw new DomainError("Bill not found after generation", 500);
       const printJobId = this.enqueuePrintJob({
@@ -972,8 +981,8 @@ export class OrderService {
       });
       this.orm.update(bills).set({ printCount: sql`${bills.printCount} + 1` }).where(eq(bills.id, billId)).run();
 
-      this.appendEvent("bill.generated", "bill", billId, { orderId, billNumber, totalPaise: totals.totalPaise, taxBreakdown: totals.taxBreakdown, printJobId });
-      return { billId, billNumber, totalPaise: totals.totalPaise, printJobId };
+      this.appendEvent("bill.generated", "bill", billId, { orderId, billNumber, totalPaise: totals.totalPaise, discountPaise, tipPaise, finalTotalPaise, taxBreakdown: totals.taxBreakdown, printJobId });
+      return { billId, billNumber, totalPaise: totals.totalPaise, finalTotalPaise, printJobId };
     });
 
     return run();
@@ -2370,7 +2379,9 @@ export class OrderService {
       const activeItems = this.getOrderItems(order.id).filter((item) => item.quantity > 0 && item.status !== "cancelled");
       if (activeItems.length === 0) throw new DomainError("History bill edit needs at least one item");
       const totals = this.calculateBillTotals(activeItems);
-      const finalTotalPaise = Math.max(0, totals.totalPaise - bill.discount_paise + bill.tip_paise);
+      const discountPaise = input.discountValue === undefined ? bill.discount_paise : this.calculateDiscountPaise(totals.totalPaise, input);
+      const tipPaise = input.tipPaise === undefined ? bill.tip_paise : input.tipPaise;
+      const finalTotalPaise = Math.max(0, totals.totalPaise - discountPaise + tipPaise);
       const revisionNumber = (bill.revision_number ?? 1) + 1;
       if (bill.status === "paid" || bill.is_nc) {
         this.applyAlcoholUsageDeltaForHistoryEdit(billId, previousAlcoholUsage, this.calculateAlcoholUsageForItems(activeItems));
@@ -2382,6 +2393,8 @@ export class OrderService {
           subtotalPaise: totals.subtotalPaise,
           taxPaise: totals.taxPaise,
           totalPaise: totals.totalPaise,
+          discountPaise,
+          tipPaise,
           finalTotalPaise,
           taxBreakdownJson: JSON.stringify(totals.taxBreakdown),
           revisionNumber
@@ -2389,10 +2402,10 @@ export class OrderService {
         .where(eq(bills.id, billId))
         .run();
 
-      this.syncPaidBillPaymentToFinalTotal(billId, finalTotalPaise, input.masterApproval.approvedBy, now);
+      this.replaceHistoryEditPayments(bill, input.payments, finalTotalPaise, input.masterApproval.approvedBy, now);
       this.recordBillRevision(billId, revisionNumber, totals, input.masterApproval.reason, input.masterApproval.approvedBy, now, {
-        discountPaise: bill.discount_paise,
-        tipPaise: bill.tip_paise,
+        discountPaise,
+        tipPaise,
         finalTotalPaise
       });
 
@@ -2421,6 +2434,9 @@ export class OrderService {
       if (bill.status !== "pending") throw new DomainError("Only unpaid bills can be marked NC");
       const existingPaid = this.getBillPaidPaise(billId);
       if (existingPaid > 0) throw new DomainError("Remove or reverse recorded payments before marking this bill NC");
+      this.applyBillAdjustments(billId, input, input.managerApproval.approvedBy);
+      const adjustedBill = this.getBillById(billId);
+      if (!adjustedBill) throw new DomainError("Bill not found after adjustment", 500);
       const order = this.requireOrderById(bill.order_id);
       const table = this.requireTable(order.table_id);
       const now = new Date().toISOString();
@@ -2448,7 +2464,7 @@ export class OrderService {
         ...this.resolveBillPrinter(input.printerSlot ?? "default"),
         payload: renderBillTicketForPrint(
           this.buildBillTicket({
-            bill,
+            bill: adjustedBill,
             tableName: table.name,
             createdAt: now,
             ncReason: input.managerApproval.reason
@@ -5086,6 +5102,48 @@ export class OrderService {
     }
   }
 
+  private replaceHistoryEditPayments(
+    bill: BillRow,
+    requestedPayments: HistoryEditBillInput["payments"],
+    finalTotalPaise: number,
+    receivedBy: string,
+    now: string
+  ): void {
+    const billId = bill.id;
+    if (bill.is_nc) {
+      if (requestedPayments?.some((payment) => payment.amountPaise > 0)) {
+        throw new DomainError("NC bills cannot record collected payments");
+      }
+      this.orm.delete(payments).where(eq(payments.billId, billId)).run();
+      return;
+    }
+    if (bill.status !== "paid") return;
+    if (!requestedPayments) {
+      throw new DomainError("History edit payments must exactly match the edited bill total");
+    }
+    const normalizedPayments = requestedPayments.filter((payment) => payment.amountPaise > 0);
+    if (requestedPayments.some((payment) => payment.amountPaise < 0)) {
+      throw new DomainError("Payment amount cannot be negative");
+    }
+    const paymentTotalPaise = normalizedPayments.reduce((total, payment) => total + payment.amountPaise, 0);
+    if (paymentTotalPaise !== finalTotalPaise) {
+      throw new DomainError("History edit payments must exactly match the edited bill total");
+    }
+    this.orm.delete(payments).where(eq(payments.billId, billId)).run();
+    for (const payment of normalizedPayments) {
+      this.orm.insert(payments).values({
+        id: makeId("pay"),
+        billId,
+        method: payment.method ?? "cash",
+        amountPaise: payment.amountPaise,
+        receivedBy,
+        reference: payment.reference ?? null,
+        note: payment.note ?? "Owner history edit",
+        createdAt: now
+      }).run();
+    }
+  }
+
   private deleteLocalBillRecord(billId: string): void {
     this.orm.delete(payments).where(eq(payments.billId, billId)).run();
     this.orm.delete(billRevisions).where(eq(billRevisions.billId, billId)).run();
@@ -5124,7 +5182,29 @@ export class OrderService {
     run();
   }
 
-  private calculateDiscountPaise(totalPaise: number, input: SettleBillInput): number {
+  private applyBillAdjustments(billId: string, input: BillAdjustmentInput, requestedBy: string, mode: "any" | "pending_only" = "any"): void {
+    if (input.discountValue === undefined && input.tipPaise === undefined) return;
+    const bill = this.getBillById(billId);
+    if (!bill) throw new DomainError("Bill not found", 404);
+    if (mode === "pending_only" && bill.status !== "pending") {
+      throw new DomainError("Paid bill discounts can only be changed from Order History with Master PIN");
+    }
+    const now = new Date().toISOString();
+    const discountPaise = input.discountValue === undefined ? bill.discount_paise : this.calculateDiscountPaise(bill.total_paise, input);
+    const tipPaise = input.tipPaise === undefined ? bill.tip_paise : input.tipPaise;
+    const finalTotalPaise = Math.max(0, bill.total_paise - discountPaise + tipPaise);
+    if (this.getBillPaidPaise(billId) > finalTotalPaise) {
+      throw new DomainError("Recorded payments exceed adjusted bill total");
+    }
+    this.orm
+      .update(bills)
+      .set({ discountPaise, tipPaise, finalTotalPaise })
+      .where(eq(bills.id, billId))
+      .run();
+    this.syncPaidBillPaymentToFinalTotal(billId, finalTotalPaise, requestedBy, now);
+  }
+
+  private calculateDiscountPaise(totalPaise: number, input: BillAdjustmentInput): number {
     if (input.discountType === "percent") {
       const percent = Math.min(100, input.discountValue ?? 0);
       return Math.round((totalPaise * percent) / 100);

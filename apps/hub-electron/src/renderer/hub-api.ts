@@ -261,6 +261,12 @@ export interface MasterApprovalPayload {
   masterApproval: { pin: string; reason: string; approvedBy: string };
 }
 
+export type BillAdjustmentPayload = {
+  discountType?: "amount" | "percent";
+  discountValue?: number;
+  tipPaise?: number;
+};
+
 export interface OrderItem {
   id: string;
   order_id: string;
@@ -690,12 +696,12 @@ export const hubApi = {
 	      idempotencyKey,
 	      body: JSON.stringify(payload)
 	    }),
-	  generateBill: (orderId: string, idempotencyKey?: string, printerSlot: BillPrinterSlot = "default") =>
-	    apiFetch<{ billId: string; billNumber: number; totalPaise: number; printJobId: string; processed?: PrintProcessSummary }>(`/bills/${orderId}/generate`, {
+	  generateBill: (orderId: string, idempotencyKey?: string, printerSlot: BillPrinterSlot = "default", adjustments: BillAdjustmentPayload = {}) =>
+	    apiFetch<{ billId: string; billNumber: number; totalPaise: number; finalTotalPaise: number; printJobId: string; processed?: PrintProcessSummary }>(`/bills/${orderId}/generate`, {
         method: "POST",
         idempotent: "bill-generate",
         idempotencyKey,
-        body: JSON.stringify({ printerSlot })
+        body: JSON.stringify({ printerSlot, ...adjustments })
       }),
   settleBill: (
     billId: string,
@@ -731,17 +737,18 @@ export const hubApi = {
       idempotencyKey,
       body: JSON.stringify(payload)
     }),
-  reprintBill: (billId: string, payload: ManagerApprovalPayload, idempotencyKey?: string, printerSlot: BillPrinterSlot = "default") =>
+  reprintBill: (billId: string, payload: ManagerApprovalPayload & BillAdjustmentPayload, idempotencyKey?: string, printerSlot: BillPrinterSlot = "default") =>
     apiFetch<{ printJobId: string; processed?: PrintProcessSummary }>(`/bills/${billId}/reprint`, { method: "POST", idempotent: "bill-reprint", idempotencyKey, body: JSON.stringify({ reason: payload.managerApproval.reason, ...payload, printerSlot }) }),
   historyReprintBill: (billId: string, idempotencyKey?: string, printerSlot: BillPrinterSlot = "default") =>
     apiFetch<{ printJobId: string; processed?: PrintProcessSummary }>(`/bills/${billId}/history-reprint`, { method: "POST", idempotent: "bill-history-reprint", idempotencyKey, body: JSON.stringify({ printerSlot }) }),
   historyEditBill: (
     billId: string,
-    payload: MasterApprovalPayload & {
+    payload: MasterApprovalPayload & BillAdjustmentPayload & {
       items: Array<
         | { orderItemId?: string; menuItemId: string; menuItemVariantId?: string; quantity: number }
         | { orderItemId?: string; openName: string; openPricePaise: number; saleGroupId: string; productionUnitId?: string | null; quantity: number }
       >;
+      payments?: Array<{ method: "cash" | "upi" | "card" | "online"; amountPaise: number; reference?: string }>;
     },
     idempotencyKey?: string,
     printerSlot: BillPrinterSlot = "default"
@@ -752,7 +759,7 @@ export const hubApi = {
       idempotencyKey,
       body: JSON.stringify({ ...payload, printerSlot })
     }),
-  markBillNc: (billId: string, payload: ManagerApprovalPayload, idempotencyKey?: string, printerSlot: BillPrinterSlot = "default") =>
+  markBillNc: (billId: string, payload: ManagerApprovalPayload & BillAdjustmentPayload, idempotencyKey?: string, printerSlot: BillPrinterSlot = "default") =>
     apiFetch<{ printJobId: string; processed?: PrintProcessSummary }>(`/bills/${billId}/nc`, { method: "POST", idempotent: "bill-nc", idempotencyKey, body: JSON.stringify({ ...payload, printerSlot }) }),
   cancelOrder: (orderId: string, payload: ManagerApprovalPayload) =>
     apiFetch<{ orderId: string; kotIds?: string[]; printJobIds?: string[]; processed?: PrintProcessSummary }>(`/orders/${orderId}/cancel`, {

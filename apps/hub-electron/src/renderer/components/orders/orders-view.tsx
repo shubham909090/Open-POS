@@ -18,6 +18,7 @@ export function OrdersView({ bootstrap, setNotice, requestManagerApproval }: { b
   const search = useHubStore((state) => state.menuSearch);
   const setSearch = useHubStore((state) => state.setMenuSearch);
   const addDraftItem = useHubStore((state) => state.addDraftItem);
+  const drafts = useHubStore((state) => state.drafts);
   const [saleGroupFilter, setSaleGroupFilter] = useState<SaleGroupKind | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [nowMs, setNowMs] = useState(() => Date.now());
@@ -88,22 +89,29 @@ export function OrdersView({ bootstrap, setNotice, requestManagerApproval }: { b
                 <div className="table-list">
                   {floorTables.map((table) => {
                     const displayState = getTableDisplayState(table);
+                    const tableDraft = Object.values(drafts[table.id] ?? {});
+                    const draftQuantity = tableDraft.reduce((total, item) => total + item.quantity, 0);
+                    const draftTotal = tableDraft.reduce((total, item) => total + item.pricePaise * item.quantity, 0);
+                    const hasLocalDraftWarning = displayState === "free" && draftQuantity > 0;
                     const isLiveTable = table.current_order_id && displayState !== "free";
                     const duration = formatTableDuration(table, nowMs);
+                    const tileClass = [
+                      "table-tile",
+                      hasLocalDraftWarning ? "draft-warning" : tableDisplayClass(displayState),
+                      table.id === selectedTable?.id ? "active" : ""
+                    ].filter(Boolean).join(" ");
                     return (
                       <article
                         key={table.id}
-                        className={
-                          table.id === selectedTable?.id
-                            ? `table-tile ${tableDisplayClass(displayState)} active`
-                            : `table-tile ${tableDisplayClass(displayState)}`
-                        }
+                        className={tileClass}
                       >
                         <button type="button" className="table-tile-main" onClick={() => openTablePanel(table.id, "new")}>
                           <span className="table-tile-topline">
                             <span className="table-tile-heading">
                               <strong>{table.name}</strong>
-                              <span>{tableDisplayLabel(displayState)}</span>
+                              <span>
+                                {hasLocalDraftWarning ? `Draft ${draftQuantity} ${draftQuantity === 1 ? "item" : "items"}` : tableDisplayLabel(displayState)}
+                              </span>
                             </span>
                             {duration ? (
                               <span className="table-tile-duration" aria-label={`${table.name} open for ${duration}`}>
@@ -113,6 +121,7 @@ export function OrdersView({ bootstrap, setNotice, requestManagerApproval }: { b
                             ) : null}
                           </span>
                           {isLiveTable ? <b className="table-tile-total">{formatInr(table.current_order_total_paise)}</b> : null}
+                          {hasLocalDraftWarning ? <b className="table-tile-total">{formatInr(draftTotal)}</b> : null}
                         </button>
                         {isLiveTable ? (
                           <div className="table-tile-actions" aria-label={`${table.name} shortcuts`}>
