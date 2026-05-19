@@ -12,9 +12,11 @@ const mocks = vi.hoisted(() => ({
   registerUpdateBaselineMock: vi.fn(),
   registerInstallerBaselineMock: vi.fn(),
   installUpdateMock: vi.fn(),
+  githubUpdateLatestMock: vi.fn(),
+  installGithubUpdateMock: vi.fn(),
   rollbackUpdateMock: vi.fn()
 }));
-const { updateStatusMock, validateUpdatePackageMock, registerUpdateBaselineMock, registerInstallerBaselineMock, installUpdateMock, rollbackUpdateMock } = mocks;
+const { updateStatusMock, validateUpdatePackageMock, registerUpdateBaselineMock, registerInstallerBaselineMock, installUpdateMock, githubUpdateLatestMock, installGithubUpdateMock, rollbackUpdateMock } = mocks;
 
 vi.mock("../renderer/hub-api.js", () => ({
   hubApi: {
@@ -23,6 +25,8 @@ vi.mock("../renderer/hub-api.js", () => ({
     registerUpdateBaseline: registerUpdateBaselineMock,
     registerInstallerBaseline: registerInstallerBaselineMock,
     installUpdate: installUpdateMock,
+    githubUpdateLatest: githubUpdateLatestMock,
+    installGithubUpdate: installGithubUpdateMock,
     rollbackUpdate: rollbackUpdateMock
   }
 }));
@@ -193,6 +197,50 @@ describe("AppUpdatePanel", () => {
     expect(requestManagerApproval).not.toHaveBeenCalled();
     expect(installUpdateMock).not.toHaveBeenCalled();
   });
+
+  it("checks GitHub releases and installs an available update with Manager PIN", async () => {
+    updateStatusMock.mockResolvedValue(updateStatus({ baselineRegistered: true }));
+    githubUpdateLatestMock.mockResolvedValue(githubUpdate({ status: "update_available" }));
+    installGithubUpdateMock.mockResolvedValue({
+      installing: true,
+      backup: { fileName: "pre-update.sqlite" },
+      package: {},
+      recoveryScriptPath: "recovery.cmd"
+    });
+    const requestManagerApproval = vi.fn().mockResolvedValue({ pin: "1234", reason: "Install GitHub update", approvedBy: "admin" });
+
+    const { AppUpdatePanel } = await import("../renderer/components/advanced/advanced-view.js");
+    renderAppUpdatePanel(AppUpdatePanel, { requestManagerApproval });
+
+    expect(await screen.findByText("App 0.1.0 · DB 10")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Check GitHub for update" }));
+
+    expect(await screen.findByText("GitHub update available: 0.2.0")).toBeTruthy();
+    expect(screen.getByText("Gaurav POS Hub-0.2.0.gpos-update.zip · 2 MB")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Install GitHub update" }));
+
+    await waitFor(() => expect(requestManagerApproval).toHaveBeenCalledWith(expect.objectContaining({ title: "Install GitHub update" })));
+    await waitFor(() => expect(installGithubUpdateMock).toHaveBeenCalledWith({
+      tagName: "hub-v0.2.0",
+      assetName: "Gaurav POS Hub-0.2.0.gpos-update.zip",
+      expectedVersion: "0.2.0"
+    }, "1234"));
+  });
+
+  it("shows exact GitHub update errors", async () => {
+    updateStatusMock.mockResolvedValue(updateStatus({ baselineRegistered: true }));
+    githubUpdateLatestMock.mockRejectedValue(new Error("GitHub unreachable"));
+    const setNotice = vi.fn();
+
+    const { AppUpdatePanel } = await import("../renderer/components/advanced/advanced-view.js");
+    renderAppUpdatePanel(AppUpdatePanel, { setNotice });
+
+    expect(await screen.findByText("App 0.1.0 · DB 10")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Check GitHub for update" }));
+
+    await waitFor(() => expect(setNotice).toHaveBeenCalledWith({ tone: "bad", text: "GitHub unreachable" }));
+  });
 });
 
 function renderAppUpdatePanel(
@@ -230,5 +278,30 @@ function updateStatus(overrides: { baselineRegistered: boolean; activeOrderCount
     rollbackAvailable: false,
     current: overrides.baselineRegistered ? { version: "0.1.0" } : undefined,
     previous: undefined
+  };
+}
+
+function githubUpdate(overrides: { status: "up_to_date" | "update_available" | "unavailable" }) {
+  return {
+    status: overrides.status,
+    currentVersion: "0.1.0",
+    latestVersion: overrides.status === "update_available" ? "0.2.0" : "0.1.0",
+    release: {
+      tagName: "hub-v0.2.0",
+      title: "Hub 0.2.0",
+      url: "https://github.com/shubham909090/Open-POS/releases/tag/hub-v0.2.0",
+      publishedAt: "2026-05-20T00:00:00Z",
+      notes: "Release notes"
+    },
+    asset: {
+      name: "Gaurav POS Hub-0.2.0.gpos-update.zip",
+      sizeBytes: 2 * 1024 * 1024,
+      downloadUrl: "https://github.com/download"
+    },
+    installRequest: {
+      tagName: "hub-v0.2.0",
+      assetName: "Gaurav POS Hub-0.2.0.gpos-update.zip",
+      expectedVersion: "0.2.0"
+    }
   };
 }

@@ -1,6 +1,6 @@
 {
   "name": "@gaurav-pos/hub-electron",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Offline-first restaurant POS hub for Windows.",
   "author": "Gaurav POS",
   "private": true,
@@ -15,6 +15,7 @@
     "db:studio": "drizzle-kit studio",
     "package:win": "pnpm build && electron-builder --win nsis --x64",
     "package:update": "tsx scripts/create-update-package.ts",
+    "release:github": "tsx scripts/publish-github-release.ts",
     "package:dir": "pnpm build && electron-builder --dir",
     "lint": "pnpm --filter @gaurav-pos/shared build && tsc --noEmit",
     "perf:load": "pnpm --filter @gaurav-pos/shared build && tsx scripts/hub-load-probe.ts",

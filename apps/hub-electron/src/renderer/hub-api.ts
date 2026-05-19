@@ -70,6 +70,32 @@ export interface ValidatedUpdatePackage {
   manifest: UpdatePackageManifest;
 }
 
+export interface GithubUpdateCheckResult {
+  status: "up_to_date" | "update_available" | "unavailable";
+  currentVersion: string;
+  latestVersion?: string;
+  message?: string;
+  release?: {
+    tagName: string;
+    title: string;
+    url: string;
+    publishedAt?: string;
+    notes: string;
+  };
+  asset?: {
+    name: string;
+    sizeBytes: number;
+    downloadUrl: string;
+  };
+  installRequest?: GithubUpdateInstallRequest;
+}
+
+export interface GithubUpdateInstallRequest {
+  tagName: string;
+  assetName: string;
+  expectedVersion: string;
+}
+
 export interface PosDay {
   id: string;
   business_date: string;
@@ -586,6 +612,7 @@ export const hubApi = {
   scheduleRestore: (fileName: string) =>
     apiFetch<{ scheduled: true; restartRequired: true; backup: BackupSummary }>("/backups/restore", { method: "POST", body: JSON.stringify({ fileName }) }),
   updateStatus: () => apiFetch<AppUpdateStatus>("/system/update/status"),
+  githubUpdateLatest: () => apiFetch<GithubUpdateCheckResult>("/system/update/github/latest"),
   validateUpdatePackage: (packagePath: string) =>
     apiFetch<ValidatedUpdatePackage>("/system/update/validate", { method: "POST", body: JSON.stringify({ packagePath }) }),
   registerUpdateBaseline: (packagePath: string) =>
@@ -597,6 +624,12 @@ export const hubApi = {
       method: "POST",
       headers: { "x-manager-pin": managerPin },
       body: JSON.stringify({ packagePath })
+    }),
+  installGithubUpdate: (request: GithubUpdateInstallRequest, managerPin: string) =>
+    apiFetch<{ installing: true; backup: BackupSummary; package: CachedUpdatePackage; recoveryScriptPath: string }>("/system/update/github/install", {
+      method: "POST",
+      headers: { "x-manager-pin": managerPin },
+      body: JSON.stringify(request)
     }),
   rollbackUpdate: (managerPin: string) =>
     apiFetch<{ rollingBack: true; package: CachedUpdatePackage }>("/system/update/rollback", {

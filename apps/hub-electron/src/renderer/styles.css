@@ -571,14 +571,58 @@
     @apply border-danger bg-danger-soft;
   }
 
+  .github-update-card {
+    @apply border-blue bg-blue-soft;
+  }
+
   .update-action-card > strong {
     @apply text-sm font-black uppercase tracking-normal text-ink;
+  }
+
+  .github-update-result {
+    @apply grid gap-1 rounded-lg border border-line bg-white p-3 text-sm font-semibold text-muted;
+  }
+
+  .github-update-result strong {
+    @apply text-base font-black text-ink;
+  }
+
+  .github-update-result a {
+    @apply font-black text-blue underline underline-offset-2;
+  }
+
+  .github-update-result p {
+    @apply m-0 leading-5;
+  }
+
+  .github-release-notes {
+    @apply max-h-32 overflow-auto rounded-md border border-line bg-white px-3 py-2;
+    white-space: pre-wrap;
+  }
+
+  .github-update-result.update_available {
+    @apply border-accent bg-accent-soft;
+  }
+
+  .github-update-result.unavailable {
+    @apply border-warning bg-warning-soft;
   }
 
   .update-action-row .utility-action,
   .update-action-row .primary-button,
   .update-action-row .danger-button {
     @apply min-h-11 min-w-0 flex-1 px-3;
+  }
+
+  @media (max-width: 980px) {
+    .update-package-card,
+    .update-action-groups {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .update-picker-actions {
+      @apply justify-start;
+    }
   }
 
   .table-list {

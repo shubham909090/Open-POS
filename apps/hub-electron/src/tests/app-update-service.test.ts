@@ -1,5 +1,5 @@
 import AdmZip from "adm-zip";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
@@ -126,6 +126,97 @@ describe("AppUpdateService", () => {
 
     fixture.close();
   });
+
+  it("finds a newer stable GitHub release update and ignores drafts/prereleases", async () => {
+    const fixture = createFixture();
+    const packagePath = writePackage(fixture.root, "0.2.0");
+    const fetch = createGithubFetch({
+      releases: [
+        releaseFixture({ tagName: "hub-v0.3.0", prerelease: true, assetName: "Gaurav POS Hub-0.3.0.gpos-update.zip", bytes: readFileSync(packagePath) }),
+        releaseFixture({ tagName: "hub-v0.2.0", assetName: "Gaurav POS Hub-0.2.0.gpos-update.zip", bytes: readFileSync(packagePath) })
+      ]
+    });
+    const service = createService(fixture, { githubFetch: fetch });
+
+    const result = await service.checkGithubLatest();
+
+    expect(result.status).toBe("update_available");
+    expect(result.latestVersion).toBe("0.2.0");
+    expect(result.release?.tagName).toBe("hub-v0.2.0");
+    expect(result.asset?.name).toBe("Gaurav POS Hub-0.2.0.gpos-update.zip");
+    expect(result.installRequest).toEqual({
+      tagName: "hub-v0.2.0",
+      assetName: "Gaurav POS Hub-0.2.0.gpos-update.zip",
+      expectedVersion: "0.2.0"
+    });
+
+    fixture.close();
+  });
+
+  it("returns up to date when the latest GitHub package is not newer", async () => {
+    const fixture = createFixture();
+    const packagePath = writePackage(fixture.root, "0.1.0");
+    const service = createService(fixture, {
+      githubFetch: createGithubFetch({
+        releases: [releaseFixture({ tagName: "hub-v0.1.0", assetName: "Gaurav POS Hub-0.1.0.gpos-update.zip", bytes: readFileSync(packagePath) })]
+      })
+    });
+
+    const result = await service.checkGithubLatest();
+
+    expect(result.status).toBe("up_to_date");
+    expect(result.latestVersion).toBe("0.1.0");
+
+    fixture.close();
+  });
+
+  it("downloads, validates, backs up, and launches a GitHub update install", async () => {
+    const fixture = createFixture();
+    const launchInstaller = vi.fn();
+    const packagePath = writePackage(fixture.root, "0.2.0");
+    const service = createService(fixture, {
+      launchInstaller,
+      githubFetch: createGithubFetch({
+        releases: [releaseFixture({ tagName: "hub-v0.2.0", assetName: "Gaurav POS Hub-0.2.0.gpos-update.zip", bytes: readFileSync(packagePath) })]
+      })
+    });
+    service.registerBaseline(writePackage(fixture.root, "0.1.0"));
+
+    const result = await service.installGithubUpdate({
+      tagName: "hub-v0.2.0",
+      assetName: "Gaurav POS Hub-0.2.0.gpos-update.zip",
+      expectedVersion: "0.2.0"
+    });
+
+    expect(existsSync(result.backup.path)).toBe(true);
+    expect(launchInstaller).toHaveBeenCalledWith(expect.stringContaining("Gaurav POS Hub Setup 0.2.0.exe"));
+    expect(service.status().rollbackAvailable).toBe(true);
+
+    fixture.close();
+  });
+
+  it("fails a bad GitHub package before creating a backup or launching installer", async () => {
+    const fixture = createFixture();
+    const launchInstaller = vi.fn();
+    const service = createService(fixture, {
+      launchInstaller,
+      githubFetch: createGithubFetch({
+        releases: [releaseFixture({ tagName: "hub-v0.2.0", assetName: "Gaurav POS Hub-0.2.0.gpos-update.zip", bytes: Buffer.from("bad zip") })]
+      })
+    });
+    service.registerBaseline(writePackage(fixture.root, "0.1.0"));
+
+    await expect(service.installGithubUpdate({
+      tagName: "hub-v0.2.0",
+      assetName: "Gaurav POS Hub-0.2.0.gpos-update.zip",
+      expectedVersion: "0.2.0"
+    })).rejects.toThrow("GitHub update package is invalid");
+
+    expect(launchInstaller).not.toHaveBeenCalled();
+    expect(existsSync(fixture.backupDir) ? readdirSync(fixture.backupDir) : []).toEqual([]);
+
+    fixture.close();
+  });
 });
 
 function createFixture() {
@@ -247,4 +338,52 @@ function mergeManifest<T extends Record<string, unknown>>(base: T, patch: Partia
     }
   }
   return merged;
+}
+
+function releaseFixture(input: { tagName: string; assetName?: string; bytes?: Buffer; draft?: boolean; prerelease?: boolean }) {
+  return {
+    tag_name: input.tagName,
+    name: input.tagName,
+    html_url: `https://github.com/shubham909090/Open-POS/releases/tag/${input.tagName}`,
+    published_at: "2026-05-20T00:00:00Z",
+    body: "Release notes",
+    draft: input.draft ?? false,
+    prerelease: input.prerelease ?? false,
+    assets: input.assetName
+      ? [
+          {
+            name: input.assetName,
+            size: input.bytes?.length ?? 0,
+            browser_download_url: `https://downloads.example/${input.assetName}`,
+            __bytes: input.bytes
+          }
+        ]
+      : []
+  };
+}
+
+function createGithubFetch(input: { releases: ReturnType<typeof releaseFixture>[] }) {
+  return vi.fn(async (url: string) => {
+    if (url.includes("api.github.com")) return jsonResponse(input.releases);
+    const asset = input.releases.flatMap((release) => release.assets).find((candidate) => url.endsWith(candidate.name));
+    if (!asset) return { ok: false, status: 404, statusText: "Not Found", json: async () => ({}), arrayBuffer: async () => new ArrayBuffer(0) };
+    const bytes = asset.__bytes ?? Buffer.alloc(0);
+    return {
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      json: async () => ({}),
+      arrayBuffer: async () => bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)
+    };
+  });
+}
+
+function jsonResponse(value: unknown) {
+  return {
+    ok: true,
+    status: 200,
+    statusText: "OK",
+    json: async () => value,
+    arrayBuffer: async () => new ArrayBuffer(0)
+  };
 }

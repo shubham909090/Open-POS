@@ -83,6 +83,12 @@ const updateInstallerPathSchema = z.object({
   installerPath: z.string().trim().min(1)
 });
 
+const githubUpdateInstallSchema = z.object({
+  tagName: z.string().trim().min(1),
+  assetName: z.string().trim().min(1),
+  expectedVersion: z.string().trim().min(1)
+});
+
 export function isRealtimeEventVisibleForRole(event: unknown, role: UserRole): boolean {
   if (role === "admin" || role === "captain") return true;
   const type = typeof event === "object" && event !== null && "type" in event ? String((event as { type?: unknown }).type ?? "") : "";
@@ -994,6 +1000,7 @@ export function createHubServer(input: {
     return input.backupService.scheduleRestore(body.fileName);
   });
   app.get("/system/update/status", { preHandler: adminOnly }, async () => requireAppUpdateService().status());
+  app.get("/system/update/github/latest", { preHandler: adminOnly }, async () => requireAppUpdateService().checkGithubLatest());
   app.post("/system/update/validate", { preHandler: adminOnly }, async (request) => {
     const body = updatePackagePathSchema.parse(request.body);
     return requireAppUpdateService().validatePackage(body.packagePath);
@@ -1011,6 +1018,12 @@ export function createHubServer(input: {
     const managerPin = String(request.headers["x-manager-pin"] ?? "");
     input.orderService.verifyManagerPinForSession(managerPin);
     return requireAppUpdateService().installUpdate(body.packagePath);
+  });
+  app.post("/system/update/github/install", { preHandler: adminOnly }, async (request) => {
+    const managerPin = String(request.headers["x-manager-pin"] ?? "");
+    input.orderService.verifyManagerPinForSession(managerPin);
+    const body = githubUpdateInstallSchema.parse(request.body ?? {});
+    return requireAppUpdateService().installGithubUpdate(body);
   });
   app.post("/system/update/rollback", { preHandler: adminOnly }, async (request) => {
     const managerPin = String(request.headers["x-manager-pin"] ?? "");

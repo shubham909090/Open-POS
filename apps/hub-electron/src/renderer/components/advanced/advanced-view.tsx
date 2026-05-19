@@ -413,6 +413,25 @@ export function AppUpdatePanel({
     },
     onError: (error) => setNotice({ tone: "bad", text: messageOf(error) })
   });
+  const githubLatest = useMutation({
+    mutationFn: hubApi.githubUpdateLatest,
+    onSuccess: (result) => {
+      if (result.status === "update_available") setNotice({ tone: "good", text: `GitHub update available: ${result.latestVersion}` });
+      else if (result.status === "up_to_date") setNotice({ tone: "good", text: `Hub is up to date: ${result.currentVersion}` });
+      else setNotice({ tone: "bad", text: result.message ?? "No GitHub update is available." });
+    },
+    onError: (error) => setNotice({ tone: "bad", text: messageOf(error) })
+  });
+  const installGithubUpdate = useMutation({
+    mutationFn: ({ pin, request }: { pin: string; request: NonNullable<NonNullable<typeof githubResult>["installRequest"]> }) => {
+      if (!request) throw new Error("Check GitHub for an update before installing.");
+      return hubApi.installGithubUpdate(request, pin);
+    },
+    onSuccess: (result) => {
+      setNotice({ tone: "good", text: `GitHub update downloaded. Backup created: ${result.backup.fileName}. Installer opening now.` });
+    },
+    onError: (error) => setNotice({ tone: "bad", text: messageOf(error) })
+  });
   const rollbackUpdate = useMutation({
     mutationFn: hubApi.rollbackUpdate,
     onSuccess: () => {
@@ -420,8 +439,9 @@ export function AppUpdatePanel({
     },
     onError: (error) => setNotice({ tone: "bad", text: messageOf(error) })
   });
-  const busy = validatePackage.isPending || registerBaseline.isPending || registerInstallerBaseline.isPending || installUpdate.isPending || rollbackUpdate.isPending;
+  const busy = validatePackage.isPending || registerBaseline.isPending || registerInstallerBaseline.isPending || installUpdate.isPending || githubLatest.isPending || installGithubUpdate.isPending || rollbackUpdate.isPending;
   const status = updateStatus.data;
+  const githubResult = githubLatest.data;
   const chosenPath = packagePath.trim();
   const chosenPathLower = chosenPath.toLowerCase();
   const isUpdatePackagePath = chosenPathLower.endsWith(".gpos-update.zip");
@@ -489,6 +509,69 @@ export function AppUpdatePanel({
           </article>
         ) : null}
       </div>
+      <div className="update-action-card github-update-card">
+        <div>
+          <strong>GitHub release update</strong>
+          <p className="soft-note">Primary update path. Hub downloads the latest stable Open-POS release package, validates DB and SQLite binaries, backs up the database, then opens the installer.</p>
+        </div>
+        <div className="update-action-row">
+          <button type="button" className="primary-button" disabled={busy} onClick={() => githubLatest.mutate()}>
+            <CloudDownload size={18} /> {githubLatest.isPending ? "Checking GitHub..." : "Check GitHub for update"}
+          </button>
+          <button
+            type="button"
+            className="utility-action"
+            disabled={busy || githubResult?.status !== "update_available" || !githubResult.installRequest}
+            onClick={async () => {
+              if (!status?.baselineRegistered) {
+                setNotice({ tone: "bad", text: "Register the current version as rollback baseline before installing updates." });
+                return;
+              }
+              if ((status?.activeOrderCount ?? 0) > 0) {
+                setNotice({ tone: "bad", text: `Close or settle ${status?.activeOrderCount ?? 0} running order(s) before installing update.` });
+                return;
+              }
+              const installRequest = githubResult?.installRequest;
+              if (!installRequest) {
+                setNotice({ tone: "bad", text: "Check GitHub for an update before installing." });
+                return;
+              }
+              const approval = await requestManagerApproval({
+                title: "Install GitHub update",
+                defaultReason: "Install GitHub update",
+                message: `The hub will download ${githubResult?.latestVersion ?? "the latest release"}, create a database backup, open the installer, and close this app.`,
+                confirmLabel: installGithubUpdate.isPending ? "Installing..." : "Install GitHub update",
+                danger: true
+              }).catch(() => null);
+              if (approval) installGithubUpdate.mutate({ pin: approval.pin, request: installRequest });
+            }}
+          >
+            Install GitHub update
+          </button>
+        </div>
+        {githubResult ? (
+          <div className={`github-update-result ${githubResult.status}`}>
+            <strong>
+              {githubResult.status === "update_available"
+                ? `GitHub update available: ${githubResult.latestVersion}`
+                : githubResult.status === "up_to_date"
+                  ? `Hub is up to date: ${githubResult.currentVersion}`
+                  : "GitHub update unavailable"}
+            </strong>
+            {githubResult.asset ? <span>{githubResult.asset.name} · {formatFileSize(githubResult.asset.sizeBytes)}</span> : null}
+            {githubResult.release ? (
+              <span>
+                {githubResult.release.title}
+                {githubResult.release.publishedAt ? ` · ${formatPosDateTime(githubResult.release.publishedAt)}` : ""}
+                {" · "}
+                <a href={githubResult.release.url} target="_blank" rel="noreferrer">Open release</a>
+              </span>
+            ) : null}
+            {githubResult.release?.notes ? <p className="github-release-notes">{githubResult.release.notes}</p> : null}
+            {githubResult.message ? <p className="github-release-notes">{githubResult.message}</p> : null}
+          </div>
+        ) : null}
+      </div>
       <div className="update-package-card">
         <label>
           <span>Update package or current installer</span>
@@ -507,7 +590,7 @@ export function AppUpdatePanel({
       {!pickerAvailable ? <p className="soft-note">File picker unavailable. Paste the path manually.</p> : null}
       <div className="update-action-groups">
         <div className="update-action-card">
-          <strong>Check and register baseline</strong>
+          <strong>Local fallback and baseline</strong>
           <div className="update-action-row">
             <button type="button" className="utility-action" disabled={!isUpdatePackagePath || busy} onClick={() => validatePackage.mutate(chosenPath)}>
               <PackageCheck size={18} /> Validate
@@ -583,4 +666,10 @@ export function AppUpdatePanel({
       {updateStatus.error ? <p className="warning-text">{messageOf(updateStatus.error)}</p> : null}
     </section>
   );
+}
+
+function formatFileSize(sizeBytes: number): string {
+  if (sizeBytes >= 1024 * 1024) return `${Math.round(sizeBytes / 1024 / 1024)} MB`;
+  if (sizeBytes >= 1024) return `${Math.round(sizeBytes / 1024)} KB`;
+  return `${sizeBytes} B`;
 }

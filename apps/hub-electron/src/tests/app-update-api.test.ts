@@ -1,5 +1,5 @@
 import AdmZip from "adm-zip";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
@@ -76,9 +76,67 @@ describe("app update API", () => {
 
     await fixture.close();
   });
+
+  it("checks GitHub releases through an admin-only API", async () => {
+    const fixture = createFixture({
+      githubFetch: createGithubFetch({
+        releases: [releaseFixture({ tagName: "hub-v0.2.0", assetName: "Gaurav POS Hub-0.2.0.gpos-update.zip", bytes: readFileSync(writePackage(mkdtempSync(join(tmpdir(), "gpos-api-release-")), "0.2.0")) })]
+      })
+    });
+
+    const blocked = await fixture.app.inject({ method: "GET", url: "/system/update/github/latest" });
+    expect(blocked.statusCode).toBe(401);
+
+    const response = await fixture.app.inject({
+      method: "GET",
+      url: "/system/update/github/latest",
+      headers: { "x-device-token": "test-admin-token" }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json<{ status: string; latestVersion: string }>().status).toBe("update_available");
+    expect(response.json<{ status: string; latestVersion: string }>().latestVersion).toBe("0.2.0");
+
+    await fixture.close();
+  });
+
+  it("requires Manager PIN before installing a GitHub update", async () => {
+    const releaseRoot = mkdtempSync(join(tmpdir(), "gpos-api-release-"));
+    const fixture = createFixture({
+      githubFetch: createGithubFetch({
+        releases: [releaseFixture({ tagName: "hub-v0.2.0", assetName: "Gaurav POS Hub-0.2.0.gpos-update.zip", bytes: readFileSync(writePackage(releaseRoot, "0.2.0")) })]
+      })
+    });
+    await setManagerPin(fixture.app);
+    fixture.updateService.registerBaseline(writePackage(fixture.root, "0.1.0"));
+
+    const blocked = await fixture.app.inject({
+      method: "POST",
+      url: "/system/update/github/install",
+      headers: { "x-device-token": "test-admin-token" }
+    });
+    expect(blocked.statusCode).toBe(403);
+
+    const response = await fixture.app.inject({
+      method: "POST",
+      url: "/system/update/github/install",
+      headers: { "x-device-token": "test-admin-token", "x-manager-pin": "1234" },
+      payload: {
+        tagName: "hub-v0.2.0",
+        assetName: "Gaurav POS Hub-0.2.0.gpos-update.zip",
+        expectedVersion: "0.2.0"
+      }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json<{ installing: true }>().installing).toBe(true);
+
+    rmSync(releaseRoot, { recursive: true, force: true });
+    await fixture.close();
+  });
 });
 
-function createFixture() {
+function createFixture(overrides: Partial<ConstructorParameters<typeof AppUpdateService>[0]> = {}) {
   const root = mkdtempSync(join(tmpdir(), "gpos-update-api-"));
   const databasePath = join(root, "hub.sqlite");
   const backupDir = join(root, "backups");
@@ -101,7 +159,8 @@ function createFixture() {
     databasePath,
     sqliteNativePath,
     launchInstaller: vi.fn(),
-    exitApp: () => undefined
+    exitApp: () => undefined,
+    ...overrides
   });
   const app = createHubServer({
     database,
@@ -125,6 +184,45 @@ function createFixture() {
       rmSync(root, { recursive: true, force: true });
     }
   };
+}
+
+function releaseFixture(input: { tagName: string; assetName?: string; bytes?: Buffer; draft?: boolean; prerelease?: boolean }) {
+  return {
+    tag_name: input.tagName,
+    name: input.tagName,
+    html_url: `https://github.com/shubham909090/Open-POS/releases/tag/${input.tagName}`,
+    published_at: "2026-05-20T00:00:00Z",
+    body: "Release notes",
+    draft: input.draft ?? false,
+    prerelease: input.prerelease ?? false,
+    assets: input.assetName
+      ? [
+          {
+            name: input.assetName,
+            size: input.bytes?.length ?? 0,
+            browser_download_url: `https://downloads.example/${input.assetName}`,
+            __bytes: input.bytes
+          }
+        ]
+      : []
+  };
+}
+
+function createGithubFetch(input: { releases: ReturnType<typeof releaseFixture>[] }) {
+  return vi.fn(async (url: string) => {
+    if (url.includes("api.github.com")) {
+      return { ok: true, status: 200, statusText: "OK", json: async () => input.releases, arrayBuffer: async () => new ArrayBuffer(0) };
+    }
+    const asset = input.releases.flatMap((release) => release.assets).find((candidate) => url.endsWith(candidate.name));
+    const bytes = asset?.__bytes ?? Buffer.alloc(0);
+    return {
+      ok: Boolean(asset),
+      status: asset ? 200 : 404,
+      statusText: asset ? "OK" : "Not Found",
+      json: async () => ({}),
+      arrayBuffer: async () => bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)
+    };
+  });
 }
 
 async function setManagerPin(app: ReturnType<typeof createHubServer>) {
