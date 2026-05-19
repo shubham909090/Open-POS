@@ -76,6 +76,16 @@ function HubShell() {
   const firstRunNeedsPin = sessionStatus.data?.managerPinConfigured === false;
 
   useEffect(() => {
+    const handleFocusRepair = (event: KeyboardEvent) => {
+      if (!event.ctrlKey || !event.shiftKey || event.key.toLowerCase() !== "f") return;
+      event.preventDefault();
+      void window.gauravPos?.repairFocus?.();
+    };
+    window.addEventListener("keydown", handleFocusRepair);
+    return () => window.removeEventListener("keydown", handleFocusRepair);
+  }, []);
+
+  useEffect(() => {
     if (!hubUnlocked) return;
     const pendingKeys = new Map<string, readonly unknown[]>();
     let invalidateTimer: ReturnType<typeof setTimeout> | null = null;

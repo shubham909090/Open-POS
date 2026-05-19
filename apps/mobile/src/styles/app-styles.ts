@@ -250,8 +250,9 @@ export const styles = StyleSheet.create({
   floorTableStack: { gap: 12 },
   floorTableGroup: { gap: 8 },
   floorTableHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 },
-  tableGrid: { flexDirection: "row", flexWrap: "wrap", gap: 12 },
+  tableGrid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", rowGap: 12 },
   tableTile: {
+    width: "48%",
     minHeight: 92,
     padding: 12,
     borderWidth: 0,

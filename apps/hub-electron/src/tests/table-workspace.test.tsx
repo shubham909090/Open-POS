@@ -56,7 +56,9 @@ describe("hub table workspace send actions", () => {
       quantity = 2;
       return { orderId: "order-1", printJobIds: [], kotIds: [] };
     });
-    vi.spyOn(window, "confirm").mockReturnValue(true);
+    const nativeConfirm = vi.spyOn(window, "confirm").mockImplementation(() => {
+      throw new Error("Native confirm must not be used in Electron renderer");
+    });
     useHubStore.setState({ selectedTableId: "table-t1", orderPanel: "sent", drafts: {} });
 
     const { container } = renderWorkspace(TableWorkspace);
@@ -78,8 +80,34 @@ describe("hub table workspace send actions", () => {
     expect(screen.getByRole("button", { name: "Save and print" })).not.toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: /^Save$/ }));
+    expect(await screen.findByRole("dialog", { name: "Save without printing?" })).not.toBeNull();
+    expect(screen.getByText("Save these table changes without printing a modification KOT/BOT?")).not.toBeNull();
+    expect(nativeConfirm).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Save without print" }));
     await waitFor(() => expect(updateOrderStateMock).toHaveBeenCalledWith("order-1", expect.objectContaining({ saveMode: "save" }), expect.any(String)));
     await waitFor(() => expect(screen.queryByRole("button", { name: /^Save$/ })).toBeNull());
+  });
+
+  it("cancels the custom save-without-print confirmation without mutating order state", async () => {
+    const { TableWorkspace, useHubStore } = await importWorkspace();
+    tableOrderMock.mockResolvedValue(tableOrder(1));
+    const nativeConfirm = vi.spyOn(window, "confirm").mockImplementation(() => true);
+    useHubStore.setState({ selectedTableId: "table-t1", orderPanel: "sent", drafts: {} });
+
+    renderWorkspace(TableWorkspace);
+
+    await screen.findByText("Edited total");
+    fireEvent.change(screen.getByPlaceholderText("Search menu item"), { target: { value: "whisky" } });
+    fireEvent.click(await screen.findByText("30 ml ₹40"));
+    fireEvent.click(await screen.findByRole("button", { name: /^Save$/ }));
+
+    expect(await screen.findByRole("dialog", { name: "Save without printing?" })).not.toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Keep editing" }));
+
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Save without printing?" })).toBeNull());
+    expect(updateOrderStateMock).not.toHaveBeenCalled();
+    expect(nativeConfirm).not.toHaveBeenCalled();
   });
 
   it("removes unsaved search-added state rows when their quantity returns to zero", async () => {

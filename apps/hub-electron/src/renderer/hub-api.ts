@@ -491,6 +491,7 @@ declare global {
   interface Window {
     gauravPos?: {
       chooseUpdatePackage?: (kind?: "update" | "installer") => Promise<string | null>;
+      repairFocus?: () => Promise<{ ok: true }>;
     };
   }
 }

@@ -8,7 +8,7 @@ import type { BackupService, BackupSummary } from "../db/backup-service.js";
 import type { HubDatabase } from "../db/database.js";
 import { DomainError } from "../domain/errors.js";
 import type { UpdatePackageManifest } from "./update-package.js";
-import { PACKAGED_SQLITE_NATIVE_PATH, UPDATE_APP_ID, sha256, validateInstallerContainsSQLiteNative, validateUpdatePackage, validateWindowsX64NativeModule } from "./update-package.js";
+import { PACKAGED_SQLITE_NATIVE_PATH, UPDATE_APP_ID, sha256, validateUpdatePackage, validateWindowsX64NativeModule } from "./update-package.js";
 
 const STATE_FILE = "app-update-state.json";
 const require = createRequire(import.meta.url);
@@ -117,11 +117,12 @@ export class AppUpdateService {
     const sqliteNativeBytes = readBaselineFile(sqliteNativePath, "Installed SQLite native binary");
     try {
       validateWindowsX64NativeModule(sqliteNativeBytes);
-      validateInstallerContainsSQLiteNative(installerBytes, sha256(sqliteNativeBytes));
     } catch (error) {
-      throw new DomainError(error instanceof Error ? error.message : "Current installer SQLite validation failed", 400);
+      throw new DomainError(error instanceof Error ? error.message : "Installed SQLite native validation failed", 400);
     }
 
+    // Baseline installers are rollback anchors for the already-running app.
+    // Update packages still perform strict installer content inspection before install.
     const metadata = readAppMetadata();
     const manifest: UpdatePackageManifest = {
       schemaVersion: 1,

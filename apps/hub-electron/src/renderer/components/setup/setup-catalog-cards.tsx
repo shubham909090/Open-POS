@@ -450,6 +450,7 @@ export function DishesCard({
       </div>
       <EditableRecordList
         setNotice={setNotice}
+        hideSearch
         rows={setupDishItems.map((item) => ({
           id: item.id,
           title: item.name,

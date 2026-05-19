@@ -76,6 +76,20 @@ describe("AppUpdateService", () => {
     fixture.close();
   });
 
+  it("does not require unpacking the installer when registering a current rollback baseline", () => {
+    const fixture = createFixture();
+    const service = createService(fixture, { sqliteNativePath: fixture.sqliteNativePath });
+    const installerPath = join(fixture.root, "Gaurav POS Hub Setup 0.1.0.exe");
+    writeFileSync(installerPath, Buffer.from("MZ".padEnd(1024, "\0"), "binary"));
+
+    const baseline = service.registerInstallerBaseline(installerPath);
+
+    expect(baseline.version).toBe("0.1.0");
+    expect(service.status().baselineRegistered).toBe(true);
+
+    fixture.close();
+  });
+
   it("rejects an installer baseline when the filename does not match the running version", () => {
     const fixture = createFixture();
     const service = createService(fixture, { sqliteNativePath: fixture.sqliteNativePath });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { nextConnectionAfterRefresh } from "../lib/connection-health";
+import { nextConnectionAfterDevicePairing, nextConnectionAfterRefresh, shouldShowMobileOnboarding } from "../lib/connection-health";
 
 describe("mobile connection health", () => {
   it("does not flip a loaded phone offline after one silent network miss", () => {
@@ -46,5 +46,17 @@ describe("mobile connection health", () => {
       })
     ).toEqual({ connection: "online", failures: 0, shouldShowOfflineMessage: false });
   });
-});
 
+  it("lets a newly paired phone leave setup immediately even if the previous health state was offline", () => {
+    const next = nextConnectionAfterDevicePairing();
+
+    expect(next).toEqual({ connection: "checking", failures: 0 });
+    expect(
+      shouldShowMobileOnboarding({
+        setupOpen: false,
+        deviceToken: "fresh-device-token",
+        connection: next.connection
+      })
+    ).toBe(false);
+  });
+});

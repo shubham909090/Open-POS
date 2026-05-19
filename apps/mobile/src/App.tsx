@@ -35,7 +35,13 @@ import { AppHeader, ConnectionBanner, DraftBar, ModeTabs, OnboardingScreen } fro
 import { BillingHistoryPanel, KitchenScreen, MenuScreen, TablePicker, TicketScreen } from "./components/screens";
 import type { BillPrinterSlot, ConnectionState, MobileOrderStateItem, OrderStateSaveMode, PaymentMethod, PrintMode, ViewMode } from "./lib/mobile-types";
 import { useDevicePairing } from "./hooks/use-device-pairing";
-import { MOBILE_REALTIME_REFRESH_DEBOUNCE_MS, MOBILE_REFRESH_INTERVAL_MS, nextConnectionAfterRefresh } from "./lib/connection-health";
+import {
+  MOBILE_REALTIME_REFRESH_DEBOUNCE_MS,
+  MOBILE_REFRESH_INTERVAL_MS,
+  nextConnectionAfterDevicePairing,
+  nextConnectionAfterRefresh,
+  shouldShowMobileOnboarding
+} from "./lib/connection-health";
 
 type HistoryEditPayloadItem =
   | { orderItemId?: string; menuItemId: string; menuItemVariantId?: string; quantity: number }
@@ -53,10 +59,6 @@ export default function App() {
   const { width } = useWindowDimensions();
   const isWide = width >= 780;
   const contentWidth = Math.max(320, width - 32);
-  const tablePanelWidth = isWide ? Math.min(360, Math.floor(contentWidth * 0.34)) : contentWidth;
-  const tableColumns = tablePanelWidth >= 320 ? 2 : 1;
-  const tableGridGap = 12;
-  const tableTileWidth = Math.floor((tablePanelWidth - 28 - tableGridGap * (tableColumns - 1)) / tableColumns);
 
   const [initializing, setInitializing] = useState(true);
   const [hubUrl, setHubUrlState] = useState("http://192.168.1.10:3737");
@@ -68,6 +70,7 @@ export default function App() {
   const [sending, setSending] = useState(false);
   const [savingDraft, setSavingDraft] = useState(false);
   const [message, setMessage] = useState("Checking hub connection...");
+  const connectionFailuresRef = useRef(0);
   const {
     hubUrlDraft,
     setHubUrlDraft,
@@ -94,6 +97,11 @@ export default function App() {
     setDeviceRoleState,
     setDeviceNameState,
     setMessage,
+    onDevicePaired: () => {
+      const next = nextConnectionAfterDevicePairing();
+      connectionFailuresRef.current = next.failures;
+      setConnection(next.connection);
+    },
   });
   const [bootstrap, setBootstrap] = useState<HubBootstrap | null>(null);
   const [selectedTableId, setSelectedTableId] = useState<string | null>(null);
@@ -113,7 +121,6 @@ export default function App() {
   const knownKdsTicketIdsRef = useRef<{ unitId: string; ids: Set<string>; initialized: boolean }>({ unitId: "", ids: new Set(), initialized: false });
   const refreshInFlightRef = useRef(false);
   const refreshQueuedRef = useRef(false);
-  const connectionFailuresRef = useRef(0);
 
   const client = useMemo(() => new HubClient(hubUrl, deviceToken), [deviceToken, hubUrl]);
   const selectedTable = bootstrap?.tables.find((table) => table.id === selectedTableId) ?? null;
@@ -130,7 +137,7 @@ export default function App() {
   const canBill = deviceRole === "admin" || deviceRole === "captain";
   const historyMode = mode === "history" && canBill;
   const isKitchenDevice = deviceRole === "kitchen";
-  const shouldShowOnboarding = setupOpen || !deviceToken || connection === "offline";
+  const shouldShowOnboarding = shouldShowMobileOnboarding({ setupOpen, deviceToken, connection });
   const useVirtualMenu = mode === "menu" && !isWide;
 
   const hasMenuSearch = menuSearch.trim().length > 0;
@@ -827,7 +834,6 @@ export default function App() {
           floors={bootstrap?.floors ?? []}
           selectedTableId={selectedTableId}
           loading={loading}
-          tileWidth={tableTileWidth}
           onSelectTable={(tableId) => void selectTable(tableId)}
         />
       )}

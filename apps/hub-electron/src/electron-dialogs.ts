@@ -29,8 +29,24 @@ export async function chooseUpdateFile(
     owner.focus();
   }
   const options = updateFileDialogOptions(kind);
-  const result = owner
-    ? await dialogApi.showOpenDialog(owner, options)
-    : await dialogApi.showOpenDialog(options);
-  return result.canceled ? null : (result.filePaths[0] ?? null);
+  try {
+    const result = owner
+      ? await dialogApi.showOpenDialog(owner, options)
+      : await dialogApi.showOpenDialog(options);
+    return result.canceled ? null : (result.filePaths[0] ?? null);
+  } finally {
+    if (owner) restoreRendererFocus(owner);
+  }
+}
+
+export function restoreRendererFocus(owner: BrowserWindow): void {
+  if (owner.isDestroyed()) return;
+  if (owner.isMinimized()) owner.restore();
+  owner.focus();
+  owner.webContents.focus();
+  setTimeout(() => {
+    if (owner.isDestroyed()) return;
+    owner.focus();
+    owner.webContents.focus();
+  }, 0);
 }

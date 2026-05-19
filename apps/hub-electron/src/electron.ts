@@ -1,6 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain } from "electron";
 import { fileURLToPath } from "node:url";
-import { chooseUpdateFile, type UpdateFileDialogKind } from "./electron-dialogs.js";
+import { chooseUpdateFile, restoreRendererFocus, type UpdateFileDialogKind } from "./electron-dialogs.js";
 import { startHub } from "./runtime.js";
 import { runSqliteSelfTest } from "./self-test.js";
 
@@ -23,6 +23,10 @@ if (selfTestOnly) {
     } catch (error) {
       throw new Error(error instanceof Error ? error.message : "Unable to open update file picker");
     }
+  });
+  ipcMain.handle("app:repair-focus", () => {
+    if (mainWindow) restoreRendererFocus(mainWindow);
+    return { ok: true };
   });
 }
 

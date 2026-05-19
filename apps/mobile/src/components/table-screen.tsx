@@ -16,14 +16,12 @@ function TablePicker({
   floors,
   selectedTableId,
   loading,
-  tileWidth,
   onSelectTable
 }: {
   activeTables: HubBootstrap["tables"];
   floors: HubBootstrap["floors"];
   selectedTableId: string | null;
   loading: boolean;
-  tileWidth: number;
   onSelectTable: (tableId: string) => void;
 }) {
   const floorGroups = groupTablesByFloor(activeTables, floors);
@@ -48,7 +46,7 @@ function TablePicker({
               </View>
               <View style={styles.tableGrid}>
                 {group.tables.map((table) => (
-                  <TableTile key={table.id} table={table} selected={table.id === selectedTableId} tileWidth={tileWidth} onSelectTable={onSelectTable} />
+                  <TableTile key={table.id} table={table} selected={table.id === selectedTableId} onSelectTable={onSelectTable} />
                 ))}
               </View>
             </View>
@@ -62,12 +60,10 @@ function TablePicker({
 function TableTile({
   table,
   selected,
-  tileWidth,
   onSelectTable
 }: {
   table: HubBootstrap["tables"][number];
   selected: boolean;
-  tileWidth: number;
   onSelectTable: (tableId: string) => void;
 }) {
   const state = getTableDisplayState(table);
@@ -75,7 +71,6 @@ function TableTile({
     <Pressable
       style={[
         styles.tableTile,
-        { width: tileWidth },
         state === "running" && styles.busyTable,
         state === "bill_printed" && styles.billedTable,
         selected && styles.selectedTable

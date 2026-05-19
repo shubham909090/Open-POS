@@ -21,3 +21,14 @@ export function nextConnectionAfterRefresh(input: {
   return { connection: "offline", failures, shouldShowOfflineMessage: true };
 }
 
+export function nextConnectionAfterDevicePairing(): { connection: ConnectionState; failures: number } {
+  return { connection: "checking", failures: 0 };
+}
+
+export function shouldShowMobileOnboarding(input: {
+  setupOpen: boolean;
+  deviceToken: string;
+  connection: ConnectionState;
+}): boolean {
+  return input.setupOpen || !input.deviceToken || input.connection === "offline";
+}

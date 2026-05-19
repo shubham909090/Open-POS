@@ -8,6 +8,7 @@ import { useKeyboardListNavigation } from "../../hooks/use-keyboard-list-navigat
 import { useOperationKeys } from "../../hooks/use-operation-keys.js";
 import { useHubStore } from "../../store.js";
 import { EmptyState } from "../ui/empty-state.js";
+import { ConfirmationDialog } from "../ui/confirmation-dialog.js";
 import { LineItems } from "./line-items.js";
 import { BillingPanel } from "./billing-panel.js";
 import { BillPrinterChooser } from "./bill-printer-chooser.js";
@@ -68,6 +69,7 @@ export function TableWorkspace({
   const [orderStateSearch, setOrderStateSearch] = useState("");
   const [draftSearch, setDraftSearch] = useState("");
   const [billPrintIntent, setBillPrintIntent] = useState<"generate" | null>(null);
+  const [saveWithoutPrintOpen, setSaveWithoutPrintOpen] = useState(false);
   const operationKeys = useOperationKeys();
   const draft = tableId ? Object.values(drafts[tableId] ?? {}) : [];
   const tableOrder = useQuery({
@@ -325,13 +327,9 @@ export function TableWorkspace({
   const saveOrderState = useMutation({
     mutationFn: async (input: { saveMode: SaveMode; approval?: ManagerApproval }) => {
       const order = data?.order;
-	      if (!order) throw new Error("No active order to update.");
-	      if (order.status !== "billed" && orderStateItems.every((item) => item.quantity <= 0)) {
-	        throw new Error("Running table must keep at least one item. Use Cancel order instead.");
-	      }
-	      if (input.saveMode === "save" && order.status !== "billed") {
-        const ok = window.confirm("Save these table changes without printing a modification KOT/BOT?");
-        if (!ok) throw new Error("Table changes were not saved.");
+      if (!order) throw new Error("No active order to update.");
+      if (order.status !== "billed" && orderStateItems.every((item) => item.quantity <= 0)) {
+        throw new Error("Running table must keep at least one item. Use Cancel order instead.");
       }
       const payload = {
         saveMode: input.saveMode,
@@ -355,19 +353,16 @@ export function TableWorkspace({
       setOrderPanel("sent");
       setNotice({ tone: "good", text: input.saveMode === "save" ? "Table state saved without printing." : "Table state saved and modification ticket sent." });
     },
-    onError: (error) => {
-      if (messageOf(error) === "Table changes were not saved.") return;
-      setNotice({ tone: "bad", text: messageOf(error) });
-    }
+    onError: (error) => setNotice({ tone: "bad", text: messageOf(error) })
   });
 
   async function requestOrderStateSave(saveMode: SaveMode) {
-	    const order = data?.order;
-	    if (!order || saveOrderState.isPending || !hasOrderStateChanges) return;
-	    if (!canSaveOrderState) {
-	      setNotice({ tone: "bad", text: "Running table must keep at least one item. Use Cancel order instead." });
-	      return;
-	    }
+    const order = data?.order;
+    if (!order || saveOrderState.isPending || !hasOrderStateChanges) return;
+    if (!canSaveOrderState) {
+      setNotice({ tone: "bad", text: "Running table must keep at least one item. Use Cancel order instead." });
+      return;
+    }
     if (order.status === "billed") {
       const approval = await requestManagerApproval({
         title: "Approve billed table edit",
@@ -377,6 +372,10 @@ export function TableWorkspace({
       }).catch(() => null);
       if (!approval) return;
       saveOrderState.mutate({ saveMode, approval });
+      return;
+    }
+    if (saveMode === "save") {
+      setSaveWithoutPrintOpen(true);
       return;
     }
     saveOrderState.mutate({ saveMode });
@@ -612,6 +611,19 @@ export function TableWorkspace({
         onChoose={(printerSlot) => {
           setBillPrintIntent(null);
           generateBill.mutate(printerSlot);
+        }}
+      />
+      <ConfirmationDialog
+        open={saveWithoutPrintOpen}
+        title="Save without printing?"
+        message="Save these table changes without printing a modification KOT/BOT?"
+        cancelLabel="Keep editing"
+        confirmLabel="Save without print"
+        busy={saveOrderState.isPending}
+        onCancel={() => setSaveWithoutPrintOpen(false)}
+        onConfirm={() => {
+          setSaveWithoutPrintOpen(false);
+          saveOrderState.mutate({ saveMode: "save" });
         }}
       />
     </section>

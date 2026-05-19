@@ -22,12 +22,14 @@ export function useDevicePairing({
   setDeviceRoleState,
   setDeviceNameState,
   setMessage,
+  onDevicePaired,
 }: {
   setHubUrlState: (value: string) => void;
   setDeviceTokenState: (value: string) => void;
   setDeviceRoleState: (value: string) => void;
   setDeviceNameState: (value: string) => void;
   setMessage: (value: string) => void;
+  onDevicePaired?: () => void;
 }) {
   const [hubUrlDraft, setHubUrlDraft] = useState("http://192.168.1.10:3737");
   const [deviceTokenDraft, setDeviceTokenDraft] = useState("");
@@ -129,6 +131,7 @@ export function useDevicePairing({
       setDeviceTokenDraft(result.token);
       setDeviceRoleState(result.role);
       setDeviceNameState(result.deviceName);
+      onDevicePaired?.();
       setPairingCode("");
       setPairingPayload("");
       setSetupOpen(false);

@@ -4,7 +4,7 @@
   }
 
   .side-rail {
-    @apply sticky top-0 z-10 grid-cols-[auto_minmax(0,1fr)_auto] items-center;
+    @apply static grid-cols-[auto_minmax(0,1fr)_auto] items-center;
   }
 
   .side-rail nav {

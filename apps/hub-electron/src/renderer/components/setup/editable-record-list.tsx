@@ -6,6 +6,7 @@ import { EmptyState } from "../ui/empty-state.js";
 export function EditableRecordList({
   setNotice,
   rows,
+  hideSearch = false,
 }: {
   setNotice: NoticeSetter;
   rows: Array<{
@@ -21,6 +22,7 @@ export function EditableRecordList({
     moveDownDisabled?: boolean;
     editForm: (close: () => void) => ReactNode;
   }>;
+  hideSearch?: boolean;
 }) {
   const [busyId, setBusyId] = useState("");
   const [editingId, setEditingId] = useState("");
@@ -47,7 +49,7 @@ export function EditableRecordList({
 
   return (
     <div className="record-list">
-      {rows.length > 12 ? (
+      {!hideSearch && rows.length > 12 ? (
         <div className="setup-search-row">
           <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search saved records" />
           {searchCapped ? <small>Showing first {visibleRows.length} matches. Keep typing to narrow.</small> : null}
