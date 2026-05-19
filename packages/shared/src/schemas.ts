@@ -4,7 +4,18 @@ const customIdSchema = z
   .string()
   .trim()
   .regex(/^[a-zA-Z0-9_-]{3,80}$/, "Use 3-80 letters, numbers, dashes, or underscores")
-  .optional();
+    .optional();
+
+const businessDateSchema = z
+  .string()
+  .trim()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD")
+  .refine((value) => {
+    const date = new Date(`${value}T00:00:00.000Z`);
+    return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+  }, "Use a valid business date");
+
+const businessDateToMs = (value: string) => new Date(`${value}T00:00:00.000Z`).getTime();
 
 export const saleGroupKindSchema = z.enum(["food", "alcohol", "beverage", "other"]);
 export const ticketLabelSchema = z.enum(["KOT", "BOT"]);
@@ -396,6 +407,23 @@ export const historyEditBillSchema = z.object({
   payments: z.array(paymentInputSchema).optional()
 });
 
+export const reportRangeQuerySchema = z.object({
+  from: businessDateSchema,
+  to: businessDateSchema,
+  includeBills: z.preprocess((value) => value === true || value === "true", z.boolean()).default(false)
+}).superRefine((value, ctx) => {
+  const fromMs = businessDateToMs(value.from);
+  const toMs = businessDateToMs(value.to);
+  if (fromMs > toMs) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["to"], message: "End date must be on or after start date" });
+    return;
+  }
+  const dayCount = Math.floor((toMs - fromMs) / 86_400_000) + 1;
+  if (dayCount > 366) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["to"], message: "Choose a range of 366 days or less" });
+  }
+});
+
 export const markNcBillSchema = z.object({
   managerApproval: managerApprovalSchema,
   printerSlot: billPrinterSlotSchema.default("default"),
@@ -485,6 +513,7 @@ export type CreateAlcoholItemInput = z.input<typeof createAlcoholItemSchema>;
 export type UpdateAlcoholItemInput = z.infer<typeof updateAlcoholItemSchema>;
 export type AdjustAlcoholStockInput = z.infer<typeof adjustAlcoholStockSchema>;
 export type HistoryEditBillInput = z.input<typeof historyEditBillSchema>;
+export type ReportRangeQueryInput = z.infer<typeof reportRangeQuerySchema>;
 export type UpdateKotStatusInput = z.infer<typeof updateKotStatusSchema>;
 export type RetryPrintJobInput = z.infer<typeof retryPrintJobSchema>;
 export type PrinterOutputMode = z.infer<typeof printerOutputModeSchema>;

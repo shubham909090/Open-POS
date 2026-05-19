@@ -2,6 +2,74 @@ import { describe, expect, it } from "vitest";
 import { stripPrintStyleMarkers } from "../domain/tickets.js";
 import { createTestHub } from "./helpers.js";
 
+function insertDailySnapshot(
+  database: ReturnType<typeof createTestHub>["database"],
+  input: {
+    id: string;
+    businessDate: string;
+    billCount: number;
+    finalSalesPaise: number;
+    cashPaise?: number;
+    upiPaise?: number;
+    cardPaise?: number;
+    onlinePaise?: number;
+    itemSummaries?: unknown[];
+    groupSummaries?: unknown[];
+    billSummaries?: unknown[];
+    status?: "finalized" | "active";
+  }
+) {
+  const status = input.status ?? "finalized";
+  database.db
+    .prepare(
+      `INSERT INTO pos_days (id, outlet_id, business_date, status, period_start_at, period_end_at, created_at, finalized_at)
+       VALUES (?, 'outlet-main', ?, ?, ?, ?, ?, ?)`
+    )
+    .run(input.id, input.businessDate, status, `${input.businessDate}T00:30:00.000Z`, `${input.businessDate}T18:30:00.000Z`, `${input.businessDate}T00:30:00.000Z`, status === "finalized" ? `${input.businessDate}T19:00:00.000Z` : null);
+  if (status !== "finalized") {
+    database.db
+      .prepare(
+        `INSERT INTO orders (id, table_id, pos_day_id, order_type, status, pax, captain_id, created_at, updated_at)
+         VALUES (?, 'table-t1', ?, 'dine_in', 'open', 1, 'captain-test', ?, ?)`
+      )
+      .run(`order-${input.id}`, input.id, `${input.businessDate}T12:00:00.000Z`, `${input.businessDate}T12:00:00.000Z`);
+    return;
+  }
+  const cash = input.cashPaise ?? 0;
+  const upi = input.upiPaise ?? 0;
+  const card = input.cardPaise ?? 0;
+  const online = input.onlinePaise ?? 0;
+  const totalPayments = cash + upi + card + online;
+  database.db
+    .prepare(
+      `INSERT INTO daily_report_snapshots (
+        pos_day_id, business_date, status, bill_count, open_orders, billed_orders, paid_bills, unpaid_bills, cancelled_orders,
+        gross_sales_paise, discount_paise, tip_paise, final_sales_paise,
+        cash_payments_paise, upi_payments_paise, card_payments_paise, online_payments_paise, total_payments_paise, non_cash_payments_paise,
+        bill_summaries_json, item_summaries_json, group_summaries_json, finalized_at, updated_at
+      ) VALUES (?, ?, 'finalized', ?, 0, 0, ?, 0, 0, ?, 0, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    .run(
+      input.id,
+      input.businessDate,
+      input.billCount,
+      input.billCount,
+      input.finalSalesPaise,
+      input.finalSalesPaise,
+      cash,
+      upi,
+      card,
+      online,
+      totalPayments,
+      upi + card + online,
+      JSON.stringify(input.billSummaries ?? []),
+      JSON.stringify(input.itemSummaries ?? []),
+      JSON.stringify(input.groupSummaries ?? []),
+      `${input.businessDate}T19:00:00.000Z`,
+      `${input.businessDate}T19:00:00.000Z`
+    );
+}
+
 describe("OrderService KOT lifecycle", () => {
   it("defaults printer output to test mode and persists explicit mode changes", () => {
     const { database, orderService } = createTestHub();
@@ -1448,6 +1516,74 @@ describe("OrderService KOT lifecycle", () => {
     expect(reports).toHaveLength(1);
     expect(reports[0]).toMatchObject({ business_date: "2026-05-08", final_sales_paise: bill.totalPaise });
     expect(database.db.prepare("SELECT COUNT(*) AS count FROM event_log WHERE type = 'daily_report.finalized'").get()).toEqual({ count: 1 });
+
+    database.close();
+  });
+
+  it("aggregates finalized daily snapshots into closed-only range reports", () => {
+    const { database, orderService } = createTestHub();
+    insertDailySnapshot(database, {
+      id: "day-range-1",
+      businessDate: "2026-05-01",
+      billCount: 2,
+      finalSalesPaise: 50_000,
+      cashPaise: 20_000,
+      upiPaise: 30_000,
+      itemSummaries: [{ menuItemId: "item-dal-fry", name: "Dal Fry", saleGroupId: "sg-food", saleGroupName: "Food", saleGroupKind: "food", quantity: 2, grossSalesPaise: 50_000, ncQuantity: 0, ncGrossSalesPaise: 0 }],
+      groupSummaries: [{ saleGroupId: "sg-food", name: "Food", kind: "food", quantity: 2, grossSalesPaise: 50_000, taxPaise: 2_500, finalSalesPaise: 50_000, ncQuantity: 0, ncGrossSalesPaise: 0 }],
+      billSummaries: [{ billId: "bill-old", billNumber: 1, orderId: "order-old", tableName: "T1", status: "paid", totalPaise: 50_000, discountPaise: 0, tipPaise: 0, finalTotalPaise: 50_000, paidPaise: 50_000, settledAt: "2026-05-01T18:00:00.000Z", payments: [], items: [] }]
+    });
+    insertDailySnapshot(database, {
+      id: "day-range-2",
+      businessDate: "2026-05-03",
+      billCount: 1,
+      finalSalesPaise: 25_000,
+      cardPaise: 25_000,
+      itemSummaries: [{ menuItemId: "item-dal-fry", name: "Dal Fry", saleGroupId: "sg-food", saleGroupName: "Food", saleGroupKind: "food", quantity: 1, grossSalesPaise: 25_000, ncQuantity: 0, ncGrossSalesPaise: 0 }],
+      groupSummaries: [{ saleGroupId: "sg-food", name: "Food", kind: "food", quantity: 1, grossSalesPaise: 25_000, taxPaise: 1_250, finalSalesPaise: 25_000, ncQuantity: 0, ncGrossSalesPaise: 0 }],
+      billSummaries: [{ billId: "bill-new", billNumber: 2, orderId: "order-new", tableName: "T2", status: "paid", totalPaise: 25_000, discountPaise: 0, tipPaise: 0, finalTotalPaise: 25_000, paidPaise: 25_000, settledAt: "2026-05-03T18:00:00.000Z", payments: [], items: [] }]
+    });
+    insertDailySnapshot(database, { id: "day-range-open", businessDate: "2026-05-04", billCount: 0, finalSalesPaise: 0, status: "active" });
+
+    const summary = orderService.getRangeReport({ from: "2026-05-01", to: "2026-05-04", includeBills: true }) as {
+      billCount: number;
+      finalSalesPaise: number;
+      cashPaymentsPaise: number;
+      upiPaymentsPaise: number;
+      cardPaymentsPaise: number;
+      availableDays: Array<{ business_date: string }>;
+      missingDates: string[];
+      unfinalizedDates: string[];
+      itemSummaries: Array<{ name: string; quantity: number; grossSalesPaise: number }>;
+      groupSummaries: Array<{ saleGroupId: string; finalSalesPaise: number; taxPaise: number }>;
+      billSummaries: Array<{ billId: string }>;
+    };
+
+    expect(summary).toMatchObject({
+      billCount: 3,
+      finalSalesPaise: 75_000,
+      cashPaymentsPaise: 20_000,
+      upiPaymentsPaise: 30_000,
+      cardPaymentsPaise: 25_000,
+      missingDates: ["2026-05-02"],
+      unfinalizedDates: ["2026-05-04"]
+    });
+    expect(summary.availableDays.map((day) => day.business_date)).toEqual(["2026-05-01", "2026-05-03"]);
+    expect(summary.itemSummaries).toEqual([expect.objectContaining({ name: "Dal Fry", quantity: 3, grossSalesPaise: 75_000 })]);
+    expect(summary.groupSummaries).toEqual([expect.objectContaining({ saleGroupId: "sg-food", finalSalesPaise: 75_000, taxPaise: 3_750 })]);
+    expect(summary.billSummaries.map((bill) => bill.billId)).toEqual(["bill-new", "bill-old"]);
+
+    database.close();
+  });
+
+  it("omits bill summaries from range reports until requested and rejects future-only ranges", () => {
+    const { database, orderService } = createTestHub();
+    insertDailySnapshot(database, { id: "day-range-no-bills", businessDate: "2026-05-01", billCount: 1, finalSalesPaise: 10_000, cashPaise: 10_000 });
+
+    const summary = orderService.getRangeReport({ from: "2026-05-01", to: "2026-05-01", includeBills: false }) as { billSummaries?: unknown[] };
+
+    expect(summary.billSummaries).toBeUndefined();
+    expect(() => orderService.getRangeReport({ from: "2999-01-01", to: "2999-01-02", includeBills: false })).toThrow("Report range starts after the current business day");
 
     database.close();
   });

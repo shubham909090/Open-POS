@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 const historyEditBillMock = vi.fn();
 const billPrintersMock = vi.fn();
+const rangeReportMock = vi.fn();
 
 describe("reports history payment edit", () => {
   afterEach(() => {
@@ -13,6 +14,7 @@ describe("reports history payment edit", () => {
     vi.resetModules();
     historyEditBillMock.mockReset();
     billPrintersMock.mockReset();
+    rangeReportMock.mockReset();
   });
 
   it("requires exact edited payment split and sends shared reference with history edit", async () => {
@@ -53,6 +55,25 @@ describe("reports history payment edit", () => {
       "default"
     );
   });
+
+  it("switches to monthly range reports, shows missing dates, and lazily loads bill history", async () => {
+    const { ReportsView } = await importReportsView();
+    rangeReportMock.mockResolvedValue(rangeSummary(false));
+    renderReportsView(ReportsView);
+
+    fireEvent.click(await screen.findByRole("tab", { name: "Monthly / Range" }));
+
+    expect(await screen.findByText("Finalized business days only")).toBeTruthy();
+    expect(await screen.findByText("Some selected dates have no finalized report.")).toBeTruthy();
+    expect(screen.getByText("Missing: 2026-05-02")).toBeTruthy();
+    expect(screen.getByText("Daily breakdown")).toBeTruthy();
+    expect(screen.getByText("Bill history is collapsed for performance.")).toBeTruthy();
+
+    rangeReportMock.mockResolvedValue(rangeSummary(true));
+    fireEvent.click(screen.getByRole("button", { name: "Load bill history" }));
+
+    await waitFor(() => expect(rangeReportMock).toHaveBeenCalledWith(expect.any(String), expect.any(String), true));
+  });
 });
 
 async function importReportsView() {
@@ -63,9 +84,10 @@ async function importReportsView() {
   vi.doMock("../renderer/hub-api.js", () => ({
     hubApi: {
       currentBusinessDaySummary: vi.fn().mockResolvedValue(summary()),
-      dailyReports: vi.fn().mockResolvedValue([]),
-      dailyReport: vi.fn(),
-      alcoholStockMovements: vi.fn().mockResolvedValue([]),
+	      dailyReports: vi.fn().mockResolvedValue([]),
+	      dailyReport: vi.fn(),
+	      rangeReport: rangeReportMock,
+	      alcoholStockMovements: vi.fn().mockResolvedValue([]),
       bootstrap: vi.fn().mockResolvedValue({ menuItems: [] }),
       historyEditBill: historyEditBillMock,
       historyReprintBill: vi.fn(),
@@ -73,6 +95,51 @@ async function importReportsView() {
     }
   }));
   return import("../renderer/components/reports/reports-view.js");
+}
+
+function rangeSummary(includeBills: boolean) {
+  return {
+    range: { from: "2026-05-01", to: "2026-05-03" },
+    availableDays: [
+      {
+        pos_day_id: "day-1",
+        business_date: "2026-05-01",
+        status: "finalized",
+        bill_count: 1,
+        gross_sales_paise: 50_000,
+        discount_paise: 0,
+        tip_paise: 0,
+        final_sales_paise: 50_000,
+        cash_payments_paise: 50_000,
+        upi_payments_paise: 0,
+        card_payments_paise: 0,
+        online_payments_paise: 0,
+        total_payments_paise: 50_000,
+        finalized_at: "2026-05-01T19:00:00.000Z"
+      }
+    ],
+    missingDates: ["2026-05-02"],
+    unfinalizedDates: [],
+    openOrders: 0,
+    billedOrders: 0,
+    paidBills: 1,
+    unpaidBills: 0,
+    cancelledOrders: 0,
+    billCount: 1,
+    grossSalesPaise: 50_000,
+    discountPaise: 0,
+    tipPaise: 0,
+    finalSalesPaise: 50_000,
+    cashPaymentsPaise: 50_000,
+    upiPaymentsPaise: 0,
+    cardPaymentsPaise: 0,
+    onlinePaymentsPaise: 0,
+    totalPaymentsPaise: 50_000,
+    nonCashPaymentsPaise: 0,
+    itemSummaries: [],
+    groupSummaries: [],
+    ...(includeBills ? { billSummaries: summary().billSummaries } : {})
+  };
 }
 
 function renderReportsView(ReportsView: typeof import("../renderer/components/reports/reports-view.js").ReportsView) {

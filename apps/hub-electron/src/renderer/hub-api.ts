@@ -467,6 +467,41 @@ export interface DailyReportDetail extends DailyReportRow {
   groupSummaries: ReportGroupSummary[];
 }
 
+export interface RangeReportDayRow extends DailyReportRow {
+  discount_paise: number;
+  tip_paise: number;
+  cash_payments_paise: number;
+  upi_payments_paise: number;
+  card_payments_paise: number;
+  online_payments_paise: number;
+}
+
+export interface RangeReportDetail {
+  range: { from: string; to: string };
+  availableDays: RangeReportDayRow[];
+  missingDates: string[];
+  unfinalizedDates: string[];
+  openOrders: number;
+  billedOrders: number;
+  paidBills: number;
+  unpaidBills: number;
+  cancelledOrders: number;
+  billCount: number;
+  grossSalesPaise: number;
+  discountPaise: number;
+  tipPaise: number;
+  finalSalesPaise: number;
+  cashPaymentsPaise: number;
+  upiPaymentsPaise: number;
+  cardPaymentsPaise: number;
+  onlinePaymentsPaise: number;
+  totalPaymentsPaise: number;
+  nonCashPaymentsPaise: number;
+  billSummaries?: ReportBillSummary[];
+  itemSummaries: ReportItemSummary[];
+  groupSummaries: ReportGroupSummary[];
+}
+
 export interface KdsTicket {
   id: string;
   sequence: number;
@@ -544,6 +579,8 @@ export const hubApi = {
   currentBusinessDaySummary: () => apiFetch<CloseSummary>("/business-day/current-summary"),
   dailyReports: () => apiFetch<DailyReportRow[]>("/reports/daily"),
   dailyReport: (posDayId: string) => apiFetch<DailyReportDetail>(`/reports/daily/${posDayId}`),
+  rangeReport: (from: string, to: string, includeBills = false) =>
+    apiFetch<RangeReportDetail>(`/reports/range?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&includeBills=${includeBills ? "true" : "false"}`),
   backups: () => apiFetch<BackupSummary[]>("/backups"),
   createBackup: (label: string) => apiFetch<BackupSummary>("/backups", { method: "POST", body: JSON.stringify({ label }) }),
   scheduleRestore: (fileName: string) =>

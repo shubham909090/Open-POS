@@ -411,6 +411,63 @@
     grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   }
 
+  .range-report-controls {
+    @apply grid items-end gap-3;
+    grid-template-columns: repeat(2, minmax(180px, 260px)) auto;
+  }
+
+  .report-tabs {
+    @apply inline-flex rounded-md border border-line bg-wash p-1;
+  }
+
+  .report-tabs button {
+    @apply rounded px-3 py-1.5 text-sm font-semibold text-muted;
+  }
+
+  .report-tabs button.active {
+    @apply bg-panel text-ink shadow-sm;
+  }
+
+  .reports-tab-panel {
+    @apply contents;
+  }
+
+  .range-report-controls label,
+  .range-report-result {
+    @apply grid min-w-0 gap-3;
+  }
+
+  .range-warning,
+  .range-bill-placeholder {
+    @apply grid min-w-0 gap-1 rounded-lg border p-3;
+  }
+
+  .range-warning {
+    @apply border-warning bg-warning-soft text-warning;
+  }
+
+  .range-bill-placeholder {
+    @apply border-line bg-wash text-ink;
+  }
+
+  .range-bill-placeholder span {
+    @apply text-sm font-medium text-muted;
+  }
+
+  @media (max-width: 720px) {
+    .range-report-controls {
+      grid-template-columns: 1fr;
+    }
+
+    .report-tabs {
+      @apply w-full;
+    }
+
+    .report-tabs button {
+      @apply flex-1;
+    }
+  }
+
   .action-strip,
   .form-actions,
   .modal-actions,

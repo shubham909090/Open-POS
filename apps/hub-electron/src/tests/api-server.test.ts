@@ -77,6 +77,45 @@ function createFailingPrintTestServer() {
 
 const testManagerApproval = { pin: "1234", reason: "Pair device", approvedBy: "manager" };
 
+function insertApiDailySnapshot(database: HubDatabase, input: { id: string; businessDate: string; finalSalesPaise: number; cashPaise?: number; billSummaries?: unknown[]; status?: "finalized" | "active" }) {
+  const status = input.status ?? "finalized";
+  database.db
+    .prepare(
+      `INSERT INTO pos_days (id, outlet_id, business_date, status, period_start_at, period_end_at, created_at, finalized_at)
+       VALUES (?, 'outlet-main', ?, ?, ?, ?, ?, ?)`
+    )
+    .run(input.id, input.businessDate, status, `${input.businessDate}T00:30:00.000Z`, `${input.businessDate}T18:30:00.000Z`, `${input.businessDate}T00:30:00.000Z`, status === "finalized" ? `${input.businessDate}T19:00:00.000Z` : null);
+  if (status !== "finalized") {
+    database.db
+      .prepare(
+        `INSERT INTO orders (id, table_id, pos_day_id, order_type, status, pax, captain_id, created_at, updated_at)
+         VALUES (?, 'table-t1', ?, 'dine_in', 'open', 1, 'captain-test', ?, ?)`
+      )
+      .run(`order-${input.id}`, input.id, `${input.businessDate}T12:00:00.000Z`, `${input.businessDate}T12:00:00.000Z`);
+    return;
+  }
+  database.db
+    .prepare(
+      `INSERT INTO daily_report_snapshots (
+        pos_day_id, business_date, status, bill_count, open_orders, billed_orders, paid_bills, unpaid_bills, cancelled_orders,
+        gross_sales_paise, discount_paise, tip_paise, final_sales_paise,
+        cash_payments_paise, upi_payments_paise, card_payments_paise, online_payments_paise, total_payments_paise, non_cash_payments_paise,
+        bill_summaries_json, item_summaries_json, group_summaries_json, finalized_at, updated_at
+      ) VALUES (?, ?, 'finalized', 1, 0, 0, 1, 0, 0, ?, 0, 0, ?, ?, 0, 0, 0, ?, 0, ?, '[]', '[]', ?, ?)`
+    )
+    .run(
+      input.id,
+      input.businessDate,
+      input.finalSalesPaise,
+      input.finalSalesPaise,
+      input.cashPaise ?? input.finalSalesPaise,
+      input.cashPaise ?? input.finalSalesPaise,
+      JSON.stringify(input.billSummaries ?? []),
+      `${input.businessDate}T19:00:00.000Z`,
+      `${input.businessDate}T19:00:00.000Z`
+    );
+}
+
 class FailingPrinterAdapter {
   async print(_payload: PrintTarget): Promise<void> {
     throw new Error("printer offline");
@@ -837,6 +876,36 @@ describe("Hub API auth and service flow", () => {
     expect(database.db.prepare("SELECT COUNT(*) AS count FROM event_log WHERE type = 'bill.history_reprinted'").get()).toEqual({ count: 1 });
     const printJob = database.db.prepare("SELECT payload FROM print_jobs WHERE target_id = ? ORDER BY created_at DESC LIMIT 1").get(bill.billId) as { payload: string };
     expect(printJob.payload).not.toContain("REPRINT");
+
+    await app.close();
+    database.close();
+  });
+
+  it("returns closed-only range reports and lazily includes bill history", async () => {
+    const { app, database } = createTestServer();
+    const headers = { "x-device-token": "test-admin-token" };
+    insertApiDailySnapshot(database, {
+      id: "api-day-1",
+      businessDate: "2026-05-01",
+      finalSalesPaise: 10_000,
+      billSummaries: [{ billId: "bill-1", billNumber: 1, orderId: "order-1", tableName: "T1", status: "paid", totalPaise: 10_000, discountPaise: 0, tipPaise: 0, finalTotalPaise: 10_000, paidPaise: 10_000, settledAt: "2026-05-01T18:00:00.000Z", payments: [], items: [] }]
+    });
+    insertApiDailySnapshot(database, { id: "api-day-open", businessDate: "2026-05-02", finalSalesPaise: 0, status: "active" });
+
+    const summaryResponse = await app.inject({ method: "GET", url: "/reports/range?from=2026-05-01&to=2026-05-03", headers });
+    const billsResponse = await app.inject({ method: "GET", url: "/reports/range?from=2026-05-01&to=2026-05-03&includeBills=true", headers });
+    const invalidResponse = await app.inject({ method: "GET", url: "/reports/range?from=2026-05-03&to=2026-05-01", headers });
+
+    expect(summaryResponse.statusCode).toBe(200);
+    expect(summaryResponse.json()).toMatchObject({
+      finalSalesPaise: 10_000,
+      availableDays: [expect.objectContaining({ business_date: "2026-05-01" })],
+      unfinalizedDates: ["2026-05-02"],
+      missingDates: ["2026-05-03"]
+    });
+    expect(summaryResponse.json()).not.toHaveProperty("billSummaries");
+    expect(billsResponse.json()).toMatchObject({ billSummaries: [expect.objectContaining({ billId: "bill-1" })] });
+    expect(invalidResponse.statusCode).toBe(400);
 
     await app.close();
     database.close();
