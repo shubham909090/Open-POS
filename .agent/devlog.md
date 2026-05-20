@@ -783,3 +783,17 @@
 - Renderer split: `apps/hub-electron/src/renderer/components/reports/report-history-edit-modal.tsx` owns the edit bill modal UI for subtotal/discount/tip summary, exact payment split, item correction, menu search, and Master PIN entry.
 - Result: `report-history-panel.tsx` is down from 429 to 289 lines; the new modal view is 272 lines and keeps history edit rendering searchable without opening mutation orchestration.
 - Verification: `pnpm --filter @gaurav-pos/hub-electron typecheck`, `test -- src/tests/reports-view.test.tsx src/tests/api-server-orders-billing.test.ts src/tests/order-service-history.test.ts`, `build`, `lint`, and `git diff --check` passed. The targeted test command currently runs the full hub suite: 46 files passed, 3 skipped, 264 tests passed.
+
+## 2026-05-20 mobile SafeAreaView deprecation cleanup
+- Task: Replaced deprecated React Native core `SafeAreaView` usage with `react-native-safe-area-context`.
+- Mobile dependency: installed Expo SDK 55-compatible `react-native-safe-area-context@~5.6.2`.
+- Mobile update: `apps/mobile/src/App.tsx` imports `SafeAreaProvider`/`SafeAreaView` from `react-native-safe-area-context` and wraps mobile root with the provider.
+- Mobile update: `apps/mobile/src/components/pairing-scanner-modal.tsx` imports `SafeAreaView` from `react-native-safe-area-context`.
+- Verification: `pnpm --filter @gaurav-pos/mobile typecheck`, `lint`, `test`, and `git diff --check` passed. Mobile tests: 11 files passed, 40 tests passed.
+
+## 2026-05-20 mobile 0.1.3 Android release prep
+- Task: Prepared the next Android APK build after the SafeAreaView cleanup.
+- Mobile version: bumped `apps/mobile/package.json` and `apps/mobile/app.json` to `0.1.3`; added Android `versionCode: 3`.
+- Expo cleanup: ignored local `.expo` state, removed tracked `.expo` device files, switched the cleartext plugin to `expo/config-plugins`, added `expo-asset`, and aligned Expo to `~55.0.25`.
+- Verification: `pnpm install --frozen-lockfile`, `pnpm --filter @gaurav-pos/hub-electron test`, `pnpm --filter @gaurav-pos/hub-electron typecheck`, `pnpm --filter @gaurav-pos/mobile typecheck`, `lint`, `test`, `pnpm --filter @gaurav-pos/mobile exec expo install --check`, and `pnpm --filter @gaurav-pos/mobile exec npx -y expo-doctor` passed.
+- Build note: local EAS Android build reached Gradle but failed because this Mac has no Java runtime or Android SDK installed. Hub Windows release packaging was not attempted on macOS arm64 because `docs/release-build-workflow.md` requires Windows x64 for trusted Hub artifacts.

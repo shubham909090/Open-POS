@@ -1,5 +1,6 @@
 import { CameraView } from "expo-camera";
-import { Modal, Pressable, SafeAreaView, Text, View } from "react-native";
+import { Modal, Pressable, Text, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { styles } from "../styles/app-styles";
 
 export function PairingScannerModal({

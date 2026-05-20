@@ -12,6 +12,7 @@ apps/hub-electron/release/
 apps/mobile/dist-web-check/
 .turbo/
 .next/
+**/.expo/
 coverage/
 *.tsbuildinfo
 

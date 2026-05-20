@@ -2,7 +2,7 @@
   "expo": {
     "name": "Gaurav POS Mobile",
     "slug": "gaurav-pos-mobile",
-    "version": "0.1.2",
+    "version": "0.1.3",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "assetBundlePatterns": [
@@ -19,6 +19,7 @@
     ],
     "android": {
       "package": "com.gauravpos.mobile",
+      "versionCode": 3,
       "permissions": [
         "android.permission.CAMERA",
         "android.permission.RECORD_AUDIO"

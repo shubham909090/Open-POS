@@ -1,4 +1,4 @@
-const { withAndroidManifest } = require("@expo/config-plugins");
+const { withAndroidManifest } = require("expo/config-plugins");
 
 module.exports = function withCleartextTraffic(config) {
   return withAndroidManifest(config, (configWithManifest) => {

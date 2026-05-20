@@ -3,7 +3,6 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
-  SafeAreaView,
   ScrollView,
   StatusBar,
   Text,
@@ -11,6 +10,7 @@ import {
   useWindowDimensions,
   View
 } from "react-native";
+import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import type { SaleGroupKind } from "@gaurav-pos/shared";
 import { HubClient, type CurrentDaySummary, type DailyReportDetail, type DailyReportRow, type HubBootstrap, type HubOrder, type KdsTicket } from "./lib/hub-client";
 import { getMobileServiceViewModel } from "./lib/mobile-app-view-model";
@@ -254,12 +254,14 @@ export default function App() {
 
   if (initializing) {
     return (
-      <SafeAreaView style={styles.safe}>
-        <View style={styles.loadingShell}>
-          <ActivityIndicator size="large" color={palette.green} />
-          <Text style={styles.loadingText}>Opening POS app...</Text>
-        </View>
-      </SafeAreaView>
+      <SafeAreaProvider>
+        <SafeAreaView style={styles.safe}>
+          <View style={styles.loadingShell}>
+            <ActivityIndicator size="large" color={palette.green} />
+            <Text style={styles.loadingText}>Opening POS app...</Text>
+          </View>
+        </SafeAreaView>
+      </SafeAreaProvider>
     );
   }
 
@@ -363,66 +365,68 @@ export default function App() {
   );
 
   return (
-    <SafeAreaView style={styles.safe}>
-      <StatusBar barStyle="dark-content" backgroundColor={palette.wash} />
-      <KeyboardAvoidingView style={styles.keyboardShell} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-        <AppHeader
-          connection={connection}
-          title={isKitchenDevice ? "Kitchen Screen" : selectedTable ? `Table ${selectedTable.name}` : canBill ? "Captain POS" : "Waiter"}
-          subtitle={isKitchenDevice ? deviceName || "Kitchen device" : selectedTable ? "Add dishes or review sent items" : "Pick a table to start"}
-          onSetupPress={() => openSetup(hubUrl, deviceToken)}
-        />
-
-        {shouldShowOnboarding ? (
-          <OnboardingScreen
+    <SafeAreaProvider>
+      <SafeAreaView style={styles.safe}>
+        <StatusBar barStyle="dark-content" backgroundColor={palette.wash} />
+        <KeyboardAvoidingView style={styles.keyboardShell} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+          <AppHeader
             connection={connection}
-            formRevision={formRevision}
-            hubUrl={hubUrlDraft}
-            deviceToken={deviceTokenDraft}
-            pairingCode={pairingCode}
-            pairingPayload={pairingPayload}
-            hasSavedToken={Boolean(deviceToken)}
-            loading={loading}
-            message={message}
-            onHubUrlChange={setHubUrlDraft}
-            onDeviceTokenChange={setDeviceTokenDraft}
-            onPairingCodeChange={(value) => setPairingCode(value.replace(/\D/g, "").slice(0, 6))}
-            onPairingPayloadChange={setPairingPayload}
-            onRetry={() => void refresh()}
-            onSaveConnection={() => void saveHubConnection()}
-            onScan={() => void openScanner()}
-            onPair={() => void pairDevice()}
-            onStart={() => setSetupOpen(false)}
+            title={isKitchenDevice ? "Kitchen Screen" : selectedTable ? `Table ${selectedTable.name}` : canBill ? "Captain POS" : "Waiter"}
+            subtitle={isKitchenDevice ? deviceName || "Kitchen device" : selectedTable ? "Add dishes or review sent items" : "Pick a table to start"}
+            onSetupPress={() => openSetup(hubUrl, deviceToken)}
           />
-        ) : (
-          <>
-            {useVirtualMenu ? (
-              <View style={styles.screen}>
-                <View style={[styles.screenContent, styles.virtualMenuContent]}>
-                  {serviceContent}
-                </View>
-              </View>
-            ) : (
-              <ScrollView style={styles.screen} contentContainerStyle={styles.screenContent} keyboardShouldPersistTaps="always">
-                {serviceContent}
-              </ScrollView>
-            )}
-            {!isKitchenDevice && hasNewItems && mode !== "ticket" ? (
-              <DraftBar
-                count={items.reduce((total, item) => total + item.quantity, 0)}
-                total={draftTotal}
-                onReview={() => setMode("ticket")}
-              />
-            ) : null}
-          </>
-        )}
-      </KeyboardAvoidingView>
 
-      <PairingScannerModal
-        visible={scannerOpen}
-        onClose={() => setScannerOpen(false)}
-        onScannedPayload={(data) => void handleScannedPayload(data)}
-      />
-    </SafeAreaView>
+          {shouldShowOnboarding ? (
+            <OnboardingScreen
+              connection={connection}
+              formRevision={formRevision}
+              hubUrl={hubUrlDraft}
+              deviceToken={deviceTokenDraft}
+              pairingCode={pairingCode}
+              pairingPayload={pairingPayload}
+              hasSavedToken={Boolean(deviceToken)}
+              loading={loading}
+              message={message}
+              onHubUrlChange={setHubUrlDraft}
+              onDeviceTokenChange={setDeviceTokenDraft}
+              onPairingCodeChange={(value) => setPairingCode(value.replace(/\D/g, "").slice(0, 6))}
+              onPairingPayloadChange={setPairingPayload}
+              onRetry={() => void refresh()}
+              onSaveConnection={() => void saveHubConnection()}
+              onScan={() => void openScanner()}
+              onPair={() => void pairDevice()}
+              onStart={() => setSetupOpen(false)}
+            />
+          ) : (
+            <>
+              {useVirtualMenu ? (
+                <View style={styles.screen}>
+                  <View style={[styles.screenContent, styles.virtualMenuContent]}>
+                    {serviceContent}
+                  </View>
+                </View>
+              ) : (
+                <ScrollView style={styles.screen} contentContainerStyle={styles.screenContent} keyboardShouldPersistTaps="always">
+                  {serviceContent}
+                </ScrollView>
+              )}
+              {!isKitchenDevice && hasNewItems && mode !== "ticket" ? (
+                <DraftBar
+                  count={items.reduce((total, item) => total + item.quantity, 0)}
+                  total={draftTotal}
+                  onReview={() => setMode("ticket")}
+                />
+              ) : null}
+            </>
+          )}
+        </KeyboardAvoidingView>
+
+        <PairingScannerModal
+          visible={scannerOpen}
+          onClose={() => setScannerOpen(false)}
+          onScannedPayload={(data) => void handleScannedPayload(data)}
+        />
+      </SafeAreaView>
+    </SafeAreaProvider>
   );
 }

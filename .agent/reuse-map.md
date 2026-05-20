@@ -178,8 +178,8 @@
 - `apps/mobile/src/hooks/use-kitchen-actions.ts`: mobile KDS unit selection, ticket refresh, new-ticket chime handoff, and ticket status updates.
 - `apps/mobile/src/hooks/use-order-draft.ts`: mobile selected-table draft state, draft persistence, item mutation, table selection, and draft clearing.
 - `apps/mobile/src/hooks/use-mobile-hub-refresh.ts`: mobile startup hydration, polling/realtime refresh, role-specific bootstrap loads, ready alerts, KDS refresh, and connection health state.
-- `apps/mobile/src/App.tsx`: mobile shell orchestration and screen composition; check focused hooks/libs before adding service workflow, refresh, pairing, chime, draft, or billing behaviour here.
-- `apps/mobile/src/components/pairing-scanner-modal.tsx`: QR scanner modal for hub/device pairing.
+- `apps/mobile/src/App.tsx`: mobile shell orchestration and screen composition; wraps root in `react-native-safe-area-context` `SafeAreaProvider`; check focused hooks/libs before adding service workflow, refresh, pairing, chime, draft, or billing behaviour here.
+- `apps/mobile/src/components/pairing-scanner-modal.tsx`: QR scanner modal for hub/device pairing; uses `react-native-safe-area-context` `SafeAreaView`.
 - `apps/mobile/src/components/ticket-screen.tsx`: mobile table check render orchestration, new-item notes, sent-item editor view, transfer section, and captain billing slot.
 - `apps/mobile/src/components/ticket-transfer-section.tsx`: mobile captain table/item transfer workflow, target picker, and transfer quantity controls.
 - `apps/mobile/src/components/billing-panel.tsx`: mobile captain bill generation, payment punching, and manager-approved reprint/NC/revise actions; re-exports billing history for compatibility.
