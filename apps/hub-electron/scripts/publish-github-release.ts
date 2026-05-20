@@ -1,4 +1,4 @@
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { currentDbSchemaVersion } from "../src/db/schema-version.js";
@@ -16,6 +16,13 @@ const installerName = `${metadata.productName} Setup ${version}.exe`;
 const packageName = `${metadata.productName}-${version}.gpos-update.zip`;
 const installerPath = join(releaseDir, installerName);
 const packagePath = join(releaseDir, packageName);
+const mobilePackagePath = join(root, "..", "mobile", "package.json");
+const mobileVersion = existsSync(mobilePackagePath)
+  ? (JSON.parse(readFileSync(mobilePackagePath, "utf8")).version as string)
+  : null;
+const mobileApkName = mobileVersion ? `Gaurav POS Mobile-${mobileVersion}.apk` : null;
+const mobileApkPath = mobileApkName ? join(root, "..", "mobile", "release-local", mobileApkName) : null;
+const releaseAssets = [packagePath, installerPath, ...(mobileApkPath && existsSync(mobileApkPath) ? [mobileApkPath] : [])];
 const dryRun = process.argv.includes("--dry-run");
 const clobber = process.argv.includes("--clobber");
 
@@ -38,17 +45,18 @@ const notes = [
   "Assets:",
   `- ${packageName} (in-app update package)`,
   `- ${installerName} (first-time install / manual reinstall)`,
+  ...(mobileApkName && mobileApkPath && existsSync(mobileApkPath) ? [`- ${mobileApkName} (Android APK)`] : []),
   "",
   "Update safety:",
   "- DB schema compatibility checked by Hub before install",
   "- SQLite native binary validated as Windows x64 PE32+",
   "- Installer inspected for matching SQLite native binary",
-  "- Hub creates pre-update DB backup before opening installer"
+  "- Hub creates pre-update DB backup before opening installer",
+  ...(mobileApkName && mobileApkPath && existsSync(mobileApkPath) ? ["- Android APK built with EAS preview profile"] : [])
 ].join("\n");
 
 console.log(`Ready to publish ${owner}/${repo} ${tag}`);
-console.log(`- ${packagePath}`);
-console.log(`- ${installerPath}`);
+for (const asset of releaseAssets) console.log(`- ${asset}`);
 if (dryRun) {
   console.log("Dry run only. No GitHub release created.");
   process.exit(0);
@@ -59,14 +67,13 @@ if (run("gh", ["release", "view", tag, "--repo", `${owner}/${repo}`], { allowFai
     throw new Error(`Release ${tag} already exists. Bump app version or rerun with --clobber for an intentional overwrite.`);
   }
   run("gh", ["release", "edit", tag, "--repo", `${owner}/${repo}`, "--title", `Hub ${version}`, "--notes", notes]);
-  run("gh", ["release", "upload", tag, packagePath, installerPath, "--repo", `${owner}/${repo}`, "--clobber"]);
+  run("gh", ["release", "upload", tag, ...releaseAssets, "--repo", `${owner}/${repo}`, "--clobber"]);
 } else {
   run("gh", [
       "release",
       "create",
       tag,
-      packagePath,
-      installerPath,
+      ...releaseAssets,
       "--repo",
       `${owner}/${repo}`,
       "--title",

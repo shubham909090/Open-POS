@@ -9,6 +9,7 @@ apps/*/data/
 dist/
 build/
 apps/hub-electron/release/
+apps/mobile/release-local/
 apps/mobile/dist-web-check/
 .turbo/
 .next/
