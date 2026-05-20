@@ -30,8 +30,29 @@ import { AdvancedView } from "./components/advanced/advanced-view.js";
 
 import "./styles/tokens.css";
 import "./styles/globals.css";
+import "./styles/hub-shell.css";
+import "./styles/layout-primitives.css";
+import "./styles/row-primitives.css";
+import "./styles/action-primitives.css";
 import "./styles.css";
+import "./styles/setup.css";
+import "./styles/records.css";
+import "./styles/orders.css";
+import "./styles/order-table-map.css";
+import "./styles/order-billing.css";
+import "./styles/order-revision.css";
+import "./styles/order-state-editor.css";
+import "./styles/order-transfer.css";
+import "./styles/printer.css";
+import "./styles/print-layout.css";
+import "./styles/pairing.css";
+import "./styles/app-update.css";
 import "./styles/components.css";
+import "./styles/alcohol.css";
+import "./styles/kitchen.css";
+import "./styles/reports.css";
+import "./styles/report-history.css";
+import "./styles/report-stock-movements.css";
 import "./styles/responsive.css";
 
 const queryClient = new QueryClient({

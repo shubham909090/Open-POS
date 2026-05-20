@@ -1,22 +1,209 @@
 # Reuse Map
 
-- `packages/shared/src/schemas.ts`: API command validation for hub operations.
+- `packages/shared/src/schemas.ts`: compatibility barrel for shared API command validation; prefer focused schema modules below for new work.
+- `packages/shared/src/schemas/common.ts`: shared Zod primitives for custom IDs, business dates, ticket labels, approvals, tax components, and printer slots.
+- `packages/shared/src/schemas/order.ts`: order item, submit, order-state save, KOT reprint, cancellation, KOT status, and table/item movement command schemas.
+- `packages/shared/src/schemas/billing.ts`: payment, bill adjustment, bill generation, bill reprint, revision, history edit, NC, and bill printer destination schemas.
+- `packages/shared/src/schemas/catalog.ts`: sale group, floor, table, production unit, menu item, alcohol item, CSV import, bulk delete, and alcohol stock schemas.
+- `packages/shared/src/schemas/settings.ts`: Manager/Master PIN, printer mode/profiles, ticket template, hub connection, print layout, pairing, backup, restore, and reset schemas.
+- `packages/shared/src/schemas/reports.ts`: report range query schema and date-range guard.
 - `packages/shared/src/types.ts`: shared role, order, KOT, print, billing, and event types.
 - `apps/hub-electron/src/db/drizzle-schema.ts`: Drizzle ORM table/schema source for typed local SQLite access.
 - `apps/hub-electron/drizzle`: generated Drizzle migration source of truth used at hub startup.
 - `apps/hub-electron/src/db/backup-service.ts`: hot SQLite backup creation and restart-based restore scheduling.
 - `apps/hub-electron/drizzle.config.ts`: Drizzle Kit config for generating SQLite migration snapshots and opening Studio.
-- `apps/hub-electron/src/domain/order-service.ts`: table order, KOT lifecycle, billing, and event/outbox transaction rules.
+- `apps/hub-electron/src/domain/order-service.ts`: table order, KOT lifecycle, billing, and event/outbox transaction rules. Still large; check focused helpers below before opening it.
+- `apps/hub-electron/src/domain/order-service/types.ts`: private row/result shapes used by the hub order module.
+- `apps/hub-electron/src/domain/order-service/order-item-queries.ts`: canonical order-item row projection and order-item lookup helpers used by order mutation flows.
+- `apps/hub-electron/src/domain/order-service/order-item-diff.ts`: order-item diff writes, snapshot diff-key hashing, and order-item KOT change projection.
+- `apps/hub-electron/src/domain/order-service/order-lifecycle.ts`: live order submit, full order cancel, item cancel, occupancy writes, cancellation KOT changes, and lifecycle event writes.
+- `apps/hub-electron/src/domain/order-service/order-state-update.ts`: captain order-state edits, billed-order manager-approved edits, printed KOT-on-save, bill revision, empty-billed-order bill removal, and table status writes.
+- `apps/hub-electron/src/domain/order-service/submitted-items.ts`: submitted menu/open-item normalization, variant snapshot preservation, note trimming, and price-edit approval callout for submit/edit/revision flows.
+- `apps/hub-electron/src/domain/order-service/table-transfer.ts`: table transfer, full table merge into occupied table, partial item transfer, moved-item KOT creation, and transfer event writes.
+- `apps/hub-electron/src/domain/order-service/kot-creation.ts`: KOT grouping, KOT row/item inserts, KOT ticket rendering, optional print enqueue, and `kot.created` event append callout.
+- `apps/hub-electron/src/domain/order-service/bill-queries.ts`: canonical bill row projection and bill lookup helpers.
+- `apps/hub-electron/src/domain/order-service/bill-cleanup.ts`: empty pending bill cleanup for zero-total bills with no payments, including local bill deletion and table/order cleanup events.
+- `apps/hub-electron/src/domain/order-service/bill-revisions.ts`: bill revision audit row writer preserving subtotal, tax, total, discount, tip, final total, and tax breakdown snapshots.
+- `apps/hub-electron/src/domain/order-service/event-log.ts`: local domain event writer that appends both `event_log` and pending `sync_outbox` rows for hub sync.
+- `apps/hub-electron/src/domain/order-service/order-records.ts`: order row create/select/require helpers, table-freeing write, and table/item move authorization rules.
+- `apps/hub-electron/src/domain/order-service/sequences.ts`: bill number and KOT/BOT sequence helpers, including reuse of existing per-order production-unit ticket sequences.
+- `apps/hub-electron/src/domain/order-service/bill-actions.ts`: manager-approved bill reprint, history reprint, printed-bill revision, owner history edit, NC marking, first-print flow, related print count/event/report side effects.
+- `apps/hub-electron/src/domain/order-service/bill-lifecycle.ts`: bill generation, settlement payment validation, settlement writes, optional receipt print enqueue, table release, and billing lifecycle event writes.
+- `apps/hub-electron/src/domain/order-service/bill-ticket-model.ts`: receipt bill ticket read model construction, printable tax breakdown, payment projection, and receipt print-layout mapping.
+- `apps/hub-electron/src/domain/order-service/bill-totals.ts`: bill total/tax calculation and order-item tax writeback for bill generation/revision.
+- `apps/hub-electron/src/domain/order-service/bill-payment-records.ts`: paid amount aggregation, paid-bill payment reallocation, owner history-edit payment replacement, local bill deletion, and bill adjustment writes.
+- `apps/hub-electron/src/domain/order-service/business-day-lifecycle.ts`: POS business-day creation, completed-day finalization, daily report snapshot creation, and snapshot refresh.
+- `apps/hub-electron/src/domain/order-service/menu-catalog.ts`: menu list read model, current-day popularity, menu name lookup, variant listing, menu-item snapshot lookup, variant resolution/defaulting, and default-variant updates.
+- `apps/hub-electron/src/domain/order-service/menu-item-actions.ts`: dish/menu create, CSV import, update, active toggle, delete, approved delete, and bulk delete with default-variant writes and usage-based soft delete.
+- `apps/hub-electron/src/domain/order-service/floor-table-catalog.ts`: table/floor list read models, lookup guards, and next-sort-order helpers.
+- `apps/hub-electron/src/domain/order-service/sale-group-catalog.ts`: sale-group list read model, active lookup guard, and CSV/reference resolver.
+- `apps/hub-electron/src/domain/order-service/csv-import.ts`: reusable CSV parser and typed CSV coercion helpers for menu/alcohol imports.
+- `apps/hub-electron/src/domain/order-service/helpers.ts`: pure order-service JSON array parsing, business-date range, and item-note merge helpers.
+- `apps/hub-electron/src/domain/order-service/tax.ts`: tax component/breakdown parsing and VAT filtering used by billing/report math.
+- `apps/hub-electron/src/domain/order-service/billing-calculations.ts`: pure discount and weighted allocation helpers.
+- `apps/hub-electron/src/domain/order-service/approvals.ts`: Manager/Master PIN hashing, legacy hash upgrade, and approval audit recording.
+- `apps/hub-electron/src/domain/order-service/printer-settings.ts`: bill printer profile parsing/writes, print layout keys/defaults, and printer output mode parsing.
+- `apps/hub-electron/src/domain/order-service/print-settings-actions.ts`: bill printer profile commands, printer output mode commands, bill printer resolution, and test bill/KOT print enqueue.
+- `apps/hub-electron/src/domain/order-service/print-test-payloads.ts`: pure test bill/KOT print payload builders.
+- `apps/hub-electron/src/domain/order-service/print-job-records.ts`: print-job enqueue and retry reset persistence helpers.
+- `apps/hub-electron/src/domain/order-service/reprint-tickets.ts`: KOT/bill reprint query, ticket rendering, bill print-count update, and print enqueue orchestration.
+- `apps/hub-electron/src/domain/order-service/settings-models.ts`: hub connection, ticket-template, and print-layout setting projections/write-shape helpers.
+- `apps/hub-electron/src/domain/order-service/settings-records.ts`: hub setting read/write persistence helper for setting commands and sequence updates.
+- `apps/hub-electron/src/domain/order-service/settings-actions.ts`: Manager/Master PIN commands, manager session unlock, hub connection setting commands, ticket-template commands, and print-layout commands.
+- `apps/hub-electron/src/domain/order-service/kot-status.ts`: KOT/BOT status update transaction, ready-notification trigger, not-found guard, and status-change event emission.
+- `apps/hub-electron/src/domain/order-service/production-unit-queries.ts`: production-unit list/read/require helpers, active id/name reference resolution, and first-active-unit lookup for KOT test printing.
+- `apps/hub-electron/src/domain/order-service/ready-notifications.ts`: KOT-ready captain notification creation, unread listing, and seen acknowledgement.
+- `apps/hub-electron/src/domain/order-service/setup-catalog-actions.ts`: sale group, floor, table, and kitchen/counter create/update/remove commands with ID generation, default sort order, usage-based soft delete, validation, and event writes.
+- `apps/hub-electron/src/domain/order-service/alcohol-usage.ts`: pure alcohol recipe snapshot parsing and pending/paid stock usage calculation from order items.
+- `apps/hub-electron/src/domain/order-service/alcohol-stock-consumption.ts`: alcohol usage-to-stock application for paid bills, pending usage, and bill history edit deltas.
+- `apps/hub-electron/src/domain/order-service/alcohol-actions.ts`: alcohol catalog/storage entrypoints, alcohol item create/import/update commands, manual stock adjustment approval routing, stock movement listing, and alcohol event writes.
+- `apps/hub-electron/src/domain/order-service/alcohol-catalog.ts`: alcohol catalog read model, recipe snapshots, plain-liquor resolver, recipe CSV parsing, variation/recipe validation, and variation/recipe replacement.
+- `apps/hub-electron/src/domain/order-service/alcohol-stock.ts`: alcohol storage read model, stock movement listing, stock guards/writes, and movement recording.
+- `apps/hub-electron/src/domain/order-service/report-summary.ts`: daily report aggregation from SQLite into business-day, bill, item, payment, and sale-group summaries.
+- `apps/hub-electron/src/domain/order-service/report-range.ts`: range report aggregation from finalized daily snapshots, including missing/unfinalized date detection.
+- `apps/hub-electron/src/domain/order-service/report-snapshots.ts`: finalized daily report snapshot list/get read models for report history screens and routes.
+- `apps/hub-electron/src/domain/order-service/read-models.ts`: hub read/query models for KDS tickets, full table order details, active order summaries, print-job lists, and sync status.
+- `apps/hub-electron/src/tests/order-service-kot.test.ts`: focused OrderService coverage for KOT creation, ticket sequencing, cancellation, KDS visibility, and printer-output mode.
+- `apps/hub-electron/src/tests/order-service-order-state.test.ts`: focused OrderService coverage for running table totals, sent-order edits, note merge/clear behaviour, and price snapshot rows.
+- `apps/hub-electron/src/tests/order-service-bill-lifecycle.test.ts`: focused OrderService coverage for bill tax snapshots, bill numbering, GST print summary, empty pending bill cleanup, and cash settlement.
+- `apps/hub-electron/src/tests/order-service-billing.test.ts`: focused OrderService coverage for bill generation, settlement, payment adjustment, receipt/reprint behaviour, and bill printer routing.
+- `apps/hub-electron/src/tests/order-service-reporting.test.ts`: focused OrderService coverage for current business-day summaries, bootstrap menu popularity, finalized daily reports, and closed range aggregation.
+- `apps/hub-electron/src/tests/order-service-setup-catalog.test.ts`: focused OrderService coverage for setup catalog CRUD/custom IDs/sort/delete semantics, bulk dish deletes, and KDS print retry.
+- `apps/hub-electron/src/tests/order-service-history.test.ts`: focused OrderService coverage for owner history edits, exact payment splits, pending-history rejection, NC history edits, and finalized snapshot refresh.
+- `apps/hub-electron/src/tests/order-service-report-groups.test.ts`: focused OrderService coverage for range bill-summary opt-in, NC finalization, sale group/open bar/BOT reporting, and discount/tip allocation.
+- `apps/hub-electron/src/tests/order-service-bill-guards.test.ts`: focused OrderService coverage for post-payment NC/revision guards and printed-bill price snapshot preservation.
+- `apps/hub-electron/src/tests/order-service-alcohol.test.ts`: focused OrderService coverage for manual alcohol stock adjustment approvals, stock movement listing, and disable-on-movement semantics.
+- `apps/hub-electron/src/tests/order-service-alcohol-stock-lifecycle.test.ts`: focused OrderService coverage for alcohol pending stock, paid settlement deduction, and history-edit stock deltas/restores.
+- `apps/hub-electron/src/tests/order-service-alcohol-settlement.test.ts`: focused OrderService coverage for alcohol stock deduction during paid/NC settlement, cocktail recipe snapshots, negative stock, and unpaid snapshot deletion guards.
+- `apps/hub-electron/src/tests/order-service-alcohol-catalog.test.ts`: focused OrderService coverage for alcohol catalog validation, stale recipe cleanup, recipe-based disable/delete semantics, and bulk alcohol removal.
+- `apps/hub-electron/src/tests/order-service-alcohol-revision.test.ts`: focused OrderService coverage for alcohol bill revision with inactive variants and revised bill audit totals.
+- `apps/hub-electron/src/tests/order-service-transfer.test.ts`: focused OrderService coverage for table transfer, partial item transfer, and transfer validation.
+- `apps/hub-electron/src/tests/order-service.test.ts`: skipped compatibility index for the split OrderService test suite.
 - `apps/hub-electron/src/domain/auth-service.ts`: local offline device token auth, pairing code exchange, role sessions, and revocation.
-- `apps/hub-electron/src/api/server.ts`: LAN REST/WebSocket API surface used by hub UI and Android clients.
+- `apps/hub-electron/src/api/server.ts`: LAN REST/WebSocket route registration used by hub UI and Android clients; common auth, idempotency, print processing, and feature route groups live in focused API modules.
+- `apps/hub-electron/src/api/route-context.ts`: shared hub server input, route context, auth handler, and session handler types.
+- `apps/hub-electron/src/api/route-auth.ts`: request token extraction from bearer/device/websocket/query sources, role preHandlers, and session lookup for hub routes.
+- `apps/hub-electron/src/api/idempotency.ts`: idempotency-key request hashing, replay, conflict, and failed/in-progress record transitions for hub mutation routes.
+- `apps/hub-electron/src/api/print-job-processing.ts`: created print-job processing helper that returns printed/failed/skipped totals for order and billing routes.
+- `apps/hub-electron/src/api/catalog-routes.ts`: catalog/setup CRUD route registration for floors, tables, production units, sale groups, menu items, alcohol items, and stock adjustment.
+- `apps/hub-electron/src/api/billing-routes.ts`: bill generate, print, reprint, revise, history edit, NC, and settlement route registration.
+- `apps/hub-electron/src/api/print-routes.ts`: print job process, test print, list, and retry route registration.
+- `apps/hub-electron/src/api/report-routes.ts`: current day, daily, range, and alcohol stock movement report route registration.
+- `apps/hub-electron/src/api/settings-routes.ts`: settings, printer, Manager/Master PIN, hub connection, ticket template, and print layout route registration.
+- `apps/hub-electron/src/api/maintenance-routes.ts`: backup, update, and full-reset route registration.
+- `apps/hub-electron/src/api/pairing-url.ts`: pairing QR public/LAN URL resolution and LAN IPv4 selection.
+- `apps/hub-electron/src/api/realtime-visibility.ts`: role-filtered realtime event visibility and redaction helpers.
+- `apps/hub-electron/src/tests/api-server-helpers.ts`: shared Fastify hub test-server factories, device pairing helpers, WebSocket waits, and daily snapshot fixtures for API integration tests.
+- `apps/hub-electron/src/tests/api-server-auth-settings.test.ts`: focused API coverage for local auth, admin sessions, pairing, hub connection settings, reset, sync admin endpoints, and pairing throttles.
+- `apps/hub-electron/src/tests/api-server-orders-billing.test.ts`: focused API coverage for order submission, bill generation/reprint, range reports, history edit, KDS notes, and order-state saves.
+- `apps/hub-electron/src/tests/api-server-realtime-roles.test.ts`: focused API coverage for realtime visibility/redaction, WebSocket auth, role permissions, table/item moves, kitchen access, and ready notifications.
+- `apps/hub-electron/src/tests/api-server-print-catalog.test.ts`: focused API coverage for printer mode, print layouts, test print routing/failures, alcohol stock reports, and CSV imports.
+- `apps/hub-electron/src/tests/api-server-idempotency.test.ts`: focused API coverage for bill reprint approval, idempotent submit replay, immediate KOT printing, print failure retry state, and idempotency conflicts.
+- `apps/hub-electron/src/tests/api-server.test.ts` and `api-server-orders-realtime.test.ts`: skipped compatibility indexes for the split API integration suites.
+- `apps/hub-electron/src/renderer/hub-api.ts`: renderer API fetch facade and auth token helpers; DTO shapes are re-exported from the focused type module below.
+- `apps/hub-electron/src/renderer/hub-api-types.ts`: compatibility barrel for renderer-facing REST DTOs; import from here when preserving the broad hub API facade surface.
+- `apps/hub-electron/src/renderer/hub-api-types/auth.ts`: device roles, local devices, pairing result, and approval payload contracts.
+- `apps/hub-electron/src/renderer/hub-api-types/update.ts`: backup, update package, app update status, validation, and GitHub update contracts.
+- `apps/hub-electron/src/renderer/hub-api-types/catalog.ts`: floor, table, production unit, menu item/variant, and sale group contracts.
+- `apps/hub-electron/src/renderer/hub-api-types/printing.ts`: print jobs, print process summaries, system/bill printer profiles, and print layout contracts.
+- `apps/hub-electron/src/renderer/hub-api-types/bootstrap.ts`: renderer bootstrap payload composed from catalog, printing, sync status, and setup contracts.
+- `apps/hub-electron/src/renderer/hub-api-types/orders.ts`: bill adjustments, order items, bills, payments, selected table order, and KDS ticket contracts.
+- `apps/hub-electron/src/renderer/hub-api-types/alcohol.ts`: alcohol catalog, storage row, and stock movement contracts.
+- `apps/hub-electron/src/renderer/hub-api-types/reports.ts`: close summary, daily/range report, bill summary, item summary, and group summary contracts.
+- `apps/hub-electron/src/renderer/styles.css`: compatibility marker only; focused hub styles are imported directly from `App.tsx`.
+- `apps/hub-electron/src/renderer/styles/hub-shell.css`: hub shell grid, side rail, nav buttons, unlock card, main content frame, and topbar icon button styles.
+- `apps/hub-electron/src/renderer/styles/layout-primitives.css`: shared panel, title, grid/form/action layout, segmented row, toolbar, and min-width primitives.
+- `apps/hub-electron/src/renderer/styles/row-primitives.css`: shared surface rows/cards, line item grid, quantity cluster, saved settings card, and category badge primitives.
+- `apps/hub-electron/src/renderer/styles/action-primitives.css`: shared variant/action/danger/primary buttons, split inputs, modal shell, CSV file button, print preview, and empty state primitives.
+- `apps/hub-electron/src/renderer/styles/components.css`: shared small UI primitives that are not screen-owned yet: checkbox rows, compact menu cards, CSV/setup details, payment summaries, segmented controls, manager PIN form, KOT note field, and quiet/danger inline states.
+- `apps/hub-electron/src/renderer/styles/printer.css`: printer setup, printer choice, printer slot, output mode, and printer summary styles.
+- `apps/hub-electron/src/renderer/styles/print-layout.css`: setup print-layout editor scope card, print toggles, section style rows, inline check, and print-style responsive rules.
+- `apps/hub-electron/src/renderer/styles/setup.css`: setup card shell, setup status/title/summary, setup search hint, and unit edit field layout styles.
+- `apps/hub-electron/src/renderer/styles/pairing.css`: device pairing role cards, QR/code panel, manual payload panel, and pairing form layout styles.
+- `apps/hub-electron/src/renderer/styles/records.css`: reusable record lists, status pills, row actions, move controls, inline edit forms, unit edit grids, and sale-group row layout.
+- `apps/hub-electron/src/renderer/styles/orders.css`: order grid/workspace shell, ticket header, guest/send controls, order menu panel, order modal layout, line-note fields, and order-state responsive rules.
+- `apps/hub-electron/src/renderer/styles/order-table-map.css`: table-map tile state colours, duration pills, table action buttons, map counts, and state legend dots.
+- `apps/hub-electron/src/renderer/styles/order-billing.css`: hub billing adjustments, payment grids, quick pay, change helper, reprint buttons, and mobile billing helper layout.
+- `apps/hub-electron/src/renderer/styles/order-revision.css`: printed-bill revision search result list and keyboard-active state.
+- `apps/hub-electron/src/renderer/styles/order-state-editor.css`: order-state/menu search editor shell, total/status header, search rows, and editor actions.
+- `apps/hub-electron/src/renderer/styles/order-transfer.css`: sent-item/full-table transfer toggle, mode switch, target field, warnings, item quantity controls, and submit button.
+- `apps/hub-electron/src/renderer/styles/kitchen.css`: KDS kitchen screen layout, KOT card rows, KOT notes, KDS status buttons, and KOT grid styles.
+- `apps/hub-electron/src/renderer/styles/alcohol.css`: alcohol create/edit forms, catalog table rows, variant edit rows, storage cards, stock metrics, and stock adjustment controls.
+- `apps/hub-electron/src/renderer/styles/app-update.css`: app update panel, update package card, GitHub update result, and responsive update action styles.
+- `apps/hub-electron/src/renderer/styles/reports.css`: report tabs/range controls, report metrics, closed-report rows, generic report/detail table styles, item-summary placement, and report shell responsive rules.
+- `apps/hub-electron/src/renderer/styles/report-history.css`: bill history table sizing, history status chips, owner history edit modal, payment correction, item correction, and bill-history responsive rules.
+- `apps/hub-electron/src/renderer/styles/report-stock-movements.css`: alcohol stock movement table sizing, movement row layout, balance pills, and movement responsive rules.
+- `apps/hub-electron/src/renderer/components/reports/reports-view.tsx`: report tab/range orchestration and top-level report layout.
+- `apps/hub-electron/src/renderer/components/reports/report-detail-panels.tsx`: report payment, sale/tax category, and item summary detail panels.
+- `apps/hub-electron/src/renderer/components/reports/report-history-panel.tsx`: report bill history orchestration for reprint/edit mutations, edit state, payment/item calculations, print chooser, and report query invalidation.
+- `apps/hub-electron/src/renderer/components/reports/report-history-edit-modal.tsx`: owner bill-history edit modal UI for subtotal/discount/tip summary, exact payment split, item correction, menu search, and Master PIN entry.
+- `apps/hub-electron/src/renderer/components/reports/report-history-table.tsx`: read-only bill history table, load-more behaviour, status chips, and print/edit row actions.
+- `apps/hub-electron/src/renderer/components/setup/setup-view.tsx`: setup page orchestration for business day, catalog forms, devices, and top-level setup cards.
+- `apps/hub-electron/src/renderer/components/setup/setup-catalog-cards.tsx`: compatibility barrel for setup catalog cards; prefer focused files below for new work.
+- `apps/hub-electron/src/renderer/components/setup/floors-tables-card.tsx`: floor/table creation, ordering, enable/disable, deletion, and edit-list workflow.
+- `apps/hub-electron/src/renderer/components/setup/kitchens-counters-card.tsx`: production unit creation, printer/KDS status display, enable/disable, deletion, and unit edit workflow.
+- `apps/hub-electron/src/renderer/components/setup/dishes-card.tsx`: dish CSV import, dish creation/search, manager-approved bulk delete/delete, enable/disable, and dish edit workflow.
+- `apps/hub-electron/src/renderer/components/setup/hub-connection-card.tsx`: hub cloud connection setup, secret reveal, save, and test flow.
+- `apps/hub-electron/src/renderer/components/setup/printer-setup-card.tsx`: hub bill printer setup, output mode, test prints, and print-layout editor.
+- `apps/hub-electron/src/renderer/components/setup/print-layout-editor.tsx`: print layout scope/draft/save orchestration; preview and section font controls live in focused modules below.
+- `apps/hub-electron/src/renderer/components/setup/print-layout-preview.tsx`: sample receipt/KOT rendering and styled print-preview line rendering for layout editor.
+- `apps/hub-electron/src/renderer/components/setup/print-layout-style-controls.tsx`: print layout section size/bold/alignment controls and default section style.
+- `apps/hub-electron/src/renderer/components/advanced/advanced-view.tsx`: advanced page orchestration for Manager/Master PIN, sale groups, support tools, print jobs, full reset, and app update panel slot.
+- `apps/hub-electron/src/renderer/components/advanced/app-update-panel.tsx`: app update, GitHub release install, rollback baseline, manual package install, and rollback flow.
+- `apps/hub-electron/src/renderer/components/alcohol/alcohol-items-panel.tsx`: alcohol catalog maintenance surface for search, edit, delete, and bulk delete.
+- `apps/hub-electron/src/renderer/components/alcohol/alcohol-item-create-panel.tsx`: alcohol item creation, recipe entry, and plain/prepared alcohol CSV import workflow.
+- `apps/hub-electron/src/renderer/components/orders/table-workspace.tsx`: selected-table orchestration for sent items, billing, transfer, cancellation, and bill-print chooser.
+- `apps/hub-electron/src/renderer/components/orders/new-order-panel.tsx`: new order draft search, open item entry, KOT/print submit, and draft line editing.
+- `apps/hub-electron/src/renderer/components/orders/billing-panel.tsx`: selected-table billing orchestration for adjustments, payment punching, bill reprint, and NC actions.
+- `apps/hub-electron/src/renderer/components/orders/bill-revision-editor.tsx`: printed-bill revision editor with menu search, item quantity changes, manager approval, idempotency, and revise mutation.
+- `apps/hub-electron/src/renderer/components/orders/order-workspace-types.ts`: shared selected-table edit/save item types used by table and sent-order panels.
 - `apps/hub-electron/src/public/*`: current cashier/admin operational UI served by the hub.
 - `apps/hub-electron/src/electron.ts`: desktop shell that starts the hub and opens the UI.
 - `apps/hub-electron/src/printing/print-job-service.ts`: print retry state machine and adapter boundary.
 - `apps/hub-electron/src/sync/convex-sync.ts`: SQLite outbox to Convex HTTP sync bridge.
-- `apps/mobile/src/lib/hub-client.ts`: Android LAN API client.
+- `apps/hub-electron/src/update/app-update-service.ts`: local app update baseline, install, rollback, state, and recovery-script orchestration.
+- `apps/hub-electron/src/update/github-update-source.ts`: GitHub release discovery, version comparison, update package asset download, release parsing, and validation adapter.
+- `apps/mobile/src/lib/hub-client.ts`: Android LAN API client implementation; re-exports mobile hub contracts/helpers for backwards-compatible imports.
+- `apps/mobile/src/lib/hub-client-types.ts`: mobile hub REST/WebSocket response and request option contracts.
+- `apps/mobile/src/lib/hub-client-helpers.ts`: mobile realtime URL builder, HTTP error type, idempotency key helper, and pairing URL/failure messages.
 - `apps/mobile/src/lib/draft-store.ts`: Android hub URL and draft persistence.
+- `apps/mobile/src/lib/mobile-app-view-model.ts`: pure mobile service view-model derivation for active tables, selected table, totals, menu filters/search, and active KDS units.
+- `apps/mobile/src/lib/order-command-builders.ts`: pure mobile command payload builders for KOT review summaries and bill revision items.
+- `apps/mobile/src/hooks/use-operation-keys.ts`: stable idempotency-key cache for repeated mobile operations.
+- `apps/mobile/src/hooks/use-mobile-chime.ts`: Expo audio mode, POS chime playback, vibration, and KDS new-ticket tracking.
+- `apps/mobile/src/hooks/use-bill-printer-chooser.ts`: mobile bill-printer picker alert and printer target display logic.
+- `apps/mobile/src/hooks/use-table-service-actions.ts`: mobile table service command workflows for KOT submit, table/item transfer, bill generate/reprint/NC/settle/revise, idempotency scopes, and post-command refresh.
+- `apps/mobile/src/hooks/use-ticket-state-editor.ts`: mobile sent-item state editor hook for table-state hydration, search/add, note/quantity edits, dirty signatures, billed-state approval, and save/save-print.
+- `apps/mobile/src/hooks/use-billing-history-actions.ts`: mobile owner history bill print/edit/day-selection commands, idempotency, and selected-day reload.
+- `apps/mobile/src/hooks/use-kitchen-actions.ts`: mobile KDS unit selection, ticket refresh, new-ticket chime handoff, and ticket status updates.
+- `apps/mobile/src/hooks/use-order-draft.ts`: mobile selected-table draft state, draft persistence, item mutation, table selection, and draft clearing.
+- `apps/mobile/src/hooks/use-mobile-hub-refresh.ts`: mobile startup hydration, polling/realtime refresh, role-specific bootstrap loads, ready alerts, KDS refresh, and connection health state.
+- `apps/mobile/src/App.tsx`: mobile shell orchestration and screen composition; check focused hooks/libs before adding service workflow, refresh, pairing, chime, draft, or billing behaviour here.
+- `apps/mobile/src/components/pairing-scanner-modal.tsx`: QR scanner modal for hub/device pairing.
+- `apps/mobile/src/components/ticket-screen.tsx`: mobile table check render orchestration, new-item notes, sent-item editor view, transfer section, and captain billing slot.
+- `apps/mobile/src/components/ticket-transfer-section.tsx`: mobile captain table/item transfer workflow, target picker, and transfer quantity controls.
+- `apps/mobile/src/components/billing-panel.tsx`: mobile captain bill generation, payment punching, and manager-approved reprint/NC/revise actions; re-exports billing history for compatibility.
+- `apps/mobile/src/components/billing-history-panel.tsx`: mobile billing history day picker, bill print actions, and owner history-edit modal.
+- `apps/mobile/src/lib/pos-chime.ts`: embedded POS notification chime data URI, kept out of `App.tsx`.
+- `apps/mobile/src/styles/app-styles.ts`: compatibility export that composes focused mobile style modules.
+- `apps/mobile/src/styles/app-style-tokens.ts`: mobile palette and Android status-bar inset token.
+- `apps/mobile/src/styles/app-shell-styles.ts`: mobile shell, onboarding, header, banner, buttons, and panel styles.
+- `apps/mobile/src/styles/service-workflow-styles.ts`: mobile table, kitchen, transfer, and order-state editor styles.
+- `apps/mobile/src/styles/menu-ticket-styles.ts`: mobile menu, ticket, quantity, sent-line, and total strip styles.
+- `apps/mobile/src/styles/billing-overlay-styles.ts`: mobile billing, history, popup, draft bar, empty, scanner, and collapsible styles.
 - `convex/http.ts`: cloud HTTP action for hub event ingestion.
+- `convex/admin.ts`: public cloud admin Function registration for restaurants, staff invitations, installations, hub commands, events, and reports; keep public `api.admin.*` names stable.
+- `convex/admin/membership.ts`: Convex admin restaurant membership and staff invitation validators plus query/mutation handler Implementations.
+- `convex/admin/access.ts`: Convex admin auth helpers, role validators, restaurant member/admin/owner guards, email normalization, and hub connection secret generation.
+- `convex/admin/reportModels.ts`: Convex admin daily-report return validators and DTO projection helpers for report list/detail queries.
 - `convex/sync.ts`: idempotent event ingestion, installation registration, and cloud-to-hub command pull.
+- `apps/cloud-admin/src/components/cloud-dashboard.tsx`: cloud owner/admin portal orchestration, tab state, Convex query/mutation wiring, and selected report flow.
+- `apps/cloud-admin/src/components/cloud-admin-sections.tsx`: compatibility barrel for cloud admin dashboard sections; prefer focused `cloud-sections/*` modules below for new work.
+- `apps/cloud-admin/src/components/cloud-sections/reports-section.tsx`: finalized daily report picker, metrics, bill payment detail, group summary, and item summary UI.
+- `apps/cloud-admin/src/components/cloud-sections/setup-section.tsx`: restaurant creation, hub connection setup block, and sync confirmation setup flow.
+- `apps/cloud-admin/src/components/cloud-sections/staff-section.tsx`: staff invitation, member role update/remove, and invitation revoke UI.
+- `apps/cloud-admin/src/components/cloud-sections/sync-section.tsx`: connected hub status and recent synced event timeline UI.
+- `apps/cloud-admin/src/components/cloud-sections/advanced-section.tsx`: support command queue form and recent hub command history UI.
 - `docs/cloud-sync-installations.md`: installation identity and hub command sync notes.
 - `docs/windows-hub-runbook.md`: Windows build/install/startup/printer validation runbook.
 - `docs/architecture-junior-guide.md`: friendly full-system architecture explanation with updated flowcharts.

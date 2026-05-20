@@ -1,0 +1,50 @@
+.stock-movement-table {
+  @apply min-w-[900px];
+}
+
+.stock-movement-row {
+  @apply items-center;
+  grid-template-columns: minmax(220px, 1fr) minmax(110px, auto) minmax(260px, auto) minmax(170px, auto);
+}
+
+.stock-movement-main {
+  @apply grid min-w-0 gap-1;
+}
+
+.stock-movement-main strong {
+  @apply min-w-0 text-sm font-black text-ink;
+}
+
+.stock-movement-main span {
+  @apply text-xs font-bold uppercase text-muted;
+}
+
+.stock-movement-delta {
+  @apply whitespace-nowrap rounded-full border border-line bg-wash px-2.5 py-1 text-sm font-black text-ink;
+}
+
+.stock-movement-balance {
+  @apply flex flex-wrap justify-end gap-1.5;
+}
+
+.stock-movement-balance b {
+  @apply rounded-full border border-line bg-panel px-2 py-1 text-xs font-black text-ink;
+}
+
+.stock-movement-row time {
+  @apply justify-self-end whitespace-nowrap text-sm font-semibold text-muted;
+}
+
+@media (max-width: 980px) {
+  .stock-movement-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .stock-movement-row time {
+    @apply justify-self-start;
+  }
+
+  .stock-movement-balance {
+    @apply justify-start;
+  }
+}

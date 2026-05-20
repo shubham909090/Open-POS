@@ -1,0 +1,127 @@
+.record-list {
+  @apply grid gap-3;
+}
+
+.record-row {
+  @apply grid min-w-0 items-start gap-3 rounded-lg border border-line bg-white p-3 transition;
+  grid-template-columns: minmax(260px, 1fr) auto;
+}
+
+.record-row.has-move-controls {
+  grid-template-columns: minmax(260px, 1fr) auto auto;
+}
+
+.record-row.editing {
+  @apply border-accent bg-accent-soft;
+}
+
+.record-row-main,
+.record-row > div:first-child {
+  @apply grid min-w-0 gap-1;
+}
+
+.record-row-title {
+  @apply flex min-w-0 flex-wrap items-center gap-2;
+}
+
+.record-row-main strong,
+.record-row > div:first-child strong {
+  @apply min-w-0 text-sm font-black leading-5 text-ink;
+}
+
+.record-row-main span,
+.record-row > div:first-child span {
+  @apply text-sm leading-5 text-muted;
+}
+
+.record-status {
+  @apply inline-flex min-h-6 shrink-0 items-center rounded-full border px-2 py-0.5 text-xs font-black uppercase leading-none;
+}
+
+.record-status.active {
+  @apply border-accent bg-accent-soft text-accent-dark;
+}
+
+.record-status.disabled {
+  @apply border-line bg-wash text-muted;
+}
+
+.record-status.warning {
+  @apply border-warning bg-warning-soft text-warning;
+}
+
+.record-row .row-actions {
+  @apply shrink-0 self-start;
+}
+
+.record-move-controls {
+  @apply flex shrink-0 items-center gap-1 self-start rounded-md border border-line bg-wash p-1;
+}
+
+.record-move-controls .record-action {
+  @apply min-h-8 w-8 px-0 shadow-none;
+}
+
+.record-action {
+  @apply inline-flex min-h-9 items-center justify-center gap-2 rounded-md border border-line bg-panel px-3 text-sm font-bold text-ink shadow-sm hover:bg-wash disabled:opacity-45;
+}
+
+.record-action.danger {
+  @apply border-danger bg-danger-soft text-danger hover:bg-danger hover:text-white;
+}
+
+.record-action.icon-only {
+  @apply w-10 px-0;
+}
+
+.record-row > .row-edit-form {
+  @apply col-span-full mt-1 rounded-lg border border-line-strong bg-panel p-3 shadow-sm;
+}
+
+.row-edit-form {
+  @apply grid min-w-0 gap-3;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.row-edit-fields {
+  @apply grid min-w-0 items-end gap-3;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.unit-edit-form .row-edit-fields {
+  grid-template-columns: minmax(180px, 1fr) minmax(220px, 1fr) minmax(220px, 1fr) auto minmax(220px, auto);
+}
+
+.unit-edit-form .row-edit-fields.unit-edit-fields {
+  grid-template-columns: minmax(220px, 0.8fr) minmax(260px, 1.2fr);
+}
+
+.row-edit-actions {
+  @apply flex justify-end border-t border-line pt-3;
+}
+
+.row-edit-actions button {
+  @apply min-w-44;
+}
+
+.sale-group-row {
+  grid-template-columns: minmax(220px, 1fr) minmax(360px, 520px);
+}
+
+.sale-group-form {
+  @apply grid items-end gap-2;
+  grid-template-columns: minmax(96px, 120px) minmax(180px, 1fr) auto;
+}
+
+@media (max-width: 980px) {
+  .record-row,
+  .unit-edit-form .row-edit-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .record-row .row-actions,
+  .record-move-controls,
+  .row-edit-actions {
+    @apply justify-start;
+  }
+}

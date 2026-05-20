@@ -1,0 +1,223 @@
+.range-report-controls {
+  @apply grid items-end gap-3;
+  grid-template-columns: repeat(2, minmax(180px, 260px)) auto;
+}
+
+.report-tabs {
+  @apply inline-flex rounded-md border border-line bg-wash p-1;
+}
+
+.report-tabs button {
+  @apply rounded px-3 py-1.5 text-sm font-semibold text-muted;
+}
+
+.report-tabs button.active {
+  @apply bg-panel text-ink shadow-sm;
+}
+
+.reports-tab-panel {
+  @apply contents;
+}
+
+.range-report-controls label,
+.range-report-result {
+  @apply grid min-w-0 gap-3;
+}
+
+.range-warning,
+.range-bill-placeholder {
+  @apply grid min-w-0 gap-1 rounded-lg border p-3;
+}
+
+.range-warning {
+  @apply border-warning bg-warning-soft text-warning;
+}
+
+.range-bill-placeholder {
+  @apply border-line bg-wash text-ink;
+}
+
+.range-bill-placeholder span {
+  @apply text-sm font-medium text-muted;
+}
+
+.reports-layout .report-detail-grid {
+  @apply grid gap-3;
+  grid-template-columns: minmax(260px, 0.8fr) minmax(360px, 1fr);
+}
+
+.reports-layout .panel {
+  @apply grid gap-3;
+}
+
+.reports-layout .report-metrics {
+  @apply gap-2;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.report-metric {
+  @apply border-l-4 bg-white;
+}
+
+.report-metric.sales {
+  @apply border-l-accent bg-accent-soft;
+}
+
+.report-metric.cash {
+  @apply border-l-green-600 bg-green-50;
+}
+
+.report-metric.noncash {
+  @apply border-l-blue bg-blue-soft;
+}
+
+.report-metric.bills {
+  @apply border-l-ink bg-wash;
+}
+
+.closed-report-row {
+  @apply items-center gap-3 p-3;
+  grid-template-columns: minmax(260px, 1fr) minmax(260px, auto) auto;
+}
+
+.closed-report-main,
+.closed-report-total {
+  @apply grid min-w-0 gap-1;
+}
+
+.closed-report-main strong {
+  @apply min-w-0 text-lg font-black leading-6 text-ink;
+}
+
+.closed-report-main span,
+.closed-report-total span {
+  @apply min-w-0 text-sm font-semibold leading-5 text-muted;
+}
+
+.closed-report-total {
+  @apply justify-items-end text-right;
+}
+
+.closed-report-total b {
+  @apply whitespace-nowrap text-lg font-black leading-6 text-ink;
+}
+
+.closed-report-row > button {
+  @apply min-w-24;
+}
+
+.report-row-detail {
+  @apply col-span-full min-w-0 pt-2;
+}
+
+.reports-layout .report-detail-card {
+  @apply rounded-lg border border-line bg-white p-3 shadow-none;
+}
+
+.reports-layout .report-detail-card .data-table:not(.bill-history-table) {
+  min-width: 100%;
+}
+
+.report-table-wrap {
+  @apply min-w-0 overflow-auto rounded-md border border-line bg-white;
+}
+
+.data-table {
+  @apply w-full min-w-[720px] border-collapse text-sm;
+}
+
+.data-table th {
+  @apply sticky top-0 z-[1] border-b border-line bg-wash px-3 py-2 text-left text-xs font-black uppercase text-muted;
+}
+
+.data-table td {
+  @apply border-b border-line px-3 py-2 align-top font-semibold text-ink;
+}
+
+.data-table tbody tr:last-child td {
+  @apply border-b-0;
+}
+
+.data-table tbody tr:hover td {
+  @apply bg-wash;
+}
+
+.data-table .strong-cell {
+  @apply font-black;
+}
+
+.data-table .strong-cell small {
+  @apply ml-2 inline-flex whitespace-nowrap rounded-full border border-line bg-wash px-1.5 py-0.5 text-xs font-black uppercase text-muted;
+}
+
+.data-table .wrap-cell {
+  @apply min-w-64 max-w-[520px] whitespace-normal leading-5 text-muted;
+}
+
+.data-table .action-cell {
+  @apply w-28 whitespace-nowrap text-right;
+}
+
+.report-table-detail {
+  @apply bg-panel p-3;
+}
+
+.report-table-detail > .report-detail-grid {
+  @apply mt-0;
+}
+
+.closed-report-table {
+  @apply min-w-[900px];
+}
+
+.reports-layout .payment-summary-grid,
+.reports-layout .compact-list {
+  @apply gap-0 rounded-md border border-line bg-panel;
+}
+
+.reports-layout .payment-summary-grid span,
+.reports-layout .compact-row {
+  @apply rounded-none border-0 border-b border-line bg-transparent px-3 py-2 shadow-none;
+}
+
+.reports-layout .payment-summary-grid span:last-child,
+.reports-layout .compact-row:last-child {
+  @apply border-b-0;
+}
+
+.reports-layout .item-summary-panel {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 980px) {
+  .reports-layout .report-detail-grid,
+  .closed-report-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .reports-layout .item-summary-panel {
+    grid-column: auto;
+  }
+
+  .reports-layout .report-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .range-report-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .report-tabs {
+    @apply w-full;
+  }
+
+  .report-tabs button {
+    @apply flex-1;
+  }
+
+  .reports-layout .report-metrics {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

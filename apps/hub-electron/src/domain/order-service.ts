@@ -2,10 +2,6 @@ import {
   type AdjustAlcoholStockInput,
   type BillAdjustmentInput,
   type BillPrinterSlot,
-  type BulkDeleteAlcoholItemsInput,
-  type BulkDeleteMenuItemsInput,
-  calculateLineTotal,
-  calculateTaxComponents,
   type CancelOrderInput,
   type CancelOrderItemsInput,
   type CreateAlcoholItemInput,
@@ -22,7 +18,6 @@ import {
   type ManagerPinInput,
   type MarkNcBillInput,
   type MasterApprovalInput,
-  type MenuItemDeleteApprovalInput,
   type MoveOrderItemsInput,
   type MoveTableInput,
   type PrintLayoutSettingsInput,
@@ -35,7 +30,6 @@ import {
   type SetMasterPinInput,
   type SettleBillInput,
   type SubmitOrderInput,
-  type TaxComponentAmount,
   type TicketTemplateInput,
   type UpdateAlcoholItemInput,
   type UpdateFloorInput,
@@ -46,379 +40,243 @@ import {
   type UpdateBillPrintersInput,
   type UpdateReceiptPrinterInput,
   type UpdateSaleGroupInput,
-  type UpdateTableInput,
-  type UserRole
+  type UpdateTableInput
 } from "@gaurav-pos/shared";
-import { and, count, desc, eq, inArray, max, sql, sum } from "drizzle-orm";
-import { createHash, pbkdf2Sync, randomBytes, timingSafeEqual } from "node:crypto";
 import type { HubOrm, SqliteDatabase } from "../db/database.js";
 import {
-  bills,
-  billRevisions,
-  alcoholProfiles,
-  alcoholRecipeIngredients,
-  alcoholStockLevels,
-  alcoholStockMovements,
-  cloudCommandFailures,
-  dailyReportSnapshots,
-  eventLog,
-  floors,
-  hubSettings,
-  managerApprovals,
-  menuItemVariants,
-  kotItems,
-  kots,
-  menuItems,
-  orderItems,
-  orderMovements,
-  orders,
-  payments,
-  posDays,
-  printJobs,
-  readyNotifications,
-  productionUnits,
-  restaurantTables,
-  saleGroups,
-  syncOutbox
-} from "../db/drizzle-schema.js";
-import { DomainError } from "./errors.js";
-import { makeId } from "./ids.js";
-import { renderBillTicketForPrint, renderKotTicketForPrint, type BillTicket, type KotTicketItem } from "./tickets.js";
-import { currentBusinessDayWindow } from "./business-day.js";
-
-type BillPrinterProfile = {
-  label: string;
-  printerMode: "system" | "network";
-  printerHost: string | null;
-  printerPort: number | null;
-  printerName: string | null;
-  configured: boolean;
-};
-
-type BillPrinterProfiles = {
-  default: BillPrinterProfile;
-  alternate: BillPrinterProfile;
-};
-
-const DEFAULT_TAX_COMPONENTS = [
-  { name: "CGST", rateBps: 250 },
-  { name: "SGST", rateBps: 250 }
-];
-
-interface BusinessDayRow {
-  id: string;
-  business_date: string;
-  period_start_at: string;
-  period_end_at: string;
-  status: string;
-}
-
-interface TableRow {
-  id: string;
-  name: string;
-  status: string;
-  current_order_id: string | null;
-  occupied_at?: string | null;
-}
-
-interface MenuItemRow {
-  id: string;
-  name: string;
-  price_paise: number;
-  production_unit_id: string | null;
-  sale_group_id: string;
-  sale_group_name: string;
-  sale_group_kind: string;
-  ticket_label: string;
-  tax_components_json: string;
-  unit_name: string | null;
-  printer_host: string | null;
-  printer_port: number | null;
-  printer_name: string | null;
-}
-
-interface MenuItemVariantRow {
-  id: string;
-  menu_item_id: string;
-  label: string;
-  kind: string;
-  price_paise: number;
-  volume_ml: number | null;
-  inventory_action: string;
-  sort_order: number;
-  active: boolean | number;
-}
-
-interface OrderRow {
-  id: string;
-  table_id: string;
-  pos_day_id: string;
-  status: string;
-  captain_id: string;
-  captain_device_id: string | null;
-  created_by_device_id: string | null;
-  created_by_role: UserRole | null;
-  created_at: string;
-  updated_at: string;
-}
-
-interface OrderItemRow {
-  id: string;
-  order_id: string;
-  menu_item_id: string | null;
-  menu_item_variant_id: string | null;
-  name_snapshot: string;
-  variant_name_snapshot: string;
-  variant_volume_ml: number | null;
-  inventory_action_snapshot: string;
-  alcohol_recipe_snapshot_json: string;
-  unit_price_paise: number;
-  quantity: number;
-  production_unit_id: string | null;
-  sale_group_id: string;
-  sale_group_name_snapshot: string;
-  sale_group_kind_snapshot: string;
-  ticket_label_snapshot: string;
-  tax_components_json: string;
-  tax_paise: number;
-  note: string | null;
-  is_open_item: boolean;
-  status: string;
-}
-
-interface UnitRow {
-  id: string;
-  name: string;
-  printer_host: string;
-  printer_port: number;
-  printer_name: string | null;
-  kds_enabled?: number;
-}
-
-interface BillRow {
-  id: string;
-  bill_number: number;
-  order_id: string;
-  status: string;
-  subtotal_paise: number;
-  tax_paise: number;
-  total_paise: number;
-  discount_paise: number;
-  tip_paise: number;
-  final_total_paise: number;
-  tax_breakdown_json: string;
-  revision_number: number;
-  print_count: number;
-  is_nc: boolean;
-  nc_reason: string | null;
-}
-
-interface SaleGroupRow {
-  id: string;
-  name: string;
-  kind: string;
-  report_label: string;
-  ticket_label: "KOT" | "BOT";
-  tax_components_json: string;
-  default_production_unit_id: string | null;
-}
-
-interface BillTotals {
-  subtotalPaise: number;
-  taxPaise: number;
-  totalPaise: number;
-  taxBreakdown: TaxComponentAmount[];
-}
-
-type CsvImportResult = {
-  created: number;
-  failed: number;
-  ids: string[];
-  errors: Array<{ row: number; message: string }>;
-};
-
-type CsvRow = {
-  rowNumber: number;
-  values: Record<string, string>;
-};
-
-interface DaySummary {
-  businessDay: {
-    id: string;
-    business_date: string;
-    period_start_at: string;
-    period_end_at: string;
-    status: string;
-  };
-  openOrders: number;
-  billedOrders: number;
-  paidBills: number;
-  unpaidBills: number;
-  cancelledOrders: number;
-  billCount: number;
-  grossSalesPaise: number;
-  discountPaise: number;
-  tipPaise: number;
-  finalSalesPaise: number;
-  cashPaymentsPaise: number;
-  upiPaymentsPaise: number;
-  cardPaymentsPaise: number;
-  onlinePaymentsPaise: number;
-  totalPaymentsPaise: number;
-  nonCashPaymentsPaise: number;
-  billSummaries: Array<{
-    billId: string;
-    billNumber?: number;
-    orderId: string;
-    tableName: string;
-    status: string;
-    subtotalPaise: number;
-    taxPaise: number;
-    totalPaise: number;
-    discountPaise: number;
-    tipPaise: number;
-    finalTotalPaise: number;
-    paidPaise: number;
-    settledAt: string | null;
-    payments: Array<{ method: string; amountPaise: number; reference: string | null }>;
-	    items: Array<{ orderItemId: string; menuItemId: string | null; menuItemVariantId: string | null; name: string; quantity: number; unitPricePaise: number; lineTotalPaise: number; saleGroupId: string; productionUnitId: string | null }>;
-	    isNc?: boolean;
-	    ncReason?: string | null;
-	    revisionNumber?: number;
-	    modified?: boolean;
-	  }>;
-  itemSummaries: Array<{
-    menuItemId: string;
-    name: string;
-    saleGroupId: string;
-    saleGroupName: string;
-    saleGroupKind: string;
-    quantity: number;
-    grossSalesPaise: number;
-    ncQuantity: number;
-    ncGrossSalesPaise: number;
-  }>;
-  groupSummaries: Array<{
-    saleGroupId: string;
-    name: string;
-    kind: string;
-    quantity: number;
-    grossSalesPaise: number;
-    taxPaise: number;
-    finalSalesPaise: number;
-    ncQuantity: number;
-    ncGrossSalesPaise: number;
-  }>;
-}
-
-interface DailyReportSnapshotRow {
-  pos_day_id: string;
-  business_date: string;
-  status: string;
-  bill_count: number;
-  open_orders: number;
-  billed_orders: number;
-  paid_bills: number;
-  unpaid_bills: number;
-  cancelled_orders: number;
-  gross_sales_paise: number;
-  discount_paise: number;
-  tip_paise: number;
-  final_sales_paise: number;
-  cash_payments_paise: number;
-  upi_payments_paise: number;
-  card_payments_paise: number;
-  online_payments_paise: number;
-  total_payments_paise: number;
-  non_cash_payments_paise: number;
-  bill_summaries_json: string;
-  item_summaries_json: string;
-  group_summaries_json: string;
-  finalized_at: string;
-  updated_at: string;
-}
-
-interface KotItemChange {
-  menuItemId: string | null;
-  orderItemId: string | null;
-  name: string;
-  quantityDelta: number;
-  note?: string | null;
-  noteChanged?: boolean;
-  productionUnitId: string | null;
-  productionUnitName: string;
-  printerHost: string | null;
-  printerPort: number | null;
-  printerName: string | null;
-  ticketLabel: string;
-}
-
-interface AlcoholStockRow {
-  menu_item_id: string;
-  sealed_large_count: number;
-  open_large_ml: number;
-  sealed_small_count: number;
-  large_bottle_ml: number;
-  small_bottle_ml: number;
-}
-
-interface GroupSummaryAccumulator {
-  saleGroupId: string;
-  name: string;
-  kind: string;
-  quantity: number;
-  grossSalesPaise: number;
-  taxPaise: number;
-  finalSalesPaise: number;
-  ncQuantity: number;
-  ncGrossSalesPaise: number;
-}
-
-interface RequestedOrderItem {
-  itemKey: string;
-  menuItemId: string | null;
-  menuItemVariantId: string | null;
-  quantity: number;
-  name: string;
-  variantName: string;
-  variantVolumeMl: number | null;
-  inventoryAction: string;
-  alcoholRecipeSnapshotJson: string;
-  unitPricePaise: number;
-  productionUnitId: string | null;
-  saleGroupId: string;
-  saleGroupName: string;
-  saleGroupKind: string;
-  ticketLabel: string;
-  taxComponentsJson: string;
-  note: string | null;
-  isOpenItem: boolean;
-}
-
-interface DeviceActor {
-  id: string;
-  name: string;
-  role: UserRole;
-}
-
-interface AlcoholRecipeSnapshotIngredient {
-  liquorMenuItemId: string;
-  mlPerUnit: number;
-}
-
-interface TicketCreationResult {
-  kotIds: string[];
-  printJobIds: string[];
-}
-
-type BulkMenuDeleteKind = "dish" | "alcohol";
-type BulkMenuDeleteInput = Partial<BulkDeleteMenuItemsInput & BulkDeleteAlcoholItemsInput> | MenuItemDeleteApprovalInput;
-type BulkMenuDeleteResult = {
-  deleted: number;
-  disabled: number;
-  failed: number;
-  errors: Array<{ id: string; name?: string; message: string }>;
-};
+  assertAlcoholHasSellableVariant as assertAlcoholHasSellableVariantModel,
+  assertAlcoholRecipeMatchesType as assertAlcoholRecipeMatchesTypeModel,
+  assertAlcoholVariantsMatchType as assertAlcoholVariantsMatchTypeModel,
+  countAlcoholRecipeSnapshotUsage as countAlcoholRecipeSnapshotUsageModel,
+  defaultAlcoholProductionUnitId as defaultAlcoholProductionUnitIdModel,
+  isAlcoholMenuItem as isAlcoholMenuItemModel,
+  parseAlcoholRecipeCsv as parseAlcoholRecipeCsvModel,
+  replaceAlcoholRecipe as replaceAlcoholRecipeModel,
+  replaceAlcoholVariants as replaceAlcoholVariantsModel,
+  resolvePlainLiquorRef as resolvePlainLiquorRefModel,
+  snapshotAlcoholRecipe as snapshotAlcoholRecipeModel
+} from "./order-service/alcohol-catalog.js";
+import {
+  recordAlcoholMovement as recordAlcoholMovementModel,
+  requireAlcoholStock as requireAlcoholStockModel,
+  writeAlcoholStock as writeAlcoholStockModel
+} from "./order-service/alcohol-stock.js";
+import {
+  applyAlcoholUsageDeltaForHistoryEdit as applyAlcoholUsageDeltaForHistoryEditModel,
+  calculatePendingAlcoholUsage as calculatePendingAlcoholUsageModel,
+  deductAlcoholStockForPaidBill as deductAlcoholStockForPaidBillModel
+} from "./order-service/alcohol-stock-consumption.js";
+import {
+  adjustAlcoholStock as adjustAlcoholStockModel,
+  createAlcoholItem as createAlcoholItemModel,
+  importAlcoholItemsFromCsv as importAlcoholItemsFromCsvModel,
+  listAlcoholCatalog as listAlcoholCatalogModel,
+  listAlcoholStockMovements as listAlcoholStockMovementsModel,
+  listAlcoholStorage as listAlcoholStorageModel,
+  updateAlcoholItem as updateAlcoholItemModel,
+  type AlcoholActionContext
+} from "./order-service/alcohol-actions.js";
+import type { AlcoholUsage } from "./order-service/alcohol-usage.js";
+import { removeEmptyPendingBills as removeEmptyPendingBillsModel, type BillCleanupContext } from "./order-service/bill-cleanup.js";
+import { getBillById, getLatestBillForOrder } from "./order-service/bill-queries.js";
+import { recordBillRevision as recordBillRevisionModel } from "./order-service/bill-revisions.js";
+import { buildBillTicket as buildBillTicketModel } from "./order-service/bill-ticket-model.js";
+import { calculateBillTotals as calculateBillTotalsModel } from "./order-service/bill-totals.js";
+import {
+  applyBillAdjustments as applyBillAdjustmentsModel,
+  deleteLocalBillRecord as deleteLocalBillRecordModel,
+  getBillPaidPaise as getBillPaidPaiseModel,
+  replaceHistoryEditPayments as replaceHistoryEditPaymentsModel,
+  syncPaidBillPaymentToFinalTotal as syncPaidBillPaymentToFinalTotalModel
+} from "./order-service/bill-payment-records.js";
+import {
+  editHistoryBill as editHistoryBillModel,
+  markBillNc as markBillNcModel,
+  printBill as printBillModel,
+  reprintBill as reprintBillModel,
+  reprintBillFromHistory as reprintBillFromHistoryModel,
+  reviseBill as reviseBillModel,
+  type BillActionContext
+} from "./order-service/bill-actions.js";
+import {
+  generateBill as generateBillModel,
+  settleBill as settleBillModel,
+  type BillLifecycleContext
+} from "./order-service/bill-lifecycle.js";
+import {
+  ensureCurrentBusinessDay as ensureCurrentBusinessDayModel,
+  finalizeCompletedBusinessDays as finalizeCompletedBusinessDayModels,
+  getBusinessDayById as getBusinessDayByIdModel,
+  refreshDailyReportSnapshot as refreshDailyReportSnapshotModel
+} from "./order-service/business-day-lifecycle.js";
+import { verifyApproval } from "./order-service/approvals.js";
+import {
+  listFloorReadModels,
+  listTableReadModels,
+  requireTable as requireTableModel
+} from "./order-service/floor-table-catalog.js";
+import {
+  findMenuItemIdByName as findMenuItemIdByNameModel,
+  getCurrentMenuPopularity as getCurrentMenuPopularityModel,
+  getMenuItemsByIds,
+  listMenuItemReadModels,
+  listVariantsForMenuItems as listVariantModelsForMenuItems,
+  resolveMenuItemVariant as resolveMenuItemVariantModel
+} from "./order-service/menu-catalog.js";
+import {
+  bulkRemoveMenuItems as bulkRemoveMenuItemsModel,
+  createMenuItem as createMenuItemModel,
+  importMenuItemsFromCsv as importMenuItemsFromCsvModel,
+  removeMenuItem as removeMenuItemModel,
+  removeMenuItemWithApproval as removeMenuItemWithApprovalModel,
+  setMenuItemActive as setMenuItemActiveModel,
+  updateMenuItem as updateMenuItemModel,
+  type MenuItemActionContext
+} from "./order-service/menu-item-actions.js";
+import {
+  getOpenOrderItemByName,
+  getOrderItemById,
+  getOrderItemByMenuKey,
+  listOrderItems
+} from "./order-service/order-item-queries.js";
+import {
+  applyOrderItemDiff as applyOrderItemDiffModel,
+  buildOrderItemKey,
+  kotChangeFromOrderItem as kotChangeFromOrderItemModel
+} from "./order-service/order-item-diff.js";
+import {
+  cancelOrder as cancelOrderModel,
+  cancelOrderItems as cancelOrderItemsModel,
+  submitOrder as submitOrderModel,
+  type OrderLifecycleContext
+} from "./order-service/order-lifecycle.js";
+import {
+  assertCanMoveOrder as assertCanMoveOrderModel,
+  createOrder as createOrderRecord,
+  freeTable as freeTableRecord,
+  requireEditableOrder as requireEditableOrderRecord,
+  requireOrderById as requireOrderByIdRecord,
+  selectOrderById as selectOrderByIdRecord
+} from "./order-service/order-records.js";
+import {
+  updateOrderState as updateOrderStateModel,
+  type OrderStateUpdateContext
+} from "./order-service/order-state-update.js";
+import { appendDomainEvent } from "./order-service/event-log.js";
+import { createKotsForChanges as createKotsForChangesModel } from "./order-service/kot-creation.js";
+import {
+  enqueueTestBillPrint as enqueueTestBillPrintModel,
+  enqueueTestKotPrint as enqueueTestKotPrintModel,
+  ensurePrinterOutputMode as ensurePrinterOutputModeModel,
+  getBillPrinterProfile as getBillPrinterProfileModel,
+  getBillPrinters as getBillPrintersModel,
+  getPrinterOutputMode as getPrinterOutputModeModel,
+  getReceiptPrinter as getReceiptPrinterModel,
+  resolveBillPrinter as resolveBillPrinterModel,
+  updateBillPrinters as updateBillPrintersModel,
+  updatePrinterOutputMode as updatePrinterOutputModeModel,
+  updateReceiptPrinter as updateReceiptPrinterModel,
+  type PrintSettingsActionContext
+} from "./order-service/print-settings-actions.js";
+import {
+  enqueuePrintJob as enqueuePrintJobRecord,
+  retryPrintJob as retryPrintJobRecord,
+  type PrintJobInput
+} from "./order-service/print-job-records.js";
+import {
+  getProductionUnit,
+  getProductionUnitsByIds,
+  listProductionUnitReadModels,
+  resolveProductionUnitRef as resolveProductionUnitRefModel,
+  requireProductionUnit as requireProductionUnitQuery
+} from "./order-service/production-unit-queries.js";
+import { updateKotStatus as updateKotStatusModel } from "./order-service/kot-status.js";
+import {
+  createReadyNotification as createReadyNotificationModel,
+  listReadyNotifications as listReadyNotificationModels
+} from "./order-service/ready-notifications.js";
+import {
+  enqueueBillReprint as enqueueBillReprintModel,
+  enqueueKotReprint as enqueueKotReprintModel
+} from "./order-service/reprint-tickets.js";
+import { buildRangeReport } from "./order-service/report-range.js";
+import { getDailyReportSnapshot, listDailyReportSnapshots } from "./order-service/report-snapshots.js";
+import { buildDaySummary } from "./order-service/report-summary.js";
+import { getOrderReadModel, getSyncStatusReadModel, listKdsTickets, listPrintJobReadModels } from "./order-service/read-models.js";
+import {
+  listSaleGroupReadModels,
+  requireSaleGroup as requireSaleGroupModel,
+  resolveSaleGroupRef as resolveSaleGroupRefModel
+} from "./order-service/sale-group-catalog.js";
+import {
+  createFloor as createFloorModel,
+  createProductionUnit as createProductionUnitModel,
+  createSaleGroup as createSaleGroupModel,
+  createTable as createTableModel,
+  removeFloor as removeFloorModel,
+  removeProductionUnit as removeProductionUnitModel,
+  removeTable as removeTableModel,
+  updateFloor as updateFloorModel,
+  updateProductionUnit as updateProductionUnitModel,
+  updateSaleGroup as updateSaleGroupModel,
+  updateTable as updateTableModel,
+  type SetupCatalogActionContext
+} from "./order-service/setup-catalog-actions.js";
+import {
+  ensureHubConnectionSettings as ensureHubConnectionSettingsModel,
+  getHubConnectionRuntimeSettings as getHubConnectionRuntimeSettingsModel,
+  getHubConnectionSettings as getHubConnectionSettingsModel,
+  getPrintLayout as getPrintLayoutModel,
+  getPrintLayouts as getPrintLayoutsModel,
+  getTicketTemplate as getTicketTemplateModel,
+  isManagerPinConfigured as isManagerPinConfiguredModel,
+  isMasterPinConfigured as isMasterPinConfiguredModel,
+  setManagerPin as setManagerPinModel,
+  setMasterPin as setMasterPinModel,
+  updateHubConnectionSettings as updateHubConnectionSettingsModel,
+  updatePrintLayout as updatePrintLayoutModel,
+  updateTicketTemplate as updateTicketTemplateModel,
+  verifyManagerPinForSession as verifyManagerPinForSessionModel,
+  type SettingsActionContext
+} from "./order-service/settings-actions.js";
+import {
+  prepareSubmittedItems as prepareSubmittedItemsModel,
+  type SubmittedItemContext
+} from "./order-service/submitted-items.js";
+import {
+  nextBillNumber as nextBillNumberModel,
+  nextKotSequence as nextKotSequenceModel,
+  sequenceForKotGroup as sequenceForKotGroupModel
+} from "./order-service/sequences.js";
+import {
+  readSetting as readSettingRecord,
+  writeSetting as writeSettingRecord
+} from "./order-service/settings-records.js";
+import {
+  moveOrderItems as moveOrderItemsModel,
+  moveTable as moveTableModel,
+  type TableTransferContext
+} from "./order-service/table-transfer.js";
+import {
+  type BillPrinterProfile,
+  type BillPrinterProfiles,
+  type BillRow,
+  type BillTotals,
+  type BulkMenuDeleteInput,
+  type BulkMenuDeleteKind,
+  type BulkMenuDeleteResult,
+  type BusinessDayRow,
+  type CsvImportResult,
+  type DeviceActor,
+  type KotItemChange,
+  type MenuItemRow,
+  type MenuItemVariantRow,
+  type OrderItemRow,
+  type OrderRow,
+  type RequestedOrderItem,
+  type TableRow,
+  type TicketCreationResult
+} from "./order-service/types.js";
 
 export class OrderService {
   constructor(private readonly orm: HubOrm) {}
@@ -428,232 +286,27 @@ export class OrderService {
   }
 
   submitOrder(input: SubmitOrderInput, actor?: DeviceActor): { orderId: string; kotIds: string[]; printJobIds: string[] } {
-    const run = this.db.transaction(() => {
-      this.finalizeCompletedBusinessDays();
-      const posDay = this.ensureCurrentBusinessDay();
-      const table = this.requireTable(input.tableId);
-      const now = new Date().toISOString();
-      const normalizedItems = this.prepareSubmittedItems(input.items, now);
-      const isNewOrder = !table.current_order_id;
-      const order = table.current_order_id
-        ? this.requireEditableOrder(table.current_order_id)
-        : this.createOrder(this.orderInputForActor(input, actor), posDay.id, now, actor);
-      this.assertCanEditOrder(order, actor);
-
-      const previousItems = this.getOrderItems(order.id);
-      const menuById = this.getMenuItems([
-        ...normalizedItems.map((item) => item.menuItemId).filter((id): id is string => Boolean(id)),
-        ...previousItems.map((item) => item.menu_item_id).filter((id): id is string => Boolean(id))
-      ]);
-      const changes = this.applyOrderItemDiff(order.id, normalizedItems, previousItems, menuById, now);
-      const tickets = this.createKotsForChanges(order, table, changes, now, isNewOrder, false, undefined, undefined, undefined, (input.printMode ?? "kot_print") !== "kot", input.note);
-
-      this.orm
-        .update(orders)
-        .set({ pax: input.pax, updatedAt: now })
-        .where(eq(orders.id, order.id))
-        .run();
-
-      this.orm
-        .update(restaurantTables)
-        .set({
-          status: "occupied",
-          currentOrderId: order.id,
-          occupiedAt: sql`COALESCE(${restaurantTables.occupiedAt}, ${now})`
-        })
-        .where(eq(restaurantTables.id, table.id))
-        .run();
-
-      this.appendEvent("order.submitted", "order", order.id, {
-        orderId: order.id,
-        tableId: table.id,
-        kotIds: tickets.kotIds,
-        printJobIds: tickets.printJobIds
-      });
-
-      return { orderId: order.id, kotIds: tickets.kotIds, printJobIds: tickets.printJobIds };
-    });
-
-    const result = run();
-    this.finalizeCompletedBusinessDays();
-    return result;
+    return submitOrderModel(this.orderLifecycleContext(), input, actor);
   }
 
   cancelOrder(orderId: string, input: CancelOrderInput): { orderId: string; kotIds: string[]; printJobIds: string[] } {
-    const run = this.db.transaction(() => {
-      const reason = input.reason;
-      const requestedBy = input.requestedBy;
-      this.verifyManagerApproval(input.managerApproval, "order.cancel", "order", orderId, requestedBy);
-      const order = this.requireEditableOrder(orderId);
-      const table = this.requireTable(order.table_id);
-      const now = new Date().toISOString();
-      const items = this.getOrderItems(order.id).filter((item) => item.quantity > 0);
-      const unitById = this.getUnits([...new Set(items.map((item) => item.production_unit_id).filter((id): id is string => Boolean(id)))]);
-
-      const changes = items.flatMap((item): KotItemChange[] => {
-        if (!item.production_unit_id) return [];
-        const unit = unitById.get(item.production_unit_id);
-        if (!unit) throw new DomainError(`Production unit missing for ${item.name_snapshot}`);
-
-        return [{
-          menuItemId: item.menu_item_id,
-          orderItemId: item.id,
-          name: item.name_snapshot,
-          quantityDelta: -item.quantity,
-          productionUnitId: item.production_unit_id,
-          productionUnitName: unit.name,
-          printerHost: unit.printer_host,
-          printerPort: unit.printer_port,
-          printerName: unit.printer_name,
-          ticketLabel: item.ticket_label_snapshot as "KOT" | "BOT"
-        }];
-      });
-
-      const tickets = this.createKotsForChanges(order, table, changes, now, false, true, reason);
-
-      this.orm.update(orders).set({ status: "cancelled", updatedAt: now }).where(eq(orders.id, order.id)).run();
-      this.orm
-        .update(orderItems)
-        .set({ status: "cancelled", updatedAt: now })
-        .where(eq(orderItems.orderId, order.id))
-        .run();
-      this.freeTable(table.id);
-      this.appendEvent("order.cancelled", "order", order.id, { orderId, reason, requestedBy, kotIds: tickets.kotIds, printJobIds: tickets.printJobIds });
-
-      return { orderId, kotIds: tickets.kotIds, printJobIds: tickets.printJobIds };
-    });
-
-    const result = run();
-    this.finalizeCompletedBusinessDays();
-    return result;
+    return cancelOrderModel(this.orderLifecycleContext(), orderId, input);
   }
 
   cancelOrderItems(orderId: string, input: CancelOrderItemsInput): { orderId: string; kotIds: string[]; printJobIds: string[] } {
-    const run = this.db.transaction(() => {
-      const requestedBy = input.requestedBy;
-      this.verifyManagerApproval(input.managerApproval, "order_item.cancel", "order", orderId, requestedBy);
-      const order = this.requireEditableOrder(orderId);
-      if (order.id !== orderId) throw new DomainError("Order not found", 404);
-      const table = this.requireTable(order.table_id);
-      const now = new Date().toISOString();
-      const changes: KotItemChange[] = [];
-
-      for (const requested of input.items) {
-        const item = this.getOrderItemById(requested.orderItemId);
-        if (!item || item.order_id !== order.id || item.status === "cancelled" || item.quantity <= 0) {
-          throw new DomainError("Cannot cancel an item that is not active on this order");
-        }
-        if (requested.quantity > item.quantity) throw new DomainError("Cannot cancel more items than the order has");
-        const change = this.kotChangeFromOrderItem(item, -requested.quantity);
-        if (change) changes.push(change);
-        const remaining = item.quantity - requested.quantity;
-        this.orm
-          .update(orderItems)
-          .set({ quantity: remaining, status: remaining === 0 ? "cancelled" : "active", updatedAt: now })
-          .where(eq(orderItems.id, item.id))
-          .run();
-      }
-
-      const remainingItems = this.getOrderItems(order.id).filter((item) => item.quantity > 0 && item.status !== "cancelled");
-      if (remainingItems.length === 0) {
-        this.orm.update(orders).set({ status: "cancelled", updatedAt: now }).where(eq(orders.id, order.id)).run();
-        this.freeTable(table.id);
-      } else {
-        this.orm.update(orders).set({ updatedAt: now }).where(eq(orders.id, order.id)).run();
-      }
-
-      const tickets = this.createKotsForChanges(order, table, changes, now, false, false, input.managerApproval.reason);
-      this.appendEvent("order_items.cancelled", "order", order.id, {
-        orderId,
-        reason: input.managerApproval.reason,
-        requestedBy,
-        items: input.items,
-        kotIds: tickets.kotIds,
-        printJobIds: tickets.printJobIds
-      });
-      return { orderId, kotIds: tickets.kotIds, printJobIds: tickets.printJobIds };
-    });
-
-    const result = run();
-    this.finalizeCompletedBusinessDays();
-    return result;
+    return cancelOrderItemsModel(this.orderLifecycleContext(), orderId, input);
   }
 
   reprintKot(kotId: string, input: ReprintKotInput): { printJobId: string } {
     const run = this.db.transaction(() => {
-      const kot = this.db
-        .prepare(
-          `SELECT k.*, o.captain_id, t.name AS table_name, u.name AS unit_name,
-            u.printer_host, u.printer_port, u.printer_name
-           FROM kots k
-           JOIN orders o ON o.id = k.order_id
-           JOIN restaurant_tables t ON t.id = o.table_id
-           JOIN production_units u ON u.id = k.production_unit_id
-           WHERE k.id = ?`
-        )
-        .get(kotId) as
-        | {
-            id: string;
-            order_id: string;
-            production_unit_id: string;
-            type: KotType;
-            sequence: number;
-            created_at: string;
-            note: string | null;
-            captain_id: string;
-            table_name: string;
-            unit_name: string;
-            printer_host: string;
-            printer_port: number;
-            printer_name: string | null;
-          }
-        | undefined;
-
-      if (!kot) throw new DomainError("KOT not found", 404);
-
-      const items = this.db
-        .prepare("SELECT name_snapshot, quantity_delta, note_snapshot FROM kot_items WHERE kot_id = ?")
-        .all(kotId) as Array<{ name_snapshot: string; quantity_delta: number; note_snapshot: string | null }>;
-
-      const template = this.getPrintLayout("unit", kot.production_unit_id);
-      const payload = renderKotTicketForPrint({
-        sequence: kot.sequence,
-        type: "reprint",
-        tableName: kot.table_name,
-        productionUnitName: kot.unit_name,
-        captainId: kot.captain_id,
-        createdAt: new Date().toISOString(),
+      const printJobId = enqueueKotReprintModel({
+        db: this.db,
+        kotId,
         reason: input.reason,
-        note: kot.note,
-        items: items.map((item) => ({
-          name: item.name_snapshot,
-          quantityDelta: item.quantity_delta,
-          note: item.note_snapshot
-        })),
-        lineWidthChars: template.lineWidthChars,
-        headerAlign: template.headerAlign,
-        footerAlign: template.footerAlign,
-        sectionStyles: template.sectionStyles,
-        topPaddingLines: template.topPaddingLines,
-        feedLines: template.feedLines,
-        showTable: template.showTable,
-        showCaptain: template.showCaptain,
-        showDateTime: template.showDateTime,
-        header: template.kotHeader,
-        footer: template.kotFooter
+        getPrintLayout: (scope, productionUnitId) => this.getPrintLayout(scope, productionUnitId),
+        enqueuePrintJob: (job) => this.enqueuePrintJob(job)
       });
-
-      const printJobId = this.enqueuePrintJob({
-        targetType: "KOT",
-        targetId: kot.id,
-        productionUnitId: kot.production_unit_id,
-        printerHost: kot.printer_host,
-        printerPort: kot.printer_port,
-        printerName: kot.printer_name,
-        payload
-      });
-
-      this.appendEvent("kot.reprinted", "kot", kot.id, { ...input, printJobId });
+      this.appendEvent("kot.reprinted", "kot", kotId, { ...input, printJobId });
       return { printJobId };
     });
 
@@ -661,77 +314,24 @@ export class OrderService {
   }
 
   reprintBill(billId: string, input: ReprintBillInput): { printJobId: string } {
-    const run = this.db.transaction(() => {
-      this.verifyManagerApproval(input.managerApproval, "bill.reprint", "bill", billId, input.requestedBy);
-      this.applyBillAdjustments(billId, input, input.requestedBy, "pending_only");
-      const printJobId = this.enqueueBillReprint(billId, input.requestedBy, `REPRINT\nReason: ${input.reason}\nRequested by: ${input.requestedBy}\n`, input.printerSlot ?? "default");
-
-      this.appendEvent("bill.reprinted", "bill", billId, { ...input, printJobId });
-      return { printJobId };
-    });
-
-    return run();
+    return reprintBillModel(this.billActionContext(), billId, input);
   }
 
   reprintBillFromHistory(billId: string, requestedBy: string, printerSlot: BillPrinterSlot = "default"): { printJobId: string } {
-    const run = this.db.transaction(() => {
-      const printJobId = this.enqueueBillReprint(billId, requestedBy, "", printerSlot);
-      this.appendEvent("bill.history_reprinted", "bill", billId, { billId, requestedBy, reason: "history_reprint", printJobId });
-      return { printJobId };
-    });
-
-    return run();
+    return reprintBillFromHistoryModel(this.billActionContext(), billId, requestedBy, printerSlot);
   }
 
-  private enqueueBillReprint(billId: string, requestedBy: string, suffix: string, printerSlot: BillPrinterSlot = "default"): string {
-    const bill = this.db
-      .prepare(
-        `SELECT b.*, t.name AS table_name
-           FROM bills b
-           JOIN orders o ON o.id = b.order_id
-           JOIN restaurant_tables t ON t.id = o.table_id
-           WHERE b.id = ?`
-      )
-      .get(billId) as
-      | {
-          id: string;
-          order_id: string;
-          table_name: string;
-          subtotal_paise: number;
-          tax_paise: number;
-          total_paise: number;
-          discount_paise: number;
-          tip_paise: number;
-          final_total_paise: number;
-          tax_breakdown_json: string;
-          revision_number: number;
-          is_nc: number;
-          nc_reason: string | null;
-          created_at: string;
-          bill_number: number;
-        }
-      | undefined;
-
-    if (!bill) throw new DomainError("Bill not found", 404);
-
-    const payload = `${renderBillTicketForPrint(
-      this.buildBillTicket({
-        bill,
-        tableName: bill.table_name,
-        createdAt: new Date().toISOString()
-      })
-    )}${suffix ? `\n${suffix}` : ""}`;
-
-    const printJobId = this.enqueuePrintJob({
-      targetType: "BILL",
-      targetId: billId,
-      productionUnitId: null,
-      ...this.resolveBillPrinter(printerSlot),
-      payload
+  private enqueueBillReprint(billId: string, suffix: string, printerSlot: BillPrinterSlot = "default"): string {
+    return enqueueBillReprintModel({
+      orm: this.orm,
+      db: this.db,
+      billId,
+      suffix,
+      printerSlot,
+      buildBillTicket: (ticketInput) => this.buildBillTicket(ticketInput),
+      resolveBillPrinter: (slot) => this.resolveBillPrinter(slot),
+      enqueuePrintJob: (job) => this.enqueuePrintJob(job)
     });
-
-    this.orm.update(bills).set({ printCount: sql`${bills.printCount} + 1` }).where(eq(bills.id, billId)).run();
-    return printJobId;
   }
 
   getCurrentBusinessDay(): BusinessDayRow {
@@ -739,99 +339,35 @@ export class OrderService {
   }
 
   listSaleGroups(includeInactive = true): unknown[] {
-    const where = includeInactive ? "" : "WHERE sg.active = 1";
-    return this.db
-      .prepare(
-        `SELECT sg.id, sg.name, sg.kind, sg.report_label, sg.ticket_label, sg.tax_components_json,
-          sg.default_production_unit_id, pu.name AS default_production_unit_name, sg.active
-         FROM sale_groups sg
-         LEFT JOIN production_units pu ON pu.id = sg.default_production_unit_id
-         ${where}
-         ORDER BY sg.active DESC, sg.name`
-      )
-      .all();
+    return listSaleGroupReadModels(this.db, includeInactive);
   }
 
   createSaleGroup(input: CreateSaleGroupInput): { id: string } {
-    if (input.defaultProductionUnitId) this.requireProductionUnit(input.defaultProductionUnitId);
-    const id = this.createEntityId("sg", input.customId, (candidate) =>
-      Boolean(this.orm.select({ id: saleGroups.id }).from(saleGroups).where(eq(saleGroups.id, candidate)).get())
-    );
-    this.orm
-      .insert(saleGroups)
-      .values({
-        id,
-        name: input.name,
-        kind: input.kind,
-        reportLabel: input.reportLabel ?? input.name,
-        ticketLabel: input.ticketLabel ?? "KOT",
-        taxComponentsJson: JSON.stringify(input.taxComponents ?? []),
-        defaultProductionUnitId: input.defaultProductionUnitId ?? null,
-        active: input.active ?? true
-      })
-      .run();
-    this.appendEvent("sale_group.created", "sale_group", id, { ...input, id });
-    return { id };
+    return createSaleGroupModel(this.setupCatalogActionContext(), input);
   }
 
   updateSaleGroup(id: string, input: UpdateSaleGroupInput): { id: string } {
-    if (input.defaultProductionUnitId) this.requireProductionUnit(input.defaultProductionUnitId);
-    const result = this.orm
-      .update(saleGroups)
-      .set({
-        ...(input.name !== undefined ? { name: input.name } : {}),
-        ...(input.kind !== undefined ? { kind: input.kind } : {}),
-        ...(input.reportLabel !== undefined ? { reportLabel: input.reportLabel } : {}),
-        ...(input.ticketLabel !== undefined ? { ticketLabel: input.ticketLabel } : {}),
-        ...(input.taxComponents !== undefined ? { taxComponentsJson: JSON.stringify(input.taxComponents) } : {}),
-        ...(input.defaultProductionUnitId !== undefined ? { defaultProductionUnitId: input.defaultProductionUnitId } : {}),
-        ...(input.active !== undefined ? { active: input.active } : {})
-      })
-      .where(eq(saleGroups.id, id))
-      .run();
-    if (result.changes === 0) throw new DomainError("Sale group not found", 404);
-    this.appendEvent("sale_group.updated", "sale_group", id, { id, ...input });
-    return { id };
+    return updateSaleGroupModel(this.setupCatalogActionContext(), id, input);
   }
 
   setManagerPin(input: ManagerPinInput): { configured: boolean } {
-    const currentHash = this.getSetting("manager_pin_hash");
-    if (currentHash) this.verifyManagerApproval({ pin: input.currentPin ?? "", reason: "Manager PIN changed", approvedBy: input.updatedBy }, "manager_pin.update", "hub_setting", "manager_pin");
-    this.upsertSetting("manager_pin_hash", this.hashManagerPin(input.newPin));
-    this.appendEvent("manager_pin.updated", "hub_setting", "manager_pin", { updatedBy: input.updatedBy });
-    return { configured: true };
+    return setManagerPinModel(this.settingsActionContext(), input);
   }
 
   setMasterPin(input: SetMasterPinInput): { configured: boolean } {
-    const currentHash = this.getSetting("master_pin_hash");
-    if (currentHash) {
-      this.verifyMasterApproval(
-        input.currentPin ? { pin: input.currentPin, reason: "Master PIN changed", approvedBy: input.updatedBy } : undefined,
-        "master_pin.update",
-        "hub_setting",
-        "master_pin",
-        input.updatedBy
-      );
-    }
-    this.upsertSetting("master_pin_hash", this.hashManagerPin(input.newPin));
-    this.appendEvent(currentHash ? "master_pin.updated" : "master_pin.created", "hub_setting", "master_pin", { updatedBy: input.updatedBy });
-    return { configured: true };
+    return setMasterPinModel(this.settingsActionContext(), input);
   }
 
   isManagerPinConfigured(): boolean {
-    return Boolean(this.getSetting("manager_pin_hash"));
+    return isManagerPinConfiguredModel(this.settingsActionContext());
   }
 
   isMasterPinConfigured(): boolean {
-    return Boolean(this.getSetting("master_pin_hash"));
+    return isMasterPinConfiguredModel(this.settingsActionContext());
   }
 
   verifyManagerPinForSession(pin: string): void {
-    const configuredHash = this.getSetting("manager_pin_hash");
-    if (!configuredHash) throw new DomainError("Create a Manager PIN before unlocking setup", 403);
-    const verification = this.verifyManagerPin(pin, configuredHash);
-    if (verification === "invalid") throw new DomainError("Manager PIN is incorrect", 403);
-    if (verification === "valid_legacy") this.upsertSetting("manager_pin_hash", this.hashManagerPin(pin));
+    verifyManagerPinForSessionModel(this.settingsActionContext(), pin);
   }
 
   getHubConnectionSettings(reveal = false): {
@@ -841,265 +377,47 @@ export class OrderService {
     syncSecret: string;
     hubPublicUrl: string;
   } {
-    const syncSecret = this.getSetting("hub_connection_sync_secret") ?? "";
-    return {
-      configured: Boolean((this.getSetting("hub_connection_cloud_url") ?? "") && (this.getSetting("hub_connection_installation_id") ?? "") && syncSecret),
-      cloudUrl: this.getSetting("hub_connection_cloud_url") ?? "",
-      installationId: this.getSetting("hub_connection_installation_id") ?? "",
-      syncSecret: reveal && syncSecret ? syncSecret : syncSecret ? "••••••••••••" : "",
-      hubPublicUrl: this.getSetting("hub_connection_public_url") ?? ""
-    };
+    return getHubConnectionSettingsModel(this.settingsActionContext(), reveal);
   }
 
   getHubConnectionRuntimeSettings(): HubConnectionSettingsInput {
-    return {
-      cloudUrl: this.getSetting("hub_connection_cloud_url") ?? "",
-      installationId: this.getSetting("hub_connection_installation_id") ?? "",
-      syncSecret: this.getSetting("hub_connection_sync_secret") ?? "",
-      hubPublicUrl: this.getSetting("hub_connection_public_url") ?? ""
-    };
+    return getHubConnectionRuntimeSettingsModel(this.settingsActionContext());
   }
 
   updateHubConnectionSettings(input: HubConnectionSettingsInput): { configured: boolean } {
-    const existingSecret = this.getSetting("hub_connection_sync_secret") ?? "";
-    const nextSecret = input.syncSecret?.includes("•") ? existingSecret : (input.syncSecret ?? "");
-    this.upsertSetting("hub_connection_cloud_url", input.cloudUrl ?? "");
-    this.upsertSetting("hub_connection_installation_id", input.installationId ?? "");
-    this.upsertSetting("hub_connection_sync_secret", nextSecret);
-    this.upsertSetting("hub_connection_public_url", input.hubPublicUrl ?? "");
-    this.appendEvent("hub_connection.updated", "hub_setting", "hub_connection", {
-      cloudUrl: input.cloudUrl,
-      installationId: input.installationId,
-      hubPublicUrl: input.hubPublicUrl,
-      syncSecretConfigured: Boolean(input.syncSecret)
-    });
-    return { configured: this.getHubConnectionSettings(false).configured };
+    return updateHubConnectionSettingsModel(this.settingsActionContext(), input);
   }
 
   ensureHubConnectionSettings(input: HubConnectionSettingsInput): void {
-    if (!input.cloudUrl && !input.installationId && !input.syncSecret && !input.hubPublicUrl) return;
-    if (!this.getSetting("hub_connection_cloud_url") && input.cloudUrl) this.upsertSetting("hub_connection_cloud_url", input.cloudUrl);
-    if (!this.getSetting("hub_connection_installation_id") && input.installationId) this.upsertSetting("hub_connection_installation_id", input.installationId);
-    if (!this.getSetting("hub_connection_sync_secret") && input.syncSecret) this.upsertSetting("hub_connection_sync_secret", input.syncSecret);
-    if (!this.getSetting("hub_connection_public_url") && input.hubPublicUrl) this.upsertSetting("hub_connection_public_url", input.hubPublicUrl);
+    ensureHubConnectionSettingsModel(this.settingsActionContext(), input);
   }
 
   getTicketTemplate(): TicketTemplateInput {
-    const layout = this.getPrintLayout("default");
-    return {
-      billHeader: layout.billHeader,
-      billFooter: layout.billFooter,
-      kotHeader: layout.kotHeader,
-      kotFooter: layout.kotFooter,
-      restaurantName: layout.restaurantName,
-      restaurantAddress: layout.restaurantAddress,
-      taxRegistrationText: layout.taxRegistrationText,
-      lineWidthChars: layout.lineWidthChars
-    };
+    return getTicketTemplateModel(this.settingsActionContext());
   }
 
   updateTicketTemplate(input: TicketTemplateInput): TicketTemplateInput {
-    this.upsertSetting("ticket_bill_header", input.billHeader ?? "");
-    this.upsertSetting("ticket_bill_footer", input.billFooter ?? "");
-    this.upsertSetting("ticket_kot_header", input.kotHeader ?? "");
-    this.upsertSetting("ticket_kot_footer", input.kotFooter ?? "");
-    this.upsertSetting("ticket_restaurant_name", input.restaurantName ?? "");
-    this.upsertSetting("ticket_restaurant_address", input.restaurantAddress ?? "");
-    this.upsertSetting("ticket_tax_registration_text", input.taxRegistrationText ?? "");
-    this.upsertSetting("ticket_line_width_chars", String(input.lineWidthChars ?? 42));
-    this.upsertSetting("print_layout_default", JSON.stringify({ ...this.defaultPrintLayout("default"), ...input }));
-    this.appendEvent("ticket_template.updated", "hub_setting", "ticket_template", input);
-    return this.getTicketTemplate();
+    return updateTicketTemplateModel(this.settingsActionContext(), input);
   }
 
   getPrintLayouts(): { default: PrintLayoutSettingsInput; receipt: PrintLayoutSettingsInput; units: Array<{ productionUnitId: string; name: string; layout: PrintLayoutSettingsInput }> } {
-    const units = (this.listProductionUnits() as Array<{ id: string; name: string }>).map((unit) => ({
-      productionUnitId: unit.id,
-      name: unit.name,
-      layout: this.getPrintLayout("unit", unit.id)
-    }));
-    return {
-      default: this.getPrintLayout("default"),
-      receipt: this.getPrintLayout("receipt"),
-      units
-    };
+    return getPrintLayoutsModel(this.settingsActionContext());
   }
 
   getPrintLayout(scope: PrintLayoutSettingsInput["scope"], productionUnitId?: string): PrintLayoutSettingsInput {
-    const key = this.printLayoutKey(scope, productionUnitId);
-    const stored = this.getSetting(key);
-    const fallback = this.defaultPrintLayout(scope, productionUnitId);
-    if (!stored) return fallback;
-    try {
-      const parsed = JSON.parse(stored) as Partial<PrintLayoutSettingsInput>;
-      return {
-        ...fallback,
-        ...parsed,
-        sectionStyles: { ...fallback.sectionStyles, ...(parsed.sectionStyles ?? {}) },
-        scope,
-        productionUnitId
-      };
-    } catch {
-      return fallback;
-    }
+    return getPrintLayoutModel(this.settingsActionContext(), scope, productionUnitId);
   }
 
   updatePrintLayout(input: PrintLayoutSettingsInput): PrintLayoutSettingsInput {
-    if (input.scope === "unit" && !input.productionUnitId) throw new DomainError("Choose a kitchen or counter for this layout");
-    if (input.scope === "unit" && input.productionUnitId) this.requireProductionUnit(input.productionUnitId);
-    const fallback = this.defaultPrintLayout(input.scope, input.productionUnitId);
-    const layout = { ...fallback, ...input, sectionStyles: { ...fallback.sectionStyles, ...input.sectionStyles } };
-    this.upsertSetting(this.printLayoutKey(input.scope, input.productionUnitId), JSON.stringify(layout));
-    this.appendEvent("print_layout.updated", "hub_setting", this.printLayoutKey(input.scope, input.productionUnitId), {
-      scope: input.scope,
-      productionUnitId: input.productionUnitId ?? null
-    });
-    return layout;
+    return updatePrintLayoutModel(this.settingsActionContext(), input);
   }
 
   generateBill(orderId: string, printerSlot: BillPrinterSlot = "default", input: BillAdjustmentInput = {}): { billId: string; billNumber: number; totalPaise: number; finalTotalPaise: number; printJobId: string } {
-    const run = this.db.transaction(() => {
-      const order = this.requireEditableOrder(orderId);
-      const table = this.requireTable(order.table_id);
-      const items = this.getOrderItems(orderId).filter((item) => item.quantity > 0);
-      if (items.length === 0) throw new DomainError("Cannot bill an empty order");
-
-      const totals = this.calculateBillTotals(items);
-      const discountPaise = input.discountValue === undefined ? 0 : this.calculateDiscountPaise(totals.totalPaise, input);
-      const tipPaise = input.tipPaise ?? 0;
-      const finalTotalPaise = Math.max(0, totals.totalPaise - discountPaise + tipPaise);
-      const billId = makeId("bill");
-      const billNumber = this.nextBillNumber();
-      const now = new Date().toISOString();
-
-      this.orm
-        .insert(bills)
-        .values({
-          id: billId,
-          billNumber,
-          orderId,
-          status: "pending",
-          subtotalPaise: totals.subtotalPaise,
-          taxPaise: totals.taxPaise,
-          totalPaise: totals.totalPaise,
-          discountPaise,
-          tipPaise,
-          finalTotalPaise,
-          taxBreakdownJson: JSON.stringify(totals.taxBreakdown),
-          revisionNumber: 1,
-          createdAt: now
-        })
-        .run();
-
-      this.orm.update(orders).set({ status: "billed", updatedAt: now }).where(eq(orders.id, orderId)).run();
-      this.orm.update(restaurantTables).set({ status: "billed" }).where(eq(restaurantTables.id, table.id)).run();
-      this.recordBillRevision(billId, 1, totals, "Initial bill", "captain", now, {
-        discountPaise,
-        tipPaise,
-        finalTotalPaise
-      });
-      const bill = this.getBillById(billId);
-      if (!bill) throw new DomainError("Bill not found after generation", 500);
-      const printJobId = this.enqueuePrintJob({
-        targetType: "BILL",
-        targetId: billId,
-        productionUnitId: null,
-        ...this.resolveBillPrinter(printerSlot),
-        payload: renderBillTicketForPrint(this.buildBillTicket({ bill, tableName: table.name, createdAt: now }))
-      });
-      this.orm.update(bills).set({ printCount: sql`${bills.printCount} + 1` }).where(eq(bills.id, billId)).run();
-
-      this.appendEvent("bill.generated", "bill", billId, { orderId, billNumber, totalPaise: totals.totalPaise, discountPaise, tipPaise, finalTotalPaise, taxBreakdown: totals.taxBreakdown, printJobId });
-      return { billId, billNumber, totalPaise: totals.totalPaise, finalTotalPaise, printJobId };
-    });
-
-    return run();
+    return generateBillModel(this.billLifecycleContext(), orderId, printerSlot, input);
   }
 
   updateOrderState(orderId: string, input: UpdateOrderStateInput): { orderId: string; status: string; totalPaise: number; kotIds: string[]; printJobIds: string[]; billId?: string; revisionNumber?: number } {
-    const run = this.db.transaction(() => {
-      const order = this.requireOrderById(orderId);
-      if (!["open", "billed"].includes(order.status)) throw new DomainError("Order cannot be edited");
-      if (order.status === "billed") {
-        this.verifyManagerApproval(input.managerApproval, "order_state.update_billed", "order", orderId, input.managerApproval?.approvedBy ?? "captain");
-      }
-      const table = this.requireTable(order.table_id);
-      const now = new Date().toISOString();
-      const previousItems = this.getOrderItems(orderId);
-      const previousVariantIds = new Set(previousItems.map((item) => item.menu_item_variant_id).filter((id): id is string => Boolean(id)));
-      const previousItemsById = new Map(previousItems.map((item) => [item.id, item]));
-      const normalizedItems = this.prepareSubmittedItems(input.items, now, previousVariantIds, previousItemsById);
-      const menuById = this.getMenuItems([
-        ...normalizedItems.map((item) => item.menuItemId).filter((id): id is string => Boolean(id)),
-        ...previousItems.map((item) => item.menu_item_id).filter((id): id is string => Boolean(id))
-      ]);
-	      const changes = this.applyOrderItemDiff(orderId, normalizedItems, previousItems, menuById, now, true);
-	      const activeItems = this.getOrderItems(orderId).filter((item) => item.quantity > 0 && item.status !== "cancelled");
-	      if (order.status !== "billed" && activeItems.length === 0) {
-	        throw new DomainError("Running table must keep at least one item. Use Cancel order instead.");
-	      }
-	      const totals = this.calculateBillTotals(activeItems);
-      const shouldPrint = input.saveMode === "save_print";
-      const tickets = shouldPrint
-        ? this.createKotsForChanges(order, table, changes, now, false, false, order.status === "billed" ? input.managerApproval?.reason : undefined, undefined, undefined, true)
-        : { kotIds: [], printJobIds: [] };
-
-      if (order.status === "billed") {
-        const bill = this.getBillForOrder(orderId);
-        if (!bill) throw new DomainError("Bill not found", 404);
-        if (activeItems.length === 0) {
-          const paidPaise = this.getBillPaidPaise(bill.id);
-          if (paidPaise > 0) throw new DomainError("Remove or reverse recorded payments before removing all billed items");
-          this.deleteLocalBillRecord(bill.id);
-          this.orm.update(orders).set({ status: "cancelled", updatedAt: now }).where(eq(orders.id, orderId)).run();
-          this.freeTable(table.id);
-          this.appendEvent("order_state.updated", "order", orderId, {
-            orderId,
-            saveMode: input.saveMode,
-            status: "cancelled",
-            removedBillId: bill.id,
-            kotIds: tickets.kotIds,
-            printJobIds: tickets.printJobIds
-          });
-          return { orderId, status: "cancelled", totalPaise: 0, kotIds: tickets.kotIds, printJobIds: tickets.printJobIds };
-        }
-        const finalTotalPaise = Math.max(0, totals.totalPaise - bill.discount_paise + bill.tip_paise);
-        const revisionNumber = (bill.revision_number ?? 1) + 1;
-        this.orm
-          .update(bills)
-          .set({
-            subtotalPaise: totals.subtotalPaise,
-            taxPaise: totals.taxPaise,
-            totalPaise: totals.totalPaise,
-            finalTotalPaise,
-            taxBreakdownJson: JSON.stringify(totals.taxBreakdown),
-            revisionNumber,
-            status: "pending"
-          })
-          .where(eq(bills.id, bill.id))
-          .run();
-        this.recordBillRevision(bill.id, revisionNumber, totals, input.managerApproval?.reason ?? "Bill state updated", input.managerApproval?.approvedBy ?? "manager", now, {
-          discountPaise: bill.discount_paise,
-          tipPaise: bill.tip_paise,
-          finalTotalPaise
-        });
-        this.orm.update(orders).set({ status: "billed", updatedAt: now }).where(eq(orders.id, orderId)).run();
-        this.orm.update(restaurantTables).set({ status: "billed" }).where(eq(restaurantTables.id, table.id)).run();
-        this.appendEvent("order_state.updated", "order", orderId, { orderId, saveMode: input.saveMode, billId: bill.id, revisionNumber, kotIds: tickets.kotIds, printJobIds: tickets.printJobIds });
-        return { orderId, status: "billed", totalPaise: totals.totalPaise, kotIds: tickets.kotIds, printJobIds: tickets.printJobIds, billId: bill.id, revisionNumber };
-      } else if (activeItems.length === 0) {
-        this.orm.update(orders).set({ status: "cancelled", updatedAt: now }).where(eq(orders.id, orderId)).run();
-        this.freeTable(table.id);
-      } else {
-        this.orm.update(orders).set({ status: "open", updatedAt: now }).where(eq(orders.id, orderId)).run();
-        this.orm.update(restaurantTables).set({ status: "occupied", currentOrderId: orderId }).where(eq(restaurantTables.id, table.id)).run();
-      }
-
-      const status = activeItems.length === 0 ? "cancelled" : "open";
-      this.appendEvent("order_state.updated", "order", orderId, { orderId, saveMode: input.saveMode, status, kotIds: tickets.kotIds, printJobIds: tickets.printJobIds });
-      return { orderId, status, totalPaise: totals.totalPaise, kotIds: tickets.kotIds, printJobIds: tickets.printJobIds };
-    });
-    return run();
+    return updateOrderStateModel(this.orderStateUpdateContext(), orderId, input);
   }
 
   settleBill(billId: string, input: SettleBillInput): {
@@ -1109,128 +427,15 @@ export class OrderService {
     remainingPaise: number;
     finalTotalPaise: number;
   } {
-    const run = this.db.transaction(() => {
-      const bill = this.getBillById(billId);
-      if (!bill) throw new DomainError("Bill not found", 404);
-      if (bill.status !== "pending") throw new DomainError("Bill is not pending");
-
-      const order = this.requireOrderById(bill.order_id);
-      const now = new Date().toISOString();
-      const discountPaise = input.discountValue === undefined ? bill.discount_paise : this.calculateDiscountPaise(bill.total_paise, input);
-      const tipPaise = input.tipPaise === undefined ? (bill.tip_paise ?? 0) : input.tipPaise;
-      const finalTotalPaise = Math.max(0, bill.total_paise - discountPaise + tipPaise);
-      const existingPaid = this.getBillPaidPaise(billId);
-      const requestedPayments =
-        input.payments && input.payments.length > 0
-          ? input.payments
-          : input.amountPaise !== undefined
-            ? [{ method: input.method ?? "cash", amountPaise: input.amountPaise }]
-            : [];
-
-      const validPayments = requestedPayments.filter((payment) => payment.amountPaise > 0);
-      const requestedPaymentTotalPaise = validPayments.reduce(
-        (sum, payment) => sum + payment.amountPaise,
-        0
-      );
-      if (existingPaid > finalTotalPaise) {
-        throw new DomainError("Recorded payments exceed this bill total");
-      }
-      const balanceDuePaise = finalTotalPaise - existingPaid;
-      if (requestedPaymentTotalPaise > balanceDuePaise) {
-        throw new DomainError("Payment exceeds the balance due");
-      }
-
-      for (const payment of validPayments) {
-        const paymentId = makeId("pay");
-        this.orm
-          .insert(payments)
-          .values({
-            id: paymentId,
-            billId,
-            method: payment.method ?? "cash",
-            amountPaise: payment.amountPaise,
-            receivedBy: input.receivedBy,
-            reference: payment.reference ?? null,
-            note: payment.note ?? null,
-            createdAt: now
-          })
-          .run();
-      }
-
-      const paidPaise = existingPaid + requestedPaymentTotalPaise;
-      const remainingPaise = Math.max(0, finalTotalPaise - paidPaise);
-      const isPaid = remainingPaise === 0;
-
-      this.orm
-        .update(bills)
-        .set({
-          discountPaise,
-          tipPaise,
-          finalTotalPaise,
-          status: isPaid ? "paid" : "pending",
-          settledAt: isPaid ? now : null
-        })
-        .where(eq(bills.id, billId))
-        .run();
-
-      if (isPaid) {
-        this.deductAlcoholStockForPaidBill(billId, bill.order_id);
-        this.orm.update(orders).set({ status: "paid", updatedAt: now }).where(eq(orders.id, bill.order_id)).run();
-        this.freeTable(order.table_id);
-        this.appendEvent("bill.settled", "bill", billId, { ...input, paidPaise, remainingPaise, finalTotalPaise });
-      } else {
-        this.appendEvent("payment.added", "bill", billId, { ...input, paidPaise, remainingPaise, finalTotalPaise });
-      }
-
-      return { billId, status: isPaid ? "paid" : "pending", paidPaise, remainingPaise, finalTotalPaise };
-    });
-
-    const result = run();
-    if (result.status === "paid") this.finalizeCompletedBusinessDays();
-    return result;
+    return settleBillModel(this.billLifecycleContext(), billId, input);
   }
 
   listTables(): unknown[] {
-    const rows = this.db
-      .prepare(
-        `SELECT t.id, t.floor_id, f.name AS floor_name, t.name, t.active, t.sort_order, t.status, t.current_order_id, t.occupied_at
-         FROM restaurant_tables t
-         JOIN floors f ON f.id = t.floor_id
-         ORDER BY f.sort_order ASC, f.name ASC, t.sort_order ASC, t.name ASC`
-      )
-      .all() as Array<Record<string, unknown> & { current_order_id: string | null }>;
-    const summaries = this.getCurrentOrderSummaries(rows.map((row) => row.current_order_id).filter((id): id is string => Boolean(id)));
-    return rows.map((row) => {
-      const summary = row.current_order_id ? summaries.get(row.current_order_id) : null;
-      return {
-        ...row,
-        current_order_total_paise: summary?.totalPaise ?? 0,
-        sent_item_count: summary?.itemCount ?? 0,
-        timer_ended_at: summary?.timerEndedAt ?? null
-      };
-    });
+    return listTableReadModels(this.db);
   }
 
   listKds(productionUnitId: string): unknown[] {
-    const rows = this.db
-      .prepare(
-        `SELECT k.id, k.order_id, k.production_unit_id, k.sequence, k.type, k.status, k.reason, k.note, k.created_at,
-          t.name AS table_name, o.captain_id
-         FROM kots k
-         JOIN orders o ON o.id = k.order_id
-         JOIN restaurant_tables t ON t.id = o.table_id
-         JOIN production_units pu ON pu.id = k.production_unit_id
-         WHERE k.production_unit_id = ? AND pu.kds_enabled = 1 AND k.status IN ('queued', 'preparing', 'ready')
-         ORDER BY k.created_at ASC`
-      )
-      .all(productionUnitId);
-
-    return rows.map((row) => ({
-      ...(row as Record<string, unknown>),
-      items: this.db
-        .prepare("SELECT name_snapshot, quantity_delta, note_snapshot FROM kot_items WHERE kot_id = ? ORDER BY id")
-        .all((row as { id: string }).id)
-    }));
+    return listKdsTickets(this.db, productionUnitId);
   }
 
   bootstrap(): unknown {
@@ -1252,724 +457,133 @@ export class OrderService {
   }
 
   listFloors(): unknown[] {
-    return this.db.prepare("SELECT id, name, active, sort_order FROM floors ORDER BY sort_order ASC, name ASC").all();
+    return listFloorReadModels(this.db);
   }
 
   createFloor(input: CreateFloorInput): { id: string } {
-    const id = this.createEntityId("floor", input.customId, (candidate) =>
-      Boolean(this.orm.select({ id: floors.id }).from(floors).where(eq(floors.id, candidate)).get())
-    );
-    const sortOrder = input.sortOrder ?? this.nextFloorSortOrder();
-    this.orm.insert(floors).values({ id, name: input.name, active: input.active ?? true, sortOrder }).run();
-    this.appendEvent("floor.created", "floor", id, { ...input, id });
-    return { id };
+    return createFloorModel(this.setupCatalogActionContext(), input);
   }
 
   updateFloor(id: string, input: UpdateFloorInput): { id: string } {
-    const result = this.orm
-      .update(floors)
-      .set({
-        ...(input.name !== undefined ? { name: input.name } : {}),
-        ...(input.active !== undefined ? { active: input.active } : {}),
-        ...(input.sortOrder !== undefined ? { sortOrder: input.sortOrder } : {})
-      })
-      .where(eq(floors.id, id))
-      .run();
-    if (result.changes === 0) throw new DomainError("Floor not found", 404);
-    this.appendEvent("floor.updated", "floor", id, { id, ...input });
-    return { id };
+    return updateFloorModel(this.setupCatalogActionContext(), id, input);
   }
 
   removeFloor(id: string): { id: string; deleted: boolean; active: boolean } {
-    const usage = this.orm.select({ count: count() }).from(restaurantTables).where(eq(restaurantTables.floorId, id)).get()?.count ?? 0;
-    if (usage > 0) {
-      this.updateFloor(id, { active: false });
-      return { id, deleted: false, active: false };
-    }
-    const result = this.orm.delete(floors).where(eq(floors.id, id)).run();
-    if (result.changes === 0) throw new DomainError("Floor not found", 404);
-    this.appendEvent("floor.deleted", "floor", id, { id });
-    return { id, deleted: true, active: false };
+    return removeFloorModel(this.setupCatalogActionContext(), id);
   }
 
   createTable(input: CreateTableInput): { id: string } {
-    this.requireFloor(input.floorId);
-    const id = this.createEntityId("table", input.customId, (candidate) =>
-      Boolean(this.orm.select({ id: restaurantTables.id }).from(restaurantTables).where(eq(restaurantTables.id, candidate)).get())
-    );
-    const sortOrder = input.sortOrder ?? this.nextTableSortOrder(input.floorId);
-    this.orm
-      .insert(restaurantTables)
-      .values({
-        id,
-        floorId: input.floorId,
-        name: input.name,
-        active: input.active ?? true,
-        sortOrder,
-        status: "free",
-        currentOrderId: null,
-        occupiedAt: null
-      })
-      .run();
-    this.appendEvent("table.created", "table", id, { ...input, id });
-    return { id };
+    return createTableModel(this.setupCatalogActionContext(), input);
   }
 
   updateTable(id: string, input: UpdateTableInput): { id: string } {
-    if (input.floorId) this.requireFloor(input.floorId);
-    const currentTable = input.floorId && input.sortOrder === undefined
-      ? this.orm.select({ floorId: restaurantTables.floorId }).from(restaurantTables).where(eq(restaurantTables.id, id)).get()
-      : undefined;
-    const sortOrder = input.sortOrder ?? (input.floorId && currentTable?.floorId !== input.floorId ? this.nextTableSortOrder(input.floorId) : undefined);
-    const result = this.orm
-      .update(restaurantTables)
-      .set({
-        ...(input.floorId !== undefined ? { floorId: input.floorId } : {}),
-        ...(input.name !== undefined ? { name: input.name } : {}),
-        ...(input.active !== undefined ? { active: input.active } : {}),
-        ...(sortOrder !== undefined ? { sortOrder } : {})
-      })
-      .where(eq(restaurantTables.id, id))
-      .run();
-    if (result.changes === 0) throw new DomainError("Table not found", 404);
-    this.appendEvent("table.updated", "table", id, { id, ...input });
-    return { id };
+    return updateTableModel(this.setupCatalogActionContext(), id, input);
   }
 
   removeTable(id: string): { id: string; deleted: boolean; active: boolean } {
-    const table = this.requireTable(id);
-    if (table.current_order_id) throw new DomainError("Settle or cancel the active order before removing this table");
-    const usage = this.orm.select({ count: count() }).from(orders).where(eq(orders.tableId, id)).get()?.count ?? 0;
-    if (usage > 0) {
-      this.updateTable(id, { active: false });
-      return { id, deleted: false, active: false };
-    }
-    const result = this.orm.delete(restaurantTables).where(eq(restaurantTables.id, id)).run();
-    if (result.changes === 0) throw new DomainError("Table not found", 404);
-    this.appendEvent("table.deleted", "table", id, { id });
-    return { id, deleted: true, active: false };
+    return removeTableModel(this.setupCatalogActionContext(), id);
   }
 
   listProductionUnits(): unknown[] {
-    return this.db
-      .prepare(
-        `SELECT id, name, printer_mode, printer_name, printer_host, printer_port, kds_enabled, active
-         FROM production_units
-         ORDER BY active DESC, name`
-      )
-      .all();
+    return listProductionUnitReadModels(this.db);
   }
 
   createProductionUnit(input: CreateProductionUnitInput): { id: string } {
-    const id = this.createEntityId("unit", input.customId, (candidate) =>
-      Boolean(this.orm.select({ id: productionUnits.id }).from(productionUnits).where(eq(productionUnits.id, candidate)).get())
-    );
-    const printerMode = input.printerMode ?? "system";
-    this.orm
-      .insert(productionUnits)
-      .values({
-        id,
-        name: input.name,
-        printerMode,
-        printerName: input.printerName ?? null,
-        printerHost: input.printerHost ?? "",
-        printerPort: input.printerPort ?? 9100,
-        kdsEnabled: input.kdsEnabled ?? true,
-        active: input.active ?? true
-      })
-      .run();
-    this.appendEvent("production_unit.created", "production_unit", id, { ...input, id });
-    return { id };
+    return createProductionUnitModel(this.setupCatalogActionContext(), input);
   }
 
   updateProductionUnit(id: string, input: UpdateProductionUnitInput): { id: string } {
-    const result = this.orm
-      .update(productionUnits)
-      .set({
-        ...(input.name !== undefined ? { name: input.name } : {}),
-        ...(input.printerMode !== undefined ? { printerMode: input.printerMode } : {}),
-        ...(input.printerName !== undefined ? { printerName: input.printerName } : {}),
-        ...(input.printerHost !== undefined ? { printerHost: input.printerHost } : {}),
-        ...(input.printerPort !== undefined ? { printerPort: input.printerPort } : {}),
-        ...(input.kdsEnabled !== undefined ? { kdsEnabled: input.kdsEnabled } : {}),
-        ...(input.active !== undefined ? { active: input.active } : {})
-      })
-      .where(eq(productionUnits.id, id))
-      .run();
-    if (result.changes === 0) throw new DomainError("Kitchen / counter not found", 404);
-    this.appendEvent("production_unit.updated", "production_unit", id, { id, ...input });
-    return { id };
+    return updateProductionUnitModel(this.setupCatalogActionContext(), id, input);
   }
 
   removeProductionUnit(id: string): { id: string; deleted: boolean; active: boolean } {
-    const menuUsage = this.orm.select({ count: count() }).from(menuItems).where(eq(menuItems.productionUnitId, id)).get()?.count ?? 0;
-    const orderUsage = this.orm.select({ count: count() }).from(orderItems).where(eq(orderItems.productionUnitId, id)).get()?.count ?? 0;
-    const kotUsage = this.orm.select({ count: count() }).from(kots).where(eq(kots.productionUnitId, id)).get()?.count ?? 0;
-    if (menuUsage + orderUsage + kotUsage > 0) {
-      this.updateProductionUnit(id, { active: false });
-      return { id, deleted: false, active: false };
-    }
-    const result = this.orm.delete(productionUnits).where(eq(productionUnits.id, id)).run();
-    if (result.changes === 0) throw new DomainError("Kitchen / counter not found", 404);
-    this.appendEvent("production_unit.deleted", "production_unit", id, { id });
-    return { id, deleted: true, active: false };
+    return removeProductionUnitModel(this.setupCatalogActionContext(), id);
   }
 
   listMenuItems(includeInactive = false): unknown[] {
-    const where = includeInactive ? "" : "WHERE mi.active = 1";
-    const rows = this.db
-      .prepare(
-        `SELECT mi.id, mi.name, mi.price_paise, mi.production_unit_id, mi.sale_group_id, mi.active,
-          pu.name AS production_unit_name,
-          sg.name AS sale_group_name,
-          sg.kind AS sale_group_kind,
-          sg.ticket_label
-         FROM menu_items mi
-         JOIN sale_groups sg ON sg.id = mi.sale_group_id
-         LEFT JOIN production_units pu ON pu.id = mi.production_unit_id
-         ${where}
-         ORDER BY mi.active DESC, sg.name, mi.name`
-      )
-      .all();
-    const variants = this.listVariantsForMenuItems((rows as Array<{ id: string }>).map((row) => row.id), includeInactive);
-    return (rows as Array<Record<string, unknown>>).map((row) => ({ ...row, variants: variants.get(String(row.id)) ?? [] }));
+    return listMenuItemReadModels(this.db, includeInactive);
   }
 
   getCurrentMenuPopularity(): Array<{ menuItemId: string; quantity: number }> {
     const businessDay = this.ensureCurrentBusinessDay() as { id: string };
-    return this.db
-      .prepare(
-        `SELECT oi.menu_item_id AS menuItemId, COALESCE(SUM(oi.quantity), 0) AS quantity
-         FROM order_items oi
-         JOIN orders o ON o.id = oi.order_id
-         WHERE o.pos_day_id = ?
-           AND oi.status != 'cancelled'
-           AND oi.menu_item_id IS NOT NULL
-         GROUP BY oi.menu_item_id
-         HAVING quantity > 0
-         ORDER BY quantity DESC, oi.menu_item_id ASC`
-      )
-      .all(businessDay.id) as Array<{ menuItemId: string; quantity: number }>;
+    return getCurrentMenuPopularityModel(this.db, businessDay.id);
   }
 
   private listVariantsForMenuItems(menuItemIds: string[], includeInactive = false): Map<string, MenuItemVariantRow[]> {
-    const uniqueIds = [...new Set(menuItemIds)];
-    if (uniqueIds.length === 0) return new Map();
-    const placeholders = uniqueIds.map(() => "?").join(",");
-    const activeClause = includeInactive ? "" : "AND active = 1";
-    const rows = this.db
-      .prepare(
-        `SELECT id, menu_item_id, label, kind, price_paise, volume_ml, inventory_action, sort_order, active
-         FROM menu_item_variants
-         WHERE menu_item_id IN (${placeholders}) ${activeClause}
-         ORDER BY menu_item_id, sort_order, id`
-      )
-      .all(...uniqueIds) as MenuItemVariantRow[];
-    const variants = new Map<string, MenuItemVariantRow[]>();
-    for (const row of rows) {
-      variants.set(row.menu_item_id, [...(variants.get(row.menu_item_id) ?? []), row]);
-    }
-    return variants;
+    return listVariantModelsForMenuItems(this.db, menuItemIds, includeInactive);
   }
 
   createMenuItem(input: CreateMenuItemInput): { id: string } {
-    if (input.productionUnitId) this.requireProductionUnit(input.productionUnitId);
-    this.requireSaleGroup(input.saleGroupId ?? "sg-food");
-    const id = this.createEntityId("menu", input.customId, (candidate) =>
-      Boolean(this.orm.select({ id: menuItems.id }).from(menuItems).where(eq(menuItems.id, candidate)).get())
-    );
-    this.orm
-      .insert(menuItems)
-      .values({
-        id,
-        name: input.name,
-        pricePaise: input.pricePaise,
-        productionUnitId: input.productionUnitId ?? null,
-        saleGroupId: input.saleGroupId ?? "sg-food",
-        active: input.active ?? true
-      })
-      .run();
-    this.ensureDefaultVariant(id, input.pricePaise, input.active ?? true);
-    this.appendEvent("menu_item.created", "menu_item", id, { ...input, id });
-    return { id };
+    return createMenuItemModel(this.menuItemActionContext(), input);
   }
 
   importMenuItemsFromCsv(csv: string): CsvImportResult {
-    const run = this.db.transaction(() => {
-      const rows = this.parseCsvRows(csv);
-      const result: CsvImportResult = { created: 0, failed: 0, ids: [], errors: [] };
-      for (const row of rows) {
-        try {
-          const name = this.requireCsvText(row, ["name", "item_name", "dish_name"]);
-          if (this.findMenuItemIdByName(name)) throw new DomainError(`Menu item "${name}" already exists`);
-          const pricePaise = this.csvMoneyToPaise(this.requireCsvText(row, ["price", "price_rupees", "rate"]));
-          const productionUnitId = this.resolveProductionUnitRef(this.csvText(row, ["kitchen_or_counter", "kitchen", "counter", "production_unit"]));
-          const saleGroupId = this.resolveSaleGroupRef(this.csvText(row, ["sale_category", "sale_group", "category"]) || "Food");
-          const created = this.createMenuItem({
-            name,
-            pricePaise,
-            productionUnitId,
-            saleGroupId,
-            active: this.csvBoolean(this.csvText(row, ["active"]), true)
-          });
-          result.created += 1;
-          result.ids.push(created.id);
-        } catch (error) {
-          result.failed += 1;
-          result.errors.push({ row: row.rowNumber, message: error instanceof Error ? error.message : "Could not import row" });
-        }
-      }
-      return result;
-    });
-    return run();
+    return importMenuItemsFromCsvModel(this.menuItemActionContext(), csv);
   }
 
   updateMenuItem(id: string, input: UpdateMenuItemInput): { id: string } {
-    if (input.productionUnitId) this.requireProductionUnit(input.productionUnitId);
-    if (input.saleGroupId) this.requireSaleGroup(input.saleGroupId);
-    const existing = this.orm
-      .select({
-        name: menuItems.name,
-        pricePaise: menuItems.pricePaise,
-        productionUnitId: menuItems.productionUnitId,
-        saleGroupId: menuItems.saleGroupId,
-        active: menuItems.active
-      })
-      .from(menuItems)
-      .where(eq(menuItems.id, id))
-      .get();
-    if (!existing) throw new DomainError("Menu item not found", 404);
-
-    this.orm
-      .update(menuItems)
-      .set({
-        name: input.name ?? existing.name,
-        pricePaise: input.pricePaise ?? existing.pricePaise,
-        productionUnitId: input.productionUnitId !== undefined ? input.productionUnitId : existing.productionUnitId,
-        saleGroupId: input.saleGroupId ?? existing.saleGroupId,
-        active: input.active ?? existing.active
-      })
-      .where(eq(menuItems.id, id))
-      .run();
-    if (input.pricePaise !== undefined || input.active !== undefined) {
-      this.orm
-        .update(menuItemVariants)
-        .set({
-          ...(input.pricePaise !== undefined ? { pricePaise: input.pricePaise } : {}),
-          ...(input.active !== undefined ? { active: input.active } : {})
-        })
-        .where(and(eq(menuItemVariants.menuItemId, id), eq(menuItemVariants.kind, "default")))
-        .run();
-    }
-
-    this.appendEvent("menu_item.updated", "menu_item", id, { id, ...input });
-    return { id };
+    return updateMenuItemModel(this.menuItemActionContext(), id, input);
   }
 
   setMenuItemActive(id: string, active: boolean): { id: string; active: boolean } {
-    const result = this.orm.update(menuItems).set({ active }).where(eq(menuItems.id, id)).run();
-    if (result.changes === 0) throw new DomainError("Menu item not found", 404);
-    this.orm.update(menuItemVariants).set({ active }).where(and(eq(menuItemVariants.menuItemId, id), eq(menuItemVariants.kind, "default"))).run();
-    this.appendEvent("menu_item.active_changed", "menu_item", id, { id, active });
-    return { id, active };
+    return setMenuItemActiveModel(this.menuItemActionContext(), id, active);
   }
 
   removeMenuItem(id: string): { id: string; deleted: boolean; active: boolean } {
-    const usage = this.orm.select({ count: count() }).from(orderItems).where(eq(orderItems.menuItemId, id)).get()?.count ?? 0;
-    const stockMovementUsage = this.orm.select({ count: count() }).from(alcoholStockMovements).where(eq(alcoholStockMovements.menuItemId, id)).get()?.count ?? 0;
-    const stockLevelUsage = this.db
-      .prepare(
-        `SELECT COUNT(*) AS count
-         FROM alcohol_stock_levels
-         WHERE menu_item_id = ?
-           AND (sealed_large_count != 0 OR open_large_ml != 0 OR sealed_small_count != 0)`
-      )
-      .get(id) as { count?: number } | undefined;
-    const recipeUsage = this.orm.select({ count: count() }).from(alcoholRecipeIngredients).where(eq(alcoholRecipeIngredients.liquorMenuItemId, id)).get()?.count ?? 0;
-    const recipeSnapshotUsage = this.countAlcoholRecipeSnapshotUsage(id);
-    if (usage > 0 || stockMovementUsage > 0 || (stockLevelUsage?.count ?? 0) > 0 || recipeUsage > 0 || recipeSnapshotUsage > 0) {
-      this.setMenuItemActive(id, false);
-      return { id, deleted: false, active: false };
-    }
-    this.orm.delete(alcoholRecipeIngredients).where(eq(alcoholRecipeIngredients.productMenuItemId, id)).run();
-    this.orm.delete(alcoholRecipeIngredients).where(eq(alcoholRecipeIngredients.liquorMenuItemId, id)).run();
-    this.orm.delete(alcoholStockLevels).where(eq(alcoholStockLevels.menuItemId, id)).run();
-    this.orm.delete(alcoholProfiles).where(eq(alcoholProfiles.menuItemId, id)).run();
-    this.orm.delete(menuItemVariants).where(eq(menuItemVariants.menuItemId, id)).run();
-    const result = this.orm.delete(menuItems).where(eq(menuItems.id, id)).run();
-    if (result.changes === 0) throw new DomainError("Dish not found", 404);
-    this.appendEvent("menu_item.deleted", "menu_item", id, { id });
-    return { id, deleted: true, active: false };
+    return removeMenuItemModel(this.menuItemActionContext(), id);
   }
 
   removeMenuItemWithApproval(id: string, input: BulkMenuDeleteInput): { id: string; deleted: boolean; active: boolean } {
-    if (this.isAlcoholMenuItem(id)) {
-      this.verifyMasterApproval(input.masterApproval, "menu_item.delete_alcohol", "menu_item", id, input.masterApproval?.approvedBy ?? "owner");
-    } else {
-      this.verifyManagerApproval(input.managerApproval, "menu_item.delete_dish", "menu_item", id, input.managerApproval?.approvedBy ?? "manager");
-    }
-    return this.removeMenuItem(id);
+    return removeMenuItemWithApprovalModel(this.menuItemActionContext(), id, input);
   }
 
   bulkRemoveMenuItems(kind: BulkMenuDeleteKind, input: BulkMenuDeleteInput): BulkMenuDeleteResult {
-    if (kind === "alcohol") {
-      this.verifyMasterApproval(input.masterApproval, "menu_item.bulk_delete_alcohol", "menu_item", "alcohol", input.masterApproval?.approvedBy ?? "owner");
-    } else {
-      this.verifyManagerApproval(input.managerApproval, "menu_item.bulk_delete_dishes", "menu_item", "dish", input.managerApproval?.approvedBy ?? "manager");
-    }
-    const rows = this.db
-      .prepare(
-        kind === "alcohol"
-          ? `SELECT mi.id, mi.name
-             FROM menu_items mi
-             JOIN alcohol_profiles ap ON ap.menu_item_id = mi.id
-             ORDER BY mi.name`
-          : `SELECT mi.id, mi.name
-             FROM menu_items mi
-             JOIN sale_groups sg ON sg.id = mi.sale_group_id
-             WHERE sg.kind != 'alcohol'
-             ORDER BY mi.name`
-      )
-      .all() as Array<{ id: string; name: string }>;
-    const result: BulkMenuDeleteResult = { deleted: 0, disabled: 0, failed: 0, errors: [] };
-    for (const row of rows) {
-      try {
-        const removed = this.removeMenuItem(row.id);
-        if (removed.deleted) result.deleted += 1;
-        else result.disabled += 1;
-      } catch (error) {
-        result.failed += 1;
-        result.errors.push({ id: row.id, name: row.name, message: error instanceof Error ? error.message : "Could not remove item" });
-      }
-    }
-    this.appendEvent(kind === "alcohol" ? "menu_items.alcohol_bulk_removed" : "menu_items.dish_bulk_removed", "menu_item", kind, result);
-    return result;
+    return bulkRemoveMenuItemsModel(this.menuItemActionContext(), kind, input);
   }
 
   private isAlcoholMenuItem(id: string): boolean {
-    return Boolean(this.orm.select({ menuItemId: alcoholProfiles.menuItemId }).from(alcoholProfiles).where(eq(alcoholProfiles.menuItemId, id)).get());
+    return isAlcoholMenuItemModel(this.orm, id);
   }
 
   listAlcoholCatalog(): unknown {
-    const items = this.db
-      .prepare(
-        `SELECT mi.id, mi.name, mi.price_paise, mi.production_unit_id, pu.name AS production_unit_name,
-          mi.active, ap.type, ap.large_bottle_ml, ap.small_bottle_ml,
-          COALESCE(asl.sealed_large_count, 0) AS sealed_large_count,
-          COALESCE(asl.open_large_ml, 0) AS open_large_ml,
-          COALESCE(asl.sealed_small_count, 0) AS sealed_small_count
-         FROM alcohol_profiles ap
-         JOIN menu_items mi ON mi.id = ap.menu_item_id
-         LEFT JOIN production_units pu ON pu.id = mi.production_unit_id
-         LEFT JOIN alcohol_stock_levels asl ON asl.menu_item_id = mi.id
-         ORDER BY mi.active DESC, mi.name`
-      )
-      .all() as Array<Record<string, unknown> & { id: string }>;
-    const variants = this.listVariantsForMenuItems(items.map((item) => item.id), true);
-    const recipes = this.listAlcoholRecipes();
-    return {
-      items: items.map((item) => ({
-        ...item,
-        variants: variants.get(item.id) ?? [],
-        recipeIngredients: recipes.get(item.id) ?? []
-      })),
-      storage: this.listAlcoholStorage()
-    };
+    return listAlcoholCatalogModel(this.alcoholActionContext());
   }
 
   listAlcoholStorage(): unknown[] {
-    const items = this.db
-      .prepare(
-        `SELECT mi.id, mi.name, mi.active, ap.type, ap.large_bottle_ml, ap.small_bottle_ml,
-          COALESCE(asl.sealed_large_count, 0) AS sealed_large_count,
-          COALESCE(asl.open_large_ml, 0) AS open_large_ml,
-          COALESCE(asl.sealed_small_count, 0) AS sealed_small_count
-         FROM alcohol_profiles ap
-         JOIN menu_items mi ON mi.id = ap.menu_item_id
-         LEFT JOIN alcohol_stock_levels asl ON asl.menu_item_id = mi.id
-         WHERE ap.type = 'plain_liquor'
-         ORDER BY mi.active DESC, mi.name`
-      )
-      .all() as Array<Record<string, unknown> & {
-        id: string;
-        sealed_large_count: number;
-        open_large_ml: number;
-        sealed_small_count: number;
-        large_bottle_ml: number;
-        small_bottle_ml: number;
-      }>;
-    const pending = this.calculatePendingAlcoholUsage();
-    return items.map((item) => {
-      const pendingUsage = pending.get(item.id) ?? { largeMl: 0, largeBottles: 0, smallBottles: 0 };
-      const onHandMl = item.sealed_large_count * item.large_bottle_ml + item.open_large_ml + item.sealed_small_count * item.small_bottle_ml;
-      const pendingMl = pendingUsage.largeMl + pendingUsage.largeBottles * item.large_bottle_ml + pendingUsage.smallBottles * item.small_bottle_ml;
-      return {
-        ...item,
-        total_available_ml: onHandMl,
-        pending_large_ml: pendingUsage.largeMl,
-        pending_large_bottles: pendingUsage.largeBottles,
-        pending_small_bottles: pendingUsage.smallBottles,
-        pending_total_ml: pendingMl,
-        expected_after_settlement_ml: onHandMl - pendingMl
-      };
-    });
+    return listAlcoholStorageModel(this.alcoholActionContext());
   }
 
   createAlcoholItem(input: CreateAlcoholItemInput): { id: string } {
-    const run = this.db.transaction(() => {
-      const unitId = input.productionUnitId !== undefined ? input.productionUnitId : this.defaultAlcoholProductionUnitId();
-      if (unitId) this.requireProductionUnit(unitId);
-      this.assertAlcoholRecipeMatchesType(input.type, input.recipeIngredients ?? []);
-      this.assertAlcoholVariantsMatchType(input.type, input.variants);
-      this.assertAlcoholHasSellableVariant(input.active ?? true, input.variants);
-      const firstVariant = input.variants.find((variant) => variant.active !== false) ?? input.variants[0];
-      if (!firstVariant) throw new DomainError("At least one alcohol variation is required");
-      const item = this.createMenuItem({
-        name: input.name,
-        pricePaise: firstVariant.pricePaise,
-        productionUnitId: unitId ?? null,
-        saleGroupId: "sg-alcohol",
-        active: input.active ?? true
-      });
-      this.orm.delete(menuItemVariants).where(eq(menuItemVariants.menuItemId, item.id)).run();
-      this.orm
-        .insert(alcoholProfiles)
-        .values({
-          menuItemId: item.id,
-          type: input.type,
-          largeBottleMl: input.largeBottleMl ?? 750,
-          smallBottleMl: input.smallBottleMl ?? 180
-        })
-        .run();
-      this.orm
-        .insert(alcoholStockLevels)
-        .values({
-          menuItemId: item.id,
-          sealedLargeCount: input.sealedLargeCount ?? 0,
-          openLargeMl: input.openLargeMl ?? 0,
-          sealedSmallCount: input.sealedSmallCount ?? 0,
-          updatedAt: new Date().toISOString()
-        })
-        .run();
-      this.replaceAlcoholVariants(item.id, input.variants);
-      this.replaceAlcoholRecipe(item.id, input.recipeIngredients ?? []);
-      this.appendEvent("alcohol_item.created", "menu_item", item.id, { ...input, id: item.id });
-      return item;
-    });
-    return run();
+    return createAlcoholItemModel(this.alcoholActionContext(), input);
   }
 
   importAlcoholItemsFromCsv(csv: string, type: "plain_liquor" | "prepared_product"): CsvImportResult {
-    const run = this.db.transaction(() => {
-      const rows = this.parseCsvRows(csv);
-      const result: CsvImportResult = { created: 0, failed: 0, ids: [], errors: [] };
-      for (const row of rows) {
-        try {
-          const name = this.requireCsvText(row, ["name", "item_name", "liquor_name", "product_name"]);
-          if (this.findMenuItemIdByName(name)) throw new DomainError(`Alcohol item "${name}" already exists`);
-          const productionUnitId = this.resolveProductionUnitRef(this.csvText(row, ["bar_counter", "kitchen_or_counter", "counter", "production_unit"]));
-          const active = this.csvBoolean(this.csvText(row, ["active"]), true);
-          const largeBottleMl = this.csvInteger(this.csvText(row, ["large_bottle_ml", "large_ml"]), 750);
-          const smallBottleMl = this.csvInteger(this.csvText(row, ["small_bottle_ml", "small_ml"]), 180);
-          const shotPricePaise = this.csvMoneyToPaiseOptional(this.csvText(row, ["shot_price", "price_30_ml", "thirty_ml_price"]));
-          const smallPricePaise = this.csvMoneyToPaiseOptional(this.csvText(row, ["small_bottle_price", "small_price"]));
-          const largePricePaise = this.csvMoneyToPaiseOptional(this.csvText(row, ["large_bottle_price", "large_price"]));
-          const plainVariants: CreateAlcoholItemInput["variants"] = [
-            ...(shotPricePaise > 0 ? [{ label: "30 ml", kind: "shot" as const, pricePaise: shotPricePaise, volumeMl: 30, inventoryAction: "large_ml" as const, sortOrder: 0, active: true }] : []),
-            ...(smallPricePaise > 0 ? [{ label: `${smallBottleMl} ml`, kind: "small_bottle" as const, pricePaise: smallPricePaise, volumeMl: smallBottleMl, inventoryAction: "small_bottle" as const, sortOrder: 1, active: true }] : []),
-            ...(largePricePaise > 0 ? [{ label: `${largeBottleMl} ml`, kind: "large_bottle" as const, pricePaise: largePricePaise, volumeMl: largeBottleMl, inventoryAction: "large_bottle" as const, sortOrder: 2, active: true }] : [])
-          ];
-          const created = type === "plain_liquor"
-            ? this.createAlcoholItem({
-                type,
-                name,
-                productionUnitId,
-                largeBottleMl,
-                smallBottleMl,
-                sealedLargeCount: this.csvInteger(this.csvText(row, ["sealed_large_count", "large_bottles", "large_stock"]), 0),
-                openLargeMl: this.csvInteger(this.csvText(row, ["open_large_ml", "open_ml"]), 0),
-                sealedSmallCount: this.csvInteger(this.csvText(row, ["sealed_small_count", "small_bottles", "small_stock"]), 0),
-                variants: plainVariants,
-                recipeIngredients: [],
-                active
-              })
-            : this.createAlcoholItem({
-                type,
-                name,
-                productionUnitId,
-                variants: [
-                  {
-                    label: "Regular",
-                    kind: "default",
-                    pricePaise: this.csvMoneyToPaise(this.requireCsvText(row, ["price", "price_rupees", "rate"])),
-                    volumeMl: null,
-                    inventoryAction: "none",
-                    sortOrder: 0,
-                    active: true
-                  }
-                ],
-                recipeIngredients: this.parseAlcoholRecipeCsv(this.csvText(row, ["recipe", "recipe_ml", "ingredients"])),
-                active
-              });
-          result.created += 1;
-          result.ids.push(created.id);
-        } catch (error) {
-          result.failed += 1;
-          result.errors.push({ row: row.rowNumber, message: error instanceof Error ? error.message : "Could not import row" });
-        }
-      }
-      return result;
-    });
-    return run();
+    return importAlcoholItemsFromCsvModel(this.alcoholActionContext(), csv, type);
   }
 
   updateAlcoholItem(id: string, input: UpdateAlcoholItemInput): { id: string } {
-    const run = this.db.transaction(() => {
-      const existing = this.orm
-        .select({ id: alcoholProfiles.menuItemId, type: alcoholProfiles.type, active: menuItems.active })
-        .from(alcoholProfiles)
-        .innerJoin(menuItems, eq(menuItems.id, alcoholProfiles.menuItemId))
-        .where(eq(alcoholProfiles.menuItemId, id))
-        .get();
-      if (!existing) throw new DomainError("Alcohol item not found", 404);
-      if (input.productionUnitId) this.requireProductionUnit(input.productionUnitId);
-      if (input.type !== undefined && input.variants === undefined) throw new DomainError("Changing alcohol type requires variation setup");
-      const nextType = input.type ?? (existing.type as "plain_liquor" | "prepared_product");
-      const nextActive = input.active ?? Boolean(existing.active);
-      this.assertAlcoholRecipeMatchesType(nextType, input.recipeIngredients ?? []);
-      if (input.variants) this.assertAlcoholVariantsMatchType(nextType, input.variants);
-      this.assertAlcoholHasSellableVariant(nextActive, input.variants, id);
-      const firstVariant = input.variants?.find((variant) => variant.active !== false) ?? input.variants?.[0];
-      this.updateMenuItem(id, {
-        ...(input.name !== undefined ? { name: input.name } : {}),
-        ...(firstVariant ? { pricePaise: firstVariant.pricePaise } : {}),
-        ...(input.productionUnitId !== undefined ? { productionUnitId: input.productionUnitId } : {}),
-        ...(input.active !== undefined ? { active: input.active } : {})
-      });
-      const profilePatch = {
-        ...(input.type !== undefined ? { type: input.type } : {}),
-        ...(input.largeBottleMl !== undefined ? { largeBottleMl: input.largeBottleMl } : {}),
-        ...(input.smallBottleMl !== undefined ? { smallBottleMl: input.smallBottleMl } : {})
-      };
-      if (Object.keys(profilePatch).length > 0) {
-        this.orm
-          .update(alcoholProfiles)
-          .set(profilePatch)
-          .where(eq(alcoholProfiles.menuItemId, id))
-          .run();
-      }
-      if (input.variants) this.replaceAlcoholVariants(id, input.variants);
-      if (nextType === "plain_liquor") {
-        this.replaceAlcoholRecipe(id, []);
-      } else if (input.recipeIngredients) {
-        this.replaceAlcoholRecipe(id, input.recipeIngredients);
-      }
-      this.appendEvent("alcohol_item.updated", "menu_item", id, { id, ...input });
-      return { id };
-    });
-    return run();
+    return updateAlcoholItemModel(this.alcoholActionContext(), id, input);
   }
 
   adjustAlcoholStock(menuItemId: string, input: AdjustAlcoholStockInput): { id: string } {
-    const run = this.db.transaction(() => {
-      const stock = this.requireAlcoholStock(menuItemId);
-      const lowersStock =
-        input.mode === "delta"
-          ? (input.sealedLargeCount ?? 0) < 0 || (input.openLargeMl ?? 0) < 0 || (input.sealedSmallCount ?? 0) < 0
-          : false;
-      const usesExactStock = input.mode === "set";
-      if (usesExactStock || lowersStock) {
-        if (!input.masterApproval) {
-          throw new DomainError(usesExactStock ? "Master PIN is required for exact liquor stock edits" : "Master PIN is required for lowering liquor stock", 403);
-        }
-        this.verifyMasterApproval(
-          input.masterApproval,
-          usesExactStock ? "alcohol_stock.set_exact" : "alcohol_stock.lower",
-          "menu_item",
-          menuItemId,
-          input.masterApproval?.approvedBy ?? "owner"
-        );
-      } else {
-        this.verifyManagerApproval(input.managerApproval, "alcohol_stock.adjust", "menu_item", menuItemId, input.managerApproval?.approvedBy ?? "manager");
-      }
-      const next = {
-        sealedLarge: input.mode === "set" ? (input.sealedLargeCount ?? stock.sealed_large_count) : stock.sealed_large_count + (input.sealedLargeCount ?? 0),
-        openLargeMl: input.mode === "set" ? (input.openLargeMl ?? stock.open_large_ml) : stock.open_large_ml + (input.openLargeMl ?? 0),
-        sealedSmall: input.mode === "set" ? (input.sealedSmallCount ?? stock.sealed_small_count) : stock.sealed_small_count + (input.sealedSmallCount ?? 0)
-      };
-      this.writeAlcoholStock(menuItemId, next.sealedLarge, next.openLargeMl, next.sealedSmall);
-      this.recordAlcoholMovement({
-        menuItemId,
-        sourceType: "manual_adjustment",
-        sourceId: makeId("stockadj"),
-        deltaSealedLarge: next.sealedLarge - stock.sealed_large_count,
-        deltaOpenLargeMl: next.openLargeMl - stock.open_large_ml,
-        deltaSealedSmall: next.sealedSmall - stock.sealed_small_count,
-        balanceSealedLarge: next.sealedLarge,
-        balanceOpenLargeMl: next.openLargeMl,
-        balanceSealedSmall: next.sealedSmall,
-        approvedBy: input.masterApproval?.approvedBy ?? input.managerApproval?.approvedBy ?? "manager"
-      });
-      this.appendEvent("alcohol_stock.adjusted", "menu_item", menuItemId, { menuItemId, mode: input.mode, approvedBy: input.masterApproval?.approvedBy ?? input.managerApproval?.approvedBy ?? "manager" });
-      return { id: menuItemId };
-    });
-    return run();
+    return adjustAlcoholStockModel(this.alcoholActionContext(), menuItemId, input);
   }
 
   listAlcoholStockMovements(limit = 100): unknown[] {
-    return this.db
-      .prepare(
-        `SELECT asm.id, asm.menu_item_id, mi.name AS item_name, asm.source_type, asm.source_id,
-          asm.delta_sealed_large, asm.delta_open_large_ml, asm.delta_sealed_small,
-          asm.balance_sealed_large, asm.balance_open_large_ml, asm.balance_sealed_small,
-          asm.approved_by, asm.created_at
-         FROM alcohol_stock_movements asm
-         JOIN menu_items mi ON mi.id = asm.menu_item_id
-         ORDER BY asm.created_at DESC
-         LIMIT ?`
-      )
-      .all(Math.max(1, Math.min(limit, 500)));
+    return listAlcoholStockMovementsModel(this.alcoholActionContext(), limit);
   }
 
   updateKotStatus(kotId: string, input: UpdateKotStatusInput): { id: string; status: string } {
-    const run = this.db.transaction(() => {
-      const result = this.orm.update(kots).set({ status: input.status }).where(eq(kots.id, kotId)).run();
-      if (result.changes === 0) throw new DomainError("KOT not found", 404);
-      if (input.status === "ready") this.createReadyNotification(kotId);
-      this.appendEvent("kot.status_changed", "kot", kotId, { kotId, status: input.status });
-      return { id: kotId, status: input.status };
-    });
-    return run();
+    return updateKotStatusModel({
+      orm: this.orm,
+      db: this.db,
+      createReadyNotification: (id) => this.createReadyNotification(id),
+      appendEvent: (type, aggregateType, aggregateId, payload) => this.appendEvent(type, aggregateType, aggregateId, payload)
+    }, kotId, input);
   }
 
   listReadyNotifications(actor: DeviceActor): unknown[] {
-    if (actor.role !== "captain" && actor.role !== "waiter") return [];
-    const rows = this.orm
-      .select()
-      .from(readyNotifications)
-      .where(
-        and(
-          eq(readyNotifications.captainDeviceId, actor.id),
-          eq(readyNotifications.status, "unread")
-        )
-      )
-      .orderBy(desc(readyNotifications.createdAt))
-      .limit(20)
-      .all();
-    const now = new Date().toISOString();
-    for (const row of rows) {
-      this.orm.update(readyNotifications).set({ status: "seen", acknowledgedAt: now }).where(eq(readyNotifications.id, row.id)).run();
-    }
-    return rows.map((row) => ({
-      id: row.id,
-      kotId: row.kotId,
-      orderId: row.orderId,
-      tableId: row.tableId,
-      tableName: row.tableName,
-      productionUnitName: row.productionUnitName,
-      items: JSON.parse(row.itemsJson) as Array<{ name: string; quantity: number }>,
-      createdAt: row.createdAt
-    }));
+    return listReadyNotificationModels(this.orm, actor);
   }
 
   getTableOrder(tableId: string): unknown {
@@ -1979,174 +593,37 @@ export class OrderService {
   }
 
   getOrder(orderId: string): unknown {
-    const order = this.db
-      .prepare(
-        `SELECT o.*, t.name AS table_name, f.name AS floor_name
-         FROM orders o
-         JOIN restaurant_tables t ON t.id = o.table_id
-         JOIN floors f ON f.id = t.floor_id
-         WHERE o.id = ?`
-      )
-      .get(orderId);
-    if (!order) throw new DomainError("Order not found", 404);
-
-    const items = this.db
-      .prepare(
-        `SELECT oi.*, pu.name AS production_unit_name
-         FROM order_items oi
-         LEFT JOIN production_units pu ON pu.id = oi.production_unit_id
-         WHERE oi.order_id = ?
-         ORDER BY oi.created_at, oi.id`
-      )
-      .all(orderId);
-    const kots = this.db
-      .prepare(
-        `SELECT k.*, pu.name AS production_unit_name
-         FROM kots k
-         JOIN production_units pu ON pu.id = k.production_unit_id
-         WHERE k.order_id = ?
-         ORDER BY k.sequence`
-      )
-      .all(orderId)
-      .map((kot) => ({
-        ...(kot as Record<string, unknown>),
-        items: this.db
-          .prepare("SELECT name_snapshot, quantity_delta FROM kot_items WHERE kot_id = ? ORDER BY id")
-          .all((kot as { id: string }).id)
-      }));
-    const bill = this.db.prepare("SELECT * FROM bills WHERE order_id = ? ORDER BY created_at DESC LIMIT 1").get(orderId);
-    const payments = (bill
-      ? this.db.prepare("SELECT * FROM payments WHERE bill_id = ? ORDER BY created_at").all((bill as { id: string }).id)
-      : []) as Array<{ amount_paise: number } & Record<string, unknown>>;
-    const paidPaise = payments.reduce((total, payment) => total + ((payment as { amount_paise?: number }).amount_paise ?? 0), 0);
-    const billRecord = bill as ({ final_total_paise?: number; total_paise?: number } & Record<string, unknown>) | undefined;
-    const finalTotalPaise = billRecord?.final_total_paise ?? billRecord?.total_paise ?? 0;
-
-    return {
-      order,
-      items,
-      kots,
-      bill: bill
-        ? {
-            ...(bill as Record<string, unknown>),
-            paid_paise: paidPaise,
-            remaining_paise: Math.max(0, finalTotalPaise - paidPaise)
-          }
-        : null,
-      payments
-    };
+    return getOrderReadModel(this.db, orderId);
   }
 
   listPrintJobs(limit = 50): unknown[] {
-    return this.db
-      .prepare(
-        `SELECT id, target_type, target_id, production_unit_id, printer_host, printer_port, printer_name,
-          status, attempts, last_error, created_at, updated_at
-         FROM print_jobs
-         ORDER BY created_at DESC
-         LIMIT ?`
-      )
-      .all(limit);
+    return listPrintJobReadModels(this.db, limit);
   }
 
   retryPrintJob(printJobId: string, input: RetryPrintJobInput): { id: string } {
-    const now = new Date().toISOString();
-    const result = this.db
-      .prepare("UPDATE print_jobs SET status = 'pending', attempts = 0, last_error = NULL, updated_at = ? WHERE id = ?")
-      .run(now, printJobId);
-    if (result.changes === 0) throw new DomainError("Print job not found", 404);
+    retryPrintJobRecord(this.db, printJobId);
     this.appendEvent("print_job.retry_requested", "print_job", printJobId, { ...input, printJobId });
     return { id: printJobId };
   }
 
   getReceiptPrinter(): { printerMode: "system" | "network"; printerHost: string | null; printerPort: number | null; printerName: string | null } {
-    const profile = this.getBillPrinterProfile("default");
-    return {
-      printerMode: profile.printerMode,
-      printerHost: profile.printerHost,
-      printerPort: profile.printerPort,
-      printerName: profile.printerName
-    };
+    return getReceiptPrinterModel(this.printSettingsActionContext());
   }
 
   getBillPrinters(): BillPrinterProfiles {
-    return {
-      default: this.getBillPrinterProfile("default"),
-      alternate: this.getBillPrinterProfile("alternate")
-    };
+    return getBillPrintersModel(this.printSettingsActionContext());
   }
 
   updateReceiptPrinter(input: UpdateReceiptPrinterInput): UpdateReceiptPrinterInput {
-    const now = new Date().toISOString();
-    const current = this.getBillPrinterProfile("default");
-    this.updateBillPrinterProfile("default", {
-      label: current.label,
-      printerMode: input.printerMode ?? "system",
-      printerName: input.printerName,
-      printerHost: input.printerHost,
-      printerPort: input.printerPort
-    }, now);
-    this.appendEvent("receipt_printer.updated", "hub_setting", "receipt_printer", input);
-    return input;
+    return updateReceiptPrinterModel(this.printSettingsActionContext(), input);
   }
 
   updateBillPrinters(input: UpdateBillPrintersInput): BillPrinterProfiles {
-    const now = new Date().toISOString();
-    const run = this.db.transaction(() => {
-      this.updateBillPrinterProfile("default", input.default, now);
-      this.updateBillPrinterProfile("alternate", input.alternate, now);
-      this.appendEvent("receipt_printer.updated", "hub_setting", "receipt_printer", input);
-    });
-    run();
-    return this.getBillPrinters();
+    return updateBillPrintersModel(this.printSettingsActionContext(), input);
   }
 
   private getBillPrinterProfile(slot: BillPrinterSlot): BillPrinterProfile {
-    const prefix = slot === "default" ? "receipt_printer" : "receipt_printer_alternate";
-    const defaultLabel = slot === "default" ? "Main bill printer" : "Second bill printer";
-    const mode = this.getSetting(`${prefix}_mode`);
-    const host = this.getSetting(`${prefix}_host`);
-    const port = this.getSetting(`${prefix}_port`);
-    const name = this.getSetting(`${prefix}_name`);
-    const label = this.getSetting(`${prefix}_label`) || defaultLabel;
-    const printerMode = mode === "network" ? "network" : "system";
-    const printerHost = host || null;
-    const printerName = name || null;
-    const printerPort = port ? Number(port) : null;
-    return {
-      label,
-      printerMode,
-      printerHost,
-      printerPort,
-      printerName,
-      configured: printerMode === "network" ? Boolean(printerHost) : Boolean(printerName)
-    };
-  }
-
-  private updateBillPrinterProfile(
-    slot: BillPrinterSlot,
-    input: { label?: string; printerMode?: "system" | "network"; printerName?: string | null; printerHost?: string; printerPort?: number },
-    updatedAt = new Date().toISOString()
-  ): void {
-    const prefix = slot === "default" ? "receipt_printer" : "receipt_printer_alternate";
-    const fallbackLabel = slot === "default" ? "Main bill printer" : "Second bill printer";
-    const values = [
-      [`${prefix}_label`, input.label || fallbackLabel],
-      [`${prefix}_mode`, input.printerMode ?? "system"],
-      [`${prefix}_name`, input.printerName ?? ""],
-      [`${prefix}_host`, input.printerHost ?? ""],
-      [`${prefix}_port`, String(input.printerPort ?? 9100)]
-    ] as const;
-    for (const [key, value] of values) {
-      this.orm
-        .insert(hubSettings)
-        .values({ key, value, updatedAt })
-        .onConflictDoUpdate({
-          target: hubSettings.key,
-          set: { value, updatedAt }
-        })
-        .run();
-    }
+    return getBillPrinterProfileModel(this.printSettingsActionContext(), slot);
   }
 
   private resolveBillPrinter(slot: BillPrinterSlot = "default"): {
@@ -2154,1544 +631,351 @@ export class OrderService {
     printerPort: number | null;
     printerName: string | null;
   } {
-    const profile = this.getBillPrinterProfile(slot);
-    if (!profile.configured) {
-      if (slot === "default" && this.getPrinterOutputMode() === "test") {
-        return { printerHost: null, printerPort: null, printerName: null };
-      }
-      throw new DomainError(`${profile.label} is not configured for bill printing`, 400);
-    }
-    return {
-      printerHost: profile.printerMode === "network" ? profile.printerHost : null,
-      printerPort: profile.printerMode === "network" ? profile.printerPort ?? 9100 : null,
-      printerName: profile.printerMode === "system" ? profile.printerName : null
-    };
+    return resolveBillPrinterModel(this.printSettingsActionContext(), slot);
   }
 
   getPrinterOutputMode(): PrinterOutputMode {
-    return this.readPrinterOutputMode() ?? "test";
+    return getPrinterOutputModeModel(this.printSettingsActionContext());
   }
 
   ensurePrinterOutputMode(defaultMode: PrinterOutputMode): PrinterOutputMode {
-    const current = this.readPrinterOutputMode();
-    if (current) return current;
-    this.upsertSetting("printer_output_mode", defaultMode);
-    return defaultMode;
+    return ensurePrinterOutputModeModel(this.printSettingsActionContext(), defaultMode);
   }
 
   updatePrinterOutputMode(mode: PrinterOutputMode): { mode: PrinterOutputMode } {
-    this.upsertSetting("printer_output_mode", mode);
-    this.appendEvent("printer_output_mode.updated", "hub_setting", "printer_output_mode", { mode });
-    return { mode };
+    return updatePrinterOutputModeModel(this.printSettingsActionContext(), mode);
   }
 
   enqueueTestBillPrint(requestedBy: string, printerSlot: BillPrinterSlot = "default"): { printJobId: string } {
-    const template = this.getPrintLayout("receipt");
-    const printJobId = this.enqueuePrintJob({
-      targetType: "BILL",
-      targetId: "test-bill",
-      productionUnitId: null,
-      ...this.resolveBillPrinter(printerSlot),
-      payload: renderBillTicketForPrint({
-        tableName: "TEST",
-        billId: "TEST-BILL",
-        items: [{ name: "Test item", quantity: 1, unitPricePaise: 100, lineTotalPaise: 100 }],
-        subtotalPaise: 100,
-        taxPaise: 0,
-        totalPaise: 100,
-        finalTotalPaise: 100,
-        createdAt: new Date().toISOString(),
-        restaurantName: template.restaurantName,
-        restaurantAddress: template.restaurantAddress,
-        taxRegistrationText: template.taxRegistrationText,
-        lineWidthChars: template.lineWidthChars,
-        headerAlign: template.headerAlign,
-        footerAlign: template.footerAlign,
-        sectionStyles: template.sectionStyles,
-        topPaddingLines: template.topPaddingLines,
-        feedLines: template.feedLines,
-        showTable: template.showTable,
-        showDateTime: template.showDateTime,
-        showBillId: template.showBillId,
-        showTaxBreakup: template.showTaxBreakup,
-        showDiscountTip: template.showDiscountTip,
-        showNcReprintRevision: template.showNcReprintRevision,
-        header: template.billHeader || "Printer test bill",
-        footer: template.billFooter || "If you can read this, bill printing is connected."
-      })
-    });
-    this.appendEvent("print_job.test_bill_queued", "print_job", printJobId, { requestedBy, printJobId });
-    return { printJobId };
+    return enqueueTestBillPrintModel(this.printSettingsActionContext(), requestedBy, printerSlot);
   }
 
   enqueueTestKotPrint(requestedBy: string): { printJobId: string } {
-    const unit = this.db
-      .prepare(
-        `SELECT id, name, printer_host, printer_port, printer_name
-         FROM production_units
-         WHERE active = 1
-         ORDER BY name
-         LIMIT 1`
-      )
-      .get() as { id: string; name: string; printer_host: string | null; printer_port: number | null; printer_name: string | null } | undefined;
-    const template = this.getPrintLayout(unit?.id ? "unit" : "default", unit?.id);
-    const printJobId = this.enqueuePrintJob({
-      targetType: "KOT",
-      targetId: "test-kot",
-      productionUnitId: unit?.id ?? null,
-      printerHost: unit?.printer_host ?? null,
-      printerPort: unit?.printer_port ?? null,
-      printerName: unit?.printer_name ?? null,
-      payload: renderKotTicketForPrint({
-        sequence: 0,
-        type: "test",
-        tableName: "TEST",
-        productionUnitName: unit?.name ?? "Kitchen / Counter",
-        ticketLabel: "KOT",
-        captainId: requestedBy,
-        createdAt: new Date().toISOString(),
-        items: [{ name: "Printer test item", quantityDelta: 1 }],
-        lineWidthChars: template.lineWidthChars,
-        headerAlign: template.headerAlign,
-        footerAlign: template.footerAlign,
-        sectionStyles: template.sectionStyles,
-        topPaddingLines: template.topPaddingLines,
-        feedLines: template.feedLines,
-        showTable: template.showTable,
-        showCaptain: template.showCaptain,
-        showDateTime: template.showDateTime,
-        header: template.kotHeader || "Printer test kitchen ticket",
-        footer: template.kotFooter || "If you can read this, KOT printing is connected."
-      })
-    });
-    this.appendEvent("print_job.test_kot_queued", "print_job", printJobId, { requestedBy, printJobId, productionUnitId: unit?.id ?? null });
-    return { printJobId };
+    return enqueueTestKotPrintModel(this.printSettingsActionContext(), requestedBy);
   }
 
   getSyncStatus(): unknown {
-    const rows = this.db
-      .prepare("SELECT status, COUNT(*) AS count FROM sync_outbox GROUP BY status ORDER BY status")
-      .all() as Array<{ status: string; count: number }>;
-    const lastEvent = this.db
-      .prepare("SELECT event_id, type, created_at FROM event_log ORDER BY id DESC LIMIT 1")
-      .get();
-    const commandFailures = this.orm
-      .select({
-        commandId: cloudCommandFailures.commandId,
-        type: cloudCommandFailures.type,
-        error: cloudCommandFailures.error,
-        failedAt: cloudCommandFailures.failedAt
-      })
-      .from(cloudCommandFailures)
-      .orderBy(desc(cloudCommandFailures.failedAt))
-      .limit(10)
-      .all();
-    return {
-      counts: Object.fromEntries(rows.map((row) => [row.status, row.count])),
-      lastEvent: lastEvent ?? null,
-      commandFailures
-    };
+    return getSyncStatusReadModel(this.orm, this.db);
   }
 
   getCurrentBusinessDaySummary(): unknown {
     this.finalizeCompletedBusinessDays();
     this.removeEmptyPendingBills();
-    return this.buildDaySummary(this.ensureCurrentBusinessDay().id);
+    return buildDaySummary(this.db, this.ensureCurrentBusinessDay().id);
   }
 
   listDailyReports(limit = 30): unknown[] {
     this.finalizeCompletedBusinessDays();
     this.removeEmptyPendingBills();
-    return this.db
-      .prepare(
-        `SELECT pos_day_id, business_date, status, bill_count, gross_sales_paise, final_sales_paise,
-          total_payments_paise, finalized_at
-         FROM daily_report_snapshots
-         ORDER BY business_date DESC, finalized_at DESC
-         LIMIT ?`
-      )
-      .all(limit);
+    return listDailyReportSnapshots(this.db, limit);
   }
 
   getDailyReport(posDayId: string): unknown {
-    const row = this.db.prepare("SELECT * FROM daily_report_snapshots WHERE pos_day_id = ?").get(posDayId) as
-      | (Record<string, unknown> & { bill_summaries_json: string; item_summaries_json: string; group_summaries_json?: string })
-      | undefined;
-    if (!row) throw new DomainError("Daily report not found", 404);
-    return {
-      ...row,
-      billSummaries: JSON.parse(row.bill_summaries_json),
-      itemSummaries: JSON.parse(row.item_summaries_json),
-      groupSummaries: row.group_summaries_json ? JSON.parse(row.group_summaries_json) : []
-    };
+    return getDailyReportSnapshot(this.db, posDayId);
   }
 
   getRangeReport(input: ReportRangeQueryInput): unknown {
     this.finalizeCompletedBusinessDays();
     this.removeEmptyPendingBills();
-    const currentBusinessDate = currentBusinessDayWindow(new Date()).businessDate;
-    if (input.from > currentBusinessDate) throw new DomainError("Report range starts after the current business day", 400);
-
-    const rows = this.db
-      .prepare(
-        `SELECT *
-         FROM daily_report_snapshots
-         WHERE business_date BETWEEN ? AND ?
-         ORDER BY business_date ASC, finalized_at ASC`
-      )
-      .all(input.from, input.to) as DailyReportSnapshotRow[];
-    const posDayRows = this.db
-      .prepare(
-        `SELECT business_date, status
-         FROM pos_days
-         WHERE business_date BETWEEN ? AND ?
-         ORDER BY business_date ASC`
-      )
-      .all(input.from, input.to) as Array<{ business_date: string; status: string }>;
-
-    const availableDates = new Set(rows.map((row) => row.business_date));
-    const unfinalizedDates = posDayRows
-      .filter((row) => row.status !== "finalized" && !availableDates.has(row.business_date))
-      .map((row) => row.business_date);
-    const unfinalizedSet = new Set(unfinalizedDates);
-    const missingDates = this.businessDatesBetween(input.from, input.to).filter((date) => !availableDates.has(date) && !unfinalizedSet.has(date));
-    const itemSummaryMap = new Map<string, DaySummary["itemSummaries"][number]>();
-    const groupSummaryMap = new Map<string, DaySummary["groupSummaries"][number]>();
-    const billSummaries: DaySummary["billSummaries"] = [];
-
-    const totals = rows.reduce(
-      (acc, row) => {
-        acc.openOrders += row.open_orders;
-        acc.billedOrders += row.billed_orders;
-        acc.paidBills += row.paid_bills;
-        acc.unpaidBills += row.unpaid_bills;
-        acc.cancelledOrders += row.cancelled_orders;
-        acc.billCount += row.bill_count;
-        acc.grossSalesPaise += row.gross_sales_paise;
-        acc.discountPaise += row.discount_paise;
-        acc.tipPaise += row.tip_paise;
-        acc.finalSalesPaise += row.final_sales_paise;
-        acc.cashPaymentsPaise += row.cash_payments_paise;
-        acc.upiPaymentsPaise += row.upi_payments_paise;
-        acc.cardPaymentsPaise += row.card_payments_paise;
-        acc.onlinePaymentsPaise += row.online_payments_paise;
-        acc.totalPaymentsPaise += row.total_payments_paise;
-        acc.nonCashPaymentsPaise += row.non_cash_payments_paise;
-        return acc;
-      },
-      {
-        openOrders: 0,
-        billedOrders: 0,
-        paidBills: 0,
-        unpaidBills: 0,
-        cancelledOrders: 0,
-        billCount: 0,
-        grossSalesPaise: 0,
-        discountPaise: 0,
-        tipPaise: 0,
-        finalSalesPaise: 0,
-        cashPaymentsPaise: 0,
-        upiPaymentsPaise: 0,
-        cardPaymentsPaise: 0,
-        onlinePaymentsPaise: 0,
-        totalPaymentsPaise: 0,
-        nonCashPaymentsPaise: 0
-      }
-    );
-
-    for (const row of rows) {
-      for (const item of this.parseJsonArray<DaySummary["itemSummaries"][number]>(row.item_summaries_json)) {
-        const key = item.menuItemId ? `${item.menuItemId}:${item.saleGroupId}` : `open:${item.saleGroupId}:${item.name}`;
-        const current = itemSummaryMap.get(key) ?? { ...item, quantity: 0, grossSalesPaise: 0, ncQuantity: 0, ncGrossSalesPaise: 0 };
-        current.name = item.name;
-        current.saleGroupName = item.saleGroupName;
-        current.saleGroupKind = item.saleGroupKind;
-        current.quantity += item.quantity;
-        current.grossSalesPaise += item.grossSalesPaise;
-        current.ncQuantity += item.ncQuantity;
-        current.ncGrossSalesPaise += item.ncGrossSalesPaise;
-        itemSummaryMap.set(key, current);
-      }
-      for (const group of this.parseJsonArray<DaySummary["groupSummaries"][number]>(row.group_summaries_json)) {
-        const current = groupSummaryMap.get(group.saleGroupId) ?? { ...group, quantity: 0, grossSalesPaise: 0, taxPaise: 0, finalSalesPaise: 0, ncQuantity: 0, ncGrossSalesPaise: 0 };
-        current.quantity += group.quantity;
-        current.grossSalesPaise += group.grossSalesPaise;
-        current.taxPaise += group.taxPaise;
-        current.finalSalesPaise += group.finalSalesPaise;
-        current.ncQuantity += group.ncQuantity;
-        current.ncGrossSalesPaise += group.ncGrossSalesPaise;
-        groupSummaryMap.set(group.saleGroupId, current);
-      }
-      if (input.includeBills) billSummaries.push(...this.parseJsonArray<DaySummary["billSummaries"][number]>(row.bill_summaries_json));
-    }
-
-    billSummaries.sort((left, right) => {
-      const time = new Date(right.settledAt ?? "").getTime() - new Date(left.settledAt ?? "").getTime();
-      if (Number.isFinite(time) && time !== 0) return time;
-      return (right.billNumber ?? 0) - (left.billNumber ?? 0);
-    });
-
-    return {
-      range: { from: input.from, to: input.to },
-      availableDays: rows.map((row) => ({
-        pos_day_id: row.pos_day_id,
-        business_date: row.business_date,
-        status: row.status,
-        bill_count: row.bill_count,
-        gross_sales_paise: row.gross_sales_paise,
-        discount_paise: row.discount_paise,
-        tip_paise: row.tip_paise,
-        final_sales_paise: row.final_sales_paise,
-        cash_payments_paise: row.cash_payments_paise,
-        upi_payments_paise: row.upi_payments_paise,
-        card_payments_paise: row.card_payments_paise,
-        online_payments_paise: row.online_payments_paise,
-        total_payments_paise: row.total_payments_paise,
-        finalized_at: row.finalized_at
-      })),
-      missingDates,
-      unfinalizedDates,
-      ...totals,
-      itemSummaries: [...itemSummaryMap.values()].sort((left, right) => left.name.localeCompare(right.name)),
-      groupSummaries: [...groupSummaryMap.values()].sort((left, right) => left.name.localeCompare(right.name)),
-      ...(input.includeBills ? { billSummaries } : {})
-    };
+    return buildRangeReport(this.db, input);
   }
 
   reviseBill(billId: string, input: ReviseBillInput): { billId: string; revisionNumber: number; totalPaise: number; kotIds: string[]; printJobIds: string[] } {
-    const run = this.db.transaction(() => {
-      this.verifyManagerApproval(input.managerApproval, "bill.revise", "bill", billId, input.managerApproval.approvedBy);
-      const bill = this.getBillById(billId);
-      if (!bill) throw new DomainError("Bill not found", 404);
-      if (bill.status !== "pending") throw new DomainError("Only pending printed bills can be revised");
-      if (this.getBillPaidPaise(billId) > 0) throw new DomainError("Remove or reverse recorded payments before revising this bill");
-      const order = this.requireOrderById(bill.order_id);
-      if (!["billed", "open"].includes(order.status)) throw new DomainError("Order cannot be revised");
-      const table = this.requireTable(order.table_id);
-      const now = new Date().toISOString();
-      const previousItems = this.getOrderItems(order.id);
-      const previousVariantIds = new Set(previousItems.map((item) => item.menu_item_variant_id).filter((id): id is string => Boolean(id)));
-      const previousItemsById = new Map(previousItems.map((item) => [item.id, item]));
-      const normalizedItems = this.prepareSubmittedItems(input.items, now, previousVariantIds, previousItemsById);
-      const menuById = this.getMenuItems([
-        ...normalizedItems.map((item) => item.menuItemId).filter((id): id is string => Boolean(id)),
-        ...previousItems.map((item) => item.menu_item_id).filter((id): id is string => Boolean(id))
-      ]);
-      const changes = this.applyOrderItemDiff(order.id, normalizedItems, previousItems, menuById, now, true);
-      const tickets = this.createKotsForChanges(order, table, changes, now, false, false, input.managerApproval.reason);
-      const totals = this.calculateBillTotals(this.getOrderItems(order.id).filter((item) => item.quantity > 0));
-      const finalTotalPaise = Math.max(0, totals.totalPaise - bill.discount_paise + bill.tip_paise);
-      const revisionNumber = (bill.revision_number ?? 1) + 1;
-
-      this.orm
-        .update(bills)
-        .set({
-          subtotalPaise: totals.subtotalPaise,
-          taxPaise: totals.taxPaise,
-          totalPaise: totals.totalPaise,
-          finalTotalPaise,
-          taxBreakdownJson: JSON.stringify(totals.taxBreakdown),
-          revisionNumber,
-          status: "pending"
-        })
-        .where(eq(bills.id, billId))
-        .run();
-      this.orm.update(orders).set({ status: "billed", updatedAt: now }).where(eq(orders.id, order.id)).run();
-      this.orm.update(restaurantTables).set({ status: "billed" }).where(eq(restaurantTables.id, table.id)).run();
-      this.recordBillRevision(billId, revisionNumber, totals, input.managerApproval.reason, input.managerApproval.approvedBy, now, {
-        discountPaise: bill.discount_paise,
-        tipPaise: bill.tip_paise,
-        finalTotalPaise
-      });
-      this.appendEvent("bill.revised", "bill", billId, {
-        billId,
-        revisionNumber,
-        totalPaise: totals.totalPaise,
-        kotIds: tickets.kotIds,
-        printJobIds: tickets.printJobIds
-      });
-      return { billId, revisionNumber, totalPaise: totals.totalPaise, kotIds: tickets.kotIds, printJobIds: tickets.printJobIds };
-    });
-    return run();
+    return reviseBillModel(this.billActionContext(), billId, input);
   }
 
   editHistoryBill(billId: string, input: HistoryEditBillInput): { billId: string; revisionNumber: number; totalPaise: number; printJobId: string; modified: boolean } {
-    const run = this.db.transaction(() => {
-      const bill = this.getBillById(billId);
-      if (!bill) throw new DomainError("Bill not found", 404);
-      if (bill.status !== "paid" && !bill.is_nc) {
-        throw new DomainError("Only paid or NC bills can be edited from Order History");
-      }
-      this.verifyMasterApproval(input.masterApproval, "bill.history_edit", "bill", billId, input.masterApproval.approvedBy);
-      const order = this.requireOrderById(bill.order_id);
-      const table = this.requireTable(order.table_id);
-      const now = new Date().toISOString();
-      const previousItems = this.getOrderItems(order.id);
-      const previousAlcoholUsage = this.calculateAlcoholUsageForItems(previousItems.filter((item) => item.quantity > 0 && item.status !== "cancelled"));
-      const previousVariantIds = new Set(previousItems.map((item) => item.menu_item_variant_id).filter((id): id is string => Boolean(id)));
-      const previousItemsById = new Map(previousItems.map((item) => [item.id, item]));
-      const normalizedItems = this.prepareSubmittedItems(input.items, now, previousVariantIds, previousItemsById);
-      const menuById = this.getMenuItems([
-        ...normalizedItems.map((item) => item.menuItemId).filter((id): id is string => Boolean(id)),
-        ...previousItems.map((item) => item.menu_item_id).filter((id): id is string => Boolean(id))
-      ]);
-      this.applyOrderItemDiff(order.id, normalizedItems, previousItems, menuById, now, true);
-      const activeItems = this.getOrderItems(order.id).filter((item) => item.quantity > 0 && item.status !== "cancelled");
-      if (activeItems.length === 0) throw new DomainError("History bill edit needs at least one item");
-      const totals = this.calculateBillTotals(activeItems);
-      const discountPaise = input.discountValue === undefined ? bill.discount_paise : this.calculateDiscountPaise(totals.totalPaise, input);
-      const tipPaise = input.tipPaise === undefined ? bill.tip_paise : input.tipPaise;
-      const finalTotalPaise = Math.max(0, totals.totalPaise - discountPaise + tipPaise);
-      const revisionNumber = (bill.revision_number ?? 1) + 1;
-      if (bill.status === "paid" || bill.is_nc) {
-        this.applyAlcoholUsageDeltaForHistoryEdit(billId, previousAlcoholUsage, this.calculateAlcoholUsageForItems(activeItems));
-      }
-
-      this.orm
-        .update(bills)
-        .set({
-          subtotalPaise: totals.subtotalPaise,
-          taxPaise: totals.taxPaise,
-          totalPaise: totals.totalPaise,
-          discountPaise,
-          tipPaise,
-          finalTotalPaise,
-          taxBreakdownJson: JSON.stringify(totals.taxBreakdown),
-          revisionNumber
-        })
-        .where(eq(bills.id, billId))
-        .run();
-
-      this.replaceHistoryEditPayments(bill, input.payments, finalTotalPaise, input.masterApproval.approvedBy, now);
-      this.recordBillRevision(billId, revisionNumber, totals, input.masterApproval.reason, input.masterApproval.approvedBy, now, {
-        discountPaise,
-        tipPaise,
-        finalTotalPaise
-      });
-
-      const updatedBill = this.getBillById(billId);
-      if (!updatedBill) throw new DomainError("Bill not found after history edit", 500);
-      const printJobId = this.enqueuePrintJob({
-        targetType: "BILL",
-        targetId: billId,
-        productionUnitId: null,
-        ...this.resolveBillPrinter(input.printerSlot ?? "default"),
-        payload: renderBillTicketForPrint(this.buildBillTicket({ bill: updatedBill, tableName: table.name, createdAt: now }))
-      });
-      this.orm.update(bills).set({ printCount: sql`${bills.printCount} + 1` }).where(eq(bills.id, billId)).run();
-      this.refreshDailyReportSnapshot(order.pos_day_id, now);
-      this.appendEvent("bill.history_edited", "bill", billId, { billId, revisionNumber, totalPaise: totals.totalPaise, printJobId, modified: true });
-      return { billId, revisionNumber, totalPaise: totals.totalPaise, printJobId, modified: true };
-    });
-    return run();
+    return editHistoryBillModel(this.billActionContext(), billId, input);
   }
 
   markBillNc(billId: string, input: MarkNcBillInput): { billId: string; printJobId: string } {
-    const run = this.db.transaction(() => {
-      this.verifyManagerApproval(input.managerApproval, "bill.nc", "bill", billId, input.managerApproval.approvedBy);
-      const bill = this.getBillById(billId);
-      if (!bill) throw new DomainError("Bill not found", 404);
-      if (bill.status !== "pending") throw new DomainError("Only unpaid bills can be marked NC");
-      const existingPaid = this.getBillPaidPaise(billId);
-      if (existingPaid > 0) throw new DomainError("Remove or reverse recorded payments before marking this bill NC");
-      this.applyBillAdjustments(billId, input, input.managerApproval.approvedBy);
-      const adjustedBill = this.getBillById(billId);
-      if (!adjustedBill) throw new DomainError("Bill not found after adjustment", 500);
-      const order = this.requireOrderById(bill.order_id);
-      const table = this.requireTable(order.table_id);
-      const now = new Date().toISOString();
-      this.deductAlcoholStockForPaidBill(billId, order.id);
-      this.orm
-        .update(bills)
-        .set({
-          isNc: true,
-          ncReason: input.managerApproval.reason,
-          ncApprovedBy: input.managerApproval.approvedBy,
-          ncMarkedAt: now,
-          status: "paid",
-          settledAt: now,
-          printCount: sql`${bills.printCount} + 1`
-        })
-        .where(eq(bills.id, billId))
-        .run();
-      this.orm.update(orders).set({ status: "paid", updatedAt: now }).where(eq(orders.id, order.id)).run();
-      this.freeTable(order.table_id);
-
-      const printJobId = this.enqueuePrintJob({
-        targetType: "BILL",
-        targetId: billId,
-        productionUnitId: null,
-        ...this.resolveBillPrinter(input.printerSlot ?? "default"),
-        payload: renderBillTicketForPrint(
-          this.buildBillTicket({
-            bill: adjustedBill,
-            tableName: table.name,
-            createdAt: now,
-            ncReason: input.managerApproval.reason
-          })
-        )
-      });
-      this.appendEvent("bill.nc_marked", "bill", billId, { billId, reason: input.managerApproval.reason, printJobId });
-      return { billId, printJobId };
-    });
-    const result = run();
-    this.finalizeCompletedBusinessDays();
-    return result;
+    return markBillNcModel(this.billActionContext(), billId, input);
   }
 
   printBill(billId: string, requestedBy: string, printerSlot: BillPrinterSlot = "default"): { printJobId: string } {
-    const run = this.db.transaction(() => {
-      const bill = this.getBillById(billId);
-      if (!bill) throw new DomainError("Bill not found", 404);
-      if (bill.print_count > 0) throw new DomainError("Bill was already printed. Use manager-approved reprint.");
-      const order = this.requireOrderById(bill.order_id);
-      const table = this.requireTable(order.table_id);
-      const now = new Date().toISOString();
-      const printJobId = this.enqueuePrintJob({
-        targetType: "BILL",
-        targetId: billId,
-        productionUnitId: null,
-        ...this.resolveBillPrinter(printerSlot),
-        payload: renderBillTicketForPrint(
-          this.buildBillTicket({
-            bill,
-            tableName: table.name,
-            createdAt: now
-          })
-        )
-      });
-      this.orm.update(bills).set({ printCount: sql`${bills.printCount} + 1` }).where(eq(bills.id, billId)).run();
-      this.appendEvent("bill.printed", "bill", billId, { billId, requestedBy, printJobId });
-      return { printJobId };
-    });
-    return run();
+    return printBillModel(this.billActionContext(), billId, requestedBy, printerSlot);
+  }
+
+  private billLifecycleContext(): BillLifecycleContext {
+    return {
+      orm: this.orm,
+      db: this.db,
+      requireEditableOrder: (orderId) => this.requireEditableOrder(orderId),
+      requireOrderById: (orderId) => this.requireOrderById(orderId),
+      requireTable: (tableId) => this.requireTable(tableId),
+      getOrderItems: (orderId) => this.getOrderItems(orderId),
+      calculateBillTotals: (items) => this.calculateBillTotals(items),
+      nextBillNumber: () => this.nextBillNumber(),
+      recordBillRevision: (billId, revisionNumber, totals, reason, changedBy, now, financials) => this.recordBillRevision(billId, revisionNumber, totals, reason, changedBy, now, financials),
+      getBillById: (billId) => this.getBillById(billId),
+      resolveBillPrinter: (slot) => this.resolveBillPrinter(slot),
+      buildBillTicket: (input) => this.buildBillTicket(input),
+      enqueuePrintJob: (input) => this.enqueuePrintJob(input),
+      getBillPaidPaise: (billId) => this.getBillPaidPaise(billId),
+      deductAlcoholStockForPaidBill: (billId, orderId) => this.deductAlcoholStockForPaidBill(billId, orderId),
+      freeTable: (tableId) => this.freeTable(tableId),
+      finalizeCompletedBusinessDays: () => this.finalizeCompletedBusinessDays(),
+      appendEvent: (type, aggregateType, aggregateId, payload) => this.appendEvent(type, aggregateType, aggregateId, payload)
+    };
+  }
+
+  private billCleanupContext(): BillCleanupContext {
+    return {
+      orm: this.orm,
+      db: this.db,
+      deleteLocalBillRecord: (billId) => this.deleteLocalBillRecord(billId),
+      freeTable: (tableId) => this.freeTable(tableId),
+      appendEvent: (type, aggregateType, aggregateId, payload) => this.appendEvent(type, aggregateType, aggregateId, payload)
+    };
+  }
+
+  private setupCatalogActionContext(): SetupCatalogActionContext {
+    return {
+      orm: this.orm,
+      db: this.db,
+      appendEvent: (type, aggregateType, aggregateId, payload) => this.appendEvent(type, aggregateType, aggregateId, payload)
+    };
+  }
+
+  private settingsActionContext(): SettingsActionContext {
+    return {
+      readSetting: (key) => this.getSetting(key),
+      writeSetting: (key, value) => this.upsertSetting(key, value),
+      listProductionUnits: () => this.listProductionUnits(),
+      requireProductionUnit: (productionUnitId) => this.requireProductionUnit(productionUnitId),
+      verifyManagerApproval: (input, action, aggregateType, aggregateId, requestedBy) => this.verifyManagerApproval(input, action, aggregateType, aggregateId, requestedBy),
+      verifyMasterApproval: (input, action, aggregateType, aggregateId, requestedBy) => this.verifyMasterApproval(input, action, aggregateType, aggregateId, requestedBy),
+      appendEvent: (type, aggregateType, aggregateId, payload) => this.appendEvent(type, aggregateType, aggregateId, payload)
+    };
+  }
+
+  private menuItemActionContext(): MenuItemActionContext {
+    return {
+      orm: this.orm,
+      db: this.db,
+      resolveProductionUnitRef: (value) => this.resolveProductionUnitRef(value),
+      resolveSaleGroupRef: (value) => this.resolveSaleGroupRef(value),
+      countAlcoholRecipeSnapshotUsage: (menuItemId) => this.countAlcoholRecipeSnapshotUsage(menuItemId),
+      isAlcoholMenuItem: (id) => this.isAlcoholMenuItem(id),
+      verifyManagerApproval: (input, action, aggregateType, aggregateId, requestedBy) => this.verifyManagerApproval(input, action, aggregateType, aggregateId, requestedBy),
+      verifyMasterApproval: (input, action, aggregateType, aggregateId, requestedBy) => this.verifyMasterApproval(input, action, aggregateType, aggregateId, requestedBy),
+      appendEvent: (type, aggregateType, aggregateId, payload) => this.appendEvent(type, aggregateType, aggregateId, payload)
+    };
+  }
+
+  private alcoholActionContext(): AlcoholActionContext {
+    return {
+      orm: this.orm,
+      db: this.db,
+      calculatePendingAlcoholUsage: () => this.calculatePendingAlcoholUsage(),
+      listVariantsForMenuItems: (menuItemIds, includeInactive) => this.listVariantsForMenuItems(menuItemIds, includeInactive),
+      defaultAlcoholProductionUnitId: () => this.defaultAlcoholProductionUnitId(),
+      requireProductionUnit: (productionUnitId) => this.requireProductionUnit(productionUnitId),
+      assertAlcoholRecipeMatchesType: (type, ingredients) => this.assertAlcoholRecipeMatchesType(type, ingredients),
+      assertAlcoholVariantsMatchType: (type, variants) => this.assertAlcoholVariantsMatchType(type, variants),
+      assertAlcoholHasSellableVariant: (active, variants, menuItemId) => this.assertAlcoholHasSellableVariant(active, variants, menuItemId),
+      createMenuItem: (input) => this.createMenuItem(input),
+      updateMenuItem: (id, input) => this.updateMenuItem(id, input),
+      replaceAlcoholVariants: (menuItemId, variants) => this.replaceAlcoholVariants(menuItemId, variants),
+      replaceAlcoholRecipe: (menuItemId, ingredients) => this.replaceAlcoholRecipe(menuItemId, ingredients),
+      findMenuItemIdByName: (name) => this.findMenuItemIdByName(name),
+      resolveProductionUnitRef: (value) => this.resolveProductionUnitRef(value),
+      parseAlcoholRecipeCsv: (value) => this.parseAlcoholRecipeCsv(value),
+      requireAlcoholStock: (menuItemId) => this.requireAlcoholStock(menuItemId),
+      writeAlcoholStock: (menuItemId, sealedLarge, openLargeMl, sealedSmall) => this.writeAlcoholStock(menuItemId, sealedLarge, openLargeMl, sealedSmall),
+      recordAlcoholMovement: (input) => this.recordAlcoholMovement(input),
+      verifyManagerApproval: (input, action, aggregateType, aggregateId, requestedBy) => this.verifyManagerApproval(input, action, aggregateType, aggregateId, requestedBy),
+      verifyMasterApproval: (input, action, aggregateType, aggregateId, requestedBy) => this.verifyMasterApproval(input, action, aggregateType, aggregateId, requestedBy),
+      appendEvent: (type, aggregateType, aggregateId, payload) => this.appendEvent(type, aggregateType, aggregateId, payload)
+    };
+  }
+
+  private printSettingsActionContext(): PrintSettingsActionContext {
+    return {
+      db: this.db,
+      readSetting: (key) => this.getSetting(key),
+      writeSetting: (key, value) => this.upsertSetting(key, value),
+      getPrintLayout: (scope, productionUnitId) => this.getPrintLayout(scope, productionUnitId),
+      enqueuePrintJob: (input) => this.enqueuePrintJob(input),
+      appendEvent: (type, aggregateType, aggregateId, payload) => this.appendEvent(type, aggregateType, aggregateId, payload)
+    };
+  }
+
+  private billActionContext(): BillActionContext {
+    return {
+      orm: this.orm,
+      db: this.db,
+      verifyManagerApproval: (input, action, aggregateType, aggregateId, requestedBy) => this.verifyManagerApproval(input, action, aggregateType, aggregateId, requestedBy),
+      verifyMasterApproval: (input, action, aggregateType, aggregateId, requestedBy) => this.verifyMasterApproval(input, action, aggregateType, aggregateId, requestedBy),
+      applyBillAdjustments: (billId, input, requestedBy, mode) => this.applyBillAdjustments(billId, input, requestedBy, mode),
+      enqueueBillReprint: (billId, suffix, printerSlot) => this.enqueueBillReprint(billId, suffix, printerSlot),
+      getBillById: (billId) => this.getBillById(billId),
+      getBillPaidPaise: (billId) => this.getBillPaidPaise(billId),
+      requireOrderById: (orderId) => this.requireOrderById(orderId),
+      requireTable: (tableId) => this.requireTable(tableId),
+      getOrderItems: (orderId) => this.getOrderItems(orderId),
+      prepareSubmittedItems: (items, allowedInactiveVariantIds, previousItemsById) => this.prepareSubmittedItems(items, allowedInactiveVariantIds, previousItemsById),
+      getMenuItems: (ids) => this.getMenuItems(ids),
+      applyOrderItemDiff: (orderId, requestedItems, previousItems, menuById, now, cancelMissing) => this.applyOrderItemDiff(orderId, requestedItems, previousItems, menuById, now, cancelMissing),
+      createKotsForChanges: (order, table, changes, now, isNewOrder, forceCancelled, reason, typeOverride, sequenceOrderId, printTickets, note) =>
+        this.createKotsForChanges(order, table, changes, now, isNewOrder, forceCancelled, reason, typeOverride, sequenceOrderId, printTickets, note),
+      calculateBillTotals: (items) => this.calculateBillTotals(items),
+      recordBillRevision: (billId, revisionNumber, totals, reason, changedBy, now, financials) => this.recordBillRevision(billId, revisionNumber, totals, reason, changedBy, now, financials),
+      applyAlcoholUsageDeltaForHistoryEdit: (billId, before, after) => this.applyAlcoholUsageDeltaForHistoryEdit(billId, before, after),
+      replaceHistoryEditPayments: (bill, requestedPayments, finalTotalPaise, receivedBy, now) => this.replaceHistoryEditPayments(bill, requestedPayments, finalTotalPaise, receivedBy, now),
+      resolveBillPrinter: (slot) => this.resolveBillPrinter(slot),
+      buildBillTicket: (input) => this.buildBillTicket(input),
+      enqueuePrintJob: (input) => this.enqueuePrintJob(input),
+      refreshDailyReportSnapshot: (posDayId, now) => this.refreshDailyReportSnapshot(posDayId, now),
+      deductAlcoholStockForPaidBill: (billId, orderId) => this.deductAlcoholStockForPaidBill(billId, orderId),
+      freeTable: (tableId) => this.freeTable(tableId),
+      finalizeCompletedBusinessDays: () => this.finalizeCompletedBusinessDays(),
+      appendEvent: (type, aggregateType, aggregateId, payload) => this.appendEvent(type, aggregateType, aggregateId, payload)
+    };
+  }
+
+  private orderStateUpdateContext(): OrderStateUpdateContext {
+    return {
+      orm: this.orm,
+      db: this.db,
+      requireOrderById: (orderId) => this.requireOrderById(orderId),
+      requireTable: (tableId) => this.requireTable(tableId),
+      verifyManagerApproval: (input, action, aggregateType, aggregateId, requestedBy) => this.verifyManagerApproval(input, action, aggregateType, aggregateId, requestedBy),
+      getOrderItems: (orderId) => this.getOrderItems(orderId),
+      prepareSubmittedItems: (items, allowedInactiveVariantIds, previousItemsById) => this.prepareSubmittedItems(items, allowedInactiveVariantIds, previousItemsById),
+      getMenuItems: (ids) => this.getMenuItems(ids),
+      applyOrderItemDiff: (orderId, requestedItems, previousItems, menuById, now, cancelMissing) => this.applyOrderItemDiff(orderId, requestedItems, previousItems, menuById, now, cancelMissing),
+      calculateBillTotals: (items) => this.calculateBillTotals(items),
+      createKotsForChanges: (order, table, changes, now, isNewOrder, forceCancelled, reason, typeOverride, sequenceOrderId, printTickets, note) =>
+        this.createKotsForChanges(order, table, changes, now, isNewOrder, forceCancelled, reason, typeOverride, sequenceOrderId, printTickets, note),
+      getBillForOrder: (orderId) => this.getBillForOrder(orderId),
+      getBillPaidPaise: (billId) => this.getBillPaidPaise(billId),
+      deleteLocalBillRecord: (billId) => this.deleteLocalBillRecord(billId),
+      recordBillRevision: (billId, revisionNumber, totals, reason, changedBy, now, financials) => this.recordBillRevision(billId, revisionNumber, totals, reason, changedBy, now, financials),
+      freeTable: (tableId) => this.freeTable(tableId),
+      appendEvent: (type, aggregateType, aggregateId, payload) => this.appendEvent(type, aggregateType, aggregateId, payload)
+    };
   }
 
   moveTable(input: MoveTableInput, actor: DeviceActor): { fromTableId: string; toTableId: string; orderId: string; kotIds: string[]; printJobIds: string[] } {
-    const targetPreview = this.requireTable(input.toTableId);
-    if (targetPreview.current_order_id) {
-      const fromTable = this.requireTable(input.fromTableId);
-      if (!fromTable.current_order_id) throw new DomainError("Source table has no running order");
-      const order = this.requireOrderById(fromTable.current_order_id);
-      this.assertCanMoveOrder(order, actor, "items");
-      const items = this.getOrderItems(order.id)
-        .filter((item) => item.status !== "cancelled" && item.quantity > 0)
-        .map((item) => ({ orderItemId: item.id, quantity: item.quantity }));
-      if (!items.length) throw new DomainError("Source table has no movable items");
-      const movement = this.moveOrderItems(
-        {
-          fromTableId: input.fromTableId,
-          toTableId: input.toTableId,
-          reason: `Full table transfer: ${input.reason}`,
-          items
-        },
-        actor
-      );
-      return {
-        fromTableId: input.fromTableId,
-        toTableId: input.toTableId,
-        orderId: movement.toOrderId,
-        kotIds: [...movement.sourceKotIds, ...movement.targetKotIds],
-        printJobIds: movement.printJobIds
-      };
-    }
-
-    const run = this.db.transaction(() => {
-      const fromTable = this.requireTable(input.fromTableId);
-      const toTable = this.requireTable(input.toTableId);
-      if (!fromTable.current_order_id) throw new DomainError("Source table has no running order");
-      if (toTable.current_order_id) throw new DomainError("Target table already has a running order");
-      const order = this.requireOrderById(fromTable.current_order_id);
-      this.assertCanMoveOrder(order, actor, "table");
-      const now = new Date().toISOString();
-      this.orm.update(orders).set({ tableId: toTable.id, updatedAt: now }).where(eq(orders.id, order.id)).run();
-      this.freeTable(fromTable.id);
-	      this.orm
-	        .update(restaurantTables)
-	        .set({ status: order.status === "billed" ? "billed" : "occupied", currentOrderId: order.id, occupiedAt: fromTable.occupied_at ?? now })
-	        .where(eq(restaurantTables.id, toTable.id))
-	        .run();
-      const tickets = this.createKotsForChanges(
-        order,
-        { ...toTable, current_order_id: order.id, status: order.status === "billed" ? "billed" : "occupied" },
-        this.getOrderItems(order.id)
-          .filter((item) => item.quantity > 0)
-          .map((item) => this.kotChangeFromOrderItem(item, item.quantity))
-          .filter((change): change is KotItemChange => Boolean(change)),
-        now,
-        false,
-        false,
-        `Table shifted from ${fromTable.name} to ${toTable.name}: ${input.reason}`,
-        "table_shifted"
-      );
-      const movementId = makeId("move");
-      this.orm
-        .insert(orderMovements)
-        .values({
-          id: movementId,
-          fromTableId: fromTable.id,
-          toTableId: toTable.id,
-          sourceOrderId: order.id,
-          movedItemsJson: JSON.stringify({ type: "table" }),
-          reason: input.reason,
-          movedBy: actor.name,
-          createdAt: now
-        })
-        .run();
-      this.appendEvent("table.shifted", "order", order.id, {
-        ...input,
-        movedBy: actor.name,
-        movedByDeviceId: actor.id,
-        orderId: order.id,
-        movementId,
-        kotIds: tickets.kotIds,
-        printJobIds: tickets.printJobIds
-      });
-      return { fromTableId: fromTable.id, toTableId: toTable.id, orderId: order.id, kotIds: tickets.kotIds, printJobIds: tickets.printJobIds };
-    });
-    return run();
+    return moveTableModel(this.tableTransferContext(), input, actor);
   }
 
   moveOrderItems(input: MoveOrderItemsInput, actor: DeviceActor): { fromOrderId: string; toOrderId: string; movementId: string; sourceKotIds: string[]; targetKotIds: string[]; printJobIds: string[] } {
-    const run = this.db.transaction(() => {
-      const fromTable = this.requireTable(input.fromTableId);
-      const toTable = this.requireTable(input.toTableId);
-      if (!fromTable.current_order_id) throw new DomainError("Source table has no running order");
-      const fromOrder = this.requireEditableOrder(fromTable.current_order_id);
-      this.assertCanMoveOrder(fromOrder, actor, "items");
-      const now = new Date().toISOString();
-      const targetHadRunningOrder = Boolean(toTable.current_order_id);
-      const toOrder = toTable.current_order_id
-        ? this.requireEditableOrder(toTable.current_order_id)
-        : this.createOrder({ tableId: toTable.id, captainId: actor.name, pax: 1, orderType: "dine_in" }, fromOrder.pos_day_id, now, actor);
-      if (targetHadRunningOrder) this.assertCanMoveOrder(toOrder, actor, "items");
-      const movementPayload: Array<{ orderItemId: string; quantity: number; name: string }> = [];
-      const sourceChanges: KotItemChange[] = [];
-      const targetChanges: KotItemChange[] = [];
-
-      for (const moveItem of input.items) {
-        const source = this.getOrderItemById(moveItem.orderItemId);
-        if (!source || source.order_id !== fromOrder.id || source.quantity < moveItem.quantity) {
-          throw new DomainError("Cannot shift more items than the source table has");
-        }
-        const target = this.getMatchingOrderItemSnapshot(toOrder.id, source);
-        let targetOrderItemId = target?.id;
-        if (target) {
-          this.orm
-            .update(orderItems)
-            .set({ quantity: target.quantity + moveItem.quantity, note: this.combineItemNotes(target.note, source.note), status: "active", updatedAt: now })
-            .where(eq(orderItems.id, target.id))
-            .run();
-        } else {
-          targetOrderItemId = makeId("item");
-          this.orm
-            .insert(orderItems)
-            .values({
-              id: targetOrderItemId,
-              orderId: toOrder.id,
-              menuItemId: source.menu_item_id,
-              menuItemVariantId: source.menu_item_variant_id,
-              nameSnapshot: source.name_snapshot,
-              variantNameSnapshot: source.variant_name_snapshot,
-              variantVolumeMl: source.variant_volume_ml,
-              inventoryActionSnapshot: source.inventory_action_snapshot,
-              alcoholRecipeSnapshotJson: source.alcohol_recipe_snapshot_json,
-              unitPricePaise: source.unit_price_paise,
-              quantity: moveItem.quantity,
-              productionUnitId: source.production_unit_id,
-              saleGroupId: source.sale_group_id,
-              saleGroupNameSnapshot: source.sale_group_name_snapshot,
-              saleGroupKindSnapshot: source.sale_group_kind_snapshot,
-              ticketLabelSnapshot: source.ticket_label_snapshot,
-              taxComponentsJson: source.tax_components_json,
-              taxPaise: source.tax_paise,
-              note: source.note,
-              isOpenItem: Boolean(source.is_open_item),
-              status: "active",
-              createdAt: now,
-              updatedAt: now
-            })
-            .run();
-        }
-        const sourceChange = this.kotChangeFromOrderItem(source, -moveItem.quantity);
-        if (sourceChange) sourceChanges.push(sourceChange);
-        const targetChange = this.kotChangeFromOrderItem(source, moveItem.quantity);
-        if (targetChange) targetChanges.push({ ...targetChange, orderItemId: targetOrderItemId ?? source.id });
-        const remaining = source.quantity - moveItem.quantity;
-        this.orm
-          .update(orderItems)
-          .set({ quantity: remaining, status: remaining === 0 ? "cancelled" : "active", updatedAt: now })
-          .where(eq(orderItems.id, source.id))
-          .run();
-        movementPayload.push({ orderItemId: source.id, quantity: moveItem.quantity, name: source.name_snapshot });
-      }
-
-	      const sourceWillBeEmpty = this.getOrderItems(fromOrder.id).every((item) => item.quantity === 0);
-	      if (sourceWillBeEmpty) {
-	        this.orm.update(orders).set({ status: "cancelled", updatedAt: now }).where(eq(orders.id, fromOrder.id)).run();
-	        this.freeTable(fromTable.id);
-	      }
-	      this.orm
-	        .update(restaurantTables)
-	        .set({
-	          status: "occupied",
-	          currentOrderId: toOrder.id,
-	          occupiedAt: targetHadRunningOrder ? sql`COALESCE(${restaurantTables.occupiedAt}, ${now})` : sourceWillBeEmpty ? (fromTable.occupied_at ?? now) : now
-	        })
-	        .where(eq(restaurantTables.id, toTable.id))
-	        .run();
-      const sourceTickets = this.createKotsForChanges(
-        fromOrder,
-        fromTable,
-        sourceChanges,
-        now,
-        false,
-        false,
-        `Items shifted to ${toTable.name}: ${input.reason}`,
-        "table_shifted"
-      );
-      const targetTickets = this.createKotsForChanges(
-        toOrder,
-        { ...toTable, current_order_id: toOrder.id, status: "occupied" },
-        targetChanges,
-        now,
-        false,
-        false,
-        `Items shifted from ${fromTable.name}: ${input.reason}`,
-        "table_shifted",
-        targetHadRunningOrder ? toOrder.id : fromOrder.id
-      );
-
-      const movementId = makeId("move");
-      this.orm
-        .insert(orderMovements)
-        .values({
-          id: movementId,
-          fromTableId: fromTable.id,
-          toTableId: toTable.id,
-          sourceOrderId: fromOrder.id,
-          targetOrderId: toOrder.id,
-          movedItemsJson: JSON.stringify(movementPayload),
-          reason: input.reason,
-          movedBy: actor.name,
-          createdAt: now
-        })
-        .run();
-      this.appendEvent("order_items.shifted", "order", fromOrder.id, {
-        ...input,
-        movedBy: actor.name,
-        movedByDeviceId: actor.id,
-        toOrderId: toOrder.id,
-        movementId,
-        sourceKotIds: sourceTickets.kotIds,
-        targetKotIds: targetTickets.kotIds,
-        printJobIds: [...sourceTickets.printJobIds, ...targetTickets.printJobIds]
-      });
-      return {
-        fromOrderId: fromOrder.id,
-        toOrderId: toOrder.id,
-        movementId,
-        sourceKotIds: sourceTickets.kotIds,
-        targetKotIds: targetTickets.kotIds,
-        printJobIds: [...sourceTickets.printJobIds, ...targetTickets.printJobIds]
-      };
-    });
-    return run();
+    return moveOrderItemsModel(this.tableTransferContext(), input, actor);
   }
 
-  private buildDaySummary(posDayId: string): DaySummary {
-    const businessDay = this.db
-      .prepare("SELECT id, business_date, period_start_at, period_end_at, status FROM pos_days WHERE id = ?")
-      .get(posDayId) as BusinessDayRow | undefined;
-    if (!businessDay) throw new DomainError("Business day not found", 404);
-
-    const orders = this.db
-      .prepare(
-        `SELECT status, COUNT(*) AS count
-         FROM orders
-         WHERE pos_day_id = ?
-         GROUP BY status`
-      )
-      .all(posDayId) as Array<{ status: string; count: number }>;
-    const bills = this.db
-      .prepare(
-        `SELECT b.status, COUNT(*) AS count
-         FROM bills b
-         JOIN orders o ON o.id = b.order_id
-         WHERE o.pos_day_id = ?
-         GROUP BY b.status`
-      )
-      .all(posDayId) as Array<{ status: string; count: number }>;
-    const payments = this.db
-      .prepare(
-        `SELECT p.method, COALESCE(SUM(p.amount_paise), 0) AS total
-         FROM payments p
-         JOIN bills b ON b.id = p.bill_id
-         JOIN orders o ON o.id = b.order_id
-         WHERE o.pos_day_id = ? AND b.is_nc = 0
-         GROUP BY p.method`
-      )
-      .all(posDayId) as Array<{ method: string; total: number }>;
-    const billTotals = this.db
-      .prepare(
-        `SELECT
-           COUNT(*) AS bill_count,
-           COALESCE(SUM(total_paise), 0) AS gross_sales_paise,
-           COALESCE(SUM(discount_paise), 0) AS discount_paise,
-           COALESCE(SUM(tip_paise), 0) AS tip_paise,
-           COALESCE(SUM(final_total_paise), 0) AS final_sales_paise
-         FROM bills b
-         JOIN orders o ON o.id = b.order_id
-         WHERE o.pos_day_id = ? AND b.is_nc = 0`
-      )
-      .get(posDayId) as {
-      bill_count: number;
-      gross_sales_paise: number;
-      discount_paise: number;
-      tip_paise: number;
-      final_sales_paise: number;
-    };
-    const billRows = this.db
-      .prepare(
-        `SELECT b.id AS bill_id, b.bill_number, b.order_id, b.status, b.subtotal_paise, b.tax_paise,
-          b.total_paise, b.discount_paise, b.tip_paise, b.final_total_paise, b.settled_at,
-          b.is_nc, b.nc_reason, b.revision_number, t.name AS table_name
-         FROM bills b
-         JOIN orders o ON o.id = b.order_id
-         JOIN restaurant_tables t ON t.id = o.table_id
-         WHERE o.pos_day_id = ?
-         ORDER BY b.bill_number ASC, b.created_at ASC`
-      )
-      .all(posDayId) as Array<{
-        bill_id: string;
-        bill_number: number;
-        order_id: string;
-        table_name: string;
-        status: string;
-        subtotal_paise: number;
-        tax_paise: number;
-        total_paise: number;
-        discount_paise: number;
-        tip_paise: number;
-        final_total_paise: number;
-        settled_at: string | null;
-        is_nc: number;
-        nc_reason: string | null;
-        revision_number: number;
-      }>;
-    const paymentRows = this.db
-      .prepare(
-        `SELECT p.bill_id, p.method, p.amount_paise, p.reference
-         FROM payments p
-         JOIN bills b ON b.id = p.bill_id
-         JOIN orders o ON o.id = b.order_id
-         WHERE o.pos_day_id = ? AND b.is_nc = 0
-         ORDER BY p.created_at ASC`
-      )
-      .all(posDayId) as Array<{ bill_id: string; method: string; amount_paise: number; reference: string | null }>;
-    const billItemRows = this.db
-      .prepare(
-	        `SELECT b.id AS bill_id, oi.id AS order_item_id, oi.menu_item_id, oi.menu_item_variant_id,
-	          oi.name_snapshot AS name, oi.quantity, oi.unit_price_paise, oi.sale_group_id, oi.production_unit_id,
-	          (oi.quantity * oi.unit_price_paise) AS line_total_paise
-         FROM order_items oi
-         JOIN orders o ON o.id = oi.order_id
-         JOIN bills b ON b.order_id = o.id
-         WHERE o.pos_day_id = ? AND oi.status != 'cancelled'
-         ORDER BY b.bill_number ASC, oi.created_at ASC, oi.id ASC`
-      )
-	      .all(posDayId) as Array<{
-	        bill_id: string;
-	        order_item_id: string;
-	        menu_item_id: string | null;
-	        menu_item_variant_id: string | null;
-	        name: string;
-	        quantity: number;
-	        unit_price_paise: number;
-	        line_total_paise: number;
-	        sale_group_id: string;
-	        production_unit_id: string | null;
-	      }>;
-    const itemSummaries = this.db
-      .prepare(
-        `SELECT COALESCE(oi.menu_item_id, oi.id) AS menu_item_id, oi.name_snapshot AS name, oi.sale_group_id, oi.sale_group_name_snapshot,
-          oi.sale_group_kind_snapshot,
-          COALESCE(SUM(CASE WHEN COALESCE(b.is_nc, 0) = 0 THEN oi.quantity ELSE 0 END), 0) AS quantity,
-          COALESCE(SUM(CASE WHEN COALESCE(b.is_nc, 0) = 0 THEN oi.quantity * oi.unit_price_paise ELSE 0 END), 0) AS gross_sales_paise,
-          COALESCE(SUM(CASE WHEN COALESCE(b.is_nc, 0) = 1 THEN oi.quantity ELSE 0 END), 0) AS nc_quantity,
-          COALESCE(SUM(CASE WHEN COALESCE(b.is_nc, 0) = 1 THEN oi.quantity * oi.unit_price_paise ELSE 0 END), 0) AS nc_gross_sales_paise
-         FROM order_items oi
-         JOIN orders o ON o.id = oi.order_id
-         LEFT JOIN bills b ON b.order_id = o.id
-         WHERE o.pos_day_id = ? AND oi.status != 'cancelled'
-         GROUP BY COALESCE(oi.menu_item_id, oi.id), oi.name_snapshot, oi.sale_group_id, oi.sale_group_name_snapshot, oi.sale_group_kind_snapshot
-         ORDER BY oi.name_snapshot ASC`
-      )
-      .all(posDayId) as Array<{
-        menu_item_id: string;
-        name: string;
-        sale_group_id: string;
-        sale_group_name_snapshot: string;
-        sale_group_kind_snapshot: string;
-        quantity: number;
-        gross_sales_paise: number;
-        nc_quantity: number;
-        nc_gross_sales_paise: number;
-      }>;
-    const groupSummaries = this.db
-      .prepare(
-        `SELECT oi.sale_group_id, oi.sale_group_name_snapshot, oi.sale_group_kind_snapshot,
-          COALESCE(SUM(CASE WHEN COALESCE(b.is_nc, 0) = 0 THEN oi.quantity ELSE 0 END), 0) AS quantity,
-          COALESCE(SUM(CASE WHEN COALESCE(b.is_nc, 0) = 0 THEN oi.quantity * oi.unit_price_paise ELSE 0 END), 0) AS gross_sales_paise,
-          COALESCE(SUM(CASE WHEN COALESCE(b.is_nc, 0) = 0 THEN oi.tax_paise ELSE 0 END), 0) AS tax_paise,
-          COALESCE(SUM(CASE WHEN COALESCE(b.is_nc, 0) = 1 THEN oi.quantity ELSE 0 END), 0) AS nc_quantity,
-          COALESCE(SUM(CASE WHEN COALESCE(b.is_nc, 0) = 1 THEN oi.quantity * oi.unit_price_paise ELSE 0 END), 0) AS nc_gross_sales_paise
-         FROM order_items oi
-         JOIN orders o ON o.id = oi.order_id
-         LEFT JOIN bills b ON b.order_id = o.id
-         WHERE o.pos_day_id = ? AND oi.status != 'cancelled'
-         GROUP BY oi.sale_group_id, oi.sale_group_name_snapshot, oi.sale_group_kind_snapshot
-         ORDER BY oi.sale_group_name_snapshot`
-      )
-      .all(posDayId) as Array<{
-        sale_group_id: string;
-        sale_group_name_snapshot: string;
-        sale_group_kind_snapshot: string;
-        quantity: number;
-        gross_sales_paise: number;
-        tax_paise: number;
-        nc_quantity: number;
-        nc_gross_sales_paise: number;
-      }>;
-    const billGroupRows = this.db
-      .prepare(
-        `SELECT b.id AS bill_id, oi.sale_group_id, oi.sale_group_name_snapshot, oi.sale_group_kind_snapshot,
-          COALESCE(SUM(oi.quantity * oi.unit_price_paise), 0) AS gross_sales_paise,
-          COALESCE(SUM(oi.tax_paise), 0) AS tax_paise
-         FROM order_items oi
-         JOIN orders o ON o.id = oi.order_id
-         JOIN bills b ON b.order_id = o.id
-         WHERE o.pos_day_id = ? AND oi.status != 'cancelled' AND b.is_nc = 0
-         GROUP BY b.id, oi.sale_group_id, oi.sale_group_name_snapshot, oi.sale_group_kind_snapshot`
-      )
-      .all(posDayId) as Array<{
-        bill_id: string;
-        sale_group_id: string;
-        sale_group_name_snapshot: string;
-        sale_group_kind_snapshot: string;
-        gross_sales_paise: number;
-        tax_paise: number;
-      }>;
-    const groupSummaryMap = new Map<string, GroupSummaryAccumulator>();
-    for (const group of groupSummaries) {
-      groupSummaryMap.set(group.sale_group_id, {
-        saleGroupId: group.sale_group_id,
-        name: group.sale_group_name_snapshot,
-        kind: group.sale_group_kind_snapshot,
-        quantity: group.quantity,
-        grossSalesPaise: group.gross_sales_paise,
-        taxPaise: group.tax_paise,
-        finalSalesPaise: 0,
-        ncQuantity: group.nc_quantity,
-        ncGrossSalesPaise: group.nc_gross_sales_paise
-      });
-    }
-    const billRowsById = new Map(billRows.map((bill) => [bill.bill_id, bill]));
-    const billGroupRowsByBill = new Map<string, typeof billGroupRows>();
-    for (const row of billGroupRows) {
-      billGroupRowsByBill.set(row.bill_id, [...(billGroupRowsByBill.get(row.bill_id) ?? []), row]);
-    }
-    for (const [billId, rows] of billGroupRowsByBill.entries()) {
-      const bill = billRowsById.get(billId);
-      if (!bill || bill.is_nc) continue;
-      const bases = rows.map((row) => row.gross_sales_paise);
-      const discountShares = this.allocateByWeight(bill.discount_paise, bases);
-      const tipShares = this.allocateByWeight(bill.tip_paise, bases);
-      rows.forEach((row, index) => {
-        const summary = groupSummaryMap.get(row.sale_group_id);
-        if (!summary) return;
-        summary.finalSalesPaise += row.gross_sales_paise - (discountShares[index] ?? 0) + (tipShares[index] ?? 0);
-      });
-    }
-
-    const orderCounts = Object.fromEntries(orders.map((row) => [row.status, row.count]));
-    const billCounts = Object.fromEntries(bills.map((row) => [row.status, row.count]));
-    const paymentTotals = Object.fromEntries(payments.map((row) => [row.method, row.total]));
-    const cashPaymentsPaise = paymentTotals.cash ?? 0;
-    const upiPaymentsPaise = paymentTotals.upi ?? 0;
-    const cardPaymentsPaise = paymentTotals.card ?? 0;
-    const onlinePaymentsPaise = paymentTotals.online ?? 0;
-    const totalPaymentsPaise = cashPaymentsPaise + upiPaymentsPaise + cardPaymentsPaise + onlinePaymentsPaise;
-    const paymentsByBill = new Map<string, Array<{ method: string; amountPaise: number; reference: string | null }>>();
-    for (const payment of paymentRows) {
-      const list = paymentsByBill.get(payment.bill_id) ?? [];
-      list.push({ method: payment.method, amountPaise: payment.amount_paise, reference: payment.reference });
-      paymentsByBill.set(payment.bill_id, list);
-    }
-	    const itemsByBill = new Map<string, Array<{ orderItemId: string; menuItemId: string | null; menuItemVariantId: string | null; name: string; quantity: number; unitPricePaise: number; lineTotalPaise: number; saleGroupId: string; productionUnitId: string | null }>>();
-	    for (const item of billItemRows) {
-	      const list = itemsByBill.get(item.bill_id) ?? [];
-	      list.push({
-	        orderItemId: item.order_item_id,
-	        menuItemId: item.menu_item_id,
-	        menuItemVariantId: item.menu_item_variant_id,
-	        name: item.name,
-	        quantity: item.quantity,
-	        unitPricePaise: item.unit_price_paise,
-	        lineTotalPaise: item.line_total_paise,
-	        saleGroupId: item.sale_group_id,
-	        productionUnitId: item.production_unit_id
-	      });
-      itemsByBill.set(item.bill_id, list);
-    }
-
+  private orderLifecycleContext(): OrderLifecycleContext {
     return {
-      businessDay,
-      openOrders: orderCounts.open ?? 0,
-      billedOrders: orderCounts.billed ?? 0,
-      paidBills: billCounts.paid ?? 0,
-      unpaidBills: billCounts.pending ?? 0,
-      cancelledOrders: orderCounts.cancelled ?? 0,
-      billCount: billTotals.bill_count,
-      grossSalesPaise: billTotals.gross_sales_paise,
-      discountPaise: billTotals.discount_paise,
-      tipPaise: billTotals.tip_paise,
-      finalSalesPaise: billTotals.final_sales_paise,
-      cashPaymentsPaise,
-      upiPaymentsPaise,
-      cardPaymentsPaise,
-      onlinePaymentsPaise,
-      totalPaymentsPaise,
-      nonCashPaymentsPaise: upiPaymentsPaise + cardPaymentsPaise + onlinePaymentsPaise,
-	      billSummaries: billRows.map((bill) => ({
-	        billId: bill.bill_id,
-        billNumber: bill.bill_number,
-        orderId: bill.order_id,
-        tableName: bill.table_name,
-        status: bill.status,
-        subtotalPaise: bill.subtotal_paise,
-        taxPaise: bill.tax_paise,
-        totalPaise: bill.total_paise,
-        discountPaise: bill.discount_paise,
-        tipPaise: bill.tip_paise,
-        finalTotalPaise: bill.final_total_paise,
-        paidPaise: (paymentsByBill.get(bill.bill_id) ?? []).reduce((total, payment) => total + payment.amountPaise, 0),
-        settledAt: bill.settled_at,
-        payments: paymentsByBill.get(bill.bill_id) ?? [],
-        items: itemsByBill.get(bill.bill_id) ?? [],
-        isNc: Boolean(bill.is_nc),
-        ncReason: bill.nc_reason,
-        revisionNumber: bill.revision_number,
-        modified: bill.revision_number > 1
-      })),
-      itemSummaries: itemSummaries.map((item) => ({
-        menuItemId: item.menu_item_id,
-        name: item.name,
-        saleGroupId: item.sale_group_id,
-        saleGroupName: item.sale_group_name_snapshot,
-        saleGroupKind: item.sale_group_kind_snapshot,
-        quantity: item.quantity,
-        grossSalesPaise: item.gross_sales_paise,
-        ncQuantity: item.nc_quantity,
-        ncGrossSalesPaise: item.nc_gross_sales_paise
-      })),
-      groupSummaries: [...groupSummaryMap.values()]
+      orm: this.orm,
+      db: this.db,
+      finalizeCompletedBusinessDays: () => this.finalizeCompletedBusinessDays(),
+      ensureCurrentBusinessDay: () => this.ensureCurrentBusinessDay(),
+      requireTable: (tableId) => this.requireTable(tableId),
+      requireEditableOrder: (orderId) => this.requireEditableOrder(orderId),
+      createOrder: (input, posDayId, now, actor) => this.createOrder(input, posDayId, now, actor),
+      prepareSubmittedItems: (items, allowedInactiveVariantIds, previousItemsById) => this.prepareSubmittedItems(items, allowedInactiveVariantIds, previousItemsById),
+      getOrderItems: (orderId) => this.getOrderItems(orderId),
+      getMenuItems: (ids) => this.getMenuItems(ids),
+      getUnits: (ids) => this.getUnits(ids),
+      getOrderItemById: (orderItemId) => this.getOrderItemById(orderItemId),
+      kotChangeFromOrderItem: (item, quantityDelta) => this.kotChangeFromOrderItem(item, quantityDelta),
+      applyOrderItemDiff: (orderId, requestedItems, previousItems, menuById, now, cancelMissing) => this.applyOrderItemDiff(orderId, requestedItems, previousItems, menuById, now, cancelMissing),
+      createKotsForChanges: (order, table, changes, now, isNewOrder, forceCancelled, reason, typeOverride, sequenceOrderId, printTickets, note) =>
+        this.createKotsForChanges(order, table, changes, now, isNewOrder, forceCancelled, reason, typeOverride, sequenceOrderId, printTickets, note),
+      verifyManagerApproval: (input, action, aggregateType, aggregateId, requestedBy) => this.verifyManagerApproval(input, action, aggregateType, aggregateId, requestedBy),
+      freeTable: (tableId) => this.freeTable(tableId),
+      appendEvent: (type, aggregateType, aggregateId, payload) => this.appendEvent(type, aggregateType, aggregateId, payload)
+    };
+  }
+
+  private tableTransferContext(): TableTransferContext {
+    return {
+      orm: this.orm,
+      db: this.db,
+      requireTable: (tableId) => this.requireTable(tableId),
+      requireOrderById: (orderId) => this.requireOrderById(orderId),
+      requireEditableOrder: (orderId) => this.requireEditableOrder(orderId),
+      assertCanMoveOrder: (order, actor, action) => this.assertCanMoveOrder(order, actor, action),
+      createOrder: (input, posDayId, now, actor) => this.createOrder(input, posDayId, now, actor),
+      getOrderItems: (orderId) => this.getOrderItems(orderId),
+      getOrderItemById: (orderItemId) => this.getOrderItemById(orderItemId),
+      kotChangeFromOrderItem: (item, quantityDelta) => this.kotChangeFromOrderItem(item, quantityDelta),
+      createKotsForChanges: (order, table, changes, now, isNewOrder, forceCancelled, reason, typeOverride, sequenceOrderId, printTickets, note) =>
+        this.createKotsForChanges(order, table, changes, now, isNewOrder, forceCancelled, reason, typeOverride, sequenceOrderId, printTickets, note),
+      freeTable: (tableId) => this.freeTable(tableId),
+      appendEvent: (type, aggregateType, aggregateId, payload) => this.appendEvent(type, aggregateType, aggregateId, payload)
     };
   }
 
   private prepareSubmittedItems(
     items: SubmitOrderInput["items"],
-    now: string,
     allowedInactiveVariantIds = new Set<string>(),
     previousItemsById = new Map<string, OrderItemRow>()
   ): RequestedOrderItem[] {
-    return items
-      .filter((item) => item.quantity > 0)
-      .map((item) => {
-        if (item.menuItemId) {
-          const menuItem = this.getMenuItems([item.menuItemId]).get(item.menuItemId);
-          if (!menuItem) throw new DomainError(`Menu item ${item.menuItemId} is not available`);
-          const variant = this.resolveMenuItemVariant(menuItem.id, item.menuItemVariantId, item.menuItemVariantId ? allowedInactiveVariantIds.has(item.menuItemVariantId) : false);
-          if (item.unitPricePaise !== undefined && item.unitPricePaise !== variant.price_paise) {
-            this.verifyManagerApproval(item.managerApproval, "order_item.price_edit", "menu_item", menuItem.id, item.managerApproval?.approvedBy ?? "captain");
-          }
-          const previous = item.orderItemId ? previousItemsById.get(item.orderItemId) : undefined;
-          const preservePreviousSnapshot =
-            previous &&
-            previous.menu_item_id === menuItem.id &&
-            previous.menu_item_variant_id === variant.id &&
-            item.unitPricePaise === undefined &&
-            item.productionUnitId === undefined;
-          const displayName = variant.kind === "default" ? menuItem.name : `${menuItem.name} ${variant.label}`;
-          return {
-            itemKey: this.itemKey(menuItem.id, undefined, variant.id),
-            menuItemId: menuItem.id,
-            menuItemVariantId: variant.id,
-            quantity: item.quantity,
-            name: preservePreviousSnapshot ? previous.name_snapshot : displayName,
-            variantName: preservePreviousSnapshot ? previous.variant_name_snapshot : variant.label,
-            variantVolumeMl: preservePreviousSnapshot ? previous.variant_volume_ml : variant.volume_ml,
-            inventoryAction: preservePreviousSnapshot ? previous.inventory_action_snapshot : variant.inventory_action,
-            alcoholRecipeSnapshotJson: preservePreviousSnapshot ? previous.alcohol_recipe_snapshot_json : this.snapshotAlcoholRecipe(menuItem.id),
-            unitPricePaise: item.unitPricePaise ?? (preservePreviousSnapshot ? previous.unit_price_paise : variant.price_paise),
-            productionUnitId: preservePreviousSnapshot ? previous.production_unit_id : item.productionUnitId !== undefined ? item.productionUnitId : menuItem.production_unit_id,
-            saleGroupId: preservePreviousSnapshot ? previous.sale_group_id : menuItem.sale_group_id,
-            saleGroupName: preservePreviousSnapshot ? previous.sale_group_name_snapshot : menuItem.sale_group_name,
-            saleGroupKind: preservePreviousSnapshot ? previous.sale_group_kind_snapshot : menuItem.sale_group_kind,
-            ticketLabel: preservePreviousSnapshot ? previous.ticket_label_snapshot : menuItem.ticket_label,
-            taxComponentsJson: preservePreviousSnapshot ? previous.tax_components_json : menuItem.tax_components_json,
-            note: this.normaliseItemNote(item.note),
-            isOpenItem: preservePreviousSnapshot ? Boolean(previous.is_open_item) : false
-          };
-        }
-
-        const saleGroup = this.requireSaleGroup(item.saleGroupId ?? "sg-food");
-        if (!item.openPricePaise) throw new DomainError("Open item price is required");
-        const productionUnitId = item.productionUnitId !== undefined ? item.productionUnitId : saleGroup.default_production_unit_id;
-        if (productionUnitId) this.requireProductionUnit(productionUnitId);
-        const existingOpenItemId = item.orderItemId?.trim();
-        return {
-          itemKey: existingOpenItemId ? `open:${existingOpenItemId}` : `open:${makeId("line")}`,
-          menuItemId: null,
-          menuItemVariantId: null,
-          quantity: item.quantity,
-          name: item.openName ?? "Open item",
-          variantName: "",
-          variantVolumeMl: null,
-          inventoryAction: "none",
-          alcoholRecipeSnapshotJson: "[]",
-          unitPricePaise: item.openPricePaise,
-          productionUnitId,
-          saleGroupId: saleGroup.id,
-          saleGroupName: saleGroup.name,
-          saleGroupKind: saleGroup.kind,
-          ticketLabel: saleGroup.ticket_label,
-          taxComponentsJson: saleGroup.tax_components_json,
-          note: this.normaliseItemNote(item.note),
-          isOpenItem: true
-        };
-      });
+    return prepareSubmittedItemsModel({
+      ctx: this.submittedItemContext(),
+      items,
+      allowedInactiveVariantIds,
+      previousItemsById
+    });
   }
 
-  private normaliseItemNote(note: string | null | undefined): string | null {
-    const trimmed = note?.trim();
-    return trimmed ? trimmed : null;
-  }
-
-  private parseJsonArray<T>(value: string | null | undefined): T[] {
-    try {
-      const parsed = JSON.parse(value || "[]");
-      return Array.isArray(parsed) ? (parsed as T[]) : [];
-    } catch {
-      return [];
-    }
-  }
-
-  private businessDatesBetween(from: string, to: string): string[] {
-    const dates: string[] = [];
-    const current = new Date(`${from}T00:00:00.000Z`);
-    const end = new Date(`${to}T00:00:00.000Z`);
-    while (current.getTime() <= end.getTime()) {
-      dates.push(current.toISOString().slice(0, 10));
-      current.setUTCDate(current.getUTCDate() + 1);
-    }
-    return dates;
-  }
-
-  private combineItemNotes(first: string | null | undefined, second: string | null | undefined): string | null {
-    const parts = [first, second]
-      .flatMap((value) => (value ?? "").split(";"))
-      .map((value) => value.trim())
-      .filter(Boolean);
-    const unique: string[] = [];
-    const seen = new Set<string>();
-    for (const part of parts) {
-      const key = part.toLowerCase();
-      if (seen.has(key)) continue;
-      seen.add(key);
-      unique.push(part);
-    }
-    return unique.length ? unique.join("; ") : null;
+  private submittedItemContext(): SubmittedItemContext {
+    return {
+      getMenuItems: (ids) => this.getMenuItems(ids),
+      resolveMenuItemVariant: (menuItemId, variantId, allowInactive) => this.resolveMenuItemVariant(menuItemId, variantId, allowInactive),
+      verifyManagerApproval: (input, action, aggregateType, aggregateId, requestedBy) => this.verifyManagerApproval(input, action, aggregateType, aggregateId, requestedBy),
+      snapshotAlcoholRecipe: (menuItemId) => this.snapshotAlcoholRecipe(menuItemId),
+      requireSaleGroup: (id) => this.requireSaleGroup(id),
+      requireProductionUnit: (productionUnitId) => this.requireProductionUnit(productionUnitId),
+      itemKey: (menuItemId, orderItemId, variantId) => this.itemKey(menuItemId, orderItemId, variantId)
+    };
   }
 
   private buildBillTicket(input: {
-    bill: Pick<
-	      BillRow,
-	      | "id"
-	      | "bill_number"
-	      | "order_id"
-      | "subtotal_paise"
-      | "tax_paise"
-      | "total_paise"
-      | "discount_paise"
-      | "tip_paise"
-      | "final_total_paise"
-      | "tax_breakdown_json"
-      | "revision_number"
-      | "nc_reason"
-    >;
+    bill: Pick<BillRow, "id" | "bill_number" | "order_id" | "subtotal_paise" | "tax_paise" | "total_paise" | "discount_paise" | "tip_paise" | "final_total_paise" | "revision_number" | "nc_reason">;
     tableName: string;
     createdAt: string;
     discountPaise?: number;
     tipPaise?: number;
     finalTotalPaise?: number;
     ncReason?: string | null;
-  }): BillTicket {
-    const billableItems = this.getOrderItems(input.bill.order_id).filter((item) => item.quantity > 0 && item.status !== "cancelled");
-    const billPayments = this.db
-      .prepare("SELECT method, amount_paise FROM payments WHERE bill_id = ? ORDER BY created_at, id")
-      .all(input.bill.id) as Array<{ method: string; amount_paise: number }>;
-    const taxBreakdown = this.compactPrintableTaxBreakdown(billableItems);
-    return {
-      tableName: input.tableName,
-	      billId: String(input.bill.bill_number || input.bill.id),
-      items: billableItems.map((item) => ({
-        name: item.name_snapshot,
-        variantName: item.variant_name_snapshot || null,
-        quantity: item.quantity,
-        unitPricePaise: item.unit_price_paise,
-        lineTotalPaise: calculateLineTotal(item.unit_price_paise, item.quantity)
-      })),
-      subtotalPaise: input.bill.subtotal_paise,
-      taxPaise: taxBreakdown.length ? input.bill.tax_paise : 0,
-      totalPaise: input.bill.total_paise,
-      discountPaise: input.discountPaise ?? input.bill.discount_paise,
-      tipPaise: input.tipPaise ?? input.bill.tip_paise,
-      finalTotalPaise: input.finalTotalPaise ?? input.bill.final_total_paise,
-      createdAt: input.createdAt,
-      taxBreakdown,
-      payments: billPayments.map((payment) => ({ method: payment.method, amountPaise: payment.amount_paise })),
-      revisionNumber: input.bill.revision_number,
-      ncReason: input.ncReason ?? input.bill.nc_reason,
-      ...this.billPrintLayout()
-    };
-  }
-
-  private compactPrintableTaxBreakdown(items: OrderItemRow[]): TaxComponentAmount[] {
-    const taxByComponent = new Map<string, TaxComponentAmount>();
-    for (const item of items) {
-      if (item.sale_group_kind_snapshot === "alcohol") continue;
-      const lineSubtotal = calculateLineTotal(item.unit_price_paise, item.quantity);
-      const components = calculateTaxComponents(lineSubtotal, this.parseTaxComponents(item.tax_components_json));
-      for (const component of components) {
-        const key = `${component.name}:${component.rateBps}`;
-        const current = taxByComponent.get(key) ?? { name: component.name, rateBps: component.rateBps, amountPaise: 0 };
-        current.amountPaise += component.amountPaise;
-        taxByComponent.set(key, current);
-      }
-    }
-    return [...taxByComponent.values()];
-  }
-
-  private billPrintLayout(): Pick<
-    BillTicket,
-    | "restaurantName"
-    | "restaurantAddress"
-    | "taxRegistrationText"
-    | "lineWidthChars"
-    | "headerAlign"
-    | "footerAlign"
-    | "sectionStyles"
-    | "topPaddingLines"
-    | "feedLines"
-    | "showTable"
-    | "showDateTime"
-    | "showBillId"
-    | "showTaxBreakup"
-    | "showPaymentSplit"
-    | "showDiscountTip"
-    | "showNcReprintRevision"
-    | "header"
-    | "footer"
-  > {
-    const layout = this.getPrintLayout("receipt");
-    return {
-      restaurantName: layout.restaurantName,
-      restaurantAddress: layout.restaurantAddress,
-      taxRegistrationText: layout.taxRegistrationText,
-      lineWidthChars: layout.lineWidthChars,
-      headerAlign: layout.headerAlign,
-      footerAlign: layout.footerAlign,
-      sectionStyles: layout.sectionStyles,
-      topPaddingLines: layout.topPaddingLines,
-      feedLines: layout.feedLines,
-      showTable: layout.showTable,
-      showDateTime: layout.showDateTime,
-      showBillId: layout.showBillId,
-      showTaxBreakup: layout.showTaxBreakup,
-      showPaymentSplit: layout.showPaymentSplit,
-      showDiscountTip: layout.showDiscountTip,
-      showNcReprintRevision: layout.showNcReprintRevision,
-      header: layout.billHeader,
-      footer: layout.billFooter
-    };
+  }) {
+    return buildBillTicketModel({
+      db: this.db,
+      ...input,
+      orderItems: this.getOrderItems(input.bill.order_id),
+      receiptLayout: this.getPrintLayout("receipt")
+    });
   }
 
   private calculateBillTotals(items: OrderItemRow[]): BillTotals {
-    const taxByName = new Map<string, TaxComponentAmount>();
-    let subtotalPaise = 0;
-    let taxPaise = 0;
-    for (const item of items) {
-      const lineSubtotal = calculateLineTotal(item.unit_price_paise, item.quantity);
-      subtotalPaise += lineSubtotal;
-      const components = calculateTaxComponents(lineSubtotal, this.parseTaxComponents(item.tax_components_json));
-      const itemTax = components.reduce((total, component) => total + component.amountPaise, 0);
-      taxPaise += itemTax;
-      for (const component of components) {
-        const name = `${item.sale_group_name_snapshot} ${component.name}`.trim();
-        const key = `${name}:${component.rateBps}`;
-        const current = taxByName.get(key) ?? { name, rateBps: component.rateBps, amountPaise: 0 };
-        current.amountPaise += component.amountPaise;
-        taxByName.set(key, current);
-      }
-      this.orm.update(orderItems).set({ taxPaise: itemTax }).where(eq(orderItems.id, item.id)).run();
-    }
-    return {
-      subtotalPaise,
-      taxPaise,
-      totalPaise: subtotalPaise,
-      taxBreakdown: [...taxByName.values()]
-    };
-  }
-
-  private getCurrentOrderSummaries(orderIds: string[]): Map<string, { totalPaise: number; itemCount: number; timerEndedAt: string | null }> {
-    const uniqueOrderIds = [...new Set(orderIds)];
-    if (uniqueOrderIds.length === 0) return new Map();
-    const placeholders = uniqueOrderIds.map(() => "?").join(",");
-    const rows = this.db
-      .prepare(
-        `SELECT order_id, unit_price_paise, quantity, tax_components_json
-         FROM order_items
-         WHERE order_id IN (${placeholders})
-           AND status != 'cancelled'
-           AND quantity > 0`
-      )
-      .all(...uniqueOrderIds) as Array<{ order_id: string; unit_price_paise: number; quantity: number; tax_components_json: string }>;
-    const billedRows = this.db
-      .prepare(
-        `SELECT order_id, MAX(created_at) AS timer_ended_at
-         FROM bills
-         WHERE order_id IN (${placeholders})
-         GROUP BY order_id`
-      )
-      .all(...uniqueOrderIds) as Array<{ order_id: string; timer_ended_at: string | null }>;
-    const billedAtByOrder = new Map(billedRows.map((row) => [row.order_id, row.timer_ended_at]));
-    const summaries = new Map<string, { totalPaise: number; itemCount: number; timerEndedAt: string | null }>();
-    for (const item of rows) {
-      const lineSubtotal = calculateLineTotal(item.unit_price_paise, item.quantity);
-      const current = summaries.get(item.order_id) ?? { totalPaise: 0, itemCount: 0, timerEndedAt: billedAtByOrder.get(item.order_id) ?? null };
-      current.totalPaise += lineSubtotal;
-      current.itemCount += item.quantity;
-      summaries.set(item.order_id, current);
-    }
-    for (const orderId of uniqueOrderIds) {
-      if (!summaries.has(orderId)) summaries.set(orderId, { totalPaise: 0, itemCount: 0, timerEndedAt: billedAtByOrder.get(orderId) ?? null });
-    }
-    return summaries;
+    return calculateBillTotalsModel(this.orm, items);
   }
 
   private deductAlcoholStockForPaidBill(billId: string, orderId: string): void {
-    const existing = this.orm
-      .select({ id: alcoholStockMovements.id })
-      .from(alcoholStockMovements)
-      .where(and(eq(alcoholStockMovements.sourceType, "bill_settlement"), eq(alcoholStockMovements.sourceId, billId)))
-      .get();
-    if (existing) return;
-
-    const usage = this.calculateAlcoholUsageForItems(this.getOrderItems(orderId).filter((item) => item.quantity > 0 && item.status !== "cancelled"));
-    for (const [menuItemId, amount] of usage.entries()) {
-      if (amount.largeBottles) this.applyAlcoholStockDelta(menuItemId, billId, { sealedLarge: -amount.largeBottles, openLargeMl: 0, sealedSmall: 0 });
-      if (amount.smallBottles) this.applyAlcoholStockDelta(menuItemId, billId, { sealedLarge: 0, openLargeMl: 0, sealedSmall: -amount.smallBottles });
-      if (amount.largeMl) this.consumeAlcoholLargeMl(menuItemId, billId, amount.largeMl);
-    }
+    deductAlcoholStockForPaidBillModel(this.orm, this.db, billId, orderId);
   }
 
-  private calculatePendingAlcoholUsage(): Map<string, { largeMl: number; largeBottles: number; smallBottles: number }> {
-    const rows = this.db
-      .prepare(
-        `SELECT oi.*
-         FROM order_items oi
-         JOIN orders o ON o.id = oi.order_id
-         LEFT JOIN bills b ON b.order_id = o.id
-         WHERE oi.status != 'cancelled'
-           AND oi.quantity > 0
-           AND o.status IN ('open', 'billed')
-           AND COALESCE(b.status, 'pending') != 'paid'`
-      )
-      .all() as OrderItemRow[];
-    return this.calculateAlcoholUsageForItems(rows);
-  }
-
-  private calculateAlcoholUsageForItems(items: OrderItemRow[]): Map<string, { largeMl: number; largeBottles: number; smallBottles: number }> {
-    const usage = new Map<string, { largeMl: number; largeBottles: number; smallBottles: number }>();
-    const add = (menuItemId: string, delta: Partial<{ largeMl: number; largeBottles: number; smallBottles: number }>) => {
-      const current = usage.get(menuItemId) ?? { largeMl: 0, largeBottles: 0, smallBottles: 0 };
-      usage.set(menuItemId, {
-        largeMl: current.largeMl + (delta.largeMl ?? 0),
-        largeBottles: current.largeBottles + (delta.largeBottles ?? 0),
-        smallBottles: current.smallBottles + (delta.smallBottles ?? 0)
-      });
-    };
-
-    for (const item of items) {
-      if (!item.menu_item_id) continue;
-      if (item.inventory_action_snapshot === "large_ml") {
-        add(item.menu_item_id, { largeMl: (item.variant_volume_ml ?? 0) * item.quantity });
-      } else if (item.inventory_action_snapshot === "small_bottle") {
-        add(item.menu_item_id, { smallBottles: item.quantity });
-      } else if (item.inventory_action_snapshot === "large_bottle") {
-        add(item.menu_item_id, { largeBottles: item.quantity });
-      }
-
-      for (const recipe of this.parseAlcoholRecipeSnapshot(item.alcohol_recipe_snapshot_json)) {
-        add(recipe.liquorMenuItemId, { largeMl: recipe.mlPerUnit * item.quantity });
-      }
-    }
-
-    return usage;
+  private calculatePendingAlcoholUsage(): AlcoholUsage {
+    return calculatePendingAlcoholUsageModel(this.db);
   }
 
   private snapshotAlcoholRecipe(menuItemId: string): string {
-    const recipeRows = this.db
-      .prepare("SELECT liquor_menu_item_id, ml_per_unit FROM alcohol_recipe_ingredients WHERE product_menu_item_id = ? ORDER BY id")
-      .all(menuItemId) as Array<{ liquor_menu_item_id: string; ml_per_unit: number }>;
-    return JSON.stringify(recipeRows.map((row) => ({ liquorMenuItemId: row.liquor_menu_item_id, mlPerUnit: row.ml_per_unit })));
-  }
-
-  private parseAlcoholRecipeSnapshot(snapshotJson: string): AlcoholRecipeSnapshotIngredient[] {
-    try {
-      const parsed = JSON.parse(snapshotJson || "[]") as AlcoholRecipeSnapshotIngredient[];
-      if (!Array.isArray(parsed)) return [];
-      return parsed.filter((entry) => typeof entry.liquorMenuItemId === "string" && Number.isFinite(entry.mlPerUnit) && entry.mlPerUnit > 0);
-    } catch {
-      return [];
-    }
+    return snapshotAlcoholRecipeModel(this.db, menuItemId);
   }
 
   private countAlcoholRecipeSnapshotUsage(menuItemId: string): number {
-    const rows = this.db
-      .prepare("SELECT alcohol_recipe_snapshot_json FROM order_items WHERE alcohol_recipe_snapshot_json LIKE ?")
-      .all(`%${menuItemId}%`) as Array<{ alcohol_recipe_snapshot_json: string }>;
-    return rows.filter((row) => this.parseAlcoholRecipeSnapshot(row.alcohol_recipe_snapshot_json).some((entry) => entry.liquorMenuItemId === menuItemId)).length;
-  }
-
-  private applyAlcoholStockDelta(
-    menuItemId: string,
-    billId: string,
-    delta: { sealedLarge: number; openLargeMl: number; sealedSmall: number },
-    sourceType = "bill_settlement"
-  ): void {
-    const stock = this.requireAlcoholStock(menuItemId);
-    const next = {
-      sealedLarge: stock.sealed_large_count + delta.sealedLarge,
-      openLargeMl: stock.open_large_ml + delta.openLargeMl,
-      sealedSmall: stock.sealed_small_count + delta.sealedSmall
-    };
-    if (sourceType === "bill_history_edit" && delta.openLargeMl > 0 && stock.large_bottle_ml > 0 && next.openLargeMl >= stock.large_bottle_ml) {
-      const restoredSealed = Math.floor(next.openLargeMl / stock.large_bottle_ml);
-      next.sealedLarge += restoredSealed;
-      next.openLargeMl -= restoredSealed * stock.large_bottle_ml;
-    }
-    this.writeAlcoholStock(menuItemId, next.sealedLarge, next.openLargeMl, next.sealedSmall, true);
-    this.recordAlcoholMovement({
-      menuItemId,
-      sourceType,
-      sourceId: billId,
-      deltaSealedLarge: next.sealedLarge - stock.sealed_large_count,
-      deltaOpenLargeMl: next.openLargeMl - stock.open_large_ml,
-      deltaSealedSmall: next.sealedSmall - stock.sealed_small_count,
-      balanceSealedLarge: next.sealedLarge,
-      balanceOpenLargeMl: next.openLargeMl,
-      balanceSealedSmall: next.sealedSmall
-    });
-  }
-
-  private consumeAlcoholLargeMl(menuItemId: string, billId: string, ml: number, sourceType = "bill_settlement"): void {
-    const stock = this.requireAlcoholStock(menuItemId);
-
-    let sealedLarge = stock.sealed_large_count;
-    let openLargeMl = stock.open_large_ml;
-    let remaining = ml;
-    while (remaining > 0) {
-      if (openLargeMl <= 0 && sealedLarge > 0) {
-        sealedLarge -= 1;
-        openLargeMl += stock.large_bottle_ml;
-      }
-      if (openLargeMl > 0) {
-        const used = Math.min(openLargeMl, remaining);
-        openLargeMl -= used;
-        remaining -= used;
-      } else {
-        openLargeMl -= remaining;
-        remaining = 0;
-      }
-    }
-    this.writeAlcoholStock(menuItemId, sealedLarge, openLargeMl, stock.sealed_small_count, true);
-    this.recordAlcoholMovement({
-      menuItemId,
-      sourceType,
-      sourceId: billId,
-      deltaSealedLarge: sealedLarge - stock.sealed_large_count,
-      deltaOpenLargeMl: openLargeMl - stock.open_large_ml,
-      deltaSealedSmall: 0,
-      balanceSealedLarge: sealedLarge,
-      balanceOpenLargeMl: openLargeMl,
-      balanceSealedSmall: stock.sealed_small_count
-    });
+    return countAlcoholRecipeSnapshotUsageModel(this.db, menuItemId);
   }
 
   private applyAlcoholUsageDeltaForHistoryEdit(
     billId: string,
-    before: Map<string, { largeMl: number; largeBottles: number; smallBottles: number }>,
-    after: Map<string, { largeMl: number; largeBottles: number; smallBottles: number }>
+    before: AlcoholUsage,
+    after: AlcoholUsage
   ): void {
-    const menuItemIds = new Set([...before.keys(), ...after.keys()]);
-    for (const menuItemId of menuItemIds) {
-      const oldUsage = before.get(menuItemId) ?? { largeMl: 0, largeBottles: 0, smallBottles: 0 };
-      const newUsage = after.get(menuItemId) ?? { largeMl: 0, largeBottles: 0, smallBottles: 0 };
-      const largeBottles = newUsage.largeBottles - oldUsage.largeBottles;
-      const smallBottles = newUsage.smallBottles - oldUsage.smallBottles;
-      const largeMl = newUsage.largeMl - oldUsage.largeMl;
-      if (largeBottles) {
-        this.applyAlcoholStockDelta(menuItemId, billId, { sealedLarge: -largeBottles, openLargeMl: 0, sealedSmall: 0 }, "bill_history_edit");
-      }
-      if (smallBottles) {
-        this.applyAlcoholStockDelta(menuItemId, billId, { sealedLarge: 0, openLargeMl: 0, sealedSmall: -smallBottles }, "bill_history_edit");
-      }
-      if (largeMl > 0) {
-        this.consumeAlcoholLargeMl(menuItemId, billId, largeMl, "bill_history_edit");
-      } else if (largeMl < 0) {
-        this.applyAlcoholStockDelta(menuItemId, billId, { sealedLarge: 0, openLargeMl: -largeMl, sealedSmall: 0 }, "bill_history_edit");
-      }
-    }
-  }
-
-  private parseTaxComponents(value: string | null | undefined): Array<{ name: string; rateBps: number }> {
-    if (!value) return DEFAULT_TAX_COMPONENTS;
-    try {
-      const parsed = JSON.parse(value) as Array<{ name?: unknown; rateBps?: unknown }>;
-      if (!Array.isArray(parsed)) return DEFAULT_TAX_COMPONENTS;
-      if (parsed.length === 0) return [];
-      return parsed
-        .map((component) => ({ name: String(component.name ?? "Tax"), rateBps: Number(component.rateBps ?? 0) }))
-        .filter((component) => component.name && !this.isVatComponent(component.name) && Number.isFinite(component.rateBps));
-    } catch {
-      return DEFAULT_TAX_COMPONENTS;
-    }
-  }
-
-  private isVatComponent(name: string): boolean {
-    return /\bvat\b/i.test(name);
-  }
-
-  private parseTaxBreakdown(value: string | null | undefined): TaxComponentAmount[] {
-    if (!value) return [];
-    try {
-      const parsed = JSON.parse(value) as TaxComponentAmount[];
-      return Array.isArray(parsed) ? parsed.filter((component) => !this.isVatComponent(component.name)) : [];
-    } catch {
-      return [];
-    }
+    applyAlcoholUsageDeltaForHistoryEditModel(this.orm, this.db, billId, before, after);
   }
 
   private recordBillRevision(
@@ -3707,49 +991,7 @@ export class OrderService {
       finalTotalPaise: totals.totalPaise
     }
   ): void {
-    this.orm
-      .insert(billRevisions)
-      .values({
-        id: makeId("billrev"),
-        billId,
-        revisionNumber,
-        subtotalPaise: totals.subtotalPaise,
-        taxPaise: totals.taxPaise,
-        totalPaise: totals.totalPaise,
-        discountPaise: financials.discountPaise,
-        tipPaise: financials.tipPaise,
-        finalTotalPaise: financials.finalTotalPaise,
-        taxBreakdownJson: JSON.stringify(totals.taxBreakdown),
-        reason,
-        approvedBy: changedBy,
-        createdAt: now
-      })
-      .run();
-  }
-
-  private hashManagerPin(pin: string): string {
-    const salt = randomBytes(16).toString("hex");
-    const hash = pbkdf2Sync(pin, salt, 210_000, 32, "sha256").toString("hex");
-    return `pbkdf2-sha256:210000:${salt}:${hash}`;
-  }
-
-  private legacyHashManagerPin(pin: string): string {
-    return createHash("sha256").update(`gaurav-pos:${pin}`).digest("hex");
-  }
-
-  private verifyManagerPin(pin: string, configuredHash: string): "valid" | "valid_legacy" | "invalid" {
-    const parts = configuredHash.split(":");
-    if (parts[0] === "pbkdf2-sha256" && parts.length === 4) {
-      const iterations = Number(parts[1]);
-      const salt = parts[2];
-      const hash = parts[3];
-      if (!Number.isInteger(iterations) || iterations < 100_000 || !salt || !hash) return "invalid";
-      const expected = Buffer.from(hash, "hex");
-      if (expected.length === 0) return "invalid";
-      const actual = pbkdf2Sync(pin, salt, iterations, expected.length, "sha256");
-      return timingSafeEqual(actual, expected) ? "valid" : "invalid";
-    }
-    return this.legacyHashManagerPin(pin) === configuredHash ? "valid_legacy" : "invalid";
+    recordBillRevisionModel(this.orm, billId, revisionNumber, totals, reason, changedBy, now, financials);
   }
 
   private verifyManagerApproval(
@@ -3759,25 +1001,19 @@ export class OrderService {
     aggregateId: string,
     requestedBy = "captain"
   ): void {
-    const configuredHash = this.getSetting("manager_pin_hash");
-    if (!configuredHash) throw new DomainError("Set a manager PIN before using manager-only actions", 403);
-    if (!approval) throw new DomainError("Manager approval is required for this action", 403);
-    const verification = this.verifyManagerPin(approval.pin, configuredHash);
-    if (verification === "invalid") throw new DomainError("Manager PIN is incorrect", 403);
-    if (verification === "valid_legacy") this.upsertSetting("manager_pin_hash", this.hashManagerPin(approval.pin));
-    this.orm
-      .insert(managerApprovals)
-      .values({
-        id: makeId("approval"),
-        action,
-        aggregateType,
-        aggregateId,
-        reason: approval.reason,
-        approvedBy: approval.approvedBy,
-        requestedBy,
-        createdAt: new Date().toISOString()
-      })
-      .run();
+    verifyApproval({
+      orm: this.orm,
+      approval,
+      configuredHash: this.getSetting("manager_pin_hash"),
+      settingKey: "manager_pin_hash",
+      missingConfiguredMessage: "Set a manager PIN before using manager-only actions",
+      missingApprovalMessage: "Manager approval is required for this action",
+      invalidPinMessage: "Manager PIN is incorrect",
+      action,
+      aggregateType,
+      aggregateId,
+      requestedBy
+    });
   }
 
   private verifyMasterApproval(
@@ -3787,355 +1023,79 @@ export class OrderService {
     aggregateId: string,
     requestedBy = "owner"
   ): void {
-    const configuredHash = this.getSetting("master_pin_hash");
-    if (!configuredHash) throw new DomainError("Create a Master PIN before using owner-only actions", 403);
-    if (!approval) throw new DomainError("Master PIN is required for this action", 403);
-    const verification = this.verifyManagerPin(approval.pin, configuredHash);
-    if (verification === "invalid") throw new DomainError("Master PIN is incorrect", 403);
-    if (verification === "valid_legacy") this.upsertSetting("master_pin_hash", this.hashManagerPin(approval.pin));
-    this.orm
-      .insert(managerApprovals)
-      .values({
-        id: makeId("approval"),
-        action,
-        aggregateType,
-        aggregateId,
-        reason: approval.reason,
-        approvedBy: approval.approvedBy,
-        requestedBy,
-        createdAt: new Date().toISOString()
-      })
-      .run();
+    verifyApproval({
+      orm: this.orm,
+      approval,
+      configuredHash: this.getSetting("master_pin_hash"),
+      settingKey: "master_pin_hash",
+      missingConfiguredMessage: "Create a Master PIN before using owner-only actions",
+      missingApprovalMessage: "Master PIN is required for this action",
+      invalidPinMessage: "Master PIN is incorrect",
+      action,
+      aggregateType,
+      aggregateId,
+      requestedBy
+    });
   }
 
   private upsertSetting(key: string, value: string): void {
-    const now = new Date().toISOString();
-    this.orm
-      .insert(hubSettings)
-      .values({ key, value, updatedAt: now })
-      .onConflictDoUpdate({ target: hubSettings.key, set: { value, updatedAt: now } })
-      .run();
+    writeSettingRecord(this.orm, key, value);
   }
 
-  private requireSaleGroup(id: string): SaleGroupRow {
-    const group = this.db
-      .prepare(
-        `SELECT id, name, kind, report_label, ticket_label, tax_components_json, default_production_unit_id
-         FROM sale_groups
-         WHERE id = ? AND active = 1`
-      )
-      .get(id) as SaleGroupRow | undefined;
-    if (!group) throw new DomainError("Sale group not found", 404);
-    return group;
+  private requireSaleGroup(id: string) {
+    return requireSaleGroupModel(this.db, id);
   }
 
   private findMenuItemIdByName(name: string): string | null {
-    const row = this.db
-      .prepare("SELECT id FROM menu_items WHERE lower(name) = lower(?) LIMIT 1")
-      .get(name.trim()) as { id: string } | undefined;
-    return row?.id ?? null;
+    return findMenuItemIdByNameModel(this.db, name);
   }
 
   private resolveProductionUnitRef(value: string | null): string | null {
-    const ref = value?.trim();
-    if (!ref) return null;
-    const row = this.db
-      .prepare("SELECT id FROM production_units WHERE active = 1 AND (lower(id) = lower(?) OR lower(name) = lower(?)) LIMIT 1")
-      .get(ref, ref) as { id: string } | undefined;
-    if (!row) throw new DomainError(`Kitchen/counter "${ref}" not found`);
-    return row.id;
+    return resolveProductionUnitRefModel(this.db, value);
   }
 
   private resolveSaleGroupRef(value: string): string {
-    const ref = value.trim();
-    const row = this.db
-      .prepare("SELECT id FROM sale_groups WHERE active = 1 AND (lower(id) = lower(?) OR lower(name) = lower(?) OR lower(report_label) = lower(?)) LIMIT 1")
-      .get(ref, ref, ref) as { id: string } | undefined;
-    if (!row) throw new DomainError(`Sale category "${ref}" not found`);
-    return row.id;
+    return resolveSaleGroupRefModel(this.db, value);
   }
 
   private resolvePlainLiquorRef(value: string): string {
-    const ref = value.trim();
-    const row = this.db
-      .prepare(
-        `SELECT mi.id
-         FROM menu_items mi
-         JOIN alcohol_profiles ap ON ap.menu_item_id = mi.id
-         WHERE ap.type = 'plain_liquor'
-           AND mi.active = 1
-           AND (lower(mi.id) = lower(?) OR lower(mi.name) = lower(?))
-         LIMIT 1`
-      )
-      .get(ref, ref) as { id: string } | undefined;
-    if (!row) throw new DomainError(`Plain liquor "${ref}" not found`);
-    return row.id;
+    return resolvePlainLiquorRefModel(this.db, value);
   }
 
   private parseAlcoholRecipeCsv(value: string | null): Array<{ liquorMenuItemId: string; mlPerUnit: number }> {
-    if (!value?.trim()) return [];
-    return value
-      .split(/[;|]/)
-      .map((entry) => entry.trim())
-      .filter(Boolean)
-      .map((entry) => {
-        const [name, ml] = entry.split(":").map((part) => part.trim());
-        if (!name || !ml) throw new DomainError(`Recipe entry "${entry}" must look like Whisky:60`);
-        return { liquorMenuItemId: this.resolvePlainLiquorRef(name), mlPerUnit: this.csvInteger(ml, 0) };
-      });
-  }
-
-  private parseCsvRows(csv: string): CsvRow[] {
-    const records = this.parseCsvRecords(csv);
-    if (records.length < 2) throw new DomainError("CSV needs a header row and at least one item row");
-    const headerRecord = records[0];
-    if (!headerRecord) throw new DomainError("CSV header row is empty");
-    const headers = headerRecord.map((header) => this.normalizeCsvHeader(header));
-    if (!headers.some(Boolean)) throw new DomainError("CSV header row is empty");
-    return records
-      .slice(1)
-      .map((cells, index) => ({
-        rowNumber: index + 2,
-        values: Object.fromEntries(headers.map((header, cellIndex) => [header, (cells[cellIndex] ?? "").trim()]))
-      }))
-      .filter((row) => Object.values(row.values).some((value) => value.length > 0));
-  }
-
-  private parseCsvRecords(csv: string): string[][] {
-    const records: string[][] = [];
-    let row: string[] = [];
-    let cell = "";
-    let quoted = false;
-    for (let index = 0; index < csv.length; index += 1) {
-      const char = csv[index];
-      const next = csv[index + 1];
-      if (char === "\"") {
-        if (quoted && next === "\"") {
-          cell += "\"";
-          index += 1;
-        } else {
-          quoted = !quoted;
-        }
-      } else if (char === "," && !quoted) {
-        row.push(cell);
-        cell = "";
-      } else if ((char === "\n" || char === "\r") && !quoted) {
-        if (char === "\r" && next === "\n") index += 1;
-        row.push(cell);
-        if (row.some((value) => value.trim().length > 0)) records.push(row);
-        row = [];
-        cell = "";
-      } else {
-        cell += char;
-      }
-    }
-    row.push(cell);
-    if (row.some((value) => value.trim().length > 0)) records.push(row);
-    if (quoted) throw new DomainError("CSV has an unclosed quoted cell");
-    return records;
-  }
-
-  private normalizeCsvHeader(value: string): string {
-    return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
-  }
-
-  private csvText(row: CsvRow, keys: string[]): string | null {
-    for (const key of keys) {
-      const value = row.values[this.normalizeCsvHeader(key)];
-      if (value?.trim()) return value.trim();
-    }
-    return null;
-  }
-
-  private requireCsvText(row: CsvRow, keys: string[]): string {
-    const value = this.csvText(row, keys);
-    if (!value) throw new DomainError(`Missing ${(keys[0] ?? "value").replaceAll("_", " ")}`);
-    return value;
-  }
-
-  private csvMoneyToPaise(value: string): number {
-    const amount = Number(value.replace(/[₹,\s]/g, ""));
-    if (!Number.isFinite(amount) || amount <= 0) throw new DomainError(`Invalid price "${value}"`);
-    return Math.round(amount * 100);
-  }
-
-  private csvMoneyToPaiseOptional(value: string | null): number {
-    if (!value?.trim()) return 0;
-    const amount = Number(value.replace(/[₹,\s]/g, ""));
-    if (!Number.isFinite(amount) || amount < 0) throw new DomainError(`Invalid price "${value}"`);
-    return Math.round(amount * 100);
-  }
-
-  private csvInteger(value: string | null, fallback: number): number {
-    if (!value?.trim()) return fallback;
-    const parsed = Number(value.replace(/,/g, "").trim());
-    if (!Number.isInteger(parsed)) throw new DomainError(`Invalid number "${value}"`);
-    return parsed;
-  }
-
-  private csvBoolean(value: string | null, fallback: boolean): boolean {
-    if (!value?.trim()) return fallback;
-    const normalized = value.trim().toLowerCase();
-    if (["true", "yes", "y", "1", "active"].includes(normalized)) return true;
-    if (["false", "no", "n", "0", "inactive", "disabled"].includes(normalized)) return false;
-    throw new DomainError(`Invalid active value "${value}"`);
+    return parseAlcoholRecipeCsvModel(this.db, value);
   }
 
   private defaultAlcoholProductionUnitId(): string | null {
-    const group = this.requireSaleGroup("sg-alcohol");
-    if (group.default_production_unit_id) return group.default_production_unit_id;
-    const bar = this.db
-      .prepare("SELECT id FROM production_units WHERE active = 1 AND lower(name) LIKE '%bar%' ORDER BY name LIMIT 1")
-      .get() as { id: string } | undefined;
-    return bar?.id ?? null;
+    return defaultAlcoholProductionUnitIdModel(this.db);
   }
 
   private assertAlcoholRecipeMatchesType(type: "plain_liquor" | "prepared_product", ingredients: CreateAlcoholItemInput["recipeIngredients"]): void {
-    if (type === "plain_liquor" && (ingredients?.length ?? 0) > 0) {
-      throw new DomainError("Plain liquor cannot have a cocktail recipe");
-    }
+    assertAlcoholRecipeMatchesTypeModel(type, ingredients);
   }
 
   private assertAlcoholVariantsMatchType(type: "plain_liquor" | "prepared_product", variants: CreateAlcoholItemInput["variants"]): void {
-    if (type !== "prepared_product") return;
-    const variant = variants[0];
-    if (
-      variants.length !== 1 ||
-      !variant ||
-      variant.kind !== "default" ||
-      variant.inventoryAction !== "none" ||
-      (variant.volumeMl ?? null) !== null
-    ) {
-      throw new DomainError("Prepared alcohol products use one regular non-stock variation");
-    }
+    assertAlcoholVariantsMatchTypeModel(type, variants);
   }
 
   private assertAlcoholHasSellableVariant(active: boolean, variants?: CreateAlcoholItemInput["variants"], menuItemId?: string): void {
-    if (!active) return;
-    if (variants) {
-      if (!variants.some((variant) => variant.active !== false)) throw new DomainError("Active alcohol items need at least one active variation");
-      return;
-    }
-    if (!menuItemId) throw new DomainError("At least one alcohol variation is required");
-    const activeVariantCount =
-      this.orm
-        .select({ count: count() })
-        .from(menuItemVariants)
-        .where(and(eq(menuItemVariants.menuItemId, menuItemId), eq(menuItemVariants.active, true)))
-        .get()?.count ?? 0;
-    if (activeVariantCount === 0) throw new DomainError("Active alcohol items need at least one active variation");
+    assertAlcoholHasSellableVariantModel(this.orm, active, variants, menuItemId);
   }
 
   private replaceAlcoholVariants(menuItemId: string, variants: CreateAlcoholItemInput["variants"]): void {
-    const existing = this.orm.select({ id: menuItemVariants.id }).from(menuItemVariants).where(eq(menuItemVariants.menuItemId, menuItemId)).all();
-    const keptIds = new Set<string>();
-    variants.forEach((variant, index) => {
-      const id = variant.id ?? `${menuItemId}-${variant.kind ?? "variant"}-${index}`;
-      const existingVariant = variant.id
-        ? this.orm.select({ menuItemId: menuItemVariants.menuItemId }).from(menuItemVariants).where(eq(menuItemVariants.id, variant.id)).get()
-        : undefined;
-      if (existingVariant && existingVariant.menuItemId !== menuItemId) throw new DomainError("Alcohol variation belongs to another item");
-      keptIds.add(id);
-      const row = {
-          menuItemId,
-          label: variant.label,
-          kind: variant.kind ?? "default",
-          pricePaise: variant.pricePaise,
-          volumeMl: variant.volumeMl ?? null,
-          inventoryAction: variant.inventoryAction ?? "none",
-          sortOrder: variant.sortOrder ?? index,
-          active: variant.active ?? true
-      };
-      const updated = this.orm.update(menuItemVariants).set(row).where(and(eq(menuItemVariants.id, id), eq(menuItemVariants.menuItemId, menuItemId))).run();
-      if (updated.changes === 0) {
-        this.orm
-          .insert(menuItemVariants)
-          .values({
-            id,
-            ...row
-          })
-          .run();
-      }
-    });
-    for (const variant of existing) {
-      if (keptIds.has(variant.id)) continue;
-      const usage = this.orm.select({ count: count() }).from(orderItems).where(eq(orderItems.menuItemVariantId, variant.id)).get()?.count ?? 0;
-      if (usage > 0) {
-        this.orm.update(menuItemVariants).set({ active: false }).where(eq(menuItemVariants.id, variant.id)).run();
-      } else {
-        this.orm.delete(menuItemVariants).where(eq(menuItemVariants.id, variant.id)).run();
-      }
-    }
+    replaceAlcoholVariantsModel(this.orm, menuItemId, variants);
   }
 
   private replaceAlcoholRecipe(menuItemId: string, ingredients: CreateAlcoholItemInput["recipeIngredients"]): void {
-    this.orm.delete(alcoholRecipeIngredients).where(eq(alcoholRecipeIngredients.productMenuItemId, menuItemId)).run();
-    for (const ingredient of ingredients ?? []) {
-      const liquor = this.orm
-        .select({ type: alcoholProfiles.type })
-        .from(alcoholProfiles)
-        .where(eq(alcoholProfiles.menuItemId, ingredient.liquorMenuItemId))
-        .get();
-      if (!liquor || liquor.type !== "plain_liquor") throw new DomainError("Cocktail recipes can only use plain liquor items");
-      this.orm
-        .insert(alcoholRecipeIngredients)
-        .values({
-          id: makeId("recipe"),
-          productMenuItemId: menuItemId,
-          liquorMenuItemId: ingredient.liquorMenuItemId,
-          mlPerUnit: ingredient.mlPerUnit
-        })
-        .run();
-    }
+    replaceAlcoholRecipeModel(this.orm, menuItemId, ingredients);
   }
 
-  private listAlcoholRecipes(): Map<string, Array<{ id: string; liquor_menu_item_id: string; liquor_name: string; ml_per_unit: number }>> {
-    const rows = this.db
-      .prepare(
-        `SELECT ari.id, ari.product_menu_item_id, ari.liquor_menu_item_id, mi.name AS liquor_name, ari.ml_per_unit
-         FROM alcohol_recipe_ingredients ari
-         JOIN menu_items mi ON mi.id = ari.liquor_menu_item_id
-         ORDER BY mi.name`
-      )
-      .all() as Array<{ id: string; product_menu_item_id: string; liquor_menu_item_id: string; liquor_name: string; ml_per_unit: number }>;
-    const recipes = new Map<string, Array<{ id: string; liquor_menu_item_id: string; liquor_name: string; ml_per_unit: number }>>();
-    for (const row of rows) {
-      const list = recipes.get(row.product_menu_item_id) ?? [];
-      list.push({ id: row.id, liquor_menu_item_id: row.liquor_menu_item_id, liquor_name: row.liquor_name, ml_per_unit: row.ml_per_unit });
-      recipes.set(row.product_menu_item_id, list);
-    }
-    return recipes;
-  }
-
-  private requireAlcoholStock(menuItemId: string): AlcoholStockRow {
-    const row = this.db
-      .prepare(
-        `SELECT asl.menu_item_id, asl.sealed_large_count, asl.open_large_ml, asl.sealed_small_count,
-          ap.large_bottle_ml, ap.small_bottle_ml
-         FROM alcohol_stock_levels asl
-         JOIN alcohol_profiles ap ON ap.menu_item_id = asl.menu_item_id
-         WHERE asl.menu_item_id = ?`
-      )
-      .get(menuItemId) as AlcoholStockRow | undefined;
-    if (!row) throw new DomainError("Alcohol stock item not found", 404);
-    return row;
+  private requireAlcoholStock(menuItemId: string) {
+    return requireAlcoholStockModel(this.db, menuItemId);
   }
 
   private writeAlcoholStock(menuItemId: string, sealedLarge: number, openLargeMl: number, sealedSmall: number, allowNegative = false): void {
-    if (!allowNegative && (sealedLarge < 0 || openLargeMl < 0 || sealedSmall < 0)) {
-      throw new DomainError("Alcohol stock cannot go below zero");
-    }
-
-    this.orm
-      .update(alcoholStockLevels)
-      .set({
-        sealedLargeCount: sealedLarge,
-        openLargeMl,
-        sealedSmallCount: sealedSmall,
-        updatedAt: new Date().toISOString()
-      })
-      .where(eq(alcoholStockLevels.menuItemId, menuItemId))
-      .run();
+    writeAlcoholStockModel(this.orm, menuItemId, sealedLarge, openLargeMl, sealedSmall, allowNegative);
   }
 
   private recordAlcoholMovement(input: {
@@ -4150,70 +1110,15 @@ export class OrderService {
     balanceSealedSmall: number;
     approvedBy?: string | null;
   }): void {
-    this.orm
-      .insert(alcoholStockMovements)
-      .values({
-        id: makeId("stockmove"),
-        menuItemId: input.menuItemId,
-        sourceType: input.sourceType,
-        sourceId: input.sourceId,
-        deltaSealedLarge: input.deltaSealedLarge,
-        deltaOpenLargeMl: input.deltaOpenLargeMl,
-        deltaSealedSmall: input.deltaSealedSmall,
-        balanceSealedLarge: input.balanceSealedLarge,
-        balanceOpenLargeMl: input.balanceOpenLargeMl,
-        balanceSealedSmall: input.balanceSealedSmall,
-        approvedBy: input.approvedBy ?? null,
-        createdAt: new Date().toISOString()
-      })
-      .run();
-  }
-
-  private orderInputForActor(input: SubmitOrderInput, actor?: DeviceActor): Pick<SubmitOrderInput, "tableId" | "pax" | "orderType"> & { captainId: string } {
-    return {
-      tableId: input.tableId,
-      captainId: actor?.name || input.captainId || "captain",
-      pax: input.pax,
-      orderType: input.orderType
-    };
-  }
-
-  private assertCanEditOrder(order: OrderRow, actor?: DeviceActor): void {
-    if (!actor || ["admin", "captain", "waiter"].includes(actor.role)) return;
-    throw new DomainError("Device role cannot edit orders", 403);
+    recordAlcoholMovementModel(this.orm, input);
   }
 
   private assertCanMoveOrder(order: OrderRow, actor: DeviceActor, action: "table" | "items"): void {
-    if (actor.role === "admin") {
-      if (action === "items" && order.status !== "open") throw new DomainError("Only running tables can have selected items shifted");
-      if (action === "table" && !["open", "billed"].includes(order.status)) throw new DomainError("Only running or billed tables can be shifted");
-      return;
-    }
-    if (actor.role !== "captain") throw new DomainError("Only captains can shift tables from the APK", 403);
-    if (order.status !== "open") throw new DomainError("Captains can shift only running tables before billing", 403);
+    assertCanMoveOrderModel(order, actor, action);
   }
 
   private createOrder(input: Pick<SubmitOrderInput, "tableId" | "pax" | "orderType"> & { captainId: string }, posDayId: string, now: string, actor?: DeviceActor): OrderRow {
-    const orderId = makeId("order");
-    this.orm
-      .insert(orders)
-      .values({
-        id: orderId,
-        tableId: input.tableId,
-        posDayId,
-        orderType: input.orderType,
-        status: "open",
-        pax: input.pax,
-        captainId: input.captainId,
-        captainDeviceId: actor && ["captain", "waiter"].includes(actor.role) ? actor.id : null,
-        createdByDeviceId: actor?.id ?? null,
-        createdByRole: actor?.role ?? null,
-        createdAt: now,
-        updatedAt: now
-      })
-      .run();
-
-    return this.requireEditableOrder(orderId);
+    return createOrderRecord(this.orm, input, posDayId, now, actor);
   }
 
   private applyOrderItemDiff(
@@ -4224,200 +1129,16 @@ export class OrderService {
     now: string,
     cancelMissing = false
   ): KotItemChange[] {
-    const previousByKey = new Map(previousItems.map((item) => [this.itemKey(item.menu_item_id, item.id, item.menu_item_variant_id), item]));
-    const requestedByKey = new Map<string, RequestedOrderItem>();
-
-    for (const item of requestedItems) {
-      const menuItem = item.menuItemId ? menuById.get(item.menuItemId) : undefined;
-      if (item.menuItemId && !menuItem) throw new DomainError(`Menu item ${item.menuItemId} is not available`);
-      const baseKey = item.itemKey;
-      const basePrevious = previousByKey.get(baseKey);
-      const key = this.orderItemDiffKey(item, basePrevious);
-      const current = requestedByKey.get(key);
-      const previous = key === baseKey ? basePrevious : undefined;
-      const startingNote = current?.note ?? (cancelMissing ? null : previous?.note ?? null);
-      requestedByKey.set(key, {
-        itemKey: key,
-        menuItemId: item.menuItemId,
-        menuItemVariantId: item.menuItemVariantId,
-        quantity: (current?.quantity ?? (cancelMissing ? 0 : previous?.quantity) ?? 0) + item.quantity,
-        name: item.name,
-        variantName: item.variantName,
-        variantVolumeMl: item.variantVolumeMl,
-        inventoryAction: item.inventoryAction,
-        alcoholRecipeSnapshotJson: item.alcoholRecipeSnapshotJson,
-        unitPricePaise: item.unitPricePaise,
-        productionUnitId: item.productionUnitId,
-        saleGroupId: item.saleGroupId,
-        saleGroupName: item.saleGroupName,
-        saleGroupKind: item.saleGroupKind,
-        ticketLabel: item.ticketLabel,
-        taxComponentsJson: item.taxComponentsJson,
-        note: this.combineItemNotes(startingNote, item.note),
-        isOpenItem: item.isOpenItem
-      });
-    }
-
-    const changes: KotItemChange[] = [];
-    const allKeys = new Set(cancelMissing ? [...requestedByKey.keys(), ...previousByKey.keys()] : [...requestedByKey.keys()]);
-
-    for (const key of allKeys) {
-      const previous = previousByKey.get(key);
-      const requested = requestedByKey.get(key);
-      const menuItemId = requested?.menuItemId ?? previous?.menu_item_id;
-      const menuItemVariantId = requested?.menuItemVariantId ?? previous?.menu_item_variant_id ?? null;
-      let changedOrderItemId = previous?.id ?? null;
-
-      const menuItem = menuItemId ? menuById.get(menuItemId) : undefined;
-      if (menuItemId && !menuItem) throw new DomainError(`Menu item ${menuItemId} is not available`);
-
-      const oldQuantity = previous?.quantity ?? 0;
-      const newQuantity = requested?.quantity ?? 0;
-      const delta = newQuantity - oldQuantity;
-      const nextNote = requested ? requested.note : previous?.note ?? null;
-      const noteChanged = (previous?.note ?? null) !== (nextNote ?? null);
-      const unitPricePaise = requested?.unitPricePaise ?? previous?.unit_price_paise ?? menuItem?.price_paise ?? 0;
-      const variantName = requested?.variantName ?? previous?.variant_name_snapshot ?? "";
-      const variantVolumeMl = requested?.variantVolumeMl ?? previous?.variant_volume_ml ?? null;
-      const inventoryAction = requested?.inventoryAction ?? previous?.inventory_action_snapshot ?? "none";
-      const alcoholRecipeSnapshotJson = previous?.alcohol_recipe_snapshot_json ?? requested?.alcoholRecipeSnapshotJson ?? "[]";
-      const productionUnitId = requested?.productionUnitId ?? previous?.production_unit_id ?? menuItem?.production_unit_id ?? null;
-      const saleGroupId = requested?.saleGroupId ?? previous?.sale_group_id ?? menuItem?.sale_group_id ?? "sg-food";
-      const saleGroupName = requested?.saleGroupName ?? previous?.sale_group_name_snapshot ?? menuItem?.sale_group_name ?? "Food";
-      const saleGroupKind = requested?.saleGroupKind ?? previous?.sale_group_kind_snapshot ?? menuItem?.sale_group_kind ?? "food";
-      const ticketLabel = (requested?.ticketLabel ?? previous?.ticket_label_snapshot ?? menuItem?.ticket_label ?? "KOT") as "KOT" | "BOT";
-      const taxComponentsJson = requested?.taxComponentsJson ?? previous?.tax_components_json ?? menuItem?.tax_components_json ?? "[]";
-      const isOpenItem = requested?.isOpenItem ?? Boolean(previous?.is_open_item);
-
-      if (newQuantity > 0 && previous) {
-        this.orm
-          .update(orderItems)
-          .set({
-            quantity: newQuantity,
-            status: "active",
-            updatedAt: now,
-            menuItemVariantId,
-            nameSnapshot: requested?.name ?? previous.name_snapshot,
-            variantNameSnapshot: variantName,
-            variantVolumeMl,
-            inventoryActionSnapshot: inventoryAction,
-            unitPricePaise,
-            productionUnitId,
-            saleGroupId,
-            saleGroupNameSnapshot: saleGroupName,
-            saleGroupKindSnapshot: saleGroupKind,
-            ticketLabelSnapshot: ticketLabel,
-            taxComponentsJson,
-            note: nextNote,
-            isOpenItem
-          })
-          .where(eq(orderItems.id, previous.id))
-          .run();
-      } else if (newQuantity > 0) {
-        const orderItemId = makeId("item");
-        changedOrderItemId = orderItemId;
-        this.orm
-          .insert(orderItems)
-          .values({
-            id: orderItemId,
-            orderId,
-            menuItemId: menuItem?.id ?? null,
-            menuItemVariantId,
-            nameSnapshot: requested?.name ?? menuItem?.name ?? "Open item",
-            variantNameSnapshot: variantName,
-            variantVolumeMl,
-            inventoryActionSnapshot: inventoryAction,
-            alcoholRecipeSnapshotJson,
-            unitPricePaise,
-            quantity: newQuantity,
-            productionUnitId,
-            saleGroupId,
-            saleGroupNameSnapshot: saleGroupName,
-            saleGroupKindSnapshot: saleGroupKind,
-            ticketLabelSnapshot: ticketLabel,
-            taxComponentsJson,
-            isOpenItem,
-            note: nextNote,
-            status: "active",
-            createdAt: now,
-            updatedAt: now
-          })
-          .run();
-      } else if (previous) {
-        this.orm
-          .update(orderItems)
-          .set({ quantity: 0, status: "cancelled", updatedAt: now })
-          .where(eq(orderItems.id, previous.id))
-          .run();
-      }
-
-      if ((delta !== 0 || noteChanged) && productionUnitId) {
-        const unit = menuItem ? null : this.getUnit(productionUnitId);
-        changes.push({
-          menuItemId: menuItem?.id ?? null,
-          orderItemId: changedOrderItemId,
-          name: requested?.name ?? menuItem?.name ?? "Open item",
-          quantityDelta: delta,
-          note: nextNote,
-          noteChanged,
-          productionUnitId,
-          productionUnitName: menuItem?.unit_name ?? unit?.name ?? "Kitchen",
-          printerHost: menuItem?.printer_host ?? unit?.printer_host ?? null,
-          printerPort: menuItem?.printer_port ?? unit?.printer_port ?? null,
-          printerName: menuItem?.printer_name ?? unit?.printer_name ?? null,
-          ticketLabel
-        });
-      }
-    }
-
-    return changes;
-  }
-
-  private orderItemDiffKey(item: RequestedOrderItem, previous?: OrderItemRow): string {
-    if (!previous || !item.menuItemId || this.canMergeRequestedOrderItemWithPrevious(item, previous)) return item.itemKey;
-    return `${item.itemKey}:snapshot:${this.requestedOrderItemSnapshotHash(item)}`;
-  }
-
-  private canMergeRequestedOrderItemWithPrevious(requested: RequestedOrderItem, previous: OrderItemRow): boolean {
-    return (
-      requested.name === previous.name_snapshot &&
-      requested.variantName === previous.variant_name_snapshot &&
-      requested.variantVolumeMl === previous.variant_volume_ml &&
-      requested.inventoryAction === previous.inventory_action_snapshot &&
-      requested.alcoholRecipeSnapshotJson === previous.alcohol_recipe_snapshot_json &&
-      requested.unitPricePaise === previous.unit_price_paise &&
-      requested.productionUnitId === previous.production_unit_id &&
-      requested.saleGroupId === previous.sale_group_id &&
-      requested.saleGroupName === previous.sale_group_name_snapshot &&
-      requested.saleGroupKind === previous.sale_group_kind_snapshot &&
-      requested.ticketLabel === previous.ticket_label_snapshot &&
-      requested.taxComponentsJson === previous.tax_components_json &&
-      requested.isOpenItem === Boolean(previous.is_open_item)
-    );
-  }
-
-  private requestedOrderItemSnapshotHash(item: RequestedOrderItem): string {
-    return createHash("sha256")
-      .update(
-        JSON.stringify({
-          name: item.name,
-          variantName: item.variantName,
-          variantVolumeMl: item.variantVolumeMl,
-          inventoryAction: item.inventoryAction,
-          alcoholRecipeSnapshotJson: item.alcoholRecipeSnapshotJson,
-          unitPricePaise: item.unitPricePaise,
-          productionUnitId: item.productionUnitId,
-          saleGroupId: item.saleGroupId,
-          saleGroupName: item.saleGroupName,
-          saleGroupKind: item.saleGroupKind,
-          ticketLabel: item.ticketLabel,
-          taxComponentsJson: item.taxComponentsJson,
-          note: item.note,
-          isOpenItem: item.isOpenItem
-        })
-      )
-      .digest("hex")
-      .slice(0, 16);
+    return applyOrderItemDiffModel({
+      orm: this.orm,
+      orderId,
+      requestedItems,
+      previousItems,
+      menuById,
+      now,
+      cancelMissing,
+      getUnit: (productionUnitId) => this.getUnit(productionUnitId)
+    });
   }
 
   private createKotsForChanges(
@@ -4433,853 +1154,135 @@ export class OrderService {
     printTickets = true,
     note?: string
   ): TicketCreationResult {
-    const meaningfulChanges = changes.filter((change) => (change.quantityDelta !== 0 || change.noteChanged) && change.productionUnitId);
-    if (meaningfulChanges.length === 0) return { kotIds: [], printJobIds: [] };
-
-    const grouped = new Map<string, KotItemChange[]>();
-    for (const change of meaningfulChanges) {
-      const type: KotType = typeOverride ?? (forceCancelled
-        ? "cancelled"
-        : change.quantityDelta > 0 && isNewOrder
-          ? "new"
-          : change.quantityDelta >= 0
-            ? "modified"
-            : "partial_cancel");
-      const key = `${change.productionUnitId}:${type}:${change.ticketLabel}`;
-      grouped.set(key, [...(grouped.get(key) ?? []), change]);
-    }
-
-    const kotIds: string[] = [];
-    const printJobIds: string[] = [];
-    for (const [key, items] of grouped) {
-      const [productionUnitId, type, ticketLabel] = key.split(":") as [string, KotType, "KOT" | "BOT"];
-      const firstItem = items[0];
-      if (!firstItem) continue;
-
-      const kotId = makeId("kot");
-      const sequence = this.sequenceForKotGroup(sequenceOrderId ?? order.id, productionUnitId, ticketLabel);
-      this.orm
-        .insert(kots)
-        .values({
-          id: kotId,
-          orderId: order.id,
-          productionUnitId,
-          type,
-	          status: "queued",
-	          sequence,
-	          ticketLabel,
-	          reason: reason ?? null,
-          note: note?.trim() || null,
-          createdAt: now
-        })
-        .run();
-
-      const ticketItems: KotTicketItem[] = [];
-      for (const item of items) {
-        const kotItemId = makeId("kotitem");
-        this.orm
-          .insert(kotItems)
-          .values({
-            id: kotItemId,
-            kotId,
-            orderItemId: item.orderItemId,
-            menuItemId: item.menuItemId,
-            nameSnapshot: item.name,
-            quantityDelta: item.quantityDelta,
-            noteSnapshot: item.note?.trim() || null
-          })
-          .run();
-        ticketItems.push({ name: item.name, quantityDelta: item.quantityDelta, note: item.note });
+    return createKotsForChangesModel({
+      orm: this.orm,
+      order,
+      table,
+      changes,
+      now,
+      isNewOrder,
+      forceCancelled,
+      reason,
+      typeOverride,
+      sequenceOrderId,
+      printTickets,
+      note,
+      sequenceForKotGroup: (targetOrderId, productionUnitId, ticketLabel) => this.sequenceForKotGroup(targetOrderId, productionUnitId, ticketLabel),
+      getPrintLayout: (scope, productionUnitId) => this.getPrintLayout(scope, productionUnitId),
+      enqueuePrintJob: (job) => this.enqueuePrintJob(job),
+      appendEvent: (type, aggregateType, aggregateId, payload) => {
+        this.appendEvent(type, aggregateType, aggregateId, payload);
       }
-
-      const template = this.getPrintLayout("unit", productionUnitId);
-      const payload = renderKotTicketForPrint({
-        sequence,
-        type,
-        tableName: table.name,
-        productionUnitName: firstItem.productionUnitName,
-        captainId: order.captain_id,
-        createdAt: now,
-        reason,
-        note,
-        items: ticketItems,
-        ticketLabel,
-        lineWidthChars: template.lineWidthChars,
-        headerAlign: template.headerAlign,
-        footerAlign: template.footerAlign,
-        sectionStyles: template.sectionStyles,
-        topPaddingLines: template.topPaddingLines,
-        feedLines: template.feedLines,
-        showTable: template.showTable,
-        showCaptain: template.showCaptain,
-        showDateTime: template.showDateTime,
-        header: template.kotHeader,
-        footer: template.kotFooter
-      });
-
-      if (printTickets) {
-        const printJobId = this.enqueuePrintJob({
-          targetType: ticketLabel,
-          targetId: kotId,
-          productionUnitId,
-          printerHost: firstItem.printerHost,
-          printerPort: firstItem.printerPort,
-          printerName: firstItem.printerName,
-          payload
-        });
-        printJobIds.push(printJobId);
-      }
-
-      this.appendEvent("kot.created", "kot", kotId, {
-        orderId: order.id,
-        productionUnitId,
-        type,
-        sequence,
-        ticketLabel
-      });
-      kotIds.push(kotId);
-    }
-
-    return { kotIds, printJobIds };
+    });
   }
 
-  private enqueuePrintJob(input: {
-    targetType: "KOT" | "BOT" | "BILL";
-    targetId: string;
-    productionUnitId: string | null;
-    printerHost: string | null;
-    printerPort: number | null;
-    printerName: string | null;
-    payload: string;
-  }): string {
-    const id = makeId("print");
-    const now = new Date().toISOString();
-    this.orm
-      .insert(printJobs)
-      .values({
-        id,
-        targetType: input.targetType,
-        targetId: input.targetId,
-        productionUnitId: input.productionUnitId,
-        printerHost: input.printerHost,
-        printerPort: input.printerPort,
-        printerName: input.printerName,
-        status: "pending",
-        attempts: 0,
-        payload: input.payload,
-        createdAt: now,
-        updatedAt: now
-      })
-      .run();
-    return id;
+  private enqueuePrintJob(input: PrintJobInput): string {
+    return enqueuePrintJobRecord(this.orm, input);
   }
 
   private appendEvent(type: string, aggregateType: string, aggregateId: string, payload: unknown): DomainEvent {
-    const event: DomainEvent = {
-      eventId: makeId("evt"),
-      type,
-      aggregateType,
-      aggregateId,
-      payload,
-      createdAt: new Date().toISOString()
-    };
-
-    this.orm
-      .insert(eventLog)
-      .values({
-        eventId: event.eventId,
-        type: event.type,
-        aggregateType: event.aggregateType,
-        aggregateId: event.aggregateId,
-        payload: JSON.stringify(event.payload),
-        createdAt: event.createdAt
-      })
-      .run();
-
-    this.orm
-      .insert(syncOutbox)
-      .values({
-        eventId: event.eventId,
-        status: "pending",
-        attempts: 0,
-        createdAt: event.createdAt,
-        updatedAt: event.createdAt
-      })
-      .run();
-
-    return event;
-  }
-
-  private createEntityId(prefix: string, customId: string | undefined, exists: (id: string) => boolean): string {
-    const requestedId = customId?.trim();
-    if (requestedId) {
-      if (exists(requestedId)) throw new DomainError("That custom ID is already used. Choose another one.", 409);
-      return requestedId;
-    }
-
-    for (let attempt = 0; attempt < 5; attempt += 1) {
-      const generatedId = makeId(prefix);
-      if (!exists(generatedId)) return generatedId;
-    }
-
-    throw new DomainError("Could not create a unique ID. Please try again.", 500);
+    return appendDomainEvent(this.orm, type, aggregateType, aggregateId, payload);
   }
 
   private ensureCurrentBusinessDay(now = new Date()): BusinessDayRow {
-    const window = currentBusinessDayWindow(now);
-    const existing = this.getBusinessDayById(window.id);
-    if (existing) return existing;
-
-    const insertResult = this.orm
-      .insert(posDays)
-      .values({
-        id: window.id,
-        outletId: "outlet-main",
-        businessDate: window.businessDate,
-        status: "active",
-        periodStartAt: window.periodStartAt,
-        periodEndAt: window.periodEndAt,
-        createdAt: now.toISOString()
-      })
-      .onConflictDoNothing()
-      .run();
-    if (insertResult.changes > 0) this.appendEvent("business_day.started", "business_day", window.id, window);
-    return this.getBusinessDayById(window.id) as BusinessDayRow;
+    return ensureCurrentBusinessDayModel({ orm: this.orm, now, appendEvent: this.appendEvent.bind(this) });
   }
 
   private getBusinessDayById(id: string): BusinessDayRow | undefined {
-    return this.orm
-      .select({
-        id: posDays.id,
-        business_date: posDays.businessDate,
-        period_start_at: posDays.periodStartAt,
-        period_end_at: posDays.periodEndAt,
-        status: posDays.status
-      })
-      .from(posDays)
-      .where(eq(posDays.id, id))
-      .get();
+    return getBusinessDayByIdModel(this.orm, id);
   }
 
   private finalizeCompletedBusinessDays(now = new Date()): void {
-    const currentBusinessDate = currentBusinessDayWindow(now).businessDate;
-    const candidates = this.db
-      .prepare(
-        `SELECT id, business_date
-         FROM pos_days
-         WHERE business_date < ?
-           AND id NOT IN (SELECT pos_day_id FROM daily_report_snapshots)`
-      )
-      .all(currentBusinessDate) as Array<{ id: string; business_date: string }>;
-
-    for (const candidate of candidates) {
-      const blocker = this.orm
-        .select({ count: count() })
-        .from(orders)
-        .where(and(eq(orders.posDayId, candidate.id), inArray(orders.status, ["open", "billed"])))
-        .get();
-      if ((blocker?.count ?? 0) > 0) continue;
-      this.finalizeBusinessDay(candidate.id, now);
-    }
-  }
-
-  private finalizeBusinessDay(posDayId: string, now = new Date()): DaySummary {
-    const report = this.buildDaySummary(posDayId);
-    const finalizedAt = now.toISOString();
-    const run = this.db.transaction(() => {
-      const snapshotExists = this.orm
-        .select({ posDayId: dailyReportSnapshots.posDayId })
-        .from(dailyReportSnapshots)
-        .where(eq(dailyReportSnapshots.posDayId, posDayId))
-        .get();
-      if (snapshotExists) return false;
-
-      this.orm
-        .update(posDays)
-        .set({ status: "finalized", finalizedAt })
-        .where(eq(posDays.id, posDayId))
-        .run();
-
-      this.orm
-        .insert(dailyReportSnapshots)
-        .values({
-          posDayId,
-          businessDate: report.businessDay.business_date,
-          status: "finalized",
-          billCount: report.billCount,
-          openOrders: report.openOrders,
-          billedOrders: report.billedOrders,
-          paidBills: report.paidBills,
-          unpaidBills: report.unpaidBills,
-          cancelledOrders: report.cancelledOrders,
-          grossSalesPaise: report.grossSalesPaise,
-          discountPaise: report.discountPaise,
-          tipPaise: report.tipPaise,
-          finalSalesPaise: report.finalSalesPaise,
-          cashPaymentsPaise: report.cashPaymentsPaise,
-          upiPaymentsPaise: report.upiPaymentsPaise,
-          cardPaymentsPaise: report.cardPaymentsPaise,
-          onlinePaymentsPaise: report.onlinePaymentsPaise,
-          totalPaymentsPaise: report.totalPaymentsPaise,
-          nonCashPaymentsPaise: report.nonCashPaymentsPaise,
-          billSummariesJson: JSON.stringify(report.billSummaries),
-          itemSummariesJson: JSON.stringify(report.itemSummaries),
-          groupSummariesJson: JSON.stringify(report.groupSummaries),
-          finalizedAt,
-          updatedAt: finalizedAt
-        })
-        .run();
-
-      this.appendEvent("daily_report.finalized", "daily_report", posDayId, {
-        posDayId,
-        businessDate: report.businessDay.business_date,
-        finalizedAt,
-        ...report
-      });
-      return true;
-    });
-    run();
-    return report;
+    finalizeCompletedBusinessDayModels({ orm: this.orm, db: this.db, now, appendEvent: this.appendEvent.bind(this) });
   }
 
   private refreshDailyReportSnapshot(posDayId: string, now = new Date().toISOString()): void {
-    const snapshotExists = this.orm
-      .select({ posDayId: dailyReportSnapshots.posDayId })
-      .from(dailyReportSnapshots)
-      .where(eq(dailyReportSnapshots.posDayId, posDayId))
-      .get();
-    if (!snapshotExists) return;
-    const report = this.buildDaySummary(posDayId);
-    this.orm
-      .update(dailyReportSnapshots)
-      .set({
-        billCount: report.billCount,
-        openOrders: report.openOrders,
-        billedOrders: report.billedOrders,
-        paidBills: report.paidBills,
-        unpaidBills: report.unpaidBills,
-        cancelledOrders: report.cancelledOrders,
-        grossSalesPaise: report.grossSalesPaise,
-        discountPaise: report.discountPaise,
-        tipPaise: report.tipPaise,
-        finalSalesPaise: report.finalSalesPaise,
-        cashPaymentsPaise: report.cashPaymentsPaise,
-        upiPaymentsPaise: report.upiPaymentsPaise,
-        cardPaymentsPaise: report.cardPaymentsPaise,
-        onlinePaymentsPaise: report.onlinePaymentsPaise,
-        totalPaymentsPaise: report.totalPaymentsPaise,
-        nonCashPaymentsPaise: report.nonCashPaymentsPaise,
-        billSummariesJson: JSON.stringify(report.billSummaries),
-        itemSummariesJson: JSON.stringify(report.itemSummaries),
-        groupSummariesJson: JSON.stringify(report.groupSummaries),
-        updatedAt: now
-      })
-      .where(eq(dailyReportSnapshots.posDayId, posDayId))
-      .run();
+    refreshDailyReportSnapshotModel({ orm: this.orm, db: this.db, posDayId, now });
   }
 
   private requireTable(tableId: string): TableRow {
-    const table = this.orm
-      .select({
-        id: restaurantTables.id,
-        name: restaurantTables.name,
-        status: restaurantTables.status,
-        current_order_id: restaurantTables.currentOrderId,
-        occupied_at: restaurantTables.occupiedAt
-      })
-      .from(restaurantTables)
-      .where(eq(restaurantTables.id, tableId))
-      .get();
-    if (!table) throw new DomainError("Table not found", 404);
-    return table;
-  }
-
-  private requireFloor(floorId: string): void {
-    const floor = this.orm.select({ id: floors.id }).from(floors).where(eq(floors.id, floorId)).get();
-    if (!floor) throw new DomainError("Floor not found", 404);
-  }
-
-  private nextFloorSortOrder(): number {
-    const row = this.db.prepare("SELECT COALESCE(MAX(sort_order), -1) + 1 AS next FROM floors").get() as { next?: number } | undefined;
-    return Number(row?.next ?? 0);
-  }
-
-  private nextTableSortOrder(floorId: string): number {
-    const row = this.db
-      .prepare("SELECT COALESCE(MAX(sort_order), -1) + 1 AS next FROM restaurant_tables WHERE floor_id = ?")
-      .get(floorId) as { next?: number } | undefined;
-    return Number(row?.next ?? 0);
+    return requireTableModel(this.orm, tableId);
   }
 
   private requireProductionUnit(productionUnitId: string): void {
-    const unit = this.orm
-      .select({ id: productionUnits.id })
-      .from(productionUnits)
-      .where(eq(productionUnits.id, productionUnitId))
-      .get();
-    if (!unit) throw new DomainError("Production unit not found", 404);
+    requireProductionUnitQuery(this.orm, productionUnitId);
   }
 
   private requireEditableOrder(orderId: string): OrderRow {
-    const order = this.selectOrderById(orderId);
-    if (!order) throw new DomainError("Order not found", 404);
-    if (!["open"].includes(order.status)) throw new DomainError("Order is not editable");
-    return order;
+    return requireEditableOrderRecord(this.orm, orderId);
   }
 
   private getMenuItems(ids: string[]): Map<string, MenuItemRow> {
-    const uniqueIds = [...new Set(ids)];
-    if (uniqueIds.length === 0) return new Map();
-
-    const placeholders = uniqueIds.map(() => "?").join(",");
-    const rows = this.db
-      .prepare(
-        `SELECT mi.id, mi.name, mi.price_paise,
-          COALESCE(mi.production_unit_id, sg.default_production_unit_id) AS production_unit_id,
-          sg.id AS sale_group_id,
-          sg.name AS sale_group_name,
-          sg.kind AS sale_group_kind,
-          sg.ticket_label,
-          sg.tax_components_json,
-          pu.name AS unit_name,
-          pu.printer_host,
-          pu.printer_port,
-          pu.printer_name
-         FROM menu_items mi
-         JOIN sale_groups sg ON sg.id = mi.sale_group_id
-         LEFT JOIN production_units pu ON pu.id = COALESCE(mi.production_unit_id, sg.default_production_unit_id)
-         WHERE mi.id IN (${placeholders})`
-      )
-      .all(...uniqueIds) as MenuItemRow[];
-
-    return new Map(rows.map((row) => [row.id, row]));
+    return getMenuItemsByIds(this.db, ids);
   }
 
   private resolveMenuItemVariant(menuItemId: string, variantId?: string, allowInactive = false): MenuItemVariantRow {
-    const params = variantId ? [variantId, menuItemId] : [menuItemId];
-    const where = variantId ? "id = ? AND menu_item_id = ?" : "menu_item_id = ? AND active = 1 ORDER BY sort_order ASC, id ASC LIMIT 1";
-    let variant = this.db
-      .prepare(
-        `SELECT id, menu_item_id, label, kind, price_paise, volume_ml, inventory_action, sort_order, active
-         FROM menu_item_variants
-         WHERE ${where}`
-      )
-      .get(...params) as MenuItemVariantRow | undefined;
-
-    if (!variant) {
-      const item = this.orm.select({ id: menuItems.id, pricePaise: menuItems.pricePaise, active: menuItems.active }).from(menuItems).where(eq(menuItems.id, menuItemId)).get();
-      if (!item) throw new DomainError("Menu item not found", 404);
-      this.ensureDefaultVariant(menuItemId, item.pricePaise, Boolean(item.active));
-      variant = this.db
-        .prepare(
-          `SELECT id, menu_item_id, label, kind, price_paise, volume_ml, inventory_action, sort_order, active
-           FROM menu_item_variants
-           WHERE menu_item_id = ? AND active = 1
-           ORDER BY sort_order ASC, id ASC LIMIT 1`
-        )
-        .get(menuItemId) as MenuItemVariantRow | undefined;
-    }
-
-    if (!variant || (!variant.active && !allowInactive)) throw new DomainError("Menu item variation is not available", 404);
-    return variant;
+    return resolveMenuItemVariantModel(this.db, this.orm, menuItemId, variantId, allowInactive);
   }
 
-  private ensureDefaultVariant(menuItemId: string, pricePaise: number, active = true): void {
-    this.orm
-      .insert(menuItemVariants)
-      .values({
-        id: `${menuItemId}-default`,
-        menuItemId,
-        label: "Regular",
-        kind: "default",
-        pricePaise,
-        volumeMl: null,
-        inventoryAction: "none",
-        sortOrder: 0,
-        active
-      })
-      .onConflictDoNothing()
-      .run();
-  }
-
-  private getUnits(ids: string[]): Map<string, UnitRow> {
-    if (ids.length === 0) return new Map();
-    const rows = this.orm
-      .select({
-        id: productionUnits.id,
-        name: productionUnits.name,
-        printer_host: productionUnits.printerHost,
-        printer_port: productionUnits.printerPort,
-        printer_name: productionUnits.printerName
-      })
-      .from(productionUnits)
-      .where(inArray(productionUnits.id, ids))
-      .all();
-    return new Map(rows.map((row) => [row.id, row]));
+  private getUnits(ids: string[]) {
+    return getProductionUnitsByIds(this.orm, ids);
   }
 
   private kotChangeFromOrderItem(item: OrderItemRow, quantityDelta: number): KotItemChange | null {
-    if (!item.production_unit_id || quantityDelta === 0) return null;
-    const unit = this.getUnit(item.production_unit_id);
-    return {
-      menuItemId: item.menu_item_id,
-      orderItemId: item.id,
-      name: item.name_snapshot,
-      quantityDelta,
-      note: item.note,
-      productionUnitId: item.production_unit_id,
-      productionUnitName: unit?.name ?? "Kitchen",
-      printerHost: unit?.printer_host ?? null,
-      printerPort: unit?.printer_port ?? null,
-      printerName: unit?.printer_name ?? null,
-      ticketLabel: item.ticket_label_snapshot
-    };
+    return kotChangeFromOrderItemModel(item, quantityDelta, (productionUnitId) => this.getUnit(productionUnitId));
   }
 
   private getOrderItems(orderId: string): OrderItemRow[] {
-    return this.orm
-      .select({
-        id: orderItems.id,
-        order_id: orderItems.orderId,
-        menu_item_id: orderItems.menuItemId,
-        menu_item_variant_id: orderItems.menuItemVariantId,
-        name_snapshot: orderItems.nameSnapshot,
-        variant_name_snapshot: orderItems.variantNameSnapshot,
-        variant_volume_ml: orderItems.variantVolumeMl,
-        inventory_action_snapshot: orderItems.inventoryActionSnapshot,
-        alcohol_recipe_snapshot_json: orderItems.alcoholRecipeSnapshotJson,
-        unit_price_paise: orderItems.unitPricePaise,
-        quantity: orderItems.quantity,
-        production_unit_id: orderItems.productionUnitId,
-        sale_group_id: orderItems.saleGroupId,
-        sale_group_name_snapshot: orderItems.saleGroupNameSnapshot,
-        sale_group_kind_snapshot: orderItems.saleGroupKindSnapshot,
-        ticket_label_snapshot: orderItems.ticketLabelSnapshot,
-        tax_components_json: orderItems.taxComponentsJson,
-        tax_paise: orderItems.taxPaise,
-        note: orderItems.note,
-        is_open_item: orderItems.isOpenItem,
-        status: orderItems.status
-      })
-      .from(orderItems)
-      .where(eq(orderItems.orderId, orderId))
-      .all();
+    return listOrderItems(this.orm, orderId);
   }
 
   private getOrderItemByKey(orderId: string, menuItemId: string, variantId?: string | null): OrderItemRow | undefined {
-    return this.orm
-      .select({
-        id: orderItems.id,
-        order_id: orderItems.orderId,
-        menu_item_id: orderItems.menuItemId,
-        menu_item_variant_id: orderItems.menuItemVariantId,
-        name_snapshot: orderItems.nameSnapshot,
-        variant_name_snapshot: orderItems.variantNameSnapshot,
-        variant_volume_ml: orderItems.variantVolumeMl,
-        inventory_action_snapshot: orderItems.inventoryActionSnapshot,
-        alcohol_recipe_snapshot_json: orderItems.alcoholRecipeSnapshotJson,
-        unit_price_paise: orderItems.unitPricePaise,
-        quantity: orderItems.quantity,
-        production_unit_id: orderItems.productionUnitId,
-        sale_group_id: orderItems.saleGroupId,
-        sale_group_name_snapshot: orderItems.saleGroupNameSnapshot,
-        sale_group_kind_snapshot: orderItems.saleGroupKindSnapshot,
-        ticket_label_snapshot: orderItems.ticketLabelSnapshot,
-        tax_components_json: orderItems.taxComponentsJson,
-        tax_paise: orderItems.taxPaise,
-        note: orderItems.note,
-        is_open_item: orderItems.isOpenItem,
-        status: orderItems.status
-      })
-      .from(orderItems)
-      .where(
-        and(
-          eq(orderItems.orderId, orderId),
-          eq(orderItems.menuItemId, menuItemId),
-          variantId ? eq(orderItems.menuItemVariantId, variantId) : sql`${orderItems.menuItemVariantId} IS NULL`
-        )
-      )
-      .get();
-  }
-
-  private getMatchingOrderItemSnapshot(orderId: string, source: OrderItemRow): OrderItemRow | undefined {
-    return this.getOrderItems(orderId).find(
-      (item) => item.menu_item_id === source.menu_item_id && item.menu_item_variant_id === source.menu_item_variant_id && this.orderItemSnapshotsMatch(item, source)
-    );
-  }
-
-  private orderItemSnapshotsMatch(left: OrderItemRow, right: OrderItemRow): boolean {
-    return (
-      left.name_snapshot === right.name_snapshot &&
-      left.variant_name_snapshot === right.variant_name_snapshot &&
-      left.variant_volume_ml === right.variant_volume_ml &&
-      left.inventory_action_snapshot === right.inventory_action_snapshot &&
-      left.alcohol_recipe_snapshot_json === right.alcohol_recipe_snapshot_json &&
-      left.unit_price_paise === right.unit_price_paise &&
-      left.production_unit_id === right.production_unit_id &&
-      left.sale_group_id === right.sale_group_id &&
-      left.sale_group_name_snapshot === right.sale_group_name_snapshot &&
-      left.sale_group_kind_snapshot === right.sale_group_kind_snapshot &&
-      left.ticket_label_snapshot === right.ticket_label_snapshot &&
-      left.tax_components_json === right.tax_components_json &&
-      Boolean(left.is_open_item) === Boolean(right.is_open_item)
-    );
+    return getOrderItemByMenuKey(this.orm, orderId, menuItemId, variantId);
   }
 
   private getOrderItemByKeyOrName(orderId: string, menuItemId: string | null, name: string): OrderItemRow | undefined {
     if (menuItemId) return this.getOrderItemByKey(orderId, menuItemId);
-    return this.orm
-      .select({
-        id: orderItems.id,
-        order_id: orderItems.orderId,
-        menu_item_id: orderItems.menuItemId,
-        menu_item_variant_id: orderItems.menuItemVariantId,
-        name_snapshot: orderItems.nameSnapshot,
-        variant_name_snapshot: orderItems.variantNameSnapshot,
-        variant_volume_ml: orderItems.variantVolumeMl,
-        inventory_action_snapshot: orderItems.inventoryActionSnapshot,
-        alcohol_recipe_snapshot_json: orderItems.alcoholRecipeSnapshotJson,
-        unit_price_paise: orderItems.unitPricePaise,
-        quantity: orderItems.quantity,
-        production_unit_id: orderItems.productionUnitId,
-        sale_group_id: orderItems.saleGroupId,
-        sale_group_name_snapshot: orderItems.saleGroupNameSnapshot,
-        sale_group_kind_snapshot: orderItems.saleGroupKindSnapshot,
-        ticket_label_snapshot: orderItems.ticketLabelSnapshot,
-        tax_components_json: orderItems.taxComponentsJson,
-        tax_paise: orderItems.taxPaise,
-        note: orderItems.note,
-        is_open_item: orderItems.isOpenItem,
-        status: orderItems.status
-      })
-      .from(orderItems)
-      .where(
-        and(
-          eq(orderItems.orderId, orderId),
-          eq(orderItems.nameSnapshot, name),
-          eq(orderItems.isOpenItem, true)
-        )
-      )
-      .get();
+    return getOpenOrderItemByName(this.orm, orderId, name);
   }
 
-  private getUnit(productionUnitId: string): UnitRow | undefined {
-    return this.orm
-      .select({
-        id: productionUnits.id,
-        name: productionUnits.name,
-        printer_host: productionUnits.printerHost,
-        printer_port: productionUnits.printerPort,
-        printer_name: productionUnits.printerName
-      })
-      .from(productionUnits)
-      .where(eq(productionUnits.id, productionUnitId))
-      .get();
+  private getUnit(productionUnitId: string) {
+    return getProductionUnit(this.orm, productionUnitId);
   }
 
   private createReadyNotification(kotId: string): void {
-    const row = this.db
-      .prepare(
-        `SELECT k.id, k.order_id, k.production_unit_id, o.table_id, o.captain_id, o.captain_device_id,
-          t.name AS table_name, pu.name AS production_unit_name
-         FROM kots k
-         JOIN orders o ON o.id = k.order_id
-         JOIN restaurant_tables t ON t.id = o.table_id
-         JOIN production_units pu ON pu.id = k.production_unit_id
-         WHERE k.id = ?`
-      )
-      .get(kotId) as
-      | {
-          id: string;
-          order_id: string;
-          production_unit_id: string;
-          table_id: string;
-          captain_id: string;
-          captain_device_id: string | null;
-          table_name: string;
-          production_unit_name: string;
-        }
-      | undefined;
-    if (!row || !row.captain_device_id) return;
-    const exists = this.orm.select({ id: readyNotifications.id }).from(readyNotifications).where(eq(readyNotifications.kotId, kotId)).get();
-    if (exists) return;
-    const items = this.db
-      .prepare("SELECT name_snapshot, ABS(quantity_delta) AS quantity FROM kot_items WHERE kot_id = ? AND quantity_delta > 0 ORDER BY id")
-      .all(kotId) as Array<{ name_snapshot: string; quantity: number }>;
-    this.orm
-      .insert(readyNotifications)
-      .values({
-        id: makeId("ready"),
-        kotId,
-        orderId: row.order_id,
-        tableId: row.table_id,
-        tableName: row.table_name,
-        productionUnitId: row.production_unit_id,
-        productionUnitName: row.production_unit_name,
-        captainDeviceId: row.captain_device_id,
-        captainId: row.captain_id,
-        itemsJson: JSON.stringify(items.map((item) => ({ name: item.name_snapshot, quantity: item.quantity }))),
-        status: "unread",
-        createdAt: new Date().toISOString()
-      })
-      .run();
+    createReadyNotificationModel(this.orm, this.db, kotId);
   }
 
   private getOrderItemById(orderItemId: string): OrderItemRow | undefined {
-    return this.orm
-      .select({
-        id: orderItems.id,
-        order_id: orderItems.orderId,
-        menu_item_id: orderItems.menuItemId,
-        menu_item_variant_id: orderItems.menuItemVariantId,
-        name_snapshot: orderItems.nameSnapshot,
-        variant_name_snapshot: orderItems.variantNameSnapshot,
-        variant_volume_ml: orderItems.variantVolumeMl,
-        inventory_action_snapshot: orderItems.inventoryActionSnapshot,
-        alcohol_recipe_snapshot_json: orderItems.alcoholRecipeSnapshotJson,
-        unit_price_paise: orderItems.unitPricePaise,
-        quantity: orderItems.quantity,
-        production_unit_id: orderItems.productionUnitId,
-        sale_group_id: orderItems.saleGroupId,
-        sale_group_name_snapshot: orderItems.saleGroupNameSnapshot,
-        sale_group_kind_snapshot: orderItems.saleGroupKindSnapshot,
-        ticket_label_snapshot: orderItems.ticketLabelSnapshot,
-        tax_components_json: orderItems.taxComponentsJson,
-        tax_paise: orderItems.taxPaise,
-        note: orderItems.note,
-        is_open_item: orderItems.isOpenItem,
-        status: orderItems.status
-      })
-      .from(orderItems)
-      .where(eq(orderItems.id, orderItemId))
-      .get();
+    return getOrderItemById(this.orm, orderItemId);
   }
 
   private itemKey(menuItemId: string | null, orderItemId?: string, variantId?: string | null): string {
-    return menuItemId ? `menu:${menuItemId}:${variantId ?? "default"}` : `open:${orderItemId ?? makeId("line")}`;
+    return buildOrderItemKey(menuItemId, orderItemId, variantId);
   }
 
   private nextKotSequence(): number {
-    const row = this.orm.select({ current: max(kots.sequence) }).from(kots).get();
-    return (row?.current ?? 0) + 1;
+    return nextKotSequenceModel(this.orm);
   }
 
   private nextBillNumber(): number {
-    const row = this.orm.select({ current: max(bills.billNumber) }).from(bills).get();
-    const next = (row?.current ?? 0) + 1;
-    this.upsertSetting("bill_number_sequence", String(next));
-    return next;
+    return nextBillNumberModel(this.orm, (key, value) => this.upsertSetting(key, value));
   }
 
   private sequenceForKotGroup(orderId: string, productionUnitId: string, ticketLabel: "KOT" | "BOT"): number {
-    const existing = this.db
-      .prepare(
-        `SELECT k.sequence
-         FROM kots k
-         WHERE k.order_id = ?
-           AND k.production_unit_id = ?
-           AND k.ticket_label = ?
-         ORDER BY k.created_at ASC, k.sequence ASC
-         LIMIT 1`
-      )
-      .get(orderId, productionUnitId, ticketLabel) as { sequence: number } | undefined;
-    return existing?.sequence ?? this.nextKotSequence();
+    return sequenceForKotGroupModel(this.orm, this.db, orderId, productionUnitId, ticketLabel);
   }
 
   private freeTable(tableId: string): void {
-    this.orm
-      .update(restaurantTables)
-      .set({ status: "free", currentOrderId: null, occupiedAt: null })
-      .where(eq(restaurantTables.id, tableId))
-      .run();
+    freeTableRecord(this.orm, tableId);
   }
 
   private getSetting(key: string): string | undefined {
-    const row = this.orm.select({ value: hubSettings.value }).from(hubSettings).where(eq(hubSettings.key, key)).get();
-    return row?.value;
-  }
-
-  private printLayoutKey(scope: PrintLayoutSettingsInput["scope"], productionUnitId?: string): string {
-    if (scope === "unit") return `print_layout_unit_${productionUnitId ?? ""}`;
-    return `print_layout_${scope}`;
-  }
-
-  private defaultPrintLayout(scope: PrintLayoutSettingsInput["scope"], productionUnitId?: string): PrintLayoutSettingsInput {
-    return {
-      scope,
-      productionUnitId,
-      billHeader: this.getSetting("ticket_bill_header") ?? "",
-      billFooter: this.getSetting("ticket_bill_footer") ?? "",
-      kotHeader: this.getSetting("ticket_kot_header") ?? "",
-      kotFooter: this.getSetting("ticket_kot_footer") ?? "",
-      restaurantName: this.getSetting("ticket_restaurant_name") ?? "",
-      restaurantAddress: this.getSetting("ticket_restaurant_address") ?? "",
-      taxRegistrationText: this.getSetting("ticket_tax_registration_text") ?? "",
-      lineWidthChars: Number(this.getSetting("ticket_line_width_chars") ?? 28),
-      headerAlign: "center",
-      footerAlign: "center",
-      sectionStyles: {
-        restaurantName: { size: "large", bold: true, align: "center" },
-        address: { size: "normal", bold: false, align: "center" },
-        header: { size: "normal", bold: false, align: "center" },
-        title: { size: "normal", bold: true, align: "center" },
-        metadata: { size: "normal", bold: false, align: "left" },
-        items: { size: "normal", bold: false, align: "left" },
-        totals: { size: "normal", bold: true, align: "left" },
-        notes: { size: "normal", bold: true, align: "left" },
-        itemNotes: { size: "small", bold: false, align: "left" },
-        footer: { size: "normal", bold: false, align: "center" }
-      },
-      topPaddingLines: 0,
-      feedLines: 3,
-      showTable: true,
-      showCaptain: true,
-      showDateTime: true,
-      showBillId: true,
-      showTaxBreakup: true,
-      showPaymentSplit: true,
-      showDiscountTip: true,
-      showNcReprintRevision: true
-    };
-  }
-
-  private readPrinterOutputMode(): PrinterOutputMode | undefined {
-    const value = this.getSetting("printer_output_mode");
-    return value === "live" || value === "test" ? value : undefined;
+    return readSettingRecord(this.orm, key);
   }
 
   private getBillPaidPaise(billId: string): number {
-    const row = this.orm.select({ paid: sum(payments.amountPaise) }).from(payments).where(eq(payments.billId, billId)).get();
-    return Number(row?.paid ?? 0);
+    return getBillPaidPaiseModel(this.orm, billId);
   }
 
   private syncPaidBillPaymentToFinalTotal(billId: string, finalTotalPaise: number, receivedBy: string, now: string): void {
-    const bill = this.getBillById(billId);
-    if (!bill || bill.status !== "paid" || bill.is_nc) return;
-    const existingPayments = this.db
-      .prepare("SELECT method, amount_paise, reference, note FROM payments WHERE bill_id = ? ORDER BY created_at ASC, id ASC")
-      .all(billId) as Array<{ method: "cash" | "upi" | "card" | "online"; amount_paise: number; reference: string | null; note: string | null }>;
-    this.db.prepare("DELETE FROM payments WHERE bill_id = ?").run(billId);
-    if (finalTotalPaise <= 0) return;
-    const weights = existingPayments.length ? existingPayments.map((payment) => payment.amount_paise) : [finalTotalPaise];
-    const allocated = this.allocateByWeight(finalTotalPaise, weights);
-    const sourcePayments = existingPayments.length
-      ? existingPayments
-      : [{ method: "cash" as const, amount_paise: finalTotalPaise, reference: null, note: "Auto-adjusted after history edit" }];
-    for (const [index, source] of sourcePayments.entries()) {
-      const amountPaise = allocated[index] ?? 0;
-      if (amountPaise <= 0) continue;
-      this.orm.insert(payments).values({
-        id: makeId("pay"),
-        billId,
-        method: source.method,
-        amountPaise,
-        receivedBy,
-        reference: source.reference,
-        note: source.note ?? "Auto-adjusted after history edit",
-        createdAt: now
-      }).run();
-    }
+    syncPaidBillPaymentToFinalTotalModel(this.orm, this.db, this.getBillById(billId), billId, finalTotalPaise, receivedBy, now);
   }
 
   private replaceHistoryEditPayments(
@@ -5289,195 +1292,34 @@ export class OrderService {
     receivedBy: string,
     now: string
   ): void {
-    const billId = bill.id;
-    if (bill.is_nc) {
-      if (requestedPayments?.some((payment) => payment.amountPaise > 0)) {
-        throw new DomainError("NC bills cannot record collected payments");
-      }
-      this.orm.delete(payments).where(eq(payments.billId, billId)).run();
-      return;
-    }
-    if (bill.status !== "paid") return;
-    if (!requestedPayments) {
-      throw new DomainError("History edit payments must exactly match the edited bill total");
-    }
-    const normalizedPayments = requestedPayments.filter((payment) => payment.amountPaise > 0);
-    if (requestedPayments.some((payment) => payment.amountPaise < 0)) {
-      throw new DomainError("Payment amount cannot be negative");
-    }
-    const paymentTotalPaise = normalizedPayments.reduce((total, payment) => total + payment.amountPaise, 0);
-    if (paymentTotalPaise !== finalTotalPaise) {
-      throw new DomainError("History edit payments must exactly match the edited bill total");
-    }
-    this.orm.delete(payments).where(eq(payments.billId, billId)).run();
-    for (const payment of normalizedPayments) {
-      this.orm.insert(payments).values({
-        id: makeId("pay"),
-        billId,
-        method: payment.method ?? "cash",
-        amountPaise: payment.amountPaise,
-        receivedBy,
-        reference: payment.reference ?? null,
-        note: payment.note ?? "Owner history edit",
-        createdAt: now
-      }).run();
-    }
+    replaceHistoryEditPaymentsModel(this.orm, bill, requestedPayments, finalTotalPaise, receivedBy, now);
   }
 
   private deleteLocalBillRecord(billId: string): void {
-    this.orm.delete(payments).where(eq(payments.billId, billId)).run();
-    this.orm.delete(billRevisions).where(eq(billRevisions.billId, billId)).run();
-    this.orm.delete(printJobs).where(and(eq(printJobs.targetType, "BILL"), eq(printJobs.targetId, billId))).run();
-    this.orm.delete(bills).where(eq(bills.id, billId)).run();
+    deleteLocalBillRecordModel(this.orm, billId);
   }
 
   private removeEmptyPendingBills(): void {
-    const rows = this.db
-      .prepare(
-        `SELECT b.id AS bill_id, b.order_id, o.table_id
-         FROM bills b
-         JOIN orders o ON o.id = b.order_id
-         WHERE b.status = 'pending'
-           AND b.total_paise = 0
-           AND b.final_total_paise = 0
-           AND NOT EXISTS (SELECT 1 FROM payments p WHERE p.bill_id = b.id)`
-      )
-      .all() as Array<{ bill_id: string; order_id: string; table_id: string }>;
-    if (rows.length === 0) return;
-
-    const now = new Date().toISOString();
-    const run = this.db.transaction(() => {
-      for (const row of rows) {
-        const remainingItems = this.getOrderItems(row.order_id).filter((item) => item.quantity > 0 && item.status !== "cancelled");
-        if (remainingItems.length > 0) continue;
-        this.deleteLocalBillRecord(row.bill_id);
-        this.orm.update(orders).set({ status: "cancelled", updatedAt: now }).where(eq(orders.id, row.order_id)).run();
-        this.freeTable(row.table_id);
-        this.appendEvent("bill.empty_pending_removed", "order", row.order_id, {
-          orderId: row.order_id,
-          removedBillId: row.bill_id
-        });
-      }
-    });
-    run();
+    removeEmptyPendingBillsModel(this.billCleanupContext());
   }
 
   private applyBillAdjustments(billId: string, input: BillAdjustmentInput, requestedBy: string, mode: "any" | "pending_only" = "any"): void {
-    if (input.discountValue === undefined && input.tipPaise === undefined) return;
-    const bill = this.getBillById(billId);
-    if (!bill) throw new DomainError("Bill not found", 404);
-    if (mode === "pending_only" && bill.status !== "pending") {
-      throw new DomainError("Paid bill discounts can only be changed from Order History with Master PIN");
-    }
-    const now = new Date().toISOString();
-    const discountPaise = input.discountValue === undefined ? bill.discount_paise : this.calculateDiscountPaise(bill.total_paise, input);
-    const tipPaise = input.tipPaise === undefined ? bill.tip_paise : input.tipPaise;
-    const finalTotalPaise = Math.max(0, bill.total_paise - discountPaise + tipPaise);
-    if (this.getBillPaidPaise(billId) > finalTotalPaise) {
-      throw new DomainError("Recorded payments exceed adjusted bill total");
-    }
-    this.orm
-      .update(bills)
-      .set({ discountPaise, tipPaise, finalTotalPaise })
-      .where(eq(bills.id, billId))
-      .run();
-    this.syncPaidBillPaymentToFinalTotal(billId, finalTotalPaise, requestedBy, now);
-  }
-
-  private calculateDiscountPaise(totalPaise: number, input: BillAdjustmentInput): number {
-    if (input.discountType === "percent") {
-      const percent = Math.min(100, input.discountValue ?? 0);
-      return Math.round((totalPaise * percent) / 100);
-    }
-    return Math.min(totalPaise, Math.round(input.discountValue ?? 0));
-  }
-
-  private allocateByWeight(totalPaise: number, bases: number[]): number[] {
-    if (totalPaise <= 0 || bases.length === 0) return bases.map(() => 0);
-    const baseTotal = bases.reduce((total, base) => total + Math.max(0, base), 0);
-    if (baseTotal <= 0) return bases.map(() => 0);
-    const shares = bases.map((base) => Math.floor((totalPaise * Math.max(0, base)) / baseTotal));
-    let remainder = totalPaise - shares.reduce((total, share) => total + share, 0);
-    for (let index = 0; remainder > 0 && index < shares.length; index += 1) {
-      if ((bases[index] ?? 0) <= 0) continue;
-      shares[index] = (shares[index] ?? 0) + 1;
-      remainder -= 1;
-    }
-    return shares;
+    applyBillAdjustmentsModel(this.orm, this.db, this.getBillById(billId), input, requestedBy, mode);
   }
 
   private selectOrderById(orderId: string): OrderRow | undefined {
-    const row = this.orm
-      .select({
-        id: orders.id,
-        table_id: orders.tableId,
-        pos_day_id: orders.posDayId,
-        status: orders.status,
-        captain_id: orders.captainId,
-        captain_device_id: orders.captainDeviceId,
-        created_by_device_id: orders.createdByDeviceId,
-        created_by_role: orders.createdByRole,
-        created_at: orders.createdAt,
-        updated_at: orders.updatedAt
-      })
-      .from(orders)
-      .where(eq(orders.id, orderId))
-      .get();
-    return row ? { ...row, created_by_role: row.created_by_role as UserRole | null } : undefined;
+    return selectOrderByIdRecord(this.orm, orderId);
   }
 
   private requireOrderById(orderId: string): OrderRow {
-    const order = this.selectOrderById(orderId);
-    if (!order) throw new DomainError("Order not found", 404);
-    return order;
+    return requireOrderByIdRecord(this.orm, orderId);
   }
 
   private getBillById(billId: string): BillRow | undefined {
-    return this.orm
-      .select({
-        id: bills.id,
-        bill_number: bills.billNumber,
-        order_id: bills.orderId,
-        status: bills.status,
-        subtotal_paise: bills.subtotalPaise,
-        tax_paise: bills.taxPaise,
-        total_paise: bills.totalPaise,
-        discount_paise: bills.discountPaise,
-        tip_paise: bills.tipPaise,
-        final_total_paise: bills.finalTotalPaise,
-        tax_breakdown_json: bills.taxBreakdownJson,
-        revision_number: bills.revisionNumber,
-        print_count: bills.printCount,
-        is_nc: bills.isNc,
-        nc_reason: bills.ncReason
-      })
-      .from(bills)
-      .where(eq(bills.id, billId))
-      .get();
+    return getBillById(this.orm, billId);
   }
 
   private getBillForOrder(orderId: string): BillRow | undefined {
-    return this.orm
-      .select({
-        id: bills.id,
-        bill_number: bills.billNumber,
-        order_id: bills.orderId,
-        status: bills.status,
-        subtotal_paise: bills.subtotalPaise,
-        tax_paise: bills.taxPaise,
-        total_paise: bills.totalPaise,
-        discount_paise: bills.discountPaise,
-        tip_paise: bills.tipPaise,
-        final_total_paise: bills.finalTotalPaise,
-        tax_breakdown_json: bills.taxBreakdownJson,
-        revision_number: bills.revisionNumber,
-        print_count: bills.printCount,
-        is_nc: bills.isNc,
-        nc_reason: bills.ncReason
-      })
-      .from(bills)
-      .where(eq(bills.orderId, orderId))
-      .orderBy(desc(bills.createdAt))
-      .get();
+    return getLatestBillForOrder(this.orm, orderId);
   }
 }

@@ -1,6 +1,5 @@
-import { type CSSProperties, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { parsePrintStyleLine, renderBillTicketForPrint, renderKotTicketForPrint } from "../../../domain/tickets.js";
 import { type NoticeSetter, messageOf } from "../../lib/format.js";
 import type { ManagerApprovalRequest } from "../../hooks/use-manager-approval.js";
 import {
@@ -8,8 +7,8 @@ import {
   type PrintLayoutSettings,
   type ProductionUnit,
 } from "../../hub-api.js";
-
-const defaultSectionStyle = { size: "normal", bold: false, align: "left" } as const;
+import { PrintLayoutPreview } from "./print-layout-preview.js";
+import { defaultSectionStyle, PrintLayoutStyleControls } from "./print-layout-style-controls.js";
 
 export function PrintLayoutEditor({
   layouts,
@@ -80,52 +79,6 @@ export function PrintLayoutEditor({
   ) => {
     setDraft((current) => (current ? { ...current, [key]: value } : current));
   };
-
-  const preview = scope === "receipt"
-    ? renderBillTicketForPrint({
-        ...draft,
-        tableName: "T1",
-        billId: "TEST-BILL",
-        createdAt: "2026-05-15T15:00:00.000Z",
-        restaurantName: draft.restaurantName,
-        restaurantAddress: draft.restaurantAddress,
-        taxRegistrationText: draft.taxRegistrationText,
-        header: draft.billHeader,
-        footer: draft.billFooter,
-        items: [{ name: "Paneer Tikka", quantity: 2, unitPricePaise: 22000, lineTotalPaise: 44000 }],
-        subtotalPaise: 44000,
-        taxPaise: draft.showTaxBreakup ? 2200 : 0,
-        totalPaise: 44000,
-        taxBreakdown: draft.showTaxBreakup ? [{ name: "CGST", rateBps: 250, amountPaise: 1100 }, { name: "SGST", rateBps: 250, amountPaise: 1100 }] : [],
-        payments: draft.showPaymentSplit ? [{ method: "cash", amountPaise: 44000 }] : []
-      })
-    : renderKotTicketForPrint({
-        sequence: 1,
-        type: "new",
-        tableName: "T1",
-        productionUnitName: units.find((unit) => unit.id === selectedUnitId)?.name ?? "Kitchen",
-        ticketLabel: "KOT",
-        captainId: "Captain",
-        createdAt: "2026-05-15T15:00:00.000Z",
-        items: [{ name: "Paneer Tikka", quantityDelta: 2, note: "No onion" }],
-        header: draft.kotHeader,
-        footer: draft.kotFooter,
-        ...draft
-      });
-  const previewLines = preview.split(/\r?\n/).map((line) => parsePrintStyleLine(line) ?? { text: line, size: "normal" as const, bold: false, align: "left" as const, graphicLine: false });
-
-  const sectionStyleKeys = [
-    ["restaurantName", "Restaurant name"],
-    ["address", "Address"],
-    ["header", "Header"],
-    ["title", "Bill / KOT title"],
-    ["metadata", "Table / date"],
-    ["items", "Item rows"],
-    ["totals", "Totals"],
-    ["notes", "KOT general notes"],
-    ["itemNotes", "Item notes"],
-    ["footer", "Footer"],
-  ] as const;
 
   const updateSectionStyle = (
     key: keyof PrintLayoutSettings["sectionStyles"],
@@ -397,44 +350,10 @@ export function PrintLayoutEditor({
               <span>NC/reprint labels</span>
             </label>
           </div>
-          <details className="setup-subdetails print-style-panel">
-            <summary>
-              <span>Section font controls</span>
-              <small>Size, bold, and alignment</small>
-            </summary>
-            <div className="print-style-grid">
-              {sectionStyleKeys.map(([key, label]) => {
-                const style = draft.sectionStyles[key] ?? defaultSectionStyle;
-                return (
-                  <div key={key} className="print-style-row">
-                    <strong>{label}</strong>
-                    <div className="print-style-fields">
-                      <label>
-                        <span>Size</span>
-                        <select value={style.size} onChange={(event) => updateSectionStyle(key, { size: event.target.value as "small" | "normal" | "large" })}>
-                          <option value="small">Small</option>
-                          <option value="normal">Normal</option>
-                          <option value="large">Large</option>
-                        </select>
-                      </label>
-                      <label>
-                        <span>Align</span>
-                        <select value={style.align} onChange={(event) => updateSectionStyle(key, { align: event.target.value as "left" | "center" | "right" })}>
-                          <option value="left">Left</option>
-                          <option value="center">Center</option>
-                          <option value="right">Right</option>
-                        </select>
-                      </label>
-                      <label className="inline-check print-bold-check">
-                        <input type="checkbox" checked={style.bold} onChange={(event) => updateSectionStyle(key, { bold: event.target.checked })} />
-                        Bold
-                      </label>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </details>
+          <PrintLayoutStyleControls
+            draft={draft}
+            updateSectionStyle={updateSectionStyle}
+          />
           <button
             type="button"
             disabled={save.isPending}
@@ -450,32 +369,13 @@ export function PrintLayoutEditor({
             Save layout
           </button>
         </form>
-        <div className="print-preview print-preview-styled">
-          {previewLines.map((line, index) => (
-            <div key={`${index}-${line.text}`} style={previewLineStyle(line)}>
-              {line.graphicLine ? "\u00a0" : line.text || "\u00a0"}
-            </div>
-          ))}
-        </div>
+        <PrintLayoutPreview
+          draft={draft}
+          scope={scope}
+          selectedUnitId={selectedUnitId}
+          units={units}
+        />
       </div>
     </section>
   );
-}
-
-function previewLineStyle(line: { size: "small" | "normal" | "large"; bold: boolean; align: "left" | "center" | "right"; graphicLine?: boolean }): CSSProperties {
-  if (line.graphicLine) {
-    return {
-      borderTop: "1px solid currentColor",
-      height: 10,
-      margin: "4px 0",
-      opacity: 0.9
-    };
-  }
-  return {
-    fontSize: line.size === "large" ? 16 : line.size === "small" ? 11 : 13,
-    fontWeight: line.bold ? 800 : 500,
-    lineHeight: line.size === "large" ? "22px" : line.size === "small" ? "15px" : "18px",
-    textAlign: line.align,
-    whiteSpace: "pre"
-  };
 }

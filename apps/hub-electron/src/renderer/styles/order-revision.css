@@ -1,0 +1,27 @@
+.revision-search-results {
+  @apply grid max-h-56 gap-2 overflow-auto rounded-lg border border-line bg-wash p-2;
+}
+
+.revision-search-result {
+  @apply flex min-w-0 items-center justify-between gap-3 rounded-md border border-line bg-white p-2 text-left text-ink shadow-sm hover:bg-accent-soft;
+}
+
+.revision-search-result span {
+  @apply grid min-w-0 gap-0.5;
+}
+
+.revision-search-result strong {
+  @apply min-w-0 text-sm font-black leading-5;
+}
+
+.revision-search-result small {
+  @apply min-w-0 text-xs font-semibold text-muted;
+}
+
+.revision-search-result b {
+  @apply shrink-0 text-sm font-black;
+}
+
+.revision-search-result.keyboard-active {
+  @apply border-accent bg-accent-soft shadow-sm;
+}

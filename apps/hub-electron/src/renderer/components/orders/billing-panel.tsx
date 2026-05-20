@@ -1,28 +1,14 @@
-import { formatInr, searchMenuItems } from "@gaurav-pos/shared";
+import { formatInr } from "@gaurav-pos/shared";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { hubApi, type BillAdjustmentPayload, type BillPrinterSlot, type MenuItem, type TableOrder } from "../../hub-api.js";
-import { menuItemVariantOptions, messageOf, type NoticeSetter } from "../../lib/format.js";
+import { messageOf, type NoticeSetter } from "../../lib/format.js";
 import type { ManagerApproval, ManagerApprovalRequest } from "../../hooks/use-manager-approval.js";
-import { useKeyboardListNavigation } from "../../hooks/use-keyboard-list-navigation.js";
 import { useOperationKeys } from "../../hooks/use-operation-keys.js";
 import { EmptyState } from "../ui/empty-state.js";
 import { Metric } from "../ui/metric.js";
-import { LineItems } from "./line-items.js";
 import { BillPrinterChooser } from "./bill-printer-chooser.js";
-
-export type RevisionItem = {
-  key: string;
-  orderItemId?: string;
-  menuItemId?: string;
-  menuItemVariantId?: string;
-  openName?: string;
-  pricePaise: number;
-  saleGroupId: string;
-  productionUnitId?: string | null;
-  name: string;
-  quantity: number;
-};
+import { BillRevisionEditor } from "./bill-revision-editor.js";
 
 type SettlePayload = {
   discountType: "amount" | "percent";
@@ -62,21 +48,12 @@ export function BillingPanel({
   const [receivedAmount, setReceivedAmount] = useState("");
   const [reference, setReference] = useState("");
   const [payments, setPayments] = useState({ cash: "0", upi: "0", card: "0", online: "0" });
-  const [revisionOpen, setRevisionOpen] = useState(false);
-  const [revisionItems, setRevisionItems] = useState<RevisionItem[]>([]);
-  const [revisionAddMenuItemId, setRevisionAddMenuItemId] = useState("");
-  const [revisionAddVariantId, setRevisionAddVariantId] = useState("");
-  const [revisionSearch, setRevisionSearch] = useState("");
   const [pendingReprintApproval, setPendingReprintApproval] = useState<ManagerApproval | null>(null);
   const [reprintApprovalOpen, setReprintApprovalOpen] = useState(false);
   const [pendingNcApproval, setPendingNcApproval] = useState<ManagerApproval | null>(null);
   const operationKeys = useOperationKeys();
   const pendingScopes = useRef<Record<string, unknown>>({});
   const bill = tableOrder?.bill;
-  const revisionAddMenuItem = menuItems.find((menuItem) => menuItem.id === revisionAddMenuItemId);
-  const revisionAddVariants = menuItemVariantOptions(revisionAddMenuItem);
-  const revisionSearchItems = searchMenuItems(menuItems, revisionSearch);
-  const revisionSearchItemIds = revisionSearchItems.map((item) => item.id).join("|");
   const existingPaid = bill?.paid_paise ?? (tableOrder?.payments ?? []).reduce((total, payment) => total + payment.amount_paise, 0);
   const billBaseTotal = bill?.total_paise ?? sentTotal;
   const discountPaise = discountType === "percent"
@@ -181,38 +158,6 @@ export function BillingPanel({
     },
     onError: (error) => setNotice({ tone: "bad", text: messageOf(error) })
   });
-  const reviseBill = useMutation({
-    mutationFn: (approval: ManagerApproval) => {
-      if (!bill) throw new Error("Generate the bill first.");
-      const items = revisionItems
-        .filter((item) => item.quantity > 0)
-        .map((item) =>
-          item.menuItemId
-            ? { orderItemId: item.orderItemId, menuItemId: item.menuItemId, menuItemVariantId: item.menuItemVariantId, quantity: item.quantity }
-            : {
-                orderItemId: item.orderItemId,
-                openName: item.openName ?? item.name,
-                openPricePaise: item.pricePaise,
-                saleGroupId: item.saleGroupId,
-                productionUnitId: item.productionUnitId ?? null,
-                quantity: item.quantity
-              }
-        );
-      if (items.length === 0) throw new Error("A revised bill needs at least one item.");
-      const payload = { items, managerApproval: approval };
-      const scope = { billId: bill.id, payload };
-      pendingScopes.current["bill-revise"] = scope;
-      return hubApi.reviseBill(bill.id, payload, operationKeys.keyFor("bill-revise", scope));
-    },
-    onSuccess: async () => {
-      if (pendingScopes.current["bill-revise"]) operationKeys.clear("bill-revise", pendingScopes.current["bill-revise"]);
-      setRevisionOpen(false);
-      await onSettled();
-      setNotice({ tone: "good", text: "Bill revised and totals refreshed." });
-    },
-    onError: (error) => setNotice({ tone: "bad", text: messageOf(error) })
-  });
-
   function fillFull(method: keyof typeof payments) {
     setPayments({ cash: "0", upi: "0", card: "0", online: "0", [method]: String(Math.max(0, finalTotal - existingPaid) / 100) });
   }
@@ -270,75 +215,6 @@ export function BillingPanel({
     setDiscount(String((bill.discount_paise ?? 0) / 100));
     setTip(String((bill.tip_paise ?? 0) / 100));
   }, [bill?.id]);
-
-  function openRevisionEditor() {
-    const rows = (tableOrder?.items ?? [])
-      .filter((item) => item.status !== "cancelled" && item.quantity > 0)
-      .map((item) => ({
-        key: item.id,
-        orderItemId: item.id,
-        menuItemId: item.menu_item_id ?? undefined,
-        menuItemVariantId: item.menu_item_variant_id ?? undefined,
-        openName: item.menu_item_id ? undefined : item.name_snapshot,
-        pricePaise: item.unit_price_paise,
-        saleGroupId: item.sale_group_id,
-        productionUnitId: item.production_unit_id,
-        name: item.name_snapshot,
-        quantity: item.quantity
-      }));
-    setRevisionItems(rows);
-    setRevisionOpen(true);
-  }
-
-  function changeRevisionQty(key: string, delta: number) {
-    setRevisionItems((current) => current.map((item) => item.key === key ? { ...item, quantity: Math.max(0, item.quantity + delta) } : item));
-  }
-
-  const addRevisionMenuItem = useCallback((item: MenuItem, requestedVariantId?: string) => {
-    const variants = menuItemVariantOptions(item);
-    const variant = variants.find((entry) => (entry.id ?? "") === (requestedVariantId ?? "")) ?? variants[0];
-    const variantId = variant?.id;
-    const lineName = variant && variant.kind !== "default" ? `${item.name} ${variant.label}` : item.name;
-    setRevisionItems((current) => {
-      const existing = current.find((row) => row.menuItemId === item.id && (row.menuItemVariantId ?? "") === (variantId ?? ""));
-      if (existing) return current.map((row) => row.key === existing.key ? { ...row, quantity: row.quantity + 1 } : row);
-      return [
-        ...current,
-        {
-          key: `new-${item.id}-${variantId ?? "default"}`,
-          menuItemId: item.id,
-          menuItemVariantId: variantId,
-          pricePaise: variant?.price_paise ?? item.price_paise,
-          saleGroupId: item.sale_group_id,
-          productionUnitId: item.production_unit_id,
-          name: lineName,
-          quantity: 1
-        }
-      ];
-    });
-  }, []);
-
-  function addRevisionDish() {
-    const item = revisionAddMenuItem;
-    if (!item) return;
-    addRevisionMenuItem(item, revisionAddVariantId);
-  }
-
-  const addKeyboardRevisionItem = useCallback(
-    (item: MenuItem) => {
-      const variantId = menuItemVariantOptions(item)[0]?.id ?? "";
-      setRevisionAddMenuItemId(item.id);
-      setRevisionAddVariantId(variantId);
-      addRevisionMenuItem(item, variantId);
-    },
-    [addRevisionMenuItem]
-  );
-  const revisionKeyboard = useKeyboardListNavigation({
-    items: revisionSearchItems,
-    enabled: Boolean(revisionOpen && revisionSearch.trim()),
-    resetKey: `${revisionSearch}|${revisionSearchItemIds}`,
-    onCommit: addKeyboardRevisionItem
-  });
 
   if (!tableOrder?.order) {
     return <EmptyState title="No active order" description="Add dishes and send them before generating a bill." />;
@@ -455,99 +331,14 @@ export function BillingPanel({
           <kbd>Enter</kbd>
         </button>
       </div>
-      {!revisionOpen ? (
-        <button type="button" className="secondary-button" disabled={Boolean(bill.is_nc) || existingPaid > 0} onClick={openRevisionEditor}>
-          Revise printed bill
-        </button>
-      ) : (
-        <div className="revision-box">
-          <div className="revision-head">
-            <strong>Revise bill items</strong>
-            <button type="button" onClick={() => setRevisionOpen(false)}>Cancel</button>
-          </div>
-          <div className="revision-add-row">
-            <input
-              value={revisionSearch}
-              onChange={(event) => setRevisionSearch(event.target.value)}
-              onKeyDown={revisionKeyboard.onKeyDown}
-              placeholder="Search dish to add"
-            />
-            <select
-              value={revisionAddMenuItemId}
-              onChange={(event) => {
-                const nextItemId = event.target.value;
-                const nextItem = menuItems.find((item) => item.id === nextItemId);
-                const nextVariants = menuItemVariantOptions(nextItem);
-                setRevisionAddMenuItemId(nextItemId);
-                setRevisionAddVariantId(nextVariants[0]?.id ?? "");
-              }}
-            >
-              <option value="">Add dish</option>
-              {revisionSearchItems.map((item) => (
-                <option key={item.id} value={item.id}>{item.name} · {formatInr(item.price_paise)}</option>
-              ))}
-            </select>
-            {revisionAddVariants.length > 1 ? (
-              <select value={revisionAddVariantId} onChange={(event) => setRevisionAddVariantId(event.target.value)}>
-                {revisionAddVariants.map((variant) => (
-                  <option key={variant.id ?? "default"} value={variant.id ?? ""}>
-                    {variant.kind === "default" ? "Regular" : variant.label} · {formatInr(variant.price_paise)}
-                  </option>
-                ))}
-              </select>
-            ) : null}
-            <button type="button" disabled={!revisionAddMenuItemId} onClick={addRevisionDish}>Add</button>
-          </div>
-          {revisionSearch.trim() && revisionSearchItems.length ? (
-            <div className="revision-search-results">
-              {revisionSearchItems.map((item, index) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  className={`revision-search-result${revisionKeyboard.activeIndex === index ? " keyboard-active" : ""}`}
-                  onMouseEnter={() => revisionKeyboard.setActiveIndex(index)}
-                  onClick={() => addKeyboardRevisionItem(item)}
-                >
-                  <span>
-                    <strong>{item.name}</strong>
-                    <small>{item.sale_group_name ?? item.production_unit_name ?? "Menu item"}</small>
-                  </span>
-                  <b>{formatInr(menuItemVariantOptions(item)[0]?.price_paise ?? item.price_paise)}</b>
-                </button>
-              ))}
-            </div>
-          ) : null}
-          <LineItems
-            emptyTitle="No bill items"
-            emptyText="Add at least one item before saving the revised bill."
-            rows={revisionItems.map((item) => ({
-              id: item.key,
-              title: item.name,
-              meta: `${formatInr(item.pricePaise)} each`,
-              quantity: item.quantity,
-              amount: item.pricePaise * item.quantity,
-              onMinus: () => changeRevisionQty(item.key, -1),
-              onPlus: () => changeRevisionQty(item.key, 1)
-            }))}
-          />
-          <button
-            type="button"
-            className="secondary-button"
-            disabled={reviseBill.isPending || revisionItems.every((item) => item.quantity <= 0)}
-            onClick={async () => {
-              const approval = await requestManagerApproval({
-                title: "Approve revised bill",
-                defaultReason: "Bill revised",
-                confirmLabel: reviseBill.isPending ? "Saving..." : "Save revised bill",
-                danger: true
-              }).catch(() => null);
-              if (approval) reviseBill.mutate(approval);
-            }}
-          >
-            {reviseBill.isPending ? "Saving revision..." : "Save revised bill"}
-          </button>
-        </div>
-      )}
+      <BillRevisionEditor
+        tableOrder={tableOrder}
+        menuItems={menuItems}
+        existingPaid={existingPaid}
+        onSettled={onSettled}
+        setNotice={setNotice}
+        requestManagerApproval={requestManagerApproval}
+      />
       <button
         type="button"
         className="danger-link"

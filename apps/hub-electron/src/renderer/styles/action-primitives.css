@@ -1,0 +1,86 @@
+.variant-buttons,
+.menu-variant-buttons {
+  @apply flex flex-wrap gap-2;
+}
+
+.variant-buttons button,
+.fill-rest-btn,
+.secondary-inline,
+.secondary-button,
+.load-more-button,
+.utility-action,
+.order-icon-button,
+.menu-rail-button,
+.transfer-panel-toggle,
+.shift-button,
+.quick-pay-button,
+.history-print-button {
+  @apply inline-flex min-h-10 items-center justify-center gap-2 rounded-md border border-line bg-panel px-3 text-sm font-semibold text-ink shadow-sm hover:bg-wash disabled:opacity-45;
+}
+
+.danger-button,
+.danger-link,
+.danger-small-button {
+  @apply inline-flex min-h-10 items-center justify-center rounded-md border border-danger bg-danger px-3 text-sm font-semibold text-white shadow-sm hover:bg-danger disabled:opacity-45;
+}
+
+.punch-button,
+.primary-button,
+.scan-button,
+.draft-bar-button,
+.hero-send-button {
+  @apply inline-flex min-h-10 items-center justify-center rounded-md bg-ink px-4 text-sm font-semibold text-white shadow-sm hover:bg-accent-dark disabled:opacity-45;
+}
+
+.split-input,
+.payment-input-row,
+.secret-field,
+.secret-input,
+.money-input-wrap {
+  @apply grid gap-2;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.split-input input,
+.payment-input-row input,
+.shift-qty-input {
+  @apply min-w-0;
+}
+
+.modal-backdrop {
+  @apply fixed inset-0 z-40 grid place-items-center bg-black/60 p-4;
+}
+
+.modal-card {
+  @apply grid w-[min(460px,100%)] gap-4 rounded-lg border border-line bg-panel p-5 shadow-2xl;
+}
+
+.modal-card.danger {
+  @apply border-danger;
+}
+
+.csv-import-grid {
+  @apply grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.csv-file-button {
+  @apply inline-flex min-h-9 w-fit cursor-pointer items-center justify-center gap-2 rounded-md bg-accent px-3 text-sm font-bold text-white hover:bg-accent-dark;
+}
+
+.csv-file-button input {
+  @apply sr-only;
+}
+
+.print-preview {
+  @apply max-w-full overflow-auto whitespace-pre-wrap rounded-lg border border-line bg-white p-3 font-mono text-xs;
+}
+
+.print-preview-styled {
+  @apply whitespace-pre bg-white;
+}
+
+.empty,
+.empty-state {
+  @apply rounded-lg border border-dashed border-line p-6 text-center text-sm font-semibold text-muted;
+}

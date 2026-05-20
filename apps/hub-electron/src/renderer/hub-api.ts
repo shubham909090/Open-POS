@@ -1,556 +1,37 @@
-export type Role = "admin" | "captain" | "waiter" | "kitchen";
+import type {
+  AlcoholCatalog,
+  AlcoholStockMovement,
+  AppUpdateStatus,
+  BackupSummary,
+  BillAdjustmentPayload,
+  BillPrinterSlot,
+  BillPrinters,
+  Bootstrap,
+  BulkDeleteResult,
+  CachedUpdatePackage,
+  CloseSummary,
+  CsvImportResult,
+  DailyReportDetail,
+  DailyReportRow,
+  GithubUpdateCheckResult,
+  GithubUpdateInstallRequest,
+  HubConnectionSettings,
+  KdsTicket,
+  LocalDevice,
+  ManagerApprovalPayload,
+  MasterApprovalPayload,
+  PairingCodeResult,
+  PrintLayoutSettings,
+  PrintLayouts,
+  PrintProcessSummary,
+  RangeReportDetail,
+  Role,
+  SystemPrinterInfo,
+  TableOrder,
+  ValidatedUpdatePackage,
+} from "./hub-api-types.js";
 
-export interface LocalDevice {
-  id: string;
-  name: string;
-  role: Role;
-  status: "active" | "revoked" | string;
-  created_at: string;
-  last_seen_at: string | null;
-  revoked_at: string | null;
-}
-
-export interface PairingCodeResult {
-  id: string;
-  code: string;
-  expiresAt: string;
-  qrDataUrl: string;
-  pairingPayloadText: string;
-}
-
-export interface BackupSummary {
-  fileName: string;
-  path: string;
-  sizeBytes: number;
-  createdAt: string;
-}
-
-export interface UpdatePackageManifest {
-  schemaVersion: 1;
-  appId: string;
-  productName: string;
-  version: string;
-  platform: "win32";
-  arch: "x64";
-  electronVersion: string;
-  dbSchemaVersion: number;
-  minSourceDbSchemaVersion: number;
-  createdAt: string;
-  installer: { fileName: string; sha256: string; sizeBytes: number };
-  sqliteNative: { fileName: string; sha256: string; sizeBytes: number; format: "pe32plus-x64" };
-}
-
-export interface CachedUpdatePackage {
-  version: string;
-  packagePath: string;
-  installerPath: string;
-  manifest: UpdatePackageManifest;
-  cachedAt: string;
-  preUpdateBackupFileName?: string;
-  preUpdateBackupPath?: string;
-  preparedAt?: string;
-}
-
-export interface AppUpdateStatus {
-  appVersion: string;
-  dbSchemaVersion: number;
-  activeOrderCount: number;
-  baselineRegistered: boolean;
-  rollbackAvailable: boolean;
-  current?: CachedUpdatePackage;
-  pending?: CachedUpdatePackage;
-  previous?: CachedUpdatePackage;
-  recoveryScriptPath?: string;
-}
-
-export interface ValidatedUpdatePackage {
-  ok: true;
-  packagePath: string;
-  packageFileName: string;
-  manifest: UpdatePackageManifest;
-}
-
-export interface GithubUpdateCheckResult {
-  status: "up_to_date" | "update_available" | "unavailable";
-  currentVersion: string;
-  latestVersion?: string;
-  message?: string;
-  release?: {
-    tagName: string;
-    title: string;
-    url: string;
-    publishedAt?: string;
-    notes: string;
-  };
-  asset?: {
-    name: string;
-    sizeBytes: number;
-    downloadUrl: string;
-  };
-  installRequest?: GithubUpdateInstallRequest;
-}
-
-export interface GithubUpdateInstallRequest {
-  tagName: string;
-  assetName: string;
-  expectedVersion: string;
-}
-
-export interface PosDay {
-  id: string;
-  business_date: string;
-  period_start_at: string;
-  period_end_at: string;
-  status: string;
-}
-
-export interface Floor {
-  id: string;
-  name: string;
-  active: boolean;
-  sort_order?: number;
-}
-
-export interface Table {
-  id: string;
-  floor_id: string;
-  floor_name: string;
-  name: string;
-  active: boolean;
-  sort_order?: number;
-  status: "free" | "occupied" | "billed" | string;
-  current_order_id: string | null;
-  occupied_at: string | null;
-  timer_ended_at?: string | null;
-  current_order_total_paise: number;
-  sent_item_count: number;
-}
-
-export interface ProductionUnit {
-  id: string;
-  name: string;
-  printer_mode?: "system" | "network";
-  printer_name?: string | null;
-  printer_host?: string;
-  printer_port?: number;
-  kds_enabled?: boolean | number;
-  active: boolean;
-}
-
-export interface MenuItem {
-  id: string;
-  name: string;
-  price_paise: number;
-  production_unit_id: string | null;
-  production_unit_name: string | null;
-  sale_group_id: string;
-  sale_group_name: string;
-  sale_group_kind: string;
-  ticket_label: "KOT" | "BOT";
-  active: boolean;
-  variants?: MenuItemVariant[];
-}
-
-export interface MenuItemVariant {
-  id: string;
-  menu_item_id: string;
-  label: string;
-  kind: "default" | "shot" | "small_bottle" | "large_bottle" | string;
-  price_paise: number;
-  volume_ml: number | null;
-  inventory_action: "none" | "large_ml" | "small_bottle" | "large_bottle" | string;
-  sort_order: number;
-  active: boolean | number;
-}
-
-export interface SaleGroup {
-  id: string;
-  name: string;
-  kind: "food" | "alcohol" | "beverage" | "other";
-  report_label: string;
-  ticket_label: "KOT" | "BOT";
-  tax_components_json: string;
-  default_production_unit_id: string | null;
-  default_production_unit_name?: string | null;
-  active: boolean;
-}
-
-export interface PrintJob {
-  id: string;
-  target_type: string;
-  target_id: string;
-  printer_name?: string | null;
-  status: string;
-  attempts: number;
-  last_error?: string | null;
-  created_at: string;
-}
-
-export interface PrintProcessSummary {
-  printed: number;
-  failed: number;
-  skipped?: number;
-}
-
-export interface SystemPrinterInfo {
-  name: string;
-  displayName: string;
-  isDefault: boolean;
-  status?: string;
-}
-
-export type BillPrinterSlot = "default" | "alternate";
-
-export interface BillPrinterProfile {
-  label: string;
-  printerMode: "system" | "network";
-  printerHost: string | null;
-  printerPort: number | null;
-  printerName: string | null;
-  configured: boolean;
-}
-
-export interface BillPrinters {
-  default: BillPrinterProfile;
-  alternate: BillPrinterProfile;
-}
-
-export interface Bootstrap {
-  currentBusinessDay: PosDay;
-  floors: Floor[];
-  tables: Table[];
-  productionUnits: ProductionUnit[];
-  saleGroups: SaleGroup[];
-  menuItems: MenuItem[];
-  menuPopularity?: Array<{ menuItemId: string; quantity: number }>;
-  ticketTemplate?: { billHeader: string; billFooter: string; kotHeader: string; kotFooter: string; restaurantName: string; restaurantAddress: string; taxRegistrationText: string; lineWidthChars: number };
-  printLayouts?: PrintLayouts;
-  printJobs: PrintJob[];
-  syncStatus: {
-    counts?: Record<string, number>;
-    lastEvent?: unknown;
-    commandFailures?: Array<{ commandId: string; type: string; error: string; failedAt: string }>;
-  };
-  setup?: {
-    printerOutputMode: "test" | "live";
-    managerPinConfigured?: boolean;
-    masterPinConfigured?: boolean;
-    hubConnection?: HubConnectionSettings;
-  };
-}
-
-export interface HubConnectionSettings {
-  configured: boolean;
-  cloudUrl: string;
-  installationId: string;
-  syncSecret: string;
-  hubPublicUrl: string;
-}
-
-export interface PrintLayoutSettings {
-  scope: "default" | "receipt" | "unit";
-  productionUnitId?: string;
-  restaurantName: string;
-  restaurantAddress: string;
-  taxRegistrationText: string;
-  billHeader: string;
-  billFooter: string;
-  kotHeader: string;
-  kotFooter: string;
-  lineWidthChars: number;
-  headerAlign: "left" | "center";
-  footerAlign: "left" | "center";
-  sectionStyles: Record<string, { size: "small" | "normal" | "large"; bold: boolean; align: "left" | "center" | "right" }>;
-  topPaddingLines: number;
-  feedLines: number;
-  showTable: boolean;
-  showCaptain: boolean;
-  showDateTime: boolean;
-  showBillId: boolean;
-  showTaxBreakup: boolean;
-  showPaymentSplit: boolean;
-  showDiscountTip: boolean;
-  showNcReprintRevision: boolean;
-}
-
-export interface PrintLayouts {
-  default: PrintLayoutSettings;
-  receipt: PrintLayoutSettings;
-  units: Array<{ productionUnitId: string; name: string; layout: PrintLayoutSettings }>;
-}
-
-export interface ManagerApprovalPayload {
-  managerApproval: { pin: string; reason: string; approvedBy: string };
-}
-
-export interface MasterApprovalPayload {
-  masterApproval: { pin: string; reason: string; approvedBy: string };
-}
-
-export type BillAdjustmentPayload = {
-  discountType?: "amount" | "percent";
-  discountValue?: number;
-  tipPaise?: number;
-};
-
-export interface OrderItem {
-  id: string;
-  order_id: string;
-  menu_item_id: string | null;
-  menu_item_variant_id?: string | null;
-  name_snapshot: string;
-  variant_name_snapshot?: string;
-  variant_volume_ml?: number | null;
-  inventory_action_snapshot?: string;
-  unit_price_paise: number;
-  quantity: number;
-  production_unit_id: string | null;
-  production_unit_name?: string | null;
-  sale_group_id: string;
-  sale_group_name_snapshot: string;
-  sale_group_kind_snapshot: string;
-  ticket_label_snapshot: "KOT" | "BOT";
-  note?: string | null;
-  is_open_item?: boolean | number;
-  status: string;
-}
-
-export interface AlcoholCatalog {
-  items: Array<MenuItem & {
-    type: "plain_liquor" | "prepared_product";
-    large_bottle_ml: number;
-    small_bottle_ml: number;
-    sealed_large_count: number;
-    open_large_ml: number;
-    sealed_small_count: number;
-    recipeIngredients: Array<{ liquor_menu_item_id: string; liquor_name: string; ml_per_unit: number }>;
-  }>;
-  storage: AlcoholStorageRow[];
-}
-
-export interface AlcoholStorageRow {
-  id: string;
-  name: string;
-  active: boolean | number;
-  large_bottle_ml: number;
-  small_bottle_ml: number;
-  sealed_large_count: number;
-  open_large_ml: number;
-  sealed_small_count: number;
-  total_available_ml: number;
-  pending_large_ml: number;
-  pending_large_bottles: number;
-  pending_small_bottles: number;
-  pending_total_ml: number;
-  expected_after_settlement_ml: number;
-}
-
-export interface AlcoholStockMovement {
-  id: string;
-  menu_item_id: string;
-  item_name: string;
-  source_type: string;
-  source_id: string;
-  delta_sealed_large: number;
-  delta_open_large_ml: number;
-  delta_sealed_small: number;
-  balance_sealed_large: number;
-  balance_open_large_ml: number;
-  balance_sealed_small: number;
-  approved_by: string | null;
-  created_at: string;
-}
-
-export interface Bill {
-  id: string;
-  order_id: string;
-  status: "pending" | "paid" | string;
-  total_paise: number;
-  discount_paise: number;
-  tip_paise: number;
-  final_total_paise: number;
-  revision_number?: number;
-  is_nc?: boolean;
-  nc_reason?: string | null;
-  paid_paise?: number;
-}
-
-export interface Payment {
-  id: string;
-  bill_id: string;
-  method: string;
-  amount_paise: number;
-  reference: string | null;
-  created_at: string;
-}
-
-export interface TableOrder {
-  order?: {
-    id: string;
-    table_id: string;
-    status: string;
-    pax: number;
-    captain_id: string;
-  } | null;
-  items: OrderItem[];
-  bill?: Bill | null;
-  payments: Payment[];
-}
-
-export interface CloseSummary {
-  businessDay: PosDay;
-  openOrders: number;
-  billedOrders: number;
-  paidBills: number;
-  unpaidBills: number;
-  cancelledOrders?: number;
-  billCount: number;
-  grossSalesPaise: number;
-  discountPaise: number;
-  tipPaise: number;
-  finalSalesPaise: number;
-  cashPaymentsPaise: number;
-  upiPaymentsPaise: number;
-  cardPaymentsPaise: number;
-  onlinePaymentsPaise: number;
-  totalPaymentsPaise: number;
-  nonCashPaymentsPaise: number;
-  billSummaries?: ReportBillSummary[];
-  itemSummaries?: ReportItemSummary[];
-  groupSummaries?: ReportGroupSummary[];
-}
-
-export interface ReportBillSummary {
-  billId: string;
-  billNumber?: number;
-  orderId: string;
-  tableName: string;
-  status: string;
-  subtotalPaise?: number;
-  taxPaise?: number;
-  totalPaise: number;
-  discountPaise: number;
-  tipPaise: number;
-  finalTotalPaise: number;
-  paidPaise: number;
-  settledAt: string | null;
-  payments: Array<{ method: string; amountPaise: number; reference: string | null }>;
-  items?: Array<{
-    orderItemId?: string;
-    menuItemId?: string | null;
-    menuItemVariantId?: string | null;
-    saleGroupId?: string;
-    productionUnitId?: string | null;
-    name: string;
-    quantity: number;
-    unitPricePaise: number;
-    lineTotalPaise: number;
-  }>;
-  isNc?: boolean;
-  ncReason?: string | null;
-  revisionNumber?: number;
-  modified?: boolean;
-}
-
-export interface ReportItemSummary {
-  menuItemId: string;
-  name: string;
-  saleGroupId: string;
-  saleGroupName: string;
-  saleGroupKind: string;
-  quantity: number;
-  grossSalesPaise: number;
-  ncQuantity: number;
-  ncGrossSalesPaise: number;
-}
-
-export interface ReportGroupSummary {
-  saleGroupId: string;
-  name: string;
-  kind: string;
-  quantity: number;
-  grossSalesPaise: number;
-  taxPaise: number;
-  finalSalesPaise: number;
-  ncQuantity: number;
-  ncGrossSalesPaise: number;
-}
-
-export interface DailyReportRow {
-  pos_day_id: string;
-  business_date: string;
-  status: string;
-  bill_count: number;
-  gross_sales_paise: number;
-  final_sales_paise: number;
-  total_payments_paise: number;
-  finalized_at: string;
-}
-
-export interface DailyReportDetail extends DailyReportRow {
-  billSummaries: ReportBillSummary[];
-  itemSummaries: ReportItemSummary[];
-  groupSummaries: ReportGroupSummary[];
-}
-
-export interface RangeReportDayRow extends DailyReportRow {
-  discount_paise: number;
-  tip_paise: number;
-  cash_payments_paise: number;
-  upi_payments_paise: number;
-  card_payments_paise: number;
-  online_payments_paise: number;
-}
-
-export interface RangeReportDetail {
-  range: { from: string; to: string };
-  availableDays: RangeReportDayRow[];
-  missingDates: string[];
-  unfinalizedDates: string[];
-  openOrders: number;
-  billedOrders: number;
-  paidBills: number;
-  unpaidBills: number;
-  cancelledOrders: number;
-  billCount: number;
-  grossSalesPaise: number;
-  discountPaise: number;
-  tipPaise: number;
-  finalSalesPaise: number;
-  cashPaymentsPaise: number;
-  upiPaymentsPaise: number;
-  cardPaymentsPaise: number;
-  onlinePaymentsPaise: number;
-  totalPaymentsPaise: number;
-  nonCashPaymentsPaise: number;
-  billSummaries?: ReportBillSummary[];
-  itemSummaries: ReportItemSummary[];
-  groupSummaries: ReportGroupSummary[];
-}
-
-export interface KdsTicket {
-  id: string;
-  sequence: number;
-  table_name: string;
-  status: string;
-  captain_id: string;
-  note?: string | null;
-  items: Array<{ name_snapshot: string; quantity_delta: number; note_snapshot?: string | null }>;
-}
-
-export interface CsvImportResult {
-  created: number;
-  failed: number;
-  ids: string[];
-  errors: Array<{ row: number; message: string }>;
-}
-
-export interface BulkDeleteResult {
-  deleted: number;
-  disabled: number;
-  failed: number;
-  errors: Array<{ id: string; name?: string; message: string }>;
-}
+export type * from "./hub-api-types.js";
 
 let authToken = localStorage.getItem("deviceToken") || "dev-admin-token";
 
@@ -730,11 +211,11 @@ export const hubApi = {
     apiFetch<{ mode: "test" | "live" }>("/settings/printer-mode", { method: "PUT", body: JSON.stringify({ mode }) }),
   submitOrder: (
     payload: {
-	      tableId: string;
-	      pax: number;
-	      printMode?: "kot" | "kot_print";
-        note?: string;
-	      items: Array<
+      tableId: string;
+      pax: number;
+      printMode?: "kot" | "kot_print";
+      note?: string;
+      items: Array<
         | { menuItemId: string; quantity: number; note?: string }
         | { menuItemId: string; menuItemVariantId: string; quantity: number; note?: string }
         | { openName: string; openPricePaise: number; saleGroupId: string; productionUnitId?: string | null; quantity: number; note?: string }
@@ -748,26 +229,26 @@ export const hubApi = {
       idempotencyKey,
       body: JSON.stringify({ ...payload, orderType: "dine_in" })
     }),
-	  updateOrderState: (
-	    orderId: string,
-	    payload: {
-	      saveMode: "save" | "save_print";
-	      items: Array<
-	        | { orderItemId?: string; menuItemId: string; menuItemVariantId?: string; quantity: number; note?: string }
-	        | { orderItemId?: string; openName: string; openPricePaise: number; saleGroupId: string; productionUnitId?: string | null; quantity: number; note?: string }
-	      >;
-	      managerApproval?: { pin: string; reason: string; approvedBy: string };
-	    },
-	    idempotencyKey?: string
-	  ) =>
-	    apiFetch<{ orderId: string; status: string; totalPaise: number; kotIds: string[]; printJobIds?: string[]; processed?: PrintProcessSummary }>(`/orders/${orderId}/state`, {
-	      method: "POST",
-	      idempotent: "order-state",
-	      idempotencyKey,
-	      body: JSON.stringify(payload)
-	    }),
-	  generateBill: (orderId: string, idempotencyKey?: string, printerSlot: BillPrinterSlot = "default", adjustments: BillAdjustmentPayload = {}) =>
-	    apiFetch<{ billId: string; billNumber: number; totalPaise: number; finalTotalPaise: number; printJobId: string; processed?: PrintProcessSummary }>(`/bills/${orderId}/generate`, {
+  updateOrderState: (
+    orderId: string,
+    payload: {
+      saveMode: "save" | "save_print";
+      items: Array<
+        | { orderItemId?: string; menuItemId: string; menuItemVariantId?: string; quantity: number; note?: string }
+        | { orderItemId?: string; openName: string; openPricePaise: number; saleGroupId: string; productionUnitId?: string | null; quantity: number; note?: string }
+      >;
+      managerApproval?: { pin: string; reason: string; approvedBy: string };
+    },
+    idempotencyKey?: string
+  ) =>
+    apiFetch<{ orderId: string; status: string; totalPaise: number; kotIds: string[]; printJobIds?: string[]; processed?: PrintProcessSummary }>(`/orders/${orderId}/state`, {
+      method: "POST",
+      idempotent: "order-state",
+      idempotencyKey,
+      body: JSON.stringify(payload)
+    }),
+  generateBill: (orderId: string, idempotencyKey?: string, printerSlot: BillPrinterSlot = "default", adjustments: BillAdjustmentPayload = {}) =>
+    apiFetch<{ billId: string; billNumber: number; totalPaise: number; finalTotalPaise: number; printJobId: string; processed?: PrintProcessSummary }>(`/bills/${orderId}/generate`, {
         method: "POST",
         idempotent: "bill-generate",
         idempotencyKey,

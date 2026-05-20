@@ -1,17 +1,16 @@
-import { useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Alert, LayoutAnimation, Modal, Pressable, ScrollView, SectionList, Text, TextInput, View } from "react-native";
-import { formatPosDateTime, getTableDisplayState, isTransferTargetTable, searchMenuItems, tableDisplayLabel, type OrderItemInput, type SaleGroupKind } from "@gaurav-pos/shared";
+import { useState } from "react";
+import { LayoutAnimation, Modal, Pressable, Text, TextInput, View } from "react-native";
+import { type OrderItemInput } from "@gaurav-pos/shared";
 
-import type { HubBootstrap, HubOrder, KdsTicket } from "../lib/hub-client";
-import { mobileDraftOrderStateSignature, mobileSavedOrderStateSignature } from "../lib/order-state";
-import { formatMobileMenuActionLabel } from "../lib/menu-actions";
-import { amountInputToPaise, categoryToneFor, findMenuVariant, formatRupees, paiseToRupeeInput } from "../lib/mobile-format";
-import { clampTransferQuantity, filterTablesForSearch, groupTablesByFloor, normaliseTransferQuantityInput, stepTransferQuantity } from "../lib/table-flow";
+import type { HubBootstrap, HubOrder } from "../lib/hub-client";
+import { findMenuVariant, formatRupees } from "../lib/mobile-format";
 import type { ConnectionState, MobileOrderStateItem, OrderStateSaveMode, PaymentMethod, PrintMode } from "../lib/mobile-types";
+import { useTicketStateEditor } from "../hooks/use-ticket-state-editor";
 import { palette, styles } from "../styles/app-styles";
-import { CollapsibleSection, EmptyState, LabeledMoneyInput, SummaryBox, UncontrolledInput } from "./app-shell";
+import { CollapsibleSection, EmptyState, UncontrolledInput } from "./app-shell";
 import { CaptainBillingPanel } from "./billing-panel";
 import { MenuItemRow } from "./menu-screen";
+import { TicketTransferSection } from "./ticket-transfer-section";
 
 function TicketScreen({
   selectedTableName,
@@ -77,77 +76,33 @@ function TicketScreen({
   }) => void;
   onSubmit: (printMode: PrintMode) => void;
 }) {
-  const [fullShiftTargetId, setFullShiftTargetId] = useState("");
-  const [itemShiftTargetId, setItemShiftTargetId] = useState("");
-  const [itemShiftQty, setItemShiftQty] = useState<Record<string, string>>({});
-  const [targetPickerMode, setTargetPickerMode] = useState<"full" | "items" | null>(null);
-  const [targetSearch, setTargetSearch] = useState("");
-  const [stateItems, setStateItems] = useState<MobileOrderStateItem[]>([]);
-  const [stateSearch, setStateSearch] = useState("");
   const [openDraftNotes, setOpenDraftNotes] = useState<Set<number>>(new Set());
-  const [openStateNotes, setOpenStateNotes] = useState<Set<number>>(new Set());
-  const [stateApprovalMode, setStateApprovalMode] = useState<OrderStateSaveMode | null>(null);
-  const [approvalPin, setApprovalPin] = useState("");
-  const [approvalReason, setApprovalReason] = useState("Billed table state edited");
   const canSubmit = Boolean(selectedTableName && items.length > 0 && !sending);
-  const shiftTargets = useMemo(
-    () => tables.filter((table) => table.id !== selectedTableId && isTransferTargetTable(table)),
-    [selectedTableId, tables]
-  );
-  const visibleShiftTargets = useMemo(() => filterTablesForSearch(shiftTargets, targetSearch), [shiftTargets, targetSearch]);
-  const visibleShiftTargetGroups = useMemo(() => groupTablesByFloor(visibleShiftTargets, floors), [floors, visibleShiftTargets]);
-  const selectedFullShiftTarget = shiftTargets.find((table) => table.id === fullShiftTargetId) ?? null;
-  const selectedItemShiftTarget = shiftTargets.find((table) => table.id === itemShiftTargetId) ?? null;
   const sentCount = sentItems.reduce((total, item) => total + item.quantity, 0);
-  const sentItemsSignature = sentItems
-    .map((item) => [item.id, item.menu_item_id, item.menu_item_variant_id, item.name_snapshot, item.unit_price_paise, item.quantity, item.note ?? "", item.status].join(":"))
-    .join("|");
-  const savedStateSignature = mobileSavedOrderStateSignature(sentItems);
-  const draftStateSignature = mobileDraftOrderStateSignature(stateItems, menuItems);
-  const hasStateChanges = Boolean(currentOrder?.order) && savedStateSignature !== draftStateSignature;
   const newCount = items.reduce((total, item) => total + item.quantity, 0);
-  const isBilledState = currentOrder?.order?.status === "billed" || Boolean(currentOrder?.bill);
-  const stateTotal = stateItems.reduce((total, item) => {
-    const menuItem = menuItems.find((entry) => entry.id === item.menuItemId);
-    const variant = findMenuVariant(menuItem, item.menuItemVariantId);
-    return total + (item.unitPricePaise ?? variant?.price_paise ?? menuItem?.price_paise ?? 0) * item.quantity;
-  }, 0);
-  const stateMatches = searchMenuItems(menuItems, stateSearch, {}).slice(0, 8);
+  const {
+    stateItems,
+    stateSearch,
+    setStateSearch,
+    openStateNotes,
+    stateApprovalMode,
+    setStateApprovalMode,
+    approvalPin,
+    setApprovalPin,
+    approvalReason,
+    setApprovalReason,
+    hasStateChanges,
+    isBilledState,
+    stateTotal,
+    stateMatches,
+    changeStateQty,
+    changeStateNote,
+    showStateNote,
+    addStateItem,
+    requestStateSave,
+    confirmBilledStateSave
+  } = useTicketStateEditor({ currentOrder, sentItems, menuItems, onSaveOrderState });
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(["new"]));
-  useEffect(() => {
-    setStateItems(
-      sentItems.map((item) =>
-        item.menu_item_id
-          ? {
-              orderItemId: item.id,
-              menuItemId: item.menu_item_id,
-              menuItemVariantId: item.menu_item_variant_id ?? undefined,
-              unitPricePaise: item.unit_price_paise,
-              saleGroupId: item.sale_group_id,
-              productionUnitId: item.production_unit_id ?? null,
-              note: item.note ?? "",
-              quantity: item.quantity
-            }
-          : {
-              orderItemId: item.id,
-              openName: item.name_snapshot,
-              openPricePaise: item.unit_price_paise,
-              saleGroupId: item.sale_group_id ?? "sg-food",
-              productionUnitId: item.production_unit_id ?? null,
-              note: item.note ?? "",
-              quantity: item.quantity
-            }
-      )
-    );
-  }, [currentOrder?.order?.id, sentItemsSignature]);
-  useEffect(() => {
-    if (fullShiftTargetId && !shiftTargets.some((table) => table.id === fullShiftTargetId)) setFullShiftTargetId("");
-    if (itemShiftTargetId && !shiftTargets.some((table) => table.id === itemShiftTargetId)) setItemShiftTargetId("");
-    setItemShiftQty((current) => {
-      const allowed = new Set(sentItems.map((item) => item.id));
-      return Object.fromEntries(Object.entries(current).filter(([itemId]) => allowed.has(itemId)));
-    });
-  }, [fullShiftTargetId, itemShiftTargetId, sentItemsSignature, shiftTargets]);
   const toggleSection = (id: string) => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setExpandedSections((prev) => {
@@ -156,70 +111,8 @@ function TicketScreen({
       return next;
     });
   };
-  const changeStateQty = (index: number, delta: number) => {
-    setStateItems((current) =>
-      current
-        .map((item, itemIndex) => (itemIndex === index ? { ...item, quantity: Math.max(0, item.quantity + delta) } : item))
-        .filter((item) => Boolean(item.orderItemId) || item.quantity > 0)
-    );
-  };
-  const changeStateNote = (index: number, note: string) => {
-    setStateItems((current) => current.map((item, itemIndex) => (itemIndex === index ? { ...item, note } : item)));
-  };
   const showDraftNote = (index: number) => {
     setOpenDraftNotes((current) => new Set(current).add(index));
-  };
-  const showStateNote = (index: number) => {
-    setOpenStateNotes((current) => new Set(current).add(index));
-  };
-  const addStateItem = (menuItemId: string, menuItemVariantId?: string) => {
-    setStateItems((current) => {
-      const found = current.find((item) => item.menuItemId === menuItemId && item.menuItemVariantId === menuItemVariantId);
-      if (found) {
-        return current.map((item) => (item === found ? { ...item, quantity: item.quantity + 1 } : item));
-      }
-      return [...current, { menuItemId, menuItemVariantId, quantity: 1 }];
-    });
-    setStateSearch("");
-  };
-  const requestStateSave = (saveMode: OrderStateSaveMode) => {
-    if (!hasStateChanges) return;
-    if (isBilledState) {
-      setStateApprovalMode(saveMode);
-      setApprovalPin("");
-      setApprovalReason("Billed table state edited");
-      return;
-    }
-    if (saveMode === "save") {
-      Alert.alert("Save without print?", "No modification print or KDS update will be generated.", [
-        { text: "Review", style: "cancel" },
-        { text: "Save", onPress: () => onSaveOrderState(saveMode, stateItems) }
-      ]);
-      return;
-    }
-    onSaveOrderState(saveMode, stateItems);
-  };
-  const confirmBilledStateSave = () => {
-    if (!stateApprovalMode) return;
-    if (!approvalPin.trim()) {
-      Alert.alert("Manager PIN needed", "Enter manager PIN to save billed table changes.");
-      return;
-    }
-    onSaveOrderState(stateApprovalMode, stateItems, {
-      pin: approvalPin.trim(),
-      reason: approvalReason.trim() || "Billed table state edited"
-    });
-    setStateApprovalMode(null);
-    setApprovalPin("");
-  };
-  const openTargetPicker = (mode: "full" | "items") => {
-    setTargetPickerMode(mode);
-    setTargetSearch("");
-  };
-  const selectShiftTarget = (tableId: string) => {
-    if (targetPickerMode === "full") setFullShiftTargetId(tableId);
-    if (targetPickerMode === "items") setItemShiftTargetId(tableId);
-    setTargetPickerMode(null);
   };
   return (
     <View style={styles.panel}>
@@ -435,85 +328,17 @@ function TicketScreen({
       </CollapsibleSection>
 
       {selectedTableId && sentItems.length > 0 && canShift ? (
-        <CollapsibleSection title="Shift Table Or Items" subtitle="Captain-only movement tools" expanded={expandedSections.has("shift")} onToggle={() => toggleSection("shift")} accentColor={palette.blueBill}>
-          {shiftTargets.length === 0 ? (
-            <Text style={styles.smallMuted}>No other active table is available for transfer.</Text>
-          ) : (
-            <>
-              <View style={styles.shiftActionCard}>
-                <View style={styles.sectionHeaderRow}>
-                  <View style={styles.flexText}>
-                    <Text style={styles.actionTitle}>Full table transfer</Text>
-                    <Text style={styles.actionMeta}>{selectedFullShiftTarget ? `${selectedFullShiftTarget.name} · ${selectedFullShiftTarget.floor_name}` : "Choose a target table from all floors."}</Text>
-                  </View>
-                </View>
-                <View style={styles.sendButtonRow}>
-                  <Pressable style={[styles.secondaryButton, styles.sendButton]} onPress={() => openTargetPicker("full")}>
-                    <Text style={styles.secondaryButtonText}>{selectedFullShiftTarget ? "Change target" : "Choose table"}</Text>
-                  </Pressable>
-                  <Pressable
-                    style={[styles.primaryButton, styles.sendButton, (!selectedFullShiftTarget || sending) && styles.buttonDisabled]}
-                    disabled={!selectedFullShiftTarget || sending}
-                    onPress={() => selectedFullShiftTarget && onShiftTable(selectedFullShiftTarget.id)}
-                  >
-                    <Text style={styles.primaryButtonText}>{sending ? "Moving..." : "Transfer table"}</Text>
-                  </Pressable>
-                </View>
-              </View>
-
-              <View style={styles.shiftActionCard}>
-                <View style={styles.sectionHeaderRow}>
-                  <View style={styles.flexText}>
-                    <Text style={styles.actionTitle}>Transfer selected items</Text>
-                    <Text style={styles.actionMeta}>{selectedItemShiftTarget ? `${selectedItemShiftTarget.name} · ${selectedItemShiftTarget.floor_name}` : "Pick one target table, then move item quantities."}</Text>
-                  </View>
-                </View>
-                <Pressable style={styles.secondaryButton} onPress={() => openTargetPicker("items")}>
-                  <Text style={styles.secondaryButtonText}>{selectedItemShiftTarget ? "Change item target" : "Choose item target"}</Text>
-                </Pressable>
-              </View>
-              {sentItems.map((item) => {
-                const quantity = clampTransferQuantity(itemShiftQty[item.id], item.quantity);
-                const canTransferItem = Boolean(selectedItemShiftTarget && !sending && quantity > 0);
-                return (
-                  <View key={`shift-${item.id}`} style={styles.itemShiftRow}>
-                    <Text style={styles.sentName} numberOfLines={2}>{item.name_snapshot}</Text>
-                    <View style={styles.transferQtyStepper}>
-                      <Pressable
-                        style={[styles.transferQtyButton, quantity <= 1 && styles.buttonDisabled]}
-                        disabled={quantity <= 1}
-                        onPress={() => setItemShiftQty((current) => ({ ...current, [item.id]: stepTransferQuantity(current[item.id], -1, item.quantity) }))}
-                      >
-                        <Text style={styles.qtyText}>-</Text>
-                      </Pressable>
-                      <TextInput
-                        style={styles.shiftQtyInput}
-                        value={quantity ? String(quantity) : ""}
-                        onChangeText={(value) => setItemShiftQty((current) => ({ ...current, [item.id]: normaliseTransferQuantityInput(value, item.quantity) }))}
-                        keyboardType="number-pad"
-                        selectTextOnFocus
-                      />
-                      <Pressable
-                        style={[styles.transferQtyButton, quantity >= item.quantity && styles.buttonDisabled]}
-                        disabled={quantity >= item.quantity}
-                        onPress={() => setItemShiftQty((current) => ({ ...current, [item.id]: stepTransferQuantity(current[item.id], 1, item.quantity) }))}
-                      >
-                        <Text style={styles.qtyText}>+</Text>
-                      </Pressable>
-                    </View>
-                    <Pressable
-                      style={[styles.shiftButton, !canTransferItem && styles.buttonDisabled]}
-                      disabled={!canTransferItem}
-                      onPress={() => onShiftItem(item.id, quantity, itemShiftTargetId)}
-                    >
-                      <Text style={styles.shiftButtonText}>Move {quantity}</Text>
-                    </Pressable>
-                  </View>
-                );
-              })}
-            </>
-          )}
-        </CollapsibleSection>
+        <TicketTransferSection
+          selectedTableId={selectedTableId}
+          sentItems={sentItems}
+          tables={tables}
+          floors={floors}
+          sending={sending}
+          expanded={expandedSections.has("shift")}
+          onToggle={() => toggleSection("shift")}
+          onShiftTable={onShiftTable}
+          onShiftItem={onShiftItem}
+        />
       ) : selectedTableId && sentItems.length > 0 ? (
         <Text style={styles.smallMuted}>Only captain devices can shift tables or items.</Text>
       ) : null}
@@ -533,61 +358,6 @@ function TicketScreen({
           />
         </CollapsibleSection>
       ) : null}
-
-      <Modal visible={Boolean(targetPickerMode)} transparent animationType="fade" onRequestClose={() => setTargetPickerMode(null)}>
-        <View style={styles.popupBackdrop}>
-          <View style={styles.popupCard}>
-            <View style={styles.sectionHeaderRow}>
-              <View style={styles.flexText}>
-                <Text style={styles.actionTitle}>{targetPickerMode === "full" ? "Transfer table to" : "Transfer items to"}</Text>
-                <Text style={styles.actionMeta}>Search by table or floor. Free and running tables are allowed.</Text>
-              </View>
-            </View>
-            <TextInput
-              style={styles.input}
-              value={targetSearch}
-              onChangeText={setTargetSearch}
-              placeholder="Search table or floor"
-              placeholderTextColor={palette.muted}
-              autoCorrect={false}
-            />
-            <ScrollView style={styles.popupScroll} contentContainerStyle={styles.floorTableStack} keyboardShouldPersistTaps="always">
-              {visibleShiftTargetGroups.length === 0 ? (
-                <EmptyState title="No matching tables" text="Clear search or check active tables on the hub." compact />
-              ) : (
-                visibleShiftTargetGroups.map((group) => (
-                  <View key={`picker-${group.floorId}`} style={styles.floorTableGroup}>
-                    <View style={styles.floorTableHeader}>
-                      <Text style={styles.subhead}>{group.floorName}</Text>
-                      <Text style={styles.smallMuted}>{group.tables.length}</Text>
-                    </View>
-                    <View style={styles.targetPickerList}>
-                      {group.tables.map((table) => {
-                        const state = getTableDisplayState(table);
-                        const selected = table.id === (targetPickerMode === "full" ? fullShiftTargetId : itemShiftTargetId);
-                        return (
-                          <Pressable key={table.id} style={[styles.targetPickerRow, selected && styles.shiftButtonActive]} onPress={() => selectShiftTarget(table.id)}>
-                            <View style={styles.flexText}>
-                              <Text style={styles.shiftButtonText}>{table.name}</Text>
-                              <Text style={styles.shiftButtonMeta}>{table.floor_name}</Text>
-                            </View>
-                            <Text style={[styles.shiftButtonMeta, state === "running" && styles.tableStatusBusy, state === "bill_printed" && styles.tableStatusBilled]}>
-                              {tableDisplayLabel(state)}
-                            </Text>
-                          </Pressable>
-                        );
-                      })}
-                    </View>
-                  </View>
-                ))
-              )}
-            </ScrollView>
-            <Pressable style={styles.secondaryButton} onPress={() => setTargetPickerMode(null)}>
-              <Text style={styles.secondaryButtonText}>Close</Text>
-            </Pressable>
-          </View>
-        </View>
-      </Modal>
 
       <Modal visible={Boolean(stateApprovalMode)} transparent animationType="fade" onRequestClose={() => setStateApprovalMode(null)}>
         <View style={styles.popupBackdrop}>

@@ -1,5 +1,135 @@
 # Devlog
 
+## 2026-05-20
+
+- Hub CSS feature split: moved printer setup styles from root `apps/hub-electron/src/renderer/styles.css` into `apps/hub-electron/src/renderer/styles/printer.css` and app update styles into `apps/hub-electron/src/renderer/styles/app-update.css`.
+- Depth: renderer styling now has better Locality for printer and updater work; agents can inspect focused style Modules instead of loading one large root stylesheet.
+- Impact: `apps/hub-electron/src/renderer/styles.css` dropped from 1553 to 1209 lines; new CSS Modules are 221 and 121 lines.
+- Verification: `pnpm --filter @gaurav-pos/hub-electron typecheck`, `pnpm --filter @gaurav-pos/hub-electron build`, `pnpm --filter @gaurav-pos/hub-electron lint`, `pnpm --filter @gaurav-pos/hub-electron test -- src/tests/app-update-panel.test.tsx src/tests/bill-printer-chooser.test.tsx` (36 files passed / 3 skipped, 264 tests passed / 3 skipped), and `git diff --check` passed after this split.
+
+- Hub settings action split: moved Manager/Master PIN setup/session unlock, hub connection setting reads/writes, ticket-template commands, and print-layout reads/writes into `apps/hub-electron/src/domain/order-service/settings-actions.ts`.
+- Depth: hub settings behaviour now sits behind one Module Interface over the existing pure setting models; `OrderService` keeps public facade plus shared approval, setting write, production-unit validation, and event seams.
+- Impact: `apps/hub-electron/src/domain/order-service.ts` dropped further to 1585 lines; new settings action Module is 157 lines.
+- Verification: `pnpm --filter @gaurav-pos/hub-electron typecheck`, `pnpm --filter @gaurav-pos/hub-electron lint`, `pnpm --filter @gaurav-pos/hub-electron test -- src/tests/order-service.test.ts` (36 files passed / 3 skipped, 264 tests passed / 3 skipped), and `git diff --check` passed after this split.
+
+- Print settings action split: moved bill-printer profile reads/writes, receipt/bill printer updates, printer output mode commands, bill-printer resolution, and test bill/KOT print enqueue into `apps/hub-electron/src/domain/order-service/print-settings-actions.ts`.
+- Depth: printer setup and test-print behaviour now sits behind one Module Interface; `OrderService` keeps public facade plus shared setting, print-layout, event, and enqueue seams used by billing flows.
+- Impact: `apps/hub-electron/src/domain/order-service.ts` dropped further to 1619 lines; new print settings action Module is 164 lines.
+- Verification: `pnpm --filter @gaurav-pos/hub-electron typecheck`, `pnpm --filter @gaurav-pos/hub-electron lint`, `pnpm --filter @gaurav-pos/hub-electron test -- src/tests/order-service.test.ts` (36 files passed / 3 skipped, 264 tests passed / 3 skipped), and `git diff --check` passed after this split.
+
+- Alcohol action split: moved alcohol catalog/storage read entrypoints, alcohol create/import/update commands, manual stock adjustment, and stock movement list entrypoint into `apps/hub-electron/src/domain/order-service/alcohol-actions.ts`.
+- Depth: alcohol commands now keep CSV coercion, variation/recipe orchestration, base menu-item creation/update, stock adjustment approval routing, movement recording, and alcohol event writes behind one Module Interface; shared low-level stock/recipe helpers remain reusable for bill settlement and history edit flows.
+- Impact: `apps/hub-electron/src/domain/order-service.ts` dropped further to 1683 lines; new alcohol action Module is 276 lines.
+- Verification: `pnpm --filter @gaurav-pos/hub-electron typecheck`, `pnpm --filter @gaurav-pos/hub-electron lint`, `pnpm --filter @gaurav-pos/hub-electron test -- src/tests/order-service.test.ts` (36 files passed / 3 skipped, 264 tests passed / 3 skipped), and `git diff --check` passed after this split.
+
+- Menu item action split: moved dish/menu create, CSV import, update, active toggle, delete, manager/master-approved delete, and bulk delete into `apps/hub-electron/src/domain/order-service/menu-item-actions.ts`.
+- Depth: menu item commands now keep custom-ID generation, default variant writes, CSV row coercion, usage-based soft delete, alcohol reference cleanup, approval routing, and event writes behind one Module Interface; `OrderService` keeps list/read and alcohol orchestration seams.
+- Impact: `apps/hub-electron/src/domain/order-service.ts` dropped further to 1848 lines; new menu item action Module is 219 lines.
+- Verification: `pnpm --filter @gaurav-pos/hub-electron typecheck`, `pnpm --filter @gaurav-pos/hub-electron lint`, `pnpm --filter @gaurav-pos/hub-electron test -- src/tests/order-service.test.ts` (36 files passed / 3 skipped, 264 tests passed / 3 skipped), and `git diff --check` passed after this split.
+
+- Setup catalog action split: moved sale group, floor, table, and kitchen/counter create/update/remove commands into `apps/hub-electron/src/domain/order-service/setup-catalog-actions.ts`.
+- Depth: setup catalog commands now keep ID generation, sort-order defaults, usage-based soft delete, validation, and event writes behind one Module Interface; `OrderService` keeps list/bootstrap/public service seams.
+- Impact: `apps/hub-electron/src/domain/order-service.ts` dropped further to 1987 lines; new setup catalog Module is 232 lines.
+- Verification: `pnpm --filter @gaurav-pos/hub-electron typecheck`, `pnpm --filter @gaurav-pos/hub-electron lint`, `pnpm --filter @gaurav-pos/hub-electron test -- src/tests/order-service.test.ts` (36 files passed / 3 skipped, 264 tests passed / 3 skipped), and `git diff --check` passed after this split. First test run caught a duplicate custom-ID message drift; fixed to preserve the existing Interface contract.
+
+- Bill action split: moved manager-approved bill reprint, history reprint, printed-bill revision, owner history edit, NC marking, and first-print flow into `apps/hub-electron/src/domain/order-service/bill-actions.ts`.
+- Depth: bill correction and print actions now sit behind one workflow Module Interface; `OrderService` keeps the public service Interface and shared billing, print, report, stock, and event seams.
+- Impact: `apps/hub-electron/src/domain/order-service.ts` dropped further to 2128 lines; new action Module is 370 lines.
+- Verification: `pnpm --filter @gaurav-pos/hub-electron typecheck`, `pnpm --filter @gaurav-pos/hub-electron lint`, `pnpm --filter @gaurav-pos/hub-electron test -- src/tests/order-service.test.ts` (36 files passed / 3 skipped, 264 tests passed / 3 skipped), and `git diff --check` passed after this split.
+
+- Order state update split: moved captain order-state edit, billed-order manager-approved edit, printed KOT-on-save, bill revision, empty-billed-order bill removal, and table status writes into `apps/hub-electron/src/domain/order-service/order-state-update.ts`.
+- Depth: open/billed order-state editing now has one workflow Module Interface; `OrderService` keeps the public service Interface and shared item, bill, KOT, and event seams.
+- Impact: `apps/hub-electron/src/domain/order-service.ts` dropped further to 2296 lines; new update Module is 191 lines.
+- Verification: `pnpm --filter @gaurav-pos/hub-electron typecheck`, `pnpm --filter @gaurav-pos/hub-electron lint`, `pnpm --filter @gaurav-pos/hub-electron test -- src/tests/order-service.test.ts` (36 files passed / 3 skipped, 264 tests passed / 3 skipped), and `git diff --check` passed after this split.
+
+- Bill lifecycle split: moved bill generation, settlement payment validation, settlement write flow, print enqueue, table release, and billing lifecycle events into `apps/hub-electron/src/domain/order-service/bill-lifecycle.ts`.
+- Depth: bill generate/settle behaviour now sits behind one lifecycle Module Interface; `OrderService` keeps the public service Interface, shared bill revision/history actions, and event/outbox seams.
+- Impact: `apps/hub-electron/src/domain/order-service.ts` dropped further to 2351 lines; new lifecycle Module is 206 lines.
+- Verification: `pnpm --filter @gaurav-pos/hub-electron typecheck`, `pnpm --filter @gaurav-pos/hub-electron lint`, `pnpm --filter @gaurav-pos/hub-electron test -- src/tests/order-service.test.ts` (36 files passed / 3 skipped, 264 tests passed / 3 skipped), and `git diff --check` passed after this split.
+
+- Order lifecycle split: moved submit order, cancel order, cancel item, order actor input, edit-role check, table occupancy writes, cancellation KOT changes, and order lifecycle events into `apps/hub-electron/src/domain/order-service/order-lifecycle.ts`.
+- Depth: live order submit/cancel behaviour now sits behind one lifecycle Module Interface; `OrderService` keeps the public service Interface and shared transaction/event seams.
+- Impact: `apps/hub-electron/src/domain/order-service.ts` dropped further to 2457 lines; new lifecycle Module is 221 lines.
+- Verification: `pnpm --filter @gaurav-pos/hub-electron typecheck`, `pnpm --filter @gaurav-pos/hub-electron lint`, `pnpm --filter @gaurav-pos/hub-electron test -- src/tests/order-service.test.ts` (36 files passed / 3 skipped, 264 tests passed / 3 skipped), and `git diff --check` passed after this split.
+
+- OrderService transfer/item normalization split: moved table transfer, full-table-to-occupied-table transfer, partial item transfer, matching item snapshot logic, and transfer event/KOT writes into `apps/hub-electron/src/domain/order-service/table-transfer.ts`. Moved submitted order-item normalization for menu items, variants, open items, note trimming, price-edit approval, and preserved item snapshots into `submitted-items.ts`.
+- Depth: table/item shifting now sits behind one transfer Module Interface, and submitted item normalization is one shared Interface used by submit, order-state edit, bill revision, and history edit paths. `OrderService` keeps transaction orchestration and event seams.
+- Impact: `apps/hub-electron/src/domain/order-service.ts` dropped further to 2581 lines; new Modules are 322 and 100 lines.
+- Verification: `pnpm --filter @gaurav-pos/hub-electron typecheck`, `pnpm --filter @gaurav-pos/hub-electron lint`, `pnpm --filter @gaurav-pos/hub-electron test -- src/tests/order-service.test.ts` (36 files passed / 3 skipped, 264 tests passed / 3 skipped), and `git diff --check` passed after this split.
+
+- OrderService test split: moved the former 3103-line `apps/hub-electron/src/tests/order-service.test.ts` suite into focused KOT, billing, history, alcohol, and transfer files; the old path is now a skipped index so targeted commands still resolve cleanly.
+- Depth: test intent now has better Locality by workflow, so agents can inspect the relevant behaviour without loading one giant fixture file.
+- Impact: largest focused OrderService test file is now `apps/hub-electron/src/tests/order-service-billing.test.ts` at 806 lines.
+- Verification: `pnpm --filter @gaurav-pos/hub-electron typecheck`, `pnpm --filter @gaurav-pos/hub-electron lint`, `pnpm --filter @gaurav-pos/hub-electron test -- src/tests/order-service.test.ts` (32 files passed / 1 skipped, 264 tests passed / 1 skipped), and `git diff --check` passed after this split.
+
+- API server test split: moved the former 2256-line `apps/hub-electron/src/tests/api-server.test.ts` suite into focused auth/settings, order/billing, realtime/roles, print/catalog/report, and idempotency files, with shared test server helpers in `api-server-helpers.ts`.
+- Depth: route coverage now follows API Module boundaries, so auth, realtime, printing, and idempotency changes no longer require loading one giant integration suite.
+- Impact: largest focused API test file is now `apps/hub-electron/src/tests/api-server-auth-settings.test.ts` at 584 lines.
+- Verification: `pnpm --filter @gaurav-pos/hub-electron typecheck`, `pnpm --filter @gaurav-pos/hub-electron lint`, `pnpm --filter @gaurav-pos/hub-electron test -- src/tests/api-server.test.ts` (36 files passed / 3 skipped, 264 tests passed / 3 skipped), and `git diff --check` passed after this split.
+
+- Print reprint/queue split: moved KOT reprint query/render/enqueue, bill reprint query/render/print-count update, print-job enqueue, and print-job retry reset to `apps/hub-electron/src/domain/order-service/reprint-tickets.ts` and `apps/hub-electron/src/domain/order-service/print-job-records.ts`.
+- Depth: print payload SQL and print-job persistence now sit behind focused Module Interfaces; `OrderService` keeps approval, adjustment, and event Locality.
+- Impact: `apps/hub-electron/src/domain/order-service.ts` dropped further to 2856 lines.
+- Verification: `pnpm --filter @gaurav-pos/hub-electron typecheck`, `pnpm --filter @gaurav-pos/hub-electron lint`, `pnpm --filter @gaurav-pos/hub-electron test -- src/tests/order-service.test.ts` (28 files / 264 tests), and `git diff --check` passed after this split.
+
+- Order item/KOT creation split: moved order-item diff writes, snapshot diff-key hashing, order-item KOT change projection, KOT grouping, KOT row/item inserts, KOT ticket rendering, optional print enqueue, and `kot.created` event append callout to `apps/hub-electron/src/domain/order-service/order-item-diff.ts` and `apps/hub-electron/src/domain/order-service/kot-creation.ts`.
+- Depth: order mutation workflows keep the transaction and service-hour decisions in `OrderService`; item diff and KOT creation Modules now hide write detail behind narrow Interfaces, improving Locality for KOT/order bugs.
+- Impact: `apps/hub-electron/src/domain/order-service.ts` dropped further to 2982 lines.
+- Verification: `pnpm --filter @gaurav-pos/hub-electron typecheck`, `pnpm --filter @gaurav-pos/hub-electron lint`, `pnpm --filter @gaurav-pos/hub-electron test -- src/tests/order-service.test.ts` (28 files / 264 tests), and `git diff --check` passed after this split.
+
+- Bill payment record split: moved paid amount aggregation, paid-bill payment reallocation, owner history-edit payment replacement, local bill deletion, and bill adjustment writes to `apps/hub-electron/src/domain/order-service/bill-payment-records.ts`.
+- Depth: bill/payment persistence rules now sit behind one payment-record Module Interface; `OrderService` keeps bill workflow orchestration, table release, print, and event/outbox Locality.
+- Impact: `apps/hub-electron/src/domain/order-service.ts` dropped further to 3264 lines.
+- Verification: `pnpm --filter @gaurav-pos/hub-electron typecheck`, `pnpm --filter @gaurav-pos/hub-electron lint`, `pnpm --filter @gaurav-pos/hub-electron test -- src/tests/order-service.test.ts` (28 files / 264 tests), and `git diff --check` passed after this split.
+
+- Alcohol catalog/stock split: moved alcohol catalog read model, recipe snapshots, plain-liquor resolver, recipe CSV parsing, variation/recipe validation, variation/recipe replacement, storage read model, stock movement listing, stock guards/writes, and movement recording to `apps/hub-electron/src/domain/order-service/alcohol-catalog.ts` and `apps/hub-electron/src/domain/order-service/alcohol-stock.ts`.
+- Depth: `OrderService` keeps service-hour transaction orchestration and event/outbox appends; alcohol catalog/stock Modules now hide SQL shape and stock mutation details behind smaller Interfaces with better Locality.
+- Impact: `apps/hub-electron/src/domain/order-service.ts` dropped further to 3336 lines.
+- Verification: `pnpm --filter @gaurav-pos/hub-electron typecheck`, `pnpm --filter @gaurav-pos/hub-electron lint`, `pnpm --filter @gaurav-pos/hub-electron test -- src/tests/order-service.test.ts` (28 files / 264 tests), and `git diff --check` passed after this split.
+
+- Sale-group catalog split: moved sale-group list read model, active lookup guard, and CSV/reference resolver to `apps/hub-electron/src/domain/order-service/sale-group-catalog.ts`.
+- Impact: `apps/hub-electron/src/domain/order-service.ts` dropped further to 3553 lines.
+- Verification: `pnpm --filter @gaurav-pos/hub-electron typecheck`, `pnpm --filter @gaurav-pos/hub-electron lint`, `pnpm --filter @gaurav-pos/hub-electron test -- src/tests/order-service.test.ts` (28 files / 264 tests), and `git diff --check` passed after this split.
+
+- Floor/table catalog split: moved table/floor list read models, table/floor lookup guards, and next-sort-order helpers to `apps/hub-electron/src/domain/order-service/floor-table-catalog.ts`.
+- Impact: `apps/hub-electron/src/domain/order-service.ts` dropped further to 3572 lines.
+- Verification: `pnpm --filter @gaurav-pos/hub-electron typecheck`, `pnpm --filter @gaurav-pos/hub-electron lint`, `pnpm --filter @gaurav-pos/hub-electron test -- src/tests/order-service.test.ts` (28 files / 264 tests), and `git diff --check` passed after this split.
+
+- Menu catalog split: moved menu list read model, current-day popularity query, variant listing, menu-item snapshot lookup, variant resolution/defaulting, and default-variant update helper to `apps/hub-electron/src/domain/order-service/menu-catalog.ts`.
+- Impact: `apps/hub-electron/src/domain/order-service.ts` dropped further to 3602 lines.
+- Verification: `pnpm --filter @gaurav-pos/hub-electron typecheck`, `pnpm --filter @gaurav-pos/hub-electron lint`, `pnpm --filter @gaurav-pos/hub-electron test -- src/tests/order-service.test.ts`, and `git diff --check` passed after this split.
+
+- Billing/day lifecycle split: moved bill total/tax calculation plus `order_items.tax_paise` writes to `apps/hub-electron/src/domain/order-service/bill-totals.ts`. Moved business-day creation, completed-day finalization, daily snapshot creation, and snapshot refresh to `business-day-lifecycle.ts`.
+- Impact: `apps/hub-electron/src/domain/order-service.ts` dropped further to 3707 lines.
+- Verification: `pnpm --filter @gaurav-pos/hub-electron typecheck`, `pnpm --filter @gaurav-pos/hub-electron lint`, `pnpm --filter @gaurav-pos/hub-electron test -- src/tests/order-service.test.ts`, and `git diff --check` passed after this split.
+
+- Billing print/read-model split: moved receipt bill ticket construction, printable tax breakdown, and receipt layout projection to `apps/hub-electron/src/domain/order-service/bill-ticket-model.ts`. Moved active order total/item/timer summaries to `order-service/read-models.ts`. `OrderService` now keeps enqueue/orchestration while ticket shape and read-model query shape sit behind smaller seams.
+- Impact: `apps/hub-electron/src/domain/order-service.ts` dropped further to 3868 lines.
+- Verification: `pnpm --filter @gaurav-pos/hub-electron typecheck`, `pnpm --filter @gaurav-pos/hub-electron lint`, `pnpm --filter @gaurav-pos/hub-electron test -- src/tests/order-service.test.ts`, and `git diff --check` passed after this split.
+
+- Hub query split: moved production-unit projections/lookup requirements to `apps/hub-electron/src/domain/order-service/production-unit-queries.ts`, ready KOT notification creation/listing to `ready-notifications.ts`, and sync status projection to `read-models.ts`. `OrderService` keeps mutation orchestration and event emission, but more read-shape/query details now live behind focused helpers.
+- Print seam: moved pure bill/KOT test-print payload construction to `apps/hub-electron/src/domain/order-service/print-test-payloads.ts`, leaving `OrderService` responsible for printer resolution, enqueue, and events.
+- Impact: `apps/hub-electron/src/domain/order-service.ts` dropped further to 3995 lines.
+- Verification: `pnpm --filter @gaurav-pos/hub-electron typecheck`, `pnpm --filter @gaurav-pos/hub-electron lint`, `pnpm --filter @gaurav-pos/hub-electron test -- src/tests/order-service.test.ts`, and `git diff --check` passed after these splits.
+
+- Task: Started the architecture cleanup for agent token efficiency around the largest hub files.
+- Hub split: moved private `OrderService` row/result shapes to `apps/hub-electron/src/domain/order-service/types.ts`, CSV import parsing/coercion to `csv-import.ts`, pure date/note helpers to `helpers.ts`, tax parsing to `tax.ts`, discount/allocation math to `billing-calculations.ts`, Manager/Master PIN approval mechanics to `approvals.ts`, printer profile/layout helpers to `printer-settings.ts`, alcohol usage math to `alcohol-usage.ts`, daily report aggregation to `report-summary.ts`, and range report aggregation to `report-range.ts`.
+- Mobile split: moved the QR scanner modal to `apps/mobile/src/components/pairing-scanner-modal.tsx` and the large POS chime data URI to `apps/mobile/src/lib/pos-chime.ts` so `App.tsx` is lighter to load.
+- API split: moved pairing URL/LAN address selection to `apps/hub-electron/src/api/pairing-url.ts`, realtime role filtering to `realtime-visibility.ts`, shared route inputs/auth context to `route-context.ts`, catalog/setup CRUD routes to `catalog-routes.ts`, settings/printer/PIN/hub-connection routes to `settings-routes.ts`, billing routes to `billing-routes.ts`, print job routes to `print-routes.ts`, report routes to `report-routes.ts`, and backup/update/full-reset routes to `maintenance-routes.ts`, while preserving public exports from `api/server.ts`.
+- Renderer split: moved report history/detail panels to `apps/hub-electron/src/renderer/components/reports/report-detail-panels.tsx`, leaving `reports-view.tsx` focused on report tabs/range orchestration. Moved hub renderer DTOs to `apps/hub-electron/src/renderer/hub-api-types.ts` while re-exporting them from `hub-api.ts`.
+- Report detail split: moved bill history table, reprint, owner edit modal, payment correction, item correction, print chooser, and query invalidation to `apps/hub-electron/src/renderer/components/reports/report-history-panel.tsx` and `report-history-table.tsx`, leaving `report-detail-panels.tsx` focused on payments/categories/items summary panels.
+- Setup split: moved hub connection setup to `apps/hub-electron/src/renderer/components/setup/hub-connection-card.tsx` and printer/output/layout setup to `apps/hub-electron/src/renderer/components/setup/printer-setup-card.tsx`, leaving `setup-view.tsx` as setup page orchestration.
+- Advanced split: moved app update, GitHub release install, rollback baseline, manual package install, and rollback flow to `apps/hub-electron/src/renderer/components/advanced/app-update-panel.tsx` while keeping the old `advanced-view.tsx` export for tests/import compatibility.
+- Order workspace split: moved new order draft search/open-item/KOT submit/draft-line editing to `apps/hub-electron/src/renderer/components/orders/new-order-panel.tsx` and moved shared table edit item types to `order-workspace-types.ts`, leaving `table-workspace.tsx` focused on selected-table orchestration.
+- Billing split: moved printed-bill revision search, item editing, manager approval, idempotency, and save mutation to `apps/hub-electron/src/renderer/components/orders/bill-revision-editor.tsx`, leaving `billing-panel.tsx` focused on bill adjustments, payment, reprint, and NC actions.
+- Alcohol split: moved alcohol item creation, recipe entry, and CSV import workflow to `apps/hub-electron/src/renderer/components/alcohol/alcohol-item-create-panel.tsx`, leaving `alcohol-items-panel.tsx` focused on catalog search, edit, and delete maintenance.
+- Update split: moved GitHub release discovery, asset download, version comparison, release parsing, and update-package validation adapter to `apps/hub-electron/src/update/github-update-source.ts`, leaving `app-update-service.ts` focused on local baseline, install, rollback, state, and recovery-script orchestration.
+- Mobile split: moved style tokens and focused style groups out of `apps/mobile/src/styles/app-styles.ts` into `app-style-tokens.ts`, `app-shell-styles.ts`, `service-workflow-styles.ts`, `menu-ticket-styles.ts`, and `billing-overlay-styles.ts`. Moved App side-effect helpers to `use-operation-keys.ts`, `use-mobile-chime.ts`, and `use-bill-printer-chooser.ts`. Moved table/item transfer workflow and target picker from `ticket-screen.tsx` to `apps/mobile/src/components/ticket-transfer-section.tsx`. Moved billing history screen/edit flow from `billing-panel.tsx` to `apps/mobile/src/components/billing-history-panel.tsx` with the old module re-export preserved.
+- Stability fix: KOT list/sequence queries now use SQLite `rowid` as a deterministic tie-breaker when multiple tickets share the same millisecond timestamp; related tests select latest rows with the same tie-breaker.
+- Impact: `apps/hub-electron/src/domain/order-service.ts` dropped from 5483 to 4444 lines, `apps/hub-electron/src/api/server.ts` dropped from 1044 to 442 lines, `apps/hub-electron/src/renderer/components/reports/reports-view.tsx` dropped from 997 to 375 lines, `apps/hub-electron/src/renderer/components/reports/report-detail-panels.tsx` dropped from 627 to 149 lines, `apps/hub-electron/src/renderer/hub-api.ts` dropped from 871 to 352 lines, `apps/hub-electron/src/renderer/components/setup/setup-view.tsx` dropped from 694 to 192 lines, `apps/hub-electron/src/renderer/components/advanced/advanced-view.tsx` dropped from 675 to 376 lines, `apps/hub-electron/src/renderer/components/orders/table-workspace.tsx` dropped from 654 to 417 lines, `apps/hub-electron/src/renderer/components/orders/billing-panel.tsx` dropped from 594 to 385 lines, `apps/hub-electron/src/renderer/components/alcohol/alcohol-items-panel.tsx` dropped from 576 to 186 lines, `apps/hub-electron/src/update/app-update-service.ts` dropped from 619 to 374 lines, `apps/mobile/src/components/ticket-screen.tsx` dropped from 630 to 476 lines, `apps/mobile/src/components/billing-panel.tsx` dropped from 501 to 244 lines, `apps/mobile/src/styles/app-styles.ts` dropped from 852 to 15 lines, and `apps/mobile/src/App.tsx` dropped from 1004 to 925 lines while shedding the large chime data URI and focused side-effect hooks.
+- Reusable pieces: check `.agent/reuse-map.md` before loading full `OrderService`, `server.ts`, `reports-view.tsx`, `report-detail-panels.tsx`, `hub-api.ts`, `setup-view.tsx`, `advanced-view.tsx`, `table-workspace.tsx`, hub `billing-panel.tsx`, hub `alcohol-items-panel.tsx`, app update service, mobile `App.tsx`, mobile `ticket-screen.tsx`, mobile `billing-panel.tsx`, or mobile styles; helper modules now cover common import, tax, billing, approvals, printer settings, alcohol usage, daily reports, range reports, pairing, realtime visibility, route context, catalog routes, billing routes, print routes, report routes, settings routes, maintenance routes, report history panel/table, report detail panels, app update panel, GitHub update source, renderer API DTOs, setup connection, setup printing, new order panel, order workspace types, hub bill revision, alcohol item create/import, scanner modal, mobile chime, operation keys, printer chooser, mobile ticket transfer, mobile billing history, and mobile style groups.
+- Verification: hub typecheck/lint passed after the renderer splits; `pnpm --filter @gaurav-pos/hub-electron test -- src/tests/order-service.test.ts src/tests/api-server.test.ts` passed on rerun with 28 test files and 264 tests; mobile typecheck/lint/tests passed with 9 files and 37 tests. The first sandboxed run failed only on localhost WebSocket binding, and one immediate rerun exposed the timestamp-order flake fixed above.
+
 ## 2026-05-16
 
 - Task: Polished the mobile APK role experience and added the missing kitchen-device flow.
@@ -362,14 +492,14 @@
 - Hub fix: New order now has an in-panel Add Dish search with compact menu result rows and variant buttons, so normal menu items can be added without opening the side menu. Sent-item add search uses the same row structure.
 - Hub fix: Alcohol CSV import, catalog edit rows, stock adjustment rows, Kitchen KOT cards, Reports bill history, item summaries, and alcohol movement rows now use constrained operational layouts instead of stretched auto-fit strips.
 - Evidence: captured .agent/screenshots/new-order-menu-search-results-fix.png, .agent/screenshots/new-order-menu-search-after-add.png, .agent/screenshots/reports-layout-fix.png, .agent/screenshots/alcohol-items-edit-import-fix.png, .agent/screenshots/alcohol-storage-fix.png, and .agent/screenshots/kitchen-layout-fix.png; browser overflow audits passed on the checked screens.
-- Verification: pnpm --filter @gaurav-pos/lá	j
+- Verification: previous entry was truncated in an older devlog write; see surrounding screenshots/evidence for that UI pass.
 ## 2026-05-17
 
 - Task: Reworked Reports and remaining spacing defects after rendered review showed fake table rows, clipped bill history, collapsed CSV spacing, and cramped KOT cards.
 - Hub fix: Reports now uses semantic tables for payments, sale/tax categories, order history, item summary, closed day reports, and alcohol stock movements. Metrics have semantic color bands and bill status is shown as paid/pending chips.
 - Hub fix: Closed report detail spans the full table width, new-order search result actions stay inline on desktop, collapsed CSV import summary is compact, and Kitchen KOT cards have proper vertical spacing.
 - Evidence: captured .agent/screenshots/reports-semantic-tables-fix.png, .agent/screenshots/new-order-search-row-inline-fix.png, .agent/screenshots/alcohol-csv-collapsed-summary-fix.png, and .agent/screenshots/kitchen-spacing-fix.png; browser audits showed no page overflow and only intentional table wrappers can scroll if data is wider than the viewport.
-- Verification: pnpm --filter @gaur!ä	j
+- Verification: previous entry was truncated in an older devlog write; see surrounding screenshots/evidence for that reports pass.
 ## 2026-05-17
 
 - Task: Tightened remaining hub operational layout issues from rendered feedback.
@@ -377,7 +507,7 @@
 - Hub fix: Guest/KOT controls now give the guest input a compact width and make KOT actions the primary area; transfer panel now has clearer mode, target, warning, and action styling.
 - Hub fix: Reports tables reserve non-wrapping bill/status columns and the business-day metric grid has explicit responsive spacing.
 - Hub fix: Alcohol Catalog now renders as a semantic table with compact price chips and a full-width edit detail row; setup/details dropdown summaries now have stronger section affordance; line items now place amount before quantity controls.
-- Evidence: captured .agent/screenshots/order-menu-list-row-fix.png, .agent/screenshots/transfer-panel-guest-row-fix.png, .agent/screenshots/details-header-alcohol-catalog-table-fix.png, .agent/screenshots/line-row-column-or¹ç	j
+- Evidence: captured .agent/screenshots/order-menu-list-row-fix.png, .agent/screenshots/transfer-panel-guest-row-fix.png, .agent/screenshots/details-header-alcohol-catalog-table-fix.png, and related line-row screenshots. This older entry was truncated before this architecture pass.
 
 ## 2026-05-17
 
@@ -413,3 +543,243 @@
 - Added captain-only History tab in the Expo app and moved billing history out of Captain Billing.
 - Restyled mobile menu rows with stronger card separation, larger category icons, separated variant/action areas, and more spacing.
 - Verified: pnpm --filter @gaurav-pos/mobile typecheck; pnpm --filter @gaurav-pos/mobile test; Expo web smoke render with mock hub in Chrome.
+
+## 2026-05-20 mobile App hook split
+- Task: Continued architecture pass on the Expo mobile app after prior style/chime/pairing extractions.
+- Mobile split: `App.tsx` now delegates history bill print/edit/day selection to `useBillingHistoryActions`, keeping owner history mutations, print target selection, idempotency, and selected-day reload in one module.
+- Mobile split: `App.tsx` now delegates selected-table draft state, draft persistence, item quantity/note edits, table selection, and draft clearing to `useOrderDraft`.
+- Mobile split: `App.tsx` now delegates KDS unit selection and ticket status updates to `useKitchenActions`.
+- Result: `apps/mobile/src/App.tsx` is down to 822 lines; the new hooks are 95, 102, and 63 lines with narrower interfaces and better locality for draft/history/kitchen behaviour.
+
+## 2026-05-20 mobile HubClient split
+- Task: Reduced mobile LAN client file size and separated contracts from the REST adapter.
+- Mobile split: `apps/mobile/src/lib/hub-client.ts` now keeps the `HubClient` implementation and re-exports its public contract for compatibility.
+- Mobile split: `apps/mobile/src/lib/hub-client-types.ts` owns mobile hub response/request contracts; `apps/mobile/src/lib/hub-client-helpers.ts` owns realtime URL, HTTP error, idempotency, and pairing alert helpers.
+- Result: `hub-client.ts` is down from 528 to 312 lines; helper/contract interfaces now have better locality for agents looking up endpoint shapes or pairing/realtime behaviour.
+
+## 2026-05-20 mobile App derived-state split
+- Task: Continued shrinking the mobile root module below the 800-line refactor signal.
+- Mobile split: `apps/mobile/src/lib/mobile-app-view-model.ts` owns active table filtering, selected table lookup, draft/sent totals, menu filters/search, and active KDS unit derivation.
+- Mobile split: `apps/mobile/src/lib/order-command-builders.ts` owns KOT review summaries and bill revision item payload construction.
+- Tests: Added focused tests for the view-model derivation and order command builders.
+- Result: `apps/mobile/src/App.tsx` is down to 789 lines with more behaviour behind small pure module interfaces.
+
+## 2026-05-20 mobile table service action split
+- Task: Moved service-hour table command workflows out of the mobile root module.
+- Mobile split: `apps/mobile/src/hooks/use-table-service-actions.ts` owns KOT submit confirmation, table/item transfer commands, bill generate/reprint/NC/settle/revise commands, idempotency scopes, printer choice handoff, and post-command refresh/reload messages.
+- Result: `apps/mobile/src/App.tsx` is down from 789 to 560 lines; the new hook is 329 lines and gives table service commands better Locality than the root render module.
+- Verification: `pnpm --filter @gaurav-pos/mobile typecheck`, `pnpm --filter @gaurav-pos/mobile lint`, `pnpm --filter @gaurav-pos/mobile test` (11 files / 40 tests), and `git diff --check` passed.
+
+## 2026-05-20 hub read-model split
+- Task: Continued reducing `OrderService` size without touching write-path transaction rules.
+- Hub split: `apps/hub-electron/src/domain/order-service/read-models.ts` now owns KDS ticket listing, full order read model building, and print-job list read models.
+- Test split: `insertDailySnapshot` moved from the large order-service test into `apps/hub-electron/src/tests/helpers.ts` for report fixture reuse.
+- Result: `apps/hub-electron/src/domain/order-service.ts` is down to 4364 lines; `order-service.test.ts` is down to 3103 lines. This is still large, but read/query shape is now easier to find without opening the main mutation-heavy module.
+
+## 2026-05-20 hub row-query split
+- Task: Removed repeated SQL/Drizzle row selectors from `OrderService`.
+- Hub split: `apps/hub-electron/src/domain/order-service/order-item-queries.ts` owns the canonical order-item row selection plus list/by-menu-key/by-open-name/by-id lookups.
+- Hub split: `apps/hub-electron/src/domain/order-service/bill-queries.ts` owns the canonical bill row selection plus by-id and latest-for-order lookups.
+- Result: `apps/hub-electron/src/domain/order-service.ts` is down to 4214 lines, with repeated row-shape knowledge concentrated behind query module interfaces.
+
+## 2026-05-20 hub settings model split
+- Task: Moved pure hub setting and print-layout model logic out of `OrderService`.
+- Hub split: `apps/hub-electron/src/domain/order-service/settings-models.ts` now owns hub connection setting read/write shape, ticket-template projection/write values, print-layout read merge, and print-layout write merge.
+- Result: `apps/hub-electron/src/domain/order-service.ts` is down to 4164 lines; event emission and validation still stay in `OrderService`, while setting data shape lives behind a smaller module interface.
+
+## 2026-05-20 hub report CSS split
+- Task: Continued shrinking oversized hub renderer stylesheets after printer/update style extraction.
+- Hub split: `apps/hub-electron/src/renderer/styles/reports.css` now owns report tabs/range controls, report metrics, closed-report rows, report tables, bill-history rows, report-history edit controls, stock movement rows, and their report-specific responsive rules.
+- Result: `apps/hub-electron/src/renderer/styles/components.css` is down to 923 lines and root `apps/hub-electron/src/renderer/styles.css` is down to 995 lines; generic summary/compact-row styling stays in components while report/table/history styling has a focused stylesheet imported from `App.tsx`.
+- Verification: `pnpm --filter @gaurav-pos/hub-electron typecheck`, `build`, `lint`, `test -- src/tests/reports-view.test.tsx`, and `git diff --check` passed. The targeted test command currently runs the full hub suite: 36 files passed, 3 skipped, 264 tests passed.
+
+## 2026-05-20 hub inventory/report service split
+- Task: Continued reducing `OrderService` facade size and moving hidden domain SQL to searchable modules.
+- Hub split: `apps/hub-electron/src/domain/order-service/alcohol-stock-consumption.ts` owns paid-bill alcohol deduction, pending alcohol usage, and history-edit stock delta application.
+- Hub split: `apps/hub-electron/src/domain/order-service/bill-cleanup.ts` owns empty pending bill cleanup used during bootstrap/report freshness; `report-snapshots.ts` owns daily report snapshot list/get reads.
+- Result: `apps/hub-electron/src/domain/order-service.ts` is down to 1449 lines; alcohol inventory settlement/history behaviour and report snapshot reads now have focused modules.
+- Verification: `pnpm --filter @gaurav-pos/hub-electron typecheck`, `build`, `lint`, `test -- src/tests/order-service-alcohol.test.ts src/tests/order-service-billing.test.ts src/tests/order-service-history.test.ts src/tests/reports-view.test.tsx`, and `git diff --check` passed. The targeted test command currently runs the full hub suite: 36 files passed, 3 skipped, 264 tests passed.
+
+## 2026-05-20 hub billing test split
+- Task: Reduced oversized billing test ownership and made setup/reporting coverage easier to find.
+- Test split: `order-service-billing.test.ts` now keeps bill print, payment, settlement, adjustment, receipt/reprint, and bill-printer routing coverage.
+- Test split: `order-service-reporting.test.ts` owns business-day summaries, finalized reports, range aggregation, and bootstrap popularity coverage.
+- Test split: `order-service-setup-catalog.test.ts` owns setup catalog CRUD/custom IDs/sort/delete semantics, bulk dish deletes, and KDS retry coverage.
+- Result: `order-service-billing.test.ts` is down from 806 to 442 lines; new focused files are 202 and 170 lines.
+- Verification: `pnpm --filter @gaurav-pos/hub-electron typecheck`, `build`, `lint`, `test -- src/tests/order-service-billing.test.ts src/tests/order-service-reporting.test.ts src/tests/order-service-setup-catalog.test.ts`, and `git diff --check` passed. The targeted test command currently runs the full hub suite: 38 files passed, 3 skipped, 264 tests passed.
+
+## 2026-05-20 hub KOT test split
+- Task: Reduced oversized KOT test ownership and separated bill/order-state coverage that was hidden in the same file.
+- Test split: `order-service-kot.test.ts` now keeps KOT creation/modification sequencing, KDS visibility, KOT-only print mode, and cancellation coverage.
+- Test split: `order-service-order-state.test.ts` owns running table totals, sent-order save modes, item note merge/clear behaviour, and price snapshot rows.
+- Test split: `order-service-bill-lifecycle.test.ts` owns no-kitchen billing, bill tax snapshots, bill numbering, GST print summary, empty pending bill cleanup, paid-bill removal guards, and cash settlement.
+- Result: `order-service-kot.test.ts` is down from 709 to 232 lines; new focused files are 251 and 236 lines.
+- Verification: `pnpm --filter @gaurav-pos/hub-electron typecheck`, `build`, `lint`, `test -- src/tests/order-service-kot.test.ts src/tests/order-service-bill-lifecycle.test.ts src/tests/order-service-order-state.test.ts`, and `git diff --check` passed. The targeted test command currently runs the full hub suite: 40 files passed, 3 skipped, 264 tests passed.
+
+## 2026-05-20 hub alcohol test split
+- Task: Reduced oversized alcohol test ownership and made stock, settlement, catalog, and revision behaviour searchable by file name.
+- Test split: `order-service-alcohol.test.ts` now keeps manual stock adjustment approvals, movement listing, and disable-on-movement semantics.
+- Test split: `order-service-alcohol-settlement.test.ts` owns paid/NC alcohol stock deduction, negative stock, cocktail recipe snapshots, and unpaid snapshot deletion guards.
+- Test split: `order-service-alcohol-catalog.test.ts` owns stale recipe cleanup, alcohol variant validation, prepared-product stock rules, recipe-based disable/delete, and bulk alcohol removal.
+- Test split: `order-service-alcohol-revision.test.ts` owns inactive variant bill revision and revised bill audit totals.
+- Result: `order-service-alcohol.test.ts` is down from 705 to 108 lines; new focused files are 278, 236, and 96 lines.
+- Verification: `pnpm --filter @gaurav-pos/hub-electron typecheck`, `build`, `lint`, `test -- src/tests/order-service-alcohol.test.ts src/tests/order-service-alcohol-settlement.test.ts src/tests/order-service-alcohol-catalog.test.ts src/tests/order-service-alcohol-revision.test.ts`, and `git diff --check` passed. The targeted test command currently runs the full hub suite: 43 files passed, 3 skipped, 264 tests passed.
+
+## 2026-05-20 hub order CSS split
+- Task: Continued shrinking oversized hub renderer stylesheets and moved order/table plus alcohol/storage styles behind searchable modules.
+- CSS split: `apps/hub-electron/src/renderer/styles/orders.css` now owns table map tiles, order workspace modal, order menu panel, bill payment/change-helper controls, line-item notes, and bill revision search styles.
+- CSS split: `apps/hub-electron/src/renderer/styles/alcohol.css` now owns alcohol create/edit forms, catalog table rows, variant edit rows, storage cards, stock metrics, and stock adjustment controls.
+- Result: root `apps/hub-electron/src/renderer/styles.css` is down from 995 to 603 lines; `components.css` is down to 786 lines; `orders.css` is 391 lines and `alcohol.css` is 131 lines.
+- Verification: `pnpm --filter @gaurav-pos/hub-electron build`, `typecheck`, `lint`, `test -- src/tests/orders-view.test.tsx src/tests/table-workspace.test.tsx src/tests/billing-panel.test.tsx`, and `git diff --check` passed. The targeted test command currently runs the full hub suite: 43 files passed, 3 skipped, 264 tests passed.
+
+## 2026-05-20 hub component CSS split
+- Task: Continued reducing generic renderer component CSS and moved screen-specific KDS/order controls out of the catch-all file.
+- CSS split: `apps/hub-electron/src/renderer/styles/kitchen.css` now owns KDS kitchen screen layout, KOT cards, KOT notes, KDS status buttons, and KOT grid styles.
+- CSS split: order ticket header, guest/send controls, and order-specific responsive rules moved from `components.css` into `orders.css`.
+- Result: `components.css` is down from 786 to 578 lines; `orders.css` is 497 lines and `kitchen.css` is 83 lines.
+- Verification: `pnpm --filter @gaurav-pos/hub-electron build`, `typecheck`, `lint`, `test -- src/tests/orders-view.test.tsx src/tests/table-workspace.test.tsx src/tests/kitchen-view.test.tsx src/tests/billing-panel.test.tsx`, and `git diff --check` passed. The targeted test command currently runs the full hub suite: 43 files passed, 3 skipped, 264 tests passed.
+
+## 2026-05-20 hub setup/pairing CSS split
+- Task: Continued shrinking root hub renderer CSS and moved setup-specific rules into focused stylesheets.
+- CSS split: `apps/hub-electron/src/renderer/styles/setup.css` owns setup cards, setup headings/status, setup search hint text, and unit edit field layout.
+- CSS split: `apps/hub-electron/src/renderer/styles/pairing.css` now owns role cards and pairing QR/code/payload layout instead of leaving duplicate pairing rules in root CSS.
+- Result: root `apps/hub-electron/src/renderer/styles.css` is down from 603 to 461 lines; setup/pairing styles are 59 and 87 lines.
+- Verification: `pnpm --filter @gaurav-pos/hub-electron build`, `typecheck`, `lint`, `test -- src/tests/hub-shell.test.tsx src/tests/bill-printer-chooser.test.tsx src/tests/order-service-setup-catalog.test.ts`, and `git diff --check` passed. The targeted test command currently runs the full hub suite: 46 files passed, 3 skipped, 264 tests passed.
+
+## 2026-05-20 hub records CSS split
+- Task: Removed reusable record/edit-list styling from the remaining catch-all component stylesheet.
+- CSS split: `apps/hub-electron/src/renderer/styles/records.css` owns record list rows, status pills, move controls, record actions, inline edit forms, unit edit grids, and sale-group row/form layout used by setup, advanced, and backup lists.
+- Result: `apps/hub-electron/src/renderer/styles/components.css` is down from 578 to 456 lines, and root `styles.css` remains under 500 at 456 lines.
+- Verification: `pnpm --filter @gaurav-pos/hub-electron build`, `typecheck`, `lint`, `test -- src/tests/hub-shell.test.tsx src/tests/order-service-setup-catalog.test.ts src/tests/app-update-panel.test.tsx`, and `git diff --check` passed. The targeted test command currently runs the full hub suite: 46 files passed, 3 skipped, 264 tests passed.
+
+## 2026-05-20 Convex admin helper split
+- Task: Reduced the oversized Convex admin public module without changing `api.admin.*` function names.
+- Convex split: `convex/admin/access.ts` owns membership/invite/command validators, identity lookup, restaurant member/admin/owner guards, email normalization, and random secret generation.
+- Convex split: `convex/admin/reportModels.ts` owns daily report list/detail return validators and report DTO projection helpers.
+- Result: `convex/admin.ts` is down from 761 to 562 lines, with auth/role locality and report shape locality improved for future admin work.
+- Verification: `pnpm exec tsc -p convex/tsconfig.json --noEmit`, `pnpm exec convex codegen --typecheck disable`, `pnpm exec vitest run convex/*.test.ts`, and `git diff --check` passed.
+
+## 2026-05-20 hub OrderService side-effect helper split
+- Task: Continued shrinking `OrderService` by moving low-level SQL side effects out of the facade.
+- Hub split: `event-log.ts` owns event_log/sync_outbox writes; `order-records.ts` owns order row create/select/require/free-table and move authorization; `sequences.ts` owns bill/KOT sequence reads/writes; `bill-revisions.ts` owns bill revision audit row writes.
+- Result: `apps/hub-electron/src/domain/order-service.ts` is down from 1449 to 1338 lines; DB table imports for events, orders, restaurant_tables, bills, bill_revisions, and sync_outbox no longer live in the facade.
+- Verification: `pnpm --filter @gaurav-pos/hub-electron typecheck`, `test -- src/tests/order-service-billing.test.ts src/tests/order-service-kot.test.ts src/tests/order-service-order-state.test.ts src/tests/order-service-transfer.test.ts src/tests/order-service-alcohol-settlement.test.ts src/tests/order-service-alcohol-revision.test.ts`, `build`, `lint`, and `git diff --check` passed. The targeted test command currently runs the full hub suite: 43 files passed, 3 skipped, 264 tests passed.
+
+## 2026-05-20 hub history/report test split
+- Task: Reduced oversized history test ownership and made report groups plus bill guard rules searchable by file name.
+- Hub split: `apps/hub-electron/src/domain/order-service/settings-records.ts` owns hub setting read/write persistence used by settings and sequence helpers.
+- Test split: `order-service-history.test.ts` now focuses on owner history edit flows, exact payment splits, pending-history rejection, NC history edits, and finalized snapshot refresh.
+- Test split: `order-service-report-groups.test.ts` owns range bill-summary opt-in, NC finalization, sale group/open bar/BOT reporting, and discount/tip allocation.
+- Test split: `order-service-bill-guards.test.ts` owns post-payment NC/revision guards and printed-bill price snapshot preservation.
+- Test split: `order-service-alcohol-stock-lifecycle.test.ts` owns alcohol pending stock, paid settlement deduction, and history-edit stock delta/restore coverage.
+- Result: `order-service-history.test.ts` is down from 621 to 268 lines; focused report, guard, and alcohol stock lifecycle files are 129, 99, and 138 lines. `OrderService` is 1336 lines.
+- Verification: `pnpm --filter @gaurav-pos/hub-electron typecheck`, `build`, `lint`, `test -- src/tests/order-service-history.test.ts src/tests/order-service-report-groups.test.ts src/tests/order-service-bill-guards.test.ts src/tests/order-service-alcohol-stock-lifecycle.test.ts src/tests/order-service-alcohol-settlement.test.ts src/tests/order-service-alcohol-revision.test.ts`, and `git diff --check` passed. The targeted test command currently runs the full hub suite: 46 files passed, 3 skipped, 264 tests passed.
+
+## 2026-05-20 hub OrderService facade SQL cleanup
+- Task: Removed remaining direct Drizzle/schema/raw lookup SQL from the `OrderService` facade.
+- Hub split: `order-service/kot-status.ts` owns KOT/BOT status update transactions, ready-notification triggers, missing-KOT errors, and status-change events.
+- Hub split: `menu-catalog.ts` now owns menu-item name lookup; `production-unit-queries.ts` now owns active production-unit id/name reference resolution.
+- Result: `apps/hub-electron/src/domain/order-service.ts` is down to 1325 lines and no longer imports Drizzle, schema tables, `DomainError`, or raw SQL `.prepare(...)` calls.
+- Verification: `pnpm --filter @gaurav-pos/hub-electron typecheck`, `test -- src/tests/order-service-kot.test.ts src/tests/order-service-alcohol-catalog.test.ts src/tests/order-service-setup-catalog.test.ts src/tests/api-server-realtime-roles.test.ts`, `build`, `lint`, and `git diff --check` passed. The targeted test command currently runs the full hub suite: 46 files passed, 3 skipped, 264 tests passed.
+
+## 2026-05-20 hub API route helper split
+- Task: Reduced hub API server registration by moving repeated auth, idempotency, and print-job processing behaviour behind focused helpers.
+- API split: `apps/hub-electron/src/api/route-auth.ts` owns request token extraction, role preHandlers, and session lookup.
+- API split: `apps/hub-electron/src/api/idempotency.ts` owns idempotency-key request hashing, in-progress conflict handling, replay, and failure marking.
+- API split: `apps/hub-electron/src/api/print-job-processing.ts` owns created print-job processing totals used by order and billing routes.
+- Result: `apps/hub-electron/src/api/server.ts` is down from 442 to 341 lines; `billing-routes.ts` now imports shared idempotency/print total types instead of redefining them.
+- Verification: `pnpm --filter @gaurav-pos/hub-electron typecheck`, `lint`, `build`, `test -- src/tests/api-server-auth-settings.test.ts src/tests/api-server-orders-billing.test.ts src/tests/api-server-realtime-roles.test.ts src/tests/api-server-print-catalog.test.ts src/tests/api-server-idempotency.test.ts`, and `git diff --check` passed. The targeted test command currently runs the full hub suite: 46 files passed, 3 skipped, 264 tests passed.
+
+## 2026-05-20 hub pairing CSS split
+- Task: Continued shrinking root hub renderer stylesheet and made setup/pairing styles searchable by file name.
+- CSS split: `apps/hub-electron/src/renderer/styles/setup.css` owns setup board/card/status/search row styles.
+- CSS split: `apps/hub-electron/src/renderer/styles/pairing.css` owns pairing copy/form, role cards, QR panel, manual code, and pairing payload panel styles.
+- Result: root `apps/hub-electron/src/renderer/styles.css` is down from 603 to 461 lines; `setup.css` is 59 lines, `pairing.css` is 87 lines, and `components.css` remains 578 lines.
+- Verification: `pnpm --filter @gaurav-pos/hub-electron typecheck`, `build`, `lint`, `test -- src/tests/hub-shell.test.tsx src/tests/api-server-auth-settings.test.ts src/tests/api-server-print-catalog.test.ts`, and `git diff --check` passed. The targeted test command currently runs the full hub suite: 46 files passed, 3 skipped, 264 tests passed.
+
+## 2026-05-20 shared schema module split
+- Task: Reduced shared API contract blob and made command validation searchable by contract area.
+- Shared split: `packages/shared/src/schemas.ts` is now a compatibility barrel; focused modules under `packages/shared/src/schemas/` own `common`, `order`, `billing`, `catalog`, `settings`, and `reports` contracts.
+- Result: old 541-line `schemas.ts` is down to 6 lines; largest focused schema module is `catalog.ts` at 180 lines.
+- Verification: `pnpm --filter @gaurav-pos/shared typecheck`, `test`, `build`, `pnpm --filter @gaurav-pos/hub-electron typecheck`, `build`, `lint`, `test -- src/tests/api-server-auth-settings.test.ts src/tests/api-server-orders-billing.test.ts src/tests/api-server-print-catalog.test.ts src/tests/order-service-billing.test.ts`, `pnpm --filter @gaurav-pos/mobile typecheck`, and `git diff --check` passed. The targeted hub test command currently runs the full hub suite: 46 files passed, 3 skipped, 264 tests passed.
+
+## 2026-05-20 hub renderer API type split
+- Task: Reduced the renderer REST DTO type bag while keeping existing `hub-api-types.ts` imports stable.
+- Hub split: `apps/hub-electron/src/renderer/hub-api-types.ts` is now a compatibility type barrel; focused modules under `hub-api-types/` own `auth`, `update`, `catalog`, `printing`, `bootstrap`, `orders`, `alcohol`, and `reports` contracts.
+- Result: old 553-line `hub-api-types.ts` is down to 8 lines; largest focused DTO module is `reports.ts` at 132 lines.
+- Verification: `pnpm --filter @gaurav-pos/hub-electron typecheck`, `lint`, `build`, `test -- src/tests/hub-api.test.ts src/tests/hub-shell.test.tsx src/tests/table-workspace.test.tsx src/tests/reports-view.test.tsx src/tests/app-update-panel.test.tsx`, and `git diff --check` passed. The targeted test command currently runs the full hub suite: 46 files passed, 3 skipped, 264 tests passed.
+
+## 2026-05-20 hub setup catalog card split
+- Task: Reduced a mixed setup UI module and made setup catalog cards searchable by restaurant concept.
+- Renderer split: `apps/hub-electron/src/renderer/components/setup/setup-catalog-cards.tsx` is now a compatibility barrel; `floors-tables-card.tsx`, `kitchens-counters-card.tsx`, and `dishes-card.tsx` own their respective setup workflows.
+- Result: old 488-line `setup-catalog-cards.tsx` is down to 3 lines; focused card modules are 202, 73, and 191 lines.
+- Verification: `pnpm --filter @gaurav-pos/hub-electron typecheck`, `lint`, `build`, `test -- src/tests/hub-shell.test.tsx src/tests/order-service-setup-catalog.test.ts src/tests/api-server-print-catalog.test.ts`, and `git diff --check` passed. The targeted test command currently runs the full hub suite: 46 files passed, 3 skipped, 264 tests passed.
+
+## 2026-05-20 Convex admin membership split
+- Task: Reduced the public Convex admin module while preserving stable `api.admin.*` Function names.
+- Convex split: `convex/admin/membership.ts` owns restaurant list/create, pending invitation list/accept, staff list, invite/update/remove member, revoke invitation validators, and their handler Implementations.
+- Result: `convex/admin.ts` is down from 562 to 343 lines; restaurant/staff membership Locality moved behind a focused Module while the public Convex Function Interface stays in `admin.ts`.
+- Verification: `pnpm exec tsc -p convex/tsconfig.json --noEmit`, `pnpm exec convex codegen --typecheck disable`, `pnpm exec vitest run convex/*.test.ts`, and `git diff --check` passed.
+
+## 2026-05-20 mobile refresh hook split
+- Task: Reduced mobile root app orchestration and moved hub connection refresh behaviour behind a focused hook.
+- Mobile split: `apps/mobile/src/hooks/use-mobile-hub-refresh.ts` owns stored hub/token hydration, polling, realtime refresh debounce, connection health transitions, role-specific bootstrap/report/KDS loads, ready notifications, and selected-table refresh.
+- Result: `apps/mobile/src/App.tsx` is down from 560 to 428 lines; the new refresh hook is 239 lines and keeps service connection behaviour searchable without opening the root render module.
+- Verification: `pnpm --filter @gaurav-pos/mobile typecheck`, `test`, `lint`, and `git diff --check` passed. Mobile tests: 11 files passed, 40 tests passed.
+
+## 2026-05-20 hub print layout editor split
+- Task: Reduced setup print layout editor by separating preview rendering and section font controls from save/scope orchestration.
+- Renderer split: `apps/hub-electron/src/renderer/components/setup/print-layout-preview.tsx` owns sample receipt/KOT preview rendering and styled print-line display.
+- Renderer split: `apps/hub-electron/src/renderer/components/setup/print-layout-style-controls.tsx` owns section size/alignment/bold controls and default section style.
+- Result: `print-layout-editor.tsx` is down from 481 to 381 lines; preview and style controls are 107 and 79 lines.
+- Verification: `pnpm --filter @gaurav-pos/hub-electron typecheck`, `test -- src/tests/hub-shell.test.tsx src/tests/bill-printer-chooser.test.tsx src/tests/api-server-print-catalog.test.ts`, `build`, `lint`, and `git diff --check` passed. The targeted test command currently runs the full hub suite: 46 files passed, 3 skipped, 264 tests passed.
+
+## 2026-05-20 mobile ticket state editor hook split
+- Task: Reduced mobile table check screen by moving sent-item state editing and billed-table approval state out of render module.
+- Mobile split: `apps/mobile/src/hooks/use-ticket-state-editor.ts` owns sent-item draft hydration, order-state signatures, state search/add, quantity/note edits, state totals, billed-state manager approval modal state, and save/save-print dispatch.
+- Result: `apps/mobile/src/components/ticket-screen.tsx` is down from 476 to 400 lines; ticket state editing now has a focused hook Module for future table-state bugs.
+- Verification: `pnpm --filter @gaurav-pos/mobile typecheck`, `lint`, `test`, and `git diff --check` passed. Mobile tests: 11 files passed, 40 tests passed.
+
+## 2026-05-20 cloud admin section split
+- Task: Reduced the cloud admin dashboard section bag and made owner-portal areas searchable by file name.
+- Cloud split: `apps/cloud-admin/src/components/cloud-admin-sections.tsx` is now a compatibility barrel; `cloud-sections/reports-section.tsx`, `setup-section.tsx`, `staff-section.tsx`, `sync-section.tsx`, and `advanced-section.tsx` own their dashboard areas.
+- Result: old 447-line `cloud-admin-sections.tsx` is down to 5 lines; focused section Modules are 185, 84, 99, 51, and 56 lines.
+- Verification: `pnpm --filter @gaurav-pos/cloud-admin typecheck`, `lint`, `build`, and `git diff --check` passed.
+
+## 2026-05-20 hub report CSS split
+- Task: Reduced oversized report stylesheet by moving bill-history and alcohol stock movement styles behind feature-owned files.
+- CSS split: `apps/hub-electron/src/renderer/styles/report-history.css` owns bill-history table sizing, history status chips, owner history edit modal, payment correction, item correction, and responsive rules for bill history.
+- CSS split: `apps/hub-electron/src/renderer/styles/report-stock-movements.css` owns alcohol stock movement table sizing, row layout, balance pills, and responsive rules.
+- Result: `apps/hub-electron/src/renderer/styles/reports.css` is down from 536 to 223 lines; report history and stock movement styles are 282 and 50 lines.
+- Verification: `pnpm --filter @gaurav-pos/hub-electron typecheck`, `build`, `lint`, and `git diff --check` passed.
+
+## 2026-05-20 hub order CSS split
+- Task: Reduced oversized order stylesheet by separating table-map, billing, and bill-revision style ownership from order workspace shell styles.
+- CSS split: `apps/hub-electron/src/renderer/styles/order-table-map.css` owns table tile state colours, duration pills, tile actions, map counts, and legend dots.
+- CSS split: `apps/hub-electron/src/renderer/styles/order-billing.css` owns billing adjustments, payment grids, quick pay, change helper, reprint buttons, and mobile billing helper layout.
+- CSS split: `apps/hub-electron/src/renderer/styles/order-revision.css` owns printed-bill revision search result list and keyboard-active state.
+- Result: `apps/hub-electron/src/renderer/styles/orders.css` is down from 497 to 239 lines; focused table-map, billing, and revision files are 161, 69, and 27 lines.
+- Verification: `pnpm --filter @gaurav-pos/hub-electron typecheck`, `build`, `lint`, and `git diff --check` passed.
+
+## 2026-05-20 hub common component CSS split
+- Task: Reduced generic renderer component stylesheet by moving feature-owned order-state, transfer, and print-layout styles out of the common bucket.
+- CSS split: `apps/hub-electron/src/renderer/styles/order-state-editor.css` owns order-state/menu search editor shell, totals/status header, search rows, and editor actions.
+- CSS split: `apps/hub-electron/src/renderer/styles/order-transfer.css` owns sent-item/full-table transfer toggle, mode switch, target field, warning, item quantity controls, and submit button styles.
+- CSS split: `apps/hub-electron/src/renderer/styles/print-layout.css` owns setup print-layout editor scope card, toggles, section style rows, inline check, and responsive rules.
+- Result: `apps/hub-electron/src/renderer/styles/components.css` is down from 456 to 209 lines; extracted order-state, transfer, and print-layout files are 72, 90, and 82 lines.
+- Verification: `pnpm --filter @gaurav-pos/hub-electron typecheck`, `build`, `lint`, and `git diff --check` passed.
+
+## 2026-05-20 hub root CSS primitive split
+- Task: Removed the remaining 456-line root renderer stylesheet by moving shell, layout, row, and action primitives into focused files.
+- CSS split: `apps/hub-electron/src/renderer/styles/hub-shell.css` owns hub shell grid, side rail, nav buttons, unlock card, main content frame, and topbar icon button styles.
+- CSS split: `apps/hub-electron/src/renderer/styles/layout-primitives.css` owns shared panels, titles, layout grids, form/action rows, segmented rows, and toolbar/min-width primitives.
+- CSS split: `apps/hub-electron/src/renderer/styles/row-primitives.css` owns shared surface rows/cards, line item grid, quantity cluster, saved settings card, and category badge primitives.
+- CSS split: `apps/hub-electron/src/renderer/styles/action-primitives.css` owns shared buttons, split inputs, modal shell, CSV file button, print preview, and empty states.
+- Result: `apps/hub-electron/src/renderer/styles.css` is down from 456 lines to a 1-line compatibility marker; focused primitive files are 40, 188, 139, and 86 lines.
+- Verification: `pnpm --filter @gaurav-pos/hub-electron typecheck`, `build`, `lint`, and `git diff --check` passed.
+
+## 2026-05-20 hub report history edit modal split
+- Task: Reduced report history orchestration by moving the owner history-edit modal view out of the report history panel.
+- Renderer split: `apps/hub-electron/src/renderer/components/reports/report-history-edit-modal.tsx` owns the edit bill modal UI for subtotal/discount/tip summary, exact payment split, item correction, menu search, and Master PIN entry.
+- Result: `report-history-panel.tsx` is down from 429 to 289 lines; the new modal view is 272 lines and keeps history edit rendering searchable without opening mutation orchestration.
+- Verification: `pnpm --filter @gaurav-pos/hub-electron typecheck`, `test -- src/tests/reports-view.test.tsx src/tests/api-server-orders-billing.test.ts src/tests/order-service-history.test.ts`, `build`, `lint`, and `git diff --check` passed. The targeted test command currently runs the full hub suite: 46 files passed, 3 skipped, 264 tests passed.

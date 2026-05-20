@@ -4,7 +4,7 @@ import { useKeyboardListNavigation } from "../../hooks/use-keyboard-list-navigat
 import type { Bootstrap, MenuItem, OrderItem, Table, TableOrder } from "../../hub-api.js";
 import { LineItems } from "./line-items.js";
 import { CategoryBadge, getMenuActionVariants, MenuItemActionGroup } from "./menu-card.js";
-import type { SaveMode, StateItem } from "./table-workspace.js";
+import type { SaveMode, StateItem } from "./order-workspace-types.js";
 
 export function SentOrderPanel({
   data,
@@ -13,10 +13,10 @@ export function SentOrderPanel({
   setOrderStateSearch,
   orderStateMatches,
   editableTotal,
-	  hasOrderStateChanges,
-	  canSaveOrderState,
-	  orderStateGuardMessage,
-	  saveOrderStatePending,
+  hasOrderStateChanges,
+  canSaveOrderState,
+  orderStateGuardMessage,
+  saveOrderStatePending,
   requestOrderStateSave,
   addStateMenuItem,
   changeStateQty,
@@ -45,10 +45,10 @@ export function SentOrderPanel({
   setOrderStateSearch: Dispatch<SetStateAction<string>>;
   orderStateMatches: MenuItem[];
   editableTotal: number;
-	  hasOrderStateChanges: boolean;
-	  canSaveOrderState: boolean;
-	  orderStateGuardMessage?: string | null;
-	  saveOrderStatePending: boolean;
+  hasOrderStateChanges: boolean;
+  canSaveOrderState: boolean;
+  orderStateGuardMessage?: string | null;
+  saveOrderStatePending: boolean;
   requestOrderStateSave: (saveMode: SaveMode) => void;
   addStateMenuItem: (menuItem: MenuItem, variantId?: string) => void;
   changeStateQty: (key: string, delta: number) => void;
@@ -96,29 +96,29 @@ export function SentOrderPanel({
               <small>Edited total</small>
               <strong>{formatInr(editableTotal)}</strong>
             </div>
-	            {hasOrderStateChanges ? (
-	              <div className="state-editor-actions">
-	                <button
-	                  type="button"
-	                  className="secondary-button"
-	                  disabled={saveOrderStatePending || !canSaveOrderState}
+            {hasOrderStateChanges ? (
+              <div className="state-editor-actions">
+                <button
+                  type="button"
+                  className="secondary-button"
+                  disabled={saveOrderStatePending || !canSaveOrderState}
                   onClick={() => requestOrderStateSave("save")}
                 >
                   {saveOrderStatePending ? "Saving..." : "Save"}
                 </button>
                 <button
-	                  type="button"
-	                  disabled={saveOrderStatePending || !canSaveOrderState}
+                  type="button"
+                  disabled={saveOrderStatePending || !canSaveOrderState}
                   onClick={() => requestOrderStateSave("save_print")}
                 >
                   {saveOrderStatePending ? "Sending..." : "Save and print"}
                 </button>
               </div>
-	            ) : (
-	              <span className="state-editor-status">Saved</span>
-	            )}
-	          </div>
-	          {orderStateGuardMessage ? <p className="state-editor-warning">{orderStateGuardMessage}</p> : null}
+            ) : (
+              <span className="state-editor-status">Saved</span>
+            )}
+          </div>
+          {orderStateGuardMessage ? <p className="state-editor-warning">{orderStateGuardMessage}</p> : null}
           <div className="state-search">
             <label className="state-search-field">
               <span>Add item</span>

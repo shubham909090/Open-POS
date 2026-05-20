@@ -1,0 +1,221 @@
+.printer-console {
+  @apply grid min-w-0 gap-3;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 340px);
+}
+
+.printer-config-main,
+.printer-config-side {
+  @apply grid min-w-0 gap-3;
+}
+
+.printer-section-header,
+.printer-saved-panel,
+.printer-output-panel,
+.printer-summary-panel,
+.printer-pc-toolbar,
+.printer-slot-card {
+  @apply min-w-0 rounded-lg border border-line bg-white p-3;
+}
+
+.printer-section-header {
+  @apply flex items-center justify-between gap-3;
+}
+
+.printer-section-header > div,
+.printer-saved-panel,
+.printer-output-panel,
+.printer-summary-panel,
+.printer-slot-card {
+  @apply grid min-w-0 gap-1;
+}
+
+.printer-section-header span,
+.printer-saved-panel span,
+.printer-output-panel span,
+.printer-summary-panel span,
+.printer-slot-head span {
+  @apply text-xs font-black uppercase tracking-wide text-muted;
+}
+
+.printer-section-header strong,
+.printer-saved-panel strong,
+.printer-output-panel strong,
+.printer-summary-panel strong,
+.printer-slot-head strong {
+  @apply truncate text-lg font-black text-ink;
+}
+
+.printer-saved-panel {
+  @apply border-accent bg-accent-soft;
+}
+
+.printer-saved-panel p {
+  @apply text-sm font-semibold leading-5 text-accent-dark;
+}
+
+.printer-choice-panel {
+  @apply grid gap-3;
+}
+
+.printer-choice-intro {
+  @apply grid gap-1 rounded-lg border border-line bg-wash p-3;
+}
+
+.printer-choice-intro strong {
+  @apply text-base font-black leading-5 text-ink;
+}
+
+.printer-choice-intro span,
+.printer-choice-note {
+  @apply text-sm font-semibold leading-5 text-muted;
+}
+
+.printer-choice-list {
+  @apply grid gap-3;
+}
+
+.printer-choice-button {
+  @apply grid w-full min-w-0 items-center gap-3 rounded-lg border border-line bg-white p-3 text-left shadow-sm transition hover:border-accent hover:bg-accent-soft disabled:cursor-not-allowed disabled:opacity-55;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.printer-choice-button.active {
+  @apply border-accent bg-accent-soft shadow-md;
+  box-shadow: 0 0 0 1px rgb(47 125 116 / 0.28), 0 8px 20px rgb(20 28 45 / 0.08);
+}
+
+.printer-choice-icon {
+  @apply grid h-11 w-11 shrink-0 place-items-center rounded-md border border-line bg-panel text-muted;
+}
+
+.printer-choice-button.active .printer-choice-icon {
+  @apply border-accent bg-white text-accent-dark;
+}
+
+.printer-choice-button.active b {
+  @apply border-accent bg-white text-accent-dark;
+}
+
+.printer-choice-copy {
+  @apply grid min-w-0 gap-1;
+}
+
+.printer-choice-copy > span {
+  @apply text-xs font-black uppercase tracking-normal text-muted;
+}
+
+.printer-choice-copy strong {
+  @apply min-w-0 truncate text-base font-black leading-5 text-ink;
+}
+
+.printer-choice-copy small {
+  @apply min-w-0 break-words text-sm font-semibold leading-5 text-muted;
+}
+
+.printer-choice-button b {
+  @apply inline-flex min-h-8 shrink-0 items-center rounded-full border border-line bg-panel px-3 text-xs font-black uppercase text-ink;
+}
+
+.printer-output-panel {
+  @apply border-warning bg-warning-soft;
+}
+
+.printer-output-panel.live {
+  @apply border-accent bg-accent-soft;
+}
+
+.printer-setup-form {
+  @apply rounded-lg border border-line bg-white p-3;
+  grid-template-columns: 1fr;
+}
+
+.printer-pc-toolbar {
+  @apply flex items-center justify-between gap-3 border-blue bg-blue-soft;
+}
+
+.printer-pc-toolbar > div {
+  @apply grid min-w-0 gap-0.5;
+}
+
+.printer-pc-toolbar strong {
+  @apply text-sm font-black text-ink;
+}
+
+.printer-pc-toolbar span {
+  @apply text-sm font-semibold leading-5 text-muted;
+}
+
+.printer-pc-toolbar button {
+  @apply shrink-0;
+}
+
+.printer-slot-card {
+  @apply gap-3 bg-panel;
+}
+
+.printer-slot-card.primary {
+  @apply border-accent bg-accent-soft;
+}
+
+.printer-slot-head {
+  @apply flex min-w-0 items-start justify-between gap-3;
+}
+
+.printer-slot-head > div {
+  @apply grid min-w-0 gap-1;
+}
+
+.printer-slot-required,
+.printer-slot-optional {
+  @apply inline-flex min-h-7 shrink-0 items-center rounded-full border px-2.5 text-xs font-black uppercase;
+}
+
+.printer-slot-required {
+  @apply border-accent bg-white text-accent-dark;
+}
+
+.printer-slot-optional {
+  @apply border-line bg-white text-muted;
+}
+
+.printer-mode-tabs {
+  @apply flex flex-wrap gap-1 rounded-lg border border-line bg-wash p-1;
+}
+
+.printer-mode-tabs button {
+  @apply min-h-10 flex-1 rounded-md bg-transparent px-3 text-sm font-bold text-muted shadow-none hover:bg-white hover:text-ink;
+}
+
+.printer-mode-tabs button.active {
+  @apply bg-ink text-white;
+}
+
+.printer-fields-grid {
+  @apply grid items-end gap-3;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.printer-fields-grid.network {
+  grid-template-columns: minmax(240px, 1fr) minmax(110px, 160px);
+}
+
+.printer-form-actions {
+  @apply border-t border-line pt-3;
+}
+
+.printer-test-actions {
+  @apply grid gap-2;
+  grid-template-columns: 1fr;
+}
+
+.printer-summary-panel {
+  @apply gap-3;
+}
+
+.printer-summary-panel > div {
+  @apply grid min-w-0 gap-1 rounded-md border border-line bg-panel p-3;
+}
+
+.printer-summary-panel small {
+  @apply min-w-0 break-words text-sm font-semibold leading-5 text-muted;
+}

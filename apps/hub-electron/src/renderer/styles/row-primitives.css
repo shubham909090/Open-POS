@@ -1,0 +1,139 @@
+.menu-card,
+.kot-card,
+.line-row,
+.report-row,
+.stock-row,
+.compact-row,
+.report-detail-card,
+.summary-box,
+.saved-settings-card,
+.payment-summary-grid span,
+.setup-subdetails,
+.csv-import-box,
+.csv-import-result,
+.revision-box,
+.action-section,
+.transfer-panel,
+.manager-box,
+.history-row,
+.bill-totals,
+.split-summary,
+.total-strip {
+  @apply min-w-0 rounded-lg border border-line bg-white p-3;
+}
+
+.danger-zone,
+.cancel-panel {
+  @apply border-danger bg-danger-soft;
+}
+
+.saved-settings-card {
+  @apply flex items-center justify-between gap-3 bg-white;
+}
+
+.saved-settings-card > div:first-child {
+  @apply grid min-w-0 gap-1;
+}
+
+.saved-settings-card strong {
+  @apply truncate text-base font-black text-ink;
+}
+
+.saved-settings-card span {
+  @apply text-sm font-semibold leading-5 text-muted;
+}
+
+.warning-text {
+  @apply text-sm font-semibold leading-5 text-warning;
+}
+
+.menu-card {
+  @apply grid gap-2;
+}
+
+.menu-card-main,
+.stock-row,
+.line-row,
+.report-row,
+.history-row,
+.ticket-line,
+.kot-item-row,
+.item-shift-row,
+.compact-row {
+  @apply grid items-center gap-2;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.line-row {
+  @apply gap-x-4 gap-y-3;
+  grid-template-areas:
+    "main amount qty"
+    "note note note"
+    "action action action";
+  grid-template-columns: minmax(180px, 1fr) auto auto;
+}
+
+.line-main {
+  @apply grid min-w-0 gap-1;
+  grid-area: main;
+}
+
+.line-title-row {
+  @apply flex min-w-0 items-center gap-2;
+}
+
+.line-title-copy {
+  @apply grid min-w-0 gap-1;
+}
+
+.line-title-copy strong {
+  overflow-wrap: anywhere;
+}
+
+.line-category-icon {
+  @apply h-8 w-8;
+}
+
+.line-main strong,
+.line-main span,
+.line-amount {
+  @apply min-w-0;
+}
+
+.line-main span {
+  @apply text-sm font-medium text-muted;
+}
+
+.line-amount {
+  @apply justify-self-end whitespace-nowrap text-base font-black text-ink;
+  grid-area: amount;
+}
+
+.qty-cluster {
+  @apply grid items-center justify-end gap-2;
+  grid-area: qty;
+  grid-template-columns: 40px minmax(48px, auto) 40px;
+}
+
+.qty-cluster.qty-readonly {
+  grid-template-columns: auto;
+}
+
+.qty-cluster button {
+  @apply h-10 min-h-10 w-10 rounded-md p-0 text-lg font-black;
+}
+
+.qty-cluster b {
+  @apply min-w-12 whitespace-nowrap text-center text-base font-black leading-10 text-ink;
+}
+
+.line-row-action {
+  @apply justify-self-end;
+  grid-area: action;
+}
+
+.menu-category-icon,
+.draft-bar-badge,
+.step-circle {
+  @apply grid h-9 w-9 shrink-0 place-items-center rounded-md bg-accent-soft text-sm font-black text-accent-dark;
+}

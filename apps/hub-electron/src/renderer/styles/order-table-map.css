@@ -1,0 +1,161 @@
+.table-list {
+  grid-auto-rows: minmax(120px, auto);
+}
+
+.table-tile {
+  @apply grid h-full min-h-[120px] overflow-hidden rounded-lg border border-l-4 border-line bg-white transition hover:-translate-y-0.5 hover:border-line-strong hover:shadow-md;
+}
+
+.table-tile.active {
+  @apply border-l-accent ring-2 ring-accent;
+}
+
+.table-tile.free {
+  @apply border-line border-l-accent bg-white;
+}
+
+.table-tile.draft-warning {
+  border-color: #ef4444;
+  border-left-color: #b91c1c;
+  background: #fee2e2;
+  color: #450a0a;
+}
+
+.table-tile.occupied,
+.table-tile.running {
+  border-color: #d97706;
+  border-left-color: #b45309;
+  background: #fcd34d;
+  color: #1f1300;
+}
+
+.table-tile.billed,
+.table-tile.bill_printed,
+.table-tile.bill-printed {
+  border-color: #16a34a;
+  border-left-color: #15803d;
+  background: #86efac;
+  color: #052e16;
+}
+
+.table-tile.needs_attention,
+.table-tile.needs-attention {
+  @apply border-danger border-l-danger bg-danger-soft;
+}
+
+.table-tile-main {
+  @apply grid min-h-20 w-full content-between gap-2 rounded-none bg-transparent p-3 text-left text-ink hover:bg-black/[0.03];
+}
+
+.table-tile-topline {
+  @apply flex min-w-0 items-start justify-between gap-2;
+}
+
+.table-tile-heading {
+  @apply grid min-w-0 gap-0.5;
+}
+
+.table-tile-heading strong {
+  @apply truncate text-xl font-black leading-none;
+}
+
+.table-tile-heading span,
+.table-tile-total,
+.total-chip {
+  @apply text-xs font-bold uppercase text-muted;
+}
+
+.table-tile.running .table-tile-heading span,
+.table-tile.occupied .table-tile-heading span,
+.table-tile.running .table-tile-total,
+.table-tile.occupied .table-tile-total {
+  color: #5f3700;
+}
+
+.table-tile.bill-printed .table-tile-heading span,
+.table-tile.bill_printed .table-tile-heading span,
+.table-tile.billed .table-tile-heading span,
+.table-tile.bill-printed .table-tile-total,
+.table-tile.bill_printed .table-tile-total,
+.table-tile.billed .table-tile-total {
+  color: #14532d;
+}
+
+.table-tile.draft-warning .table-tile-heading span,
+.table-tile.draft-warning .table-tile-total {
+  color: #991b1b;
+}
+
+.table-tile-total {
+  @apply justify-self-end text-right text-sm text-ink;
+}
+
+.table-tile-duration {
+  @apply inline-flex h-7 shrink-0 items-center gap-1 rounded-full border border-black/15 bg-white/70 px-2 text-xs font-black leading-none text-ink shadow-sm;
+}
+
+.table-tile-duration svg {
+  @apply shrink-0;
+}
+
+.table-tile.running .table-tile-duration,
+.table-tile.occupied .table-tile-duration {
+  border-color: #b45309;
+  background: #fffbeb;
+  color: #5f3700;
+}
+
+.table-tile.bill-printed .table-tile-duration,
+.table-tile.bill_printed .table-tile-duration,
+.table-tile.billed .table-tile-duration {
+  border-color: #15803d;
+  background: #f0fdf4;
+  color: #14532d;
+}
+
+.table-tile-actions {
+  @apply grid grid-cols-2 border-t border-line;
+}
+
+.table-tile.running .table-tile-actions,
+.table-tile.occupied .table-tile-actions {
+  border-top-color: #d97706;
+}
+
+.table-tile.bill-printed .table-tile-actions,
+.table-tile.bill_printed .table-tile-actions,
+.table-tile.billed .table-tile-actions {
+  border-top-color: #16a34a;
+}
+
+.table-tile-shortcut {
+  @apply min-h-9 rounded-none border-0 bg-white text-xs font-bold text-ink hover:bg-wash;
+}
+
+.table-tile-shortcut.primary {
+  @apply bg-ink text-white hover:bg-accent-dark;
+}
+
+.table-map-counts {
+  @apply flex flex-wrap justify-end gap-2;
+}
+
+.state-dot {
+  @apply inline-flex min-h-8 items-center gap-2 rounded-full border border-line bg-white px-3 text-xs font-bold uppercase text-muted;
+}
+
+.state-dot::before {
+  @apply block h-2.5 w-2.5 rounded-full content-[''];
+}
+
+.state-dot.free::before {
+  @apply bg-accent;
+}
+
+.state-dot.running::before {
+  background: #d97706;
+}
+
+.state-dot.billed::before {
+  background: #16a34a;
+}

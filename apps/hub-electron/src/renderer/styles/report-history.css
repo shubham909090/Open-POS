@@ -1,0 +1,282 @@
+.bill-history-table {
+  @apply min-w-[1120px];
+}
+
+.bill-history-table th:nth-child(1),
+.bill-history-table td:nth-child(1) {
+  @apply min-w-32 whitespace-nowrap;
+}
+
+.bill-history-table th:nth-child(2),
+.bill-history-table td:nth-child(2) {
+  @apply min-w-20 whitespace-nowrap;
+}
+
+.bill-history-table th:nth-child(3),
+.bill-history-table td:nth-child(3) {
+  @apply min-w-28 whitespace-nowrap;
+}
+
+.bill-history-table th:nth-child(4),
+.bill-history-table td:nth-child(4) {
+  @apply min-w-56;
+}
+
+.bill-history-table th:nth-child(7),
+.bill-history-table td:nth-child(7) {
+  @apply min-w-80;
+}
+
+.bill-history-table th:nth-child(8),
+.bill-history-table td:nth-child(8) {
+  @apply min-w-44 whitespace-nowrap;
+}
+
+.reports-layout .report-history-panel {
+  grid-column: 1 / -1;
+}
+
+.reports-layout .bill-history-list {
+  @apply max-h-[520px] overflow-auto;
+}
+
+.reports-layout .bill-history-row {
+  @apply items-start gap-3;
+  grid-template-columns: minmax(260px, 1fr) minmax(120px, auto) auto;
+}
+
+.bill-history-main {
+  @apply grid min-w-0 gap-1;
+}
+
+.bill-history-main strong {
+  @apply text-sm font-black text-ink;
+}
+
+.bill-history-main span,
+.bill-history-main small {
+  @apply min-w-0 text-sm font-semibold leading-5 text-muted;
+}
+
+.bill-history-line {
+  @apply flex min-w-0 flex-wrap items-center gap-1.5;
+}
+
+.bill-status {
+  @apply inline-flex rounded-full border border-line bg-wash px-2 py-0.5 text-xs font-black uppercase text-muted;
+}
+
+.bill-status.paid {
+  @apply border-accent bg-accent-soft text-accent-dark;
+}
+
+.bill-status.pending {
+  @apply border-warning bg-warning-soft text-warning;
+}
+
+.bill-status.cancelled {
+  @apply border-danger bg-danger-soft text-danger;
+}
+
+.bill-history-money {
+  @apply grid justify-items-end gap-1 whitespace-nowrap;
+}
+
+.bill-history-money b {
+  @apply text-base font-black text-ink;
+}
+
+.bill-history-money span {
+  @apply text-xs font-bold uppercase text-muted;
+}
+
+.bill-history-meta {
+  @apply col-span-full flex min-w-0 flex-wrap gap-1.5;
+}
+
+.bill-history-meta span {
+  @apply rounded-full border border-line bg-wash px-2 py-1 text-xs font-bold text-muted;
+}
+
+.history-actions {
+  @apply flex flex-col items-stretch gap-2;
+}
+
+.modified-pill {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.discount-pill {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+  color: #15803d;
+}
+
+.nc-pill {
+  border-color: #fecaca;
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+.history-discount-text {
+  @apply mt-1 block text-xs font-semibold text-emerald-700;
+}
+
+.history-breakup {
+  @apply flex min-w-0 flex-wrap gap-1.5;
+}
+
+.history-breakup span {
+  @apply rounded-full border border-line bg-wash px-2 py-1 text-xs font-bold text-muted;
+}
+
+.history-item-lines {
+  @apply space-y-1;
+}
+
+.history-item-lines span {
+  @apply block;
+}
+
+.history-edit-modal {
+  @apply grid gap-3;
+}
+
+.history-edit-summary {
+  @apply grid gap-2 rounded-lg border border-line bg-wash p-3;
+  grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
+}
+
+.history-edit-summary > div {
+  @apply grid gap-1 rounded-md border border-line bg-white px-3 py-2;
+}
+
+.history-edit-summary span {
+  @apply text-xs font-black uppercase text-muted;
+}
+
+.history-edit-summary strong {
+  @apply text-base font-black text-ink;
+}
+
+.history-edit-summary .final {
+  @apply border-accent bg-accent-soft;
+}
+
+.history-edit-summary .final strong {
+  @apply text-accent-dark;
+}
+
+.history-edit-workbench {
+  @apply grid gap-4 lg:grid-cols-[minmax(280px,360px)_1fr];
+}
+
+.history-edit-money,
+.history-edit-items-panel {
+  @apply grid content-start gap-3 rounded-lg border border-line bg-white p-3;
+}
+
+.history-payment-actions {
+  @apply grid grid-cols-2 gap-2;
+}
+
+.history-payment-actions button {
+  @apply rounded-md border border-line bg-wash px-3 py-2 text-xs font-bold text-ink transition hover:border-accent hover:bg-accent-soft;
+}
+
+.history-payment-grid {
+  @apply grid grid-cols-1 gap-2 sm:grid-cols-2;
+}
+
+.history-money-status {
+  @apply grid gap-1 rounded-md border border-line bg-wash px-3 py-2;
+}
+
+.history-money-status span {
+  @apply text-xs font-black uppercase text-muted;
+}
+
+.history-money-status b {
+  @apply text-ink;
+}
+
+.history-money-status strong {
+  @apply text-sm font-black;
+}
+
+.history-money-status.good {
+  @apply border-emerald-200 bg-emerald-50 text-emerald-800;
+}
+
+.history-money-status.bad {
+  border-color: rgb(185 28 28 / 0.3);
+  background: rgb(254 242 242);
+  color: #b91c1c;
+}
+
+.history-edit-items,
+.history-edit-search {
+  @apply grid max-h-64 gap-2 overflow-auto rounded-lg border border-line bg-wash p-2;
+}
+
+.history-edit-row,
+.history-edit-search-row {
+  @apply grid min-w-0 items-center gap-3 rounded-md border border-line bg-white p-2;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.history-edit-row > div:first-child,
+.history-edit-search-row > strong {
+  @apply min-w-0;
+  overflow-wrap: anywhere;
+}
+
+.history-edit-row span {
+  @apply block text-xs font-semibold text-muted;
+}
+
+.history-edit-search-row.keyboard-active {
+  @apply border-accent bg-accent-soft shadow-sm;
+}
+
+.history-edit-qty,
+.history-edit-actions,
+.history-edit-footer {
+  @apply flex shrink-0 items-center gap-2;
+}
+
+.history-edit-actions {
+  @apply flex-wrap justify-end;
+}
+
+.history-edit-footer {
+  @apply justify-end border-t border-line pt-3;
+}
+
+@media (max-width: 980px) {
+  .reports-layout .bill-history-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .reports-layout .report-history-panel {
+    grid-column: auto;
+  }
+
+  .bill-history-money {
+    @apply justify-self-start;
+  }
+}
+
+@media (max-width: 720px) {
+  .history-edit-row,
+  .history-edit-search-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .history-edit-qty,
+  .history-edit-actions {
+    @apply justify-start;
+  }
+}

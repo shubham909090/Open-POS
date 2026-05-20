@@ -1,0 +1,83 @@
+.kitchen-layout .panel {
+  @apply grid gap-4;
+}
+
+.kitchen-layout .panel-title {
+  @apply items-center;
+}
+
+.kitchen-layout .panel-title select {
+  @apply w-[min(220px,100%)];
+}
+
+.kot-grid {
+  @apply gap-4;
+  grid-template-columns: repeat(auto-fill, minmax(360px, 460px));
+  align-items: start;
+}
+
+.kot-card {
+  @apply grid content-start gap-4 rounded-lg border-line bg-white p-4;
+}
+
+.kot-card header,
+.kot-card footer {
+  @apply flex flex-wrap items-center justify-between gap-2;
+}
+
+.kot-card header {
+  @apply border-b border-line pb-3;
+}
+
+.kot-card header strong {
+  @apply text-base font-black text-ink;
+}
+
+.kot-card header span {
+  @apply rounded-full border border-line bg-wash px-2.5 py-1 text-xs font-black uppercase text-muted;
+}
+
+.kot-card ul {
+  @apply m-0 grid list-none gap-2 rounded-none border-0 bg-transparent p-0;
+}
+
+.kot-card li {
+  @apply rounded-md border border-line bg-wash px-3 py-3 text-base font-semibold leading-6 text-ink;
+}
+
+.kot-card li:last-child {
+  @apply border-b border-line;
+}
+
+.kot-card footer {
+  @apply grid justify-start gap-2 pt-1;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.kot-status-button {
+  @apply min-h-12 w-full text-base capitalize;
+}
+
+.kot-status-button.preparing {
+  @apply border-warning bg-warning-soft text-warning hover:bg-warning hover:text-white;
+}
+
+.kot-status-button.ready {
+  @apply border-accent bg-accent-soft text-accent-dark hover:bg-accent hover:text-white;
+}
+
+.kot-status-button.served {
+  @apply border-line bg-panel text-ink hover:bg-wash;
+}
+
+.kot-note {
+  @apply rounded-md border border-accent bg-accent-soft px-2 py-1 font-black text-accent-dark;
+}
+
+.kot-card small.kot-note {
+  @apply mt-1 block w-fit text-xs leading-4;
+}
+
+.kot-card li.kot-note {
+  @apply list-none;
+}

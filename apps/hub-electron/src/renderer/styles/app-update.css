@@ -1,0 +1,121 @@
+.app-update-panel {
+  @apply grid gap-4;
+}
+
+.update-status-grid {
+  @apply grid gap-3;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.update-status-card {
+  @apply grid min-w-0 gap-2 rounded-lg border border-line bg-white p-3;
+}
+
+.update-status-card > div {
+  @apply grid min-w-0 gap-1;
+}
+
+.update-status-card strong {
+  @apply min-w-0 text-base font-black leading-5 text-ink;
+}
+
+.update-status-card span:not(.record-status) {
+  @apply min-w-0 text-sm font-semibold leading-5 text-muted;
+}
+
+.update-status-card.ready {
+  @apply border-accent bg-accent-soft;
+}
+
+.update-status-card.warning {
+  @apply border-warning bg-warning-soft;
+}
+
+.update-package-card {
+  @apply grid gap-3 rounded-lg border border-line bg-white p-3;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.update-package-card label {
+  @apply grid min-w-0 gap-1 text-sm font-bold text-muted;
+}
+
+.update-package-card label span {
+  @apply text-xs font-black uppercase tracking-normal text-muted;
+}
+
+.update-picker-actions,
+.update-action-row {
+  @apply flex flex-wrap items-end gap-2;
+}
+
+.update-picker-actions {
+  @apply justify-end;
+}
+
+.update-action-groups {
+  @apply grid gap-3;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.update-action-card {
+  @apply grid min-w-0 gap-3 rounded-lg border border-line bg-white p-3;
+}
+
+.update-action-card.danger {
+  @apply border-danger bg-danger-soft;
+}
+
+.github-update-card {
+  @apply border-blue bg-blue-soft;
+}
+
+.update-action-card > strong {
+  @apply text-sm font-black uppercase tracking-normal text-ink;
+}
+
+.github-update-result {
+  @apply grid gap-1 rounded-lg border border-line bg-white p-3 text-sm font-semibold text-muted;
+}
+
+.github-update-result strong {
+  @apply text-base font-black text-ink;
+}
+
+.github-update-result a {
+  @apply font-black text-blue underline underline-offset-2;
+}
+
+.github-update-result p {
+  @apply m-0 leading-5;
+}
+
+.github-release-notes {
+  @apply max-h-32 overflow-auto rounded-md border border-line bg-white px-3 py-2;
+  white-space: pre-wrap;
+}
+
+.github-update-result.update_available {
+  @apply border-accent bg-accent-soft;
+}
+
+.github-update-result.unavailable {
+  @apply border-warning bg-warning-soft;
+}
+
+.update-action-row .utility-action,
+.update-action-row .primary-button,
+.update-action-row .danger-button {
+  @apply min-h-11 min-w-0 flex-1 px-3;
+}
+
+@media (max-width: 980px) {
+  .update-package-card,
+  .update-action-groups {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .update-picker-actions {
+    @apply justify-start;
+  }
+}

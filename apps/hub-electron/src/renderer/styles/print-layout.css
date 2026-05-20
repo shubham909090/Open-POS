@@ -1,0 +1,82 @@
+.print-style-grid {
+  @apply grid gap-2;
+}
+
+.print-layout-form {
+  @apply content-start;
+}
+
+.print-layout-scope-card {
+  @apply col-span-full grid gap-1 rounded-lg border border-accent bg-accent-soft p-3;
+}
+
+.print-layout-scope-card span {
+  @apply text-xs font-black uppercase tracking-normal text-accent-dark;
+}
+
+.print-layout-scope-card strong {
+  @apply text-base font-black leading-5 text-ink;
+}
+
+.print-layout-scope-card small {
+  @apply text-sm font-semibold leading-5 text-muted;
+}
+
+.print-toggle-grid {
+  @apply col-span-full grid gap-2 rounded-lg border border-line bg-wash p-2;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.print-toggle-card {
+  @apply flex min-h-11 cursor-pointer items-center gap-2 rounded-md border border-line bg-white px-3 py-2 text-sm font-bold text-ink shadow-sm;
+}
+
+.print-toggle-card input[type="checkbox"],
+.print-bold-check input[type="checkbox"] {
+  @apply h-4 w-4 shrink-0 accent-accent;
+}
+
+.print-toggle-card span {
+  @apply min-w-0 leading-5;
+}
+
+.print-style-panel {
+  @apply col-span-full;
+}
+
+.print-style-row {
+  @apply grid items-start gap-3 rounded-md border border-line bg-panel p-3;
+  grid-template-columns: minmax(160px, 0.8fr) minmax(280px, 1.2fr);
+}
+
+.print-style-row > strong {
+  @apply min-w-0 text-sm font-black leading-5 text-ink;
+}
+
+.print-style-fields {
+  @apply grid min-w-0 items-end gap-2;
+  grid-template-columns: minmax(96px, 1fr) minmax(96px, 1fr) minmax(88px, auto);
+}
+
+.print-style-fields label {
+  @apply grid min-w-0 gap-1 text-xs font-black uppercase tracking-normal text-muted;
+}
+
+.print-style-fields select {
+  @apply min-h-10 w-full rounded-md border border-line bg-white px-2 text-sm font-semibold normal-case text-ink;
+}
+
+.inline-check {
+  @apply inline-flex min-h-10 items-center gap-2 rounded-md border border-line bg-white px-3 text-sm font-bold normal-case text-ink;
+}
+
+@media (max-width: 980px) {
+  .print-style-row,
+  .print-style-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .print-style-fields .inline-check {
+    @apply w-full;
+  }
+}

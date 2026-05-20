@@ -1,0 +1,239 @@
+.orders-grid {
+    @apply grid gap-3;
+  }
+
+  .orders-grid.tables-first {
+    grid-template-columns: 1fr;
+  }
+
+  .orders-grid.has-selection {
+    grid-template-columns: minmax(240px, 360px) minmax(0, 1fr);
+  }
+
+  .order-workspace-grid {
+    @apply grid gap-3;
+  }
+
+  .order-workspace-grid.menu-open {
+    grid-template-columns: minmax(260px, 360px) minmax(0, 1fr);
+  }
+
+  .order-workspace-grid.menu-collapsed {
+    grid-template-columns: 64px minmax(0, 1fr);
+  }
+
+  .ticket-workspace {
+    @apply grid gap-3;
+  }
+
+  .ticket-header,
+  .ticket-header-actions,
+  .guest-row,
+  .send-action-row {
+    @apply flex flex-wrap items-end gap-2;
+  }
+
+  .ticket-header {
+    @apply justify-between border-b border-line pb-3;
+  }
+
+  .ticket-header span {
+    @apply text-xs font-bold uppercase text-muted;
+  }
+
+  .ticket-header h2 {
+    @apply m-0 text-xl font-black leading-7 text-ink;
+  }
+
+  .ticket-header-actions {
+    @apply justify-end;
+  }
+
+  .ticket-section {
+    @apply grid gap-3;
+  }
+
+  .guest-row {
+    @apply grid items-end gap-3 rounded-lg border border-line bg-wash p-3;
+    grid-template-columns: minmax(92px, 112px) minmax(260px, 1fr) minmax(282px, max-content);
+  }
+
+  .guest-row label {
+    @apply min-w-0;
+  }
+
+  .guest-count-field input {
+    @apply h-11 text-center text-base font-black;
+  }
+
+  .send-action-row {
+    @apply grid min-w-0 justify-end gap-2;
+    grid-template-columns: 96px 174px;
+  }
+
+  .send-action-row button {
+    @apply min-h-11 min-w-0 bg-ink px-3 text-sm font-black leading-5 text-white hover:bg-accent-dark disabled:bg-muted disabled:text-white disabled:opacity-70;
+  }
+
+  .send-action-row kbd {
+    @apply rounded border border-white/20 bg-white/10 px-1.5 py-0.5 text-xs font-black;
+  }
+
+  .order-menu-panel .menu-filter-row {
+    @apply flex-nowrap overflow-x-auto;
+  }
+
+  .order-menu-panel .menu-filter-row button {
+    @apply shrink-0 whitespace-nowrap;
+  }
+
+  .order-menu-panel .menu-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .order-menu-panel .compact-menu-card {
+    @apply items-center gap-3 p-2.5;
+    grid-template-columns: auto minmax(0, 1fr) minmax(120px, auto);
+  }
+
+  .order-menu-panel .compact-menu-card footer {
+    @apply col-auto row-auto w-auto min-w-0;
+  }
+
+  .order-menu-panel .compact-menu-card footer:has(.menu-variant-buttons button:nth-child(2)) {
+    @apply col-start-2 col-end-4 w-full;
+  }
+
+  .order-menu-panel .menu-variant-buttons {
+    @apply flex flex-wrap justify-end gap-2;
+  }
+
+  .order-menu-panel .compact-menu-card footer:has(.menu-variant-buttons button:nth-child(2)) .menu-variant-buttons {
+    @apply grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .order-menu-panel .menu-variant-buttons button {
+    @apply min-h-9 w-auto min-w-28 whitespace-nowrap px-3;
+  }
+
+  .order-menu-panel .compact-menu-card footer:has(.menu-variant-buttons button:nth-child(2)) .menu-variant-buttons button {
+    @apply w-full min-w-0;
+  }
+
+  .menu-rail-button {
+    @apply h-full min-h-56 w-full flex-col;
+  }
+
+  .order-modal-backdrop {
+    @apply place-items-start overflow-y-auto p-3 md:p-5;
+  }
+
+  .order-modal-card {
+    @apply mx-auto grid w-[min(1180px,100%)] gap-4 rounded-lg border border-line bg-panel p-4 shadow-2xl;
+    max-height: calc(100vh - 2rem);
+    overflow: auto;
+  }
+
+  .order-modal-header {
+    @apply sticky top-0 z-10 flex min-w-0 items-center justify-between gap-3 border-b border-line bg-panel pb-3;
+  }
+
+  .order-modal-header span {
+    @apply text-xs font-bold uppercase text-muted;
+  }
+
+  .order-modal-kicker {
+    @apply flex min-w-0 flex-wrap items-center gap-2;
+  }
+
+  .order-modal-header .order-modal-duration {
+    @apply inline-flex min-h-6 items-center gap-1 rounded-full border border-line bg-white px-2 text-xs font-black normal-case text-ink;
+  }
+
+  .order-modal-header h2 {
+    @apply m-0 text-2xl font-black leading-8 text-ink;
+  }
+
+  .order-modal-actions {
+    @apply flex shrink-0 flex-wrap items-center justify-end gap-2;
+  }
+
+  .order-modal-layout {
+    @apply grid min-w-0 gap-3;
+  }
+
+  .order-modal-layout.menu-open {
+    grid-template-columns: minmax(280px, 380px) minmax(0, 1fr);
+  }
+
+  .order-modal-layout.menu-closed {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .order-menu-panel {
+    @apply max-h-[calc(100vh-9rem)] overflow-auto rounded-lg border border-line bg-wash p-3;
+  }
+
+  .line-note-field {
+    @apply col-span-full grid gap-2 rounded-md border border-dashed border-line bg-wash p-2;
+    grid-area: note;
+  }
+
+  .line-note-field summary {
+    @apply cursor-pointer text-[11px] font-black uppercase tracking-normal text-muted;
+  }
+
+  .line-note-field input {
+    @apply min-h-9 rounded-md border border-line bg-white px-3 py-2 text-sm font-semibold;
+  }
+
+  .line-note-text {
+    @apply col-span-full rounded-md border border-dashed border-line bg-wash px-3 py-2 text-sm font-semibold text-muted;
+    grid-area: note;
+  }
+
+  @media (max-width: 980px) {
+    .guest-row {
+      grid-template-columns: minmax(84px, 112px) minmax(0, 1fr);
+    }
+
+    .send-action-row {
+      grid-column: 1 / -1;
+      @apply justify-start;
+    }
+  }
+
+  @media (max-width: 720px) {
+    .line-row {
+      grid-template-areas:
+        "main qty"
+        "amount qty"
+        "note note"
+        "action action";
+      grid-template-columns: minmax(0, 1fr) auto;
+    }
+
+    .line-amount {
+      @apply col-start-1 justify-self-start;
+      grid-area: amount;
+    }
+
+    .qty-cluster {
+      @apply row-span-2;
+      grid-area: qty;
+      grid-column: auto;
+    }
+
+    .state-search-row.compact-menu-card {
+      grid-template-columns: auto minmax(0, 1fr);
+    }
+
+    .state-search-row.compact-menu-card footer {
+      @apply col-start-2 w-full;
+    }
+
+    .state-search-actions {
+      @apply justify-start;
+    }
+  }

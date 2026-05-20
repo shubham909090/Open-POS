@@ -1,0 +1,90 @@
+.transfer-panel-toggle {
+  @apply w-full justify-between rounded-md border-0 bg-panel px-3 py-3 text-left shadow-none hover:bg-wash;
+}
+
+.transfer-panel-toggle > div {
+  @apply grid min-w-0 gap-0.5;
+}
+
+.transfer-panel-toggle strong {
+  @apply text-base font-black text-ink;
+}
+
+.transfer-panel-toggle span {
+  @apply rounded-md bg-wash px-2.5 py-1 text-xs font-black uppercase text-muted;
+}
+
+.transfer-panel-body {
+  @apply grid gap-3 border-t border-line p-3;
+}
+
+.transfer-panel-head {
+  @apply flex flex-wrap items-center justify-between gap-2;
+}
+
+.transfer-mode-toggle {
+  @apply inline-grid rounded-md border border-line bg-wash p-1;
+  grid-template-columns: repeat(2, minmax(112px, 1fr));
+}
+
+.transfer-mode-toggle button {
+  @apply min-h-10 rounded-md bg-transparent px-4 text-sm font-black text-muted shadow-none hover:bg-white hover:text-ink;
+}
+
+.transfer-mode-toggle button.active {
+  @apply bg-ink text-white;
+}
+
+.transfer-target-field {
+  @apply grid max-w-xl gap-1;
+}
+
+.transfer-target-field select {
+  @apply h-11;
+}
+
+.transfer-target-note {
+  @apply m-0 rounded-md border border-blue bg-blue-soft px-3 py-2 text-sm font-semibold text-blue;
+}
+
+.transfer-warning {
+  @apply m-0 rounded-md border border-warning bg-warning-soft px-3 py-2 text-sm font-black leading-5 text-warning;
+}
+
+.transfer-submit-button {
+  @apply inline-flex min-h-11 w-fit min-w-64 items-center justify-center rounded-md bg-ink px-4 text-sm font-black text-white shadow-sm hover:bg-accent-dark disabled:bg-wash disabled:text-muted disabled:opacity-100;
+}
+
+.transfer-item-list {
+  @apply grid gap-2;
+}
+
+.transfer-item-row {
+  @apply grid items-center gap-3 rounded-md border border-line bg-panel p-3;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.transfer-item-row > div:first-child {
+  @apply grid min-w-0 gap-1;
+}
+
+.transfer-item-row strong {
+  @apply min-w-0 text-sm font-black text-ink;
+}
+
+.transfer-item-row span {
+  @apply min-w-0 text-sm font-medium text-muted;
+}
+
+.transfer-qty-control {
+  @apply grid items-center gap-1;
+  grid-template-columns: 38px 72px 38px;
+}
+
+.transfer-qty-control button {
+  @apply h-9 min-h-9 w-9 p-0;
+}
+
+.transfer-qty-control input {
+  @apply h-9 text-center;
+}

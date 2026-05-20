@@ -1,0 +1,69 @@
+.bill-adjustments,
+.bill-payment-section,
+.change-helper {
+  @apply grid gap-3 rounded-lg border border-line bg-white p-3;
+}
+
+.bill-adjustments {
+  @apply bg-accent-soft;
+  border-color: rgb(47 125 116 / 0.4);
+}
+
+.bill-adjustments .adjust-grid,
+.bill-payment-section .payment-grid {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.bill-payment-section .quick-pay {
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+}
+
+.change-helper {
+  @apply bg-wash;
+}
+
+.change-helper-row {
+  @apply grid items-end gap-3;
+  grid-template-columns: minmax(180px, 1fr) auto;
+}
+
+.change-helper-row strong {
+  @apply inline-flex min-h-10 items-center justify-center rounded-md border border-line bg-white px-3 text-sm font-black text-ink shadow-sm;
+}
+
+.reprint-action-row {
+  @apply grid gap-2;
+}
+
+.reprint-bill-button {
+  @apply w-full justify-between px-4;
+}
+
+.reprint-bill-button kbd,
+.punch-button kbd {
+  @apply rounded border border-line bg-wash px-2 py-1 text-xs font-black text-muted;
+}
+
+.change-helper.good {
+  @apply border-emerald-200 bg-emerald-50 text-emerald-800;
+}
+
+.change-helper.good .change-helper-row strong {
+  @apply border-emerald-200 bg-white text-emerald-800;
+}
+
+.change-helper.bad {
+  border-color: rgb(185 28 28 / 0.3);
+  background: rgb(254 242 242);
+  color: #b91c1c;
+}
+
+@media (max-width: 720px) {
+  .change-helper-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .change-helper-row strong {
+    @apply justify-start;
+  }
+}

@@ -1,0 +1,131 @@
+.alcohol-form {
+  grid-template-columns: repeat(3, minmax(180px, 1fr));
+}
+
+.alcohol-form > .three-col,
+.alcohol-form > .recipe-list,
+.alcohol-form > button[type="submit"] {
+  grid-column: 1 / -1;
+}
+
+.alcohol-form > button[type="submit"] {
+  @apply w-fit min-w-48 justify-self-start;
+}
+
+.alcohol-form > button[type="submit"]:disabled {
+  @apply border border-line bg-panel text-muted opacity-100 shadow-none;
+}
+
+.alcohol-form .three-col {
+  @apply rounded-lg border border-line bg-wash p-3;
+}
+
+.alcohol-catalog-row {
+  grid-template-columns: minmax(220px, 1fr) minmax(240px, auto);
+}
+
+.alcohol-catalog-row.editing {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.alcohol-catalog-main {
+  @apply grid min-w-0 gap-1;
+}
+
+.alcohol-catalog-main strong,
+.alcohol-catalog-main span {
+  @apply min-w-0;
+}
+
+.alcohol-catalog-main span {
+  @apply text-sm font-medium text-muted;
+}
+
+.alcohol-catalog-row .catalog-row-actions {
+  @apply justify-end;
+}
+
+.alcohol-catalog-row.editing .catalog-row-actions {
+  @apply justify-between rounded-md border border-line bg-wash p-3;
+}
+
+.alcohol-catalog-table {
+  @apply min-w-[900px];
+}
+
+.alcohol-catalog-table .variant-price-list {
+  @apply flex flex-wrap gap-1.5;
+  grid-template-columns: none;
+}
+
+.alcohol-catalog-table .variant-price-list span {
+  @apply rounded-full border border-line bg-wash px-2 py-1 text-xs font-black text-ink;
+}
+
+.alcohol-catalog-table .action-cell {
+  @apply align-middle;
+}
+
+.alcohol-edit-cell {
+  @apply bg-wash;
+}
+
+.alcohol-edit-form {
+  @apply rounded-lg border border-line bg-panel p-3;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.alcohol-edit-form > .three-col {
+  @apply grid gap-3;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.alcohol-edit-form .checkbox-row {
+  @apply w-fit min-w-48;
+}
+
+.variant-edit-row {
+  @apply grid items-end gap-3 rounded-md border border-line bg-wash p-3;
+  grid-template-columns: minmax(120px, 150px) repeat(3, minmax(120px, 1fr));
+}
+
+.variant-edit-row .checkbox-row {
+  @apply min-w-0;
+}
+
+.storage-card {
+  @apply gap-4;
+}
+
+.storage-card .panel-title {
+  @apply items-start;
+}
+
+.stock-metrics {
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+}
+
+.stock-metrics span {
+  @apply grid gap-1 rounded-md border border-line bg-wash px-3 py-2 text-xs font-bold uppercase text-muted;
+}
+
+.stock-metrics b {
+  @apply text-lg font-black normal-case text-ink;
+}
+
+.stock-adjust-form {
+  @apply items-end rounded-lg border border-line bg-panel p-3;
+  grid-template-columns: minmax(150px, 190px) repeat(3, minmax(140px, 1fr)) minmax(120px, auto);
+}
+
+.stock-adjust-form button {
+  @apply h-10;
+}
+
+@media (max-width: 980px) {
+  .stock-adjust-form,
+  .variant-edit-row,
+  .alcohol-catalog-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

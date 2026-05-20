@@ -1,0 +1,72 @@
+.state-editor {
+  @apply grid gap-3 rounded-lg border border-line bg-wash p-3;
+}
+
+.state-editor-head {
+  @apply flex min-w-0 flex-wrap items-center justify-between gap-3;
+}
+
+.state-editor-total {
+  @apply grid min-w-0 gap-1;
+}
+
+.state-editor-total small {
+  @apply text-xs font-black uppercase tracking-normal text-muted;
+}
+
+.state-editor-total strong {
+  @apply text-xl font-black leading-6 text-ink;
+}
+
+.state-editor-status {
+  @apply inline-flex min-h-8 items-center rounded-full border border-accent bg-accent-soft px-3 text-xs font-black uppercase text-accent-dark;
+}
+
+.state-editor-warning {
+  @apply m-0 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-900;
+}
+
+.state-editor-actions {
+  @apply flex flex-wrap items-center justify-end gap-2;
+}
+
+.state-search {
+  @apply grid gap-2;
+}
+
+.state-search-field {
+  @apply grid min-w-0 gap-1;
+}
+
+.state-search-field span {
+  @apply text-xs font-black uppercase tracking-normal text-muted;
+}
+
+.state-search-field input {
+  @apply h-10 w-full max-w-md;
+}
+
+.state-search-results {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.state-search-row {
+  @apply p-3;
+}
+
+.state-search-row.compact-menu-card {
+  @apply items-center;
+  grid-template-columns: auto minmax(0, 1fr) minmax(128px, max-content);
+}
+
+.state-search-row.compact-menu-card footer {
+  @apply col-auto row-auto w-auto;
+}
+
+.state-search-actions {
+  @apply flex flex-wrap justify-end gap-2;
+}
+
+.state-search-actions button {
+  @apply w-auto min-w-28 whitespace-nowrap;
+}

@@ -1,0 +1,87 @@
+.pairing-card {
+    @apply grid items-start gap-4 rounded-lg border border-line bg-wash p-3;
+    grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
+  }
+
+  .pairing-copy {
+    @apply max-w-3xl text-sm font-medium leading-6 text-muted;
+  }
+
+  .pairing-form {
+    @apply grid items-end gap-3;
+    grid-template-columns: minmax(220px, 360px) minmax(160px, 220px) auto;
+  }
+
+  .role-card-grid {
+    @apply grid gap-2;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .role-card {
+    @apply grid min-h-24 min-w-0 gap-1 rounded-lg border border-line bg-white p-3 text-left text-ink shadow-sm hover:border-line-strong hover:bg-wash;
+  }
+
+  .role-card strong {
+    @apply text-sm font-black leading-5 text-ink;
+  }
+
+  .role-card span,
+  .role-card small {
+    @apply text-sm font-medium leading-5 text-muted;
+  }
+
+  .role-card small {
+    @apply text-xs uppercase;
+  }
+
+  .role-card.active {
+    @apply border-ink bg-ink text-white shadow-md;
+  }
+
+  .role-card.active strong,
+  .role-card.active span,
+  .role-card.active small {
+    @apply text-white;
+  }
+
+  .pairing-card img {
+    @apply h-56 w-56 rounded-md border border-line bg-white;
+  }
+
+  .pairing-qr-panel {
+    @apply grid min-w-0 justify-items-center gap-3 rounded-md border border-line bg-white p-3 text-center;
+  }
+
+  .pairing-code {
+    @apply grid min-w-0 max-w-full gap-1;
+  }
+
+  .pairing-code strong {
+    @apply text-xl font-black leading-6 text-ink;
+    overflow-wrap: anywhere;
+  }
+
+  .pairing-code span {
+    @apply text-sm font-semibold leading-5 text-muted;
+    overflow-wrap: anywhere;
+  }
+
+  .pairing-payload-panel {
+    @apply grid min-w-0 gap-2 rounded-md border border-line bg-white p-3;
+  }
+
+  .pairing-payload-panel > div {
+    @apply flex min-w-0 flex-wrap items-baseline justify-between gap-2;
+  }
+
+  .pairing-payload-panel strong {
+    @apply text-sm font-black text-ink;
+  }
+
+  .pairing-payload-panel span {
+    @apply text-sm font-semibold text-muted;
+  }
+
+  .pairing-payload-panel textarea {
+    @apply min-h-32 w-full resize-y whitespace-pre-wrap break-all font-mono text-xs leading-5;
+  }
