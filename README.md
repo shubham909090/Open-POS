@@ -53,13 +53,6 @@ Each Hub release should include:
 - `Gaurav POS Hub-<version>.gpos-update.zip` for in-app updates
 - `Gaurav POS Hub Setup <version>.exe` for first-time install or manual reinstall
 
-Brother flow:
-
-```text
-Advanced -> App Updates -> Check GitHub for update -> Install GitHub update -> Manager PIN
-```
-
-Release build and publish steps are documented in [docs/release-build-workflow.md](docs/release-build-workflow.md).
 
 ## Reference Intake
 
