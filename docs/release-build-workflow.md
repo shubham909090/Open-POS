@@ -55,6 +55,63 @@ Fresh means:
 
 Do not ship a same-version update package over the previous installed app. The app update cache and rollback baseline are version-keyed, so a real update should move from something like `0.1.2` to `0.1.6`.
 
+## One-Command Release Helpers
+
+For normal use, prefer these commands instead of manually repeating every step.
+
+Fresh Hub Windows release:
+
+```bash
+pnpm release:hub:fresh
+```
+
+That command:
+
+- bumps `apps/hub-electron/package.json` patch version automatically
+- updates this workflow's Hub version examples
+- runs Hub tests and typecheck
+- deletes and recreates `apps/hub-electron/release`
+- creates the Windows installer
+- on macOS, repairs the cross-built SQLite native to Windows x64 `PE32+`
+- rebuilds the installer after native repair
+- creates and validates the `.gpos-update.zip`
+- verifies `/preload.cjs` exists in `app.asar`
+- cleans the Hub release folder to only the current `.exe` and `.gpos-update.zip`
+
+Optional flags:
+
+```bash
+pnpm release:hub:fresh -- --version 0.1.7
+pnpm release:hub:fresh -- --publish
+pnpm release:hub:fresh -- --skip-tests
+```
+
+Fresh local Android APK:
+
+```bash
+pnpm release:mobile:local
+```
+
+That command:
+
+- bumps `apps/mobile/package.json` patch version automatically
+- bumps `apps/mobile/app.json` version and increments Android `versionCode`
+- reuses repo-local `.agent/tools/jdk-17` and `.agent/android-sdk`
+- installs the repo-local JDK/Android SDK only if missing
+- runs mobile typecheck
+- deletes and recreates `apps/mobile/release-local`
+- builds a signed preview APK locally
+- verifies the APK signature
+
+Optional flags:
+
+```bash
+pnpm release:mobile:local -- --version 0.1.5 --version-code 5
+pnpm release:mobile:local -- --skip-typecheck
+```
+
+The repo-local JDK and Android SDK are intentionally under `.agent/`, which is gitignored. They are not system-wide installs.
+
 ## Before Building
 
 From the repo root:

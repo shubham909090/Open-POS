@@ -9,6 +9,8 @@
     "dev:cloud": "pnpm --filter @gaurav-pos/cloud-admin dev",
     "dev:hub": "pnpm --filter @gaurav-pos/hub-electron dev",
     "lint": "pnpm -r --if-present lint",
+    "release:hub:fresh": "pnpm --filter @gaurav-pos/hub-electron release:fresh-windows",
+    "release:mobile:local": "pnpm --filter @gaurav-pos/mobile release:local-apk",
     "test": "vitest run convex/*.test.ts && pnpm -r --if-present test",
     "typecheck": "pnpm -r --if-present typecheck"
   },

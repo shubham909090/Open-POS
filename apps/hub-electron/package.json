@@ -15,6 +15,7 @@
     "db:studio": "drizzle-kit studio",
     "package:win": "pnpm build && electron-builder --win nsis --x64",
     "package:update": "tsx scripts/create-update-package.ts",
+    "release:fresh-windows": "tsx scripts/fresh-windows-release.ts",
     "release:github": "tsx scripts/publish-github-release.ts",
     "package:dir": "pnpm build && electron-builder --dir",
     "lint": "pnpm --filter @gaurav-pos/shared build && tsc --noEmit",

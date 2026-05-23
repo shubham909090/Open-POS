@@ -11,6 +11,7 @@
     "android:prebuild": "expo prebuild --platform android",
     "android:apk": "pnpm dlx eas-cli@18.11.0 build --platform android --profile preview",
     "android:aab": "pnpm dlx eas-cli@18.11.0 build --platform android --profile production",
+    "release:local-apk": "tsx scripts/local-apk-release.ts",
     "eas-build-post-install": "pnpm --filter @gaurav-pos/shared build",
     "lint": "pnpm build:shared && tsc --noEmit",
     "test": "vitest run",
