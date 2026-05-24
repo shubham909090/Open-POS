@@ -124,7 +124,7 @@ function run(command: string, commandArgs: string[], options: { cwd?: string; en
 
 function repairCrossBuiltWindowsSqlite(): void {
   const metadata = readAppMetadata();
-  const nativePath = join(hubRoot, PACKAGED_SQLITE_NATIVE_PATH);
+  const nativePath = packagedSqliteNativePath();
   const nativeBytes = readFileSync(nativePath);
   try {
     validateWindowsX64NativeModule(nativeBytes);
@@ -167,7 +167,7 @@ function createUpdatePackage(): void {
   const releaseDir = join(hubRoot, "release");
   const installerName = `${metadata.productName} Setup ${metadata.version}.exe`;
   const installerPath = join(releaseDir, installerName);
-  const nativePath = join(hubRoot, PACKAGED_SQLITE_NATIVE_PATH);
+  const nativePath = packagedSqliteNativePath();
   const packagePath = join(releaseDir, `${metadata.productName}-${metadata.version}.gpos-update.zip`);
   const nativeBytes = readFileSync(nativePath);
   validateWindowsX64NativeModule(nativeBytes);
@@ -192,6 +192,10 @@ function createUpdatePackage(): void {
   zip.addFile(installerName, installerBytes);
   zip.addFile(manifest.sqliteNative.fileName, nativeBytes);
   zip.writeZip(packagePath);
+}
+
+function packagedSqliteNativePath(): string {
+  return join(hubRoot, "release", PACKAGED_SQLITE_NATIVE_PATH);
 }
 
 function validatePreloadBridge(): void {
