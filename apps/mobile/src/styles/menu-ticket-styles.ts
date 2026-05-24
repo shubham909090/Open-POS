@@ -97,9 +97,9 @@ export const menuTicketStyles = {
     alignItems: "center",
     gap: 10
   },
-  ticketText: { flex: 1, minWidth: 0 },
-  ticketName: { color: palette.ink, fontWeight: "900", fontSize: 15, lineHeight: 19 },
-  qtyControls: { flexDirection: "row", alignItems: "center", gap: 8 },
+  ticketText: { flex: 1, minWidth: 160, flexShrink: 1 },
+  ticketName: { color: palette.ink, fontWeight: "900", fontSize: 15, lineHeight: 20 },
+  qtyControls: { flexDirection: "row", alignItems: "center", gap: 8, flexShrink: 0 },
   qtyButton: {
     width: 48,
     height: 48,
@@ -122,7 +122,7 @@ export const menuTicketStyles = {
     justifyContent: "space-between",
     gap: 8
   },
-  sentName: { color: palette.ink, fontWeight: "800", flex: 1, lineHeight: 18 },
+  sentName: { color: palette.ink, fontWeight: "800", flex: 1, minWidth: 150, flexShrink: 1, lineHeight: 18 },
   totalStrip: {
     borderRadius: 8,
     backgroundColor: palette.greenSoft,

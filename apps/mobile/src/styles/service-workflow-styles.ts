@@ -124,6 +124,7 @@ export const serviceWorkflowStyles = {
     borderRadius: 8,
     padding: 8,
     flexDirection: "row",
+    flexWrap: "wrap",
     alignItems: "center",
     gap: 8
   },
