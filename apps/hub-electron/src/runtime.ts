@@ -3,10 +3,12 @@ import { readAppMetadata } from "./app-metadata.js";
 import { loadHubConfig } from "./config.js";
 import { BackupService } from "./db/backup-service.js";
 import { HubDatabase } from "./db/database.js";
+import { cleanupDeprecatedLocalSyncState } from "./db/local-maintenance.js";
 import { currentDbSchemaVersion } from "./db/schema-version.js";
 import { AuthService } from "./domain/auth-service.js";
 import { EventBus } from "./domain/event-bus.js";
 import { OrderService } from "./domain/order-service.js";
+import { BUILD_LICENSE_PUBLIC_KEY_PEM, BUILD_LICENSE_REQUIRED } from "./license-build-config.js";
 import { DryRunPrinterAdapter, RoutedPrinterAdapter } from "./printing/escpos.js";
 import { PrintJobService } from "./printing/print-job-service.js";
 import { ConvexSyncBridge } from "./sync/convex-sync.js";
@@ -42,7 +44,9 @@ export async function startHub(options: { requestRestart?: () => void } = {}) {
   database.assertCompatibleAppSchema(appSchemaVersion);
   database.migrate();
   database.markAppSchemaVersion(appSchemaVersion);
+  cleanupDeprecatedLocalSyncState(database.db);
   const backupService = new BackupService(database, config.databasePath, config.backupDir);
+  backupService.pruneAutomaticBackups();
   const appMetadata = readAppMetadata();
   const appUpdateService = new AppUpdateService({
     database,
@@ -73,7 +77,8 @@ export async function startHub(options: { requestRestart?: () => void } = {}) {
     config.convexHttpUrl,
     config.posSyncSecret,
     config.installationId,
-    () => orderService.getHubConnectionRuntimeSettings()
+    () => orderService.getHubConnectionRuntimeSettings(),
+    { publicKeyPem: BUILD_LICENSE_PUBLIC_KEY_PEM }
   );
   const app = createHubServer({
     database,
@@ -83,6 +88,7 @@ export async function startHub(options: { requestRestart?: () => void } = {}) {
     orderService,
     printJobService,
     syncBridge,
+    licenseRequired: BUILD_LICENSE_REQUIRED,
     eventBus,
     publicUrl: config.publicUrl,
     requestRestart: options.requestRestart
@@ -94,6 +100,12 @@ export async function startHub(options: { requestRestart?: () => void } = {}) {
     void runSyncTick();
   }, 60_000);
   syncInterval.unref();
+
+  const maintenanceInterval = setInterval(() => {
+    cleanupDeprecatedLocalSyncState(database.db);
+    backupService.pruneAutomaticBackups();
+  }, 60 * 60_000);
+  maintenanceInterval.unref();
 
   return {
     app,

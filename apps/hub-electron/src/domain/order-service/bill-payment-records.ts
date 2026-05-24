@@ -2,10 +2,27 @@ import type { BillAdjustmentInput, HistoryEditBillInput } from "@gaurav-pos/shar
 import { and, eq, sum } from "drizzle-orm";
 import type { HubOrm, SqliteDatabase } from "../../db/database.js";
 import { billRevisions, bills, payments, printJobs } from "../../db/drizzle-schema.js";
+import { queueCloudBackupTombstone } from "../../sync/backup-tombstones.js";
 import { DomainError } from "../errors.js";
 import { makeId } from "../ids.js";
 import { allocateByWeight, calculateDiscountPaise } from "./billing-calculations.js";
 import type { BillRow } from "./types.js";
+
+function queuePaymentBackupTombstones(db: SqliteDatabase, billId: string, deletedAt: string): void {
+  const deletedPayments = db
+    .prepare(
+      `SELECT pay.id, pd.business_date
+       FROM payments pay
+       JOIN bills b ON b.id = pay.bill_id
+       JOIN orders o ON o.id = b.order_id
+       JOIN pos_days pd ON pd.id = o.pos_day_id
+       WHERE pay.bill_id = ?`
+    )
+    .all(billId) as Array<{ id: string; business_date: string }>;
+  for (const payment of deletedPayments) {
+    queueCloudBackupTombstone(db, { domain: "payments", localId: payment.id, businessDate: payment.business_date, deletedAt });
+  }
+}
 
 export function getBillPaidPaise(orm: HubOrm, billId: string): number {
   const row = orm.select({ paid: sum(payments.amountPaise) }).from(payments).where(eq(payments.billId, billId)).get();
@@ -25,6 +42,7 @@ export function syncPaidBillPaymentToFinalTotal(
   const existingPayments = db
     .prepare("SELECT method, amount_paise, reference, note FROM payments WHERE bill_id = ? ORDER BY created_at ASC, id ASC")
     .all(billId) as Array<{ method: "cash" | "upi" | "card" | "online"; amount_paise: number; reference: string | null; note: string | null }>;
+  queuePaymentBackupTombstones(db, billId, now);
   db.prepare("DELETE FROM payments WHERE bill_id = ?").run(billId);
   if (finalTotalPaise <= 0) return;
   const weights = existingPayments.length ? existingPayments.map((payment) => payment.amount_paise) : [finalTotalPaise];
@@ -50,6 +68,7 @@ export function syncPaidBillPaymentToFinalTotal(
 
 export function replaceHistoryEditPayments(
   orm: HubOrm,
+  db: SqliteDatabase,
   bill: BillRow,
   requestedPayments: HistoryEditBillInput["payments"],
   finalTotalPaise: number,
@@ -61,6 +80,7 @@ export function replaceHistoryEditPayments(
     if (requestedPayments?.some((payment) => payment.amountPaise > 0)) {
       throw new DomainError("NC bills cannot record collected payments");
     }
+    queuePaymentBackupTombstones(db, billId, now);
     orm.delete(payments).where(eq(payments.billId, billId)).run();
     return;
   }
@@ -76,6 +96,7 @@ export function replaceHistoryEditPayments(
   if (paymentTotalPaise !== finalTotalPaise) {
     throw new DomainError("History edit payments must exactly match the edited bill total");
   }
+  queuePaymentBackupTombstones(db, billId, now);
   orm.delete(payments).where(eq(payments.billId, billId)).run();
   for (const payment of normalizedPayments) {
     orm.insert(payments).values({

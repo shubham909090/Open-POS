@@ -90,7 +90,7 @@ export function registerSettingsRoutes({ app, input, auth }: HubRouteContext): v
       return { status: "missing", message: "Cloud connection details are incomplete." };
     }
     try {
-      const response = await fetch(`${settings.cloudUrl}/pos/ingest-events`, {
+      const response = await fetch(`${settings.cloudUrl}/pos/license-check`, {
         method: "POST",
         headers: {
           "content-type": "application/json",
@@ -98,7 +98,7 @@ export function registerSettingsRoutes({ app, input, auth }: HubRouteContext): v
           "x-pos-installation-secret": settings.syncSecret,
           "x-pos-installation-id": settings.installationId
         },
-        body: JSON.stringify({ events: [] })
+        body: JSON.stringify({})
       });
       if (response.status === 401 || response.status === 403) return { status: "unauthorized", message: "Cloud rejected these connection details." };
       if (!response.ok) return { status: "server_error", message: `Cloud returned HTTP ${response.status}.` };

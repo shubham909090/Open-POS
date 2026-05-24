@@ -6,6 +6,7 @@ import type { HubDatabase } from "./database.js";
 const BACKUP_EXTENSION = ".sqlite";
 const RESTORE_MARKER = "restore-pending.json";
 const RESET_MARKER = "reset-pending.json";
+const AUTO_BACKUP_PREFIXES = ["pre-restore-", "pre-update-"] as const;
 
 interface RestoreMarker {
   backupPath: string;
@@ -22,6 +23,11 @@ export interface BackupSummary {
   path: string;
   sizeBytes: number;
   createdAt: string;
+}
+
+export interface BackupPruneSummary {
+  deleted: number;
+  kept: number;
 }
 
 export class BackupService {
@@ -109,6 +115,33 @@ export class BackupService {
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }
 
+  pruneAutomaticBackups(options: { maxAgeDays?: number; maxPerPrefix?: number; now?: Date } = {}): BackupPruneSummary {
+    if (!existsSync(this.backupDir)) return { deleted: 0, kept: 0 };
+    const maxAgeDays = options.maxAgeDays ?? 30;
+    const maxPerPrefix = options.maxPerPrefix ?? 5;
+    const cutoff = (options.now ?? new Date()).getTime() - maxAgeDays * 24 * 60 * 60 * 1000;
+    let deleted = 0;
+    let kept = 0;
+
+    for (const prefix of AUTO_BACKUP_PREFIXES) {
+      const files = readdirSync(this.backupDir)
+        .filter((file) => file.startsWith(prefix) && file.endsWith(BACKUP_EXTENSION))
+        .map((file) => ({ file, createdAt: BackupService.backupFileTime(join(this.backupDir, file)) }))
+        .sort((a, b) => b.createdAt - a.createdAt);
+
+      for (const [index, entry] of files.entries()) {
+        if (entry.createdAt < cutoff || index >= maxPerPrefix) {
+          rmSync(join(this.backupDir, entry.file), { force: true });
+          deleted += 1;
+        } else {
+          kept += 1;
+        }
+      }
+    }
+
+    return { deleted, kept };
+  }
+
   scheduleRestore(fileName: string): { scheduled: true; restartRequired: true; backup: BackupSummary } {
     const backupPath = resolve(this.backupDir, fileName);
     const backupRoot = resolve(this.backupDir);
@@ -163,6 +196,19 @@ export class BackupService {
       sizeBytes: stats.size,
       createdAt: stats.birthtime.toISOString()
     };
+  }
+
+  private static backupFileTime(path: string): number {
+    const timestamp = basename(path).match(/(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z)\.sqlite$/)?.[1];
+    if (timestamp) {
+      const [, date, hour, minute, second, millisecond] =
+        timestamp.match(/^(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})-(\d{2})-(\d{3})Z$/) ?? [];
+      if (date && hour && minute && second && millisecond) {
+        const parsed = Date.parse(`${date}T${hour}:${minute}:${second}.${millisecond}Z`);
+        if (Number.isFinite(parsed)) return parsed;
+      }
+    }
+    return statSync(path).mtime.getTime();
   }
 
   private static timestamp(): string {

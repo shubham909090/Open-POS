@@ -123,6 +123,17 @@
     @apply grid grid-cols-[minmax(0,1fr)_auto] items-center gap-5 rounded-lg border border-border bg-card p-6 shadow-pos;
   }
 
+  .auth-panel > *,
+  .admin-topbar > *,
+  .topbar-actions {
+    @apply min-w-0;
+  }
+
+  .auth-panel p,
+  .user-pill {
+    overflow-wrap: anywhere;
+  }
+
   .dashboard-layout {
     @apply grid items-start gap-4;
     grid-template-columns: 290px minmax(0, 1fr);
@@ -237,8 +248,74 @@
     @apply m-0 text-base font-black;
   }
 
+  .admin-grid {
+    @apply grid gap-4;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .admin-panel {
     @apply min-w-0 p-5 shadow-pos;
+  }
+
+  .form-panel,
+  .record-list {
+    @apply grid gap-3;
+  }
+
+  .section-heading {
+    @apply mb-4 flex items-start justify-between gap-4;
+  }
+
+  .section-heading h2 {
+    @apply text-xl font-black;
+  }
+
+  .section-heading > svg {
+    @apply mt-1 shrink-0 text-primary;
+  }
+
+  .record-row {
+    @apply flex min-w-0 items-center justify-between gap-3 rounded-md border border-border bg-white p-3 text-left text-foreground;
+  }
+
+  button.record-row {
+    @apply w-full border-border bg-white hover:bg-background;
+  }
+
+  .record-row div,
+  .record-row strong,
+  .record-row span {
+    @apply min-w-0;
+  }
+
+  .record-row strong {
+    @apply block text-sm font-black;
+  }
+
+  .record-row span {
+    @apply text-sm font-semibold text-muted;
+    overflow-wrap: anywhere;
+  }
+
+  .status-pill {
+    @apply shrink-0 rounded-full border border-border bg-background px-3 py-1 text-xs font-black text-foreground;
+  }
+
+  .inline-form {
+    @apply grid items-end gap-3;
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .setup-block {
+    @apply block overflow-auto rounded-md border border-border bg-foreground p-3 text-sm font-black text-white;
+  }
+
+  .secondary-button {
+    @apply border-border bg-white text-foreground hover:bg-background;
+  }
+
+  .danger-button {
+    @apply border-red-700 bg-red-700 text-white hover:bg-red-800;
   }
 
   .wide-panel {
@@ -344,6 +421,7 @@
 
 @media (max-width: 1180px) {
   .dashboard-layout,
+  .admin-grid,
   .cloud-report-layout,
   .sync-grid,
   .staff-layout,
@@ -355,6 +433,10 @@
   .wide-panel {
     @apply col-span-1;
   }
+
+  .admin-rail {
+    @apply static;
+  }
 }
 
 @media (max-width: 860px) {
@@ -365,6 +447,7 @@
   .admin-topbar,
   .auth-panel,
   .summary-strip,
+  .inline-form,
   .report-metric-grid,
   .report-detail-grid,
   .field-grid,
@@ -377,5 +460,14 @@
   .admin-topbar,
   .auth-panel {
     @apply items-start;
+  }
+
+  .auth-panel .button-link,
+  .inline-form button,
+  .row-actions,
+  .row-actions button,
+  .topbar-actions,
+  .topbar-actions .ghost-button {
+    @apply w-full;
   }
 }

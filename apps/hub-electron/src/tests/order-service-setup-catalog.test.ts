@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createTestHub } from "./helpers.js";
 
 describe("OrderService setup catalog", () => {
-  it("manages catalog records and records sync events", () => {
+  it("manages catalog records and keeps cloud event outbox empty", () => {
     const { database, orderService } = createTestHub();
 
     const floor = orderService.createFloor({ name: "Rooftop" });
@@ -35,7 +35,8 @@ describe("OrderService setup catalog", () => {
     expect(database.db.prepare("SELECT name FROM floors WHERE id = ?").get(floor.id)).toEqual({ name: "Terrace" });
     expect(database.db.prepare("SELECT name FROM restaurant_tables WHERE id = ?").get(table.id)).toEqual({ name: "R2" });
     expect(database.db.prepare("SELECT name FROM production_units WHERE id = ?").get(unit.id)).toEqual({ name: "Main Tandoor" });
-    expect(database.db.prepare("SELECT COUNT(*) AS count FROM sync_outbox").get()).toEqual({ count: 8 });
+    expect(database.db.prepare("SELECT COUNT(*) AS count FROM event_log").get()).toEqual({ count: 8 });
+    expect(database.db.prepare("SELECT COUNT(*) AS count FROM sync_outbox").get()).toEqual({ count: 0 });
 
     database.close();
   });

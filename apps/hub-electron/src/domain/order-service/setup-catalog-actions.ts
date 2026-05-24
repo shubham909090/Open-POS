@@ -13,6 +13,7 @@ import { count, eq } from "drizzle-orm";
 
 import type { HubOrm, SqliteDatabase } from "../../db/database.js";
 import { floors, kots, menuItems, orderItems, orders, productionUnits, restaurantTables, saleGroups } from "../../db/drizzle-schema.js";
+import { queueCloudBackupTombstone } from "../../sync/backup-tombstones.js";
 import { DomainError } from "../errors.js";
 import { makeId } from "../ids.js";
 import { nextFloorSortOrder, nextTableSortOrder, requireFloor, requireTable } from "./floor-table-catalog.js";
@@ -99,6 +100,7 @@ export function removeFloor(ctx: SetupCatalogActionContext, id: string): RemoveR
     updateFloor(ctx, id, { active: false });
     return { id, deleted: false, active: false };
   }
+  queueCloudBackupTombstone(ctx.db, { domain: "floors", localId: id, deletedAt: new Date().toISOString() });
   const result = ctx.orm.delete(floors).where(eq(floors.id, id)).run();
   if (result.changes === 0) throw new DomainError("Floor not found", 404);
   ctx.appendEvent("floor.deleted", "floor", id, { id });
@@ -157,6 +159,7 @@ export function removeTable(ctx: SetupCatalogActionContext, id: string): RemoveR
     updateTable(ctx, id, { active: false });
     return { id, deleted: false, active: false };
   }
+  queueCloudBackupTombstone(ctx.db, { domain: "restaurant_tables", localId: id, deletedAt: new Date().toISOString() });
   const result = ctx.orm.delete(restaurantTables).where(eq(restaurantTables.id, id)).run();
   if (result.changes === 0) throw new DomainError("Table not found", 404);
   ctx.appendEvent("table.deleted", "table", id, { id });
@@ -212,6 +215,7 @@ export function removeProductionUnit(ctx: SetupCatalogActionContext, id: string)
     updateProductionUnit(ctx, id, { active: false });
     return { id, deleted: false, active: false };
   }
+  queueCloudBackupTombstone(ctx.db, { domain: "production_units", localId: id, deletedAt: new Date().toISOString() });
   const result = ctx.orm.delete(productionUnits).where(eq(productionUnits.id, id)).run();
   if (result.changes === 0) throw new DomainError("Kitchen / counter not found", 404);
   ctx.appendEvent("production_unit.deleted", "production_unit", id, { id });

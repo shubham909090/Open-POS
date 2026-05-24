@@ -1,17 +1,8 @@
 import { v } from "convex/values";
 import { internalMutation, mutation, type MutationCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
-import { parseHubCommandCursor, serializeHubCommandCursor } from "./hubCommandCursor";
-import { normalizeHubCommandPayload, type HubCommandType } from "./hubCommands";
+import { hubCommandType } from "./admin/access";
 
-const hubCommandType = v.union(
-  v.literal("device.revoked"),
-  v.literal("device.updated"),
-  v.literal("menu_item.upsert"),
-  v.literal("menu_item.disabled"),
-  v.literal("production_unit.upsert"),
-  v.literal("receipt_printer.updated")
-);
 async function requireRestaurantAdmin(ctx: MutationCtx, restaurantId: Id<"restaurants">) {
   const identity = await ctx.auth.getUserIdentity();
   if (!identity) throw new Error("Not authenticated");
@@ -29,201 +20,6 @@ async function requireRestaurantOwner(ctx: MutationCtx, restaurantId: Id<"restau
   const result = await requireRestaurantAdmin(ctx, restaurantId);
   if (result.membership.role !== "owner") throw new Error("Only restaurant owners can do that");
   return result;
-}
-
-type DailyReportPayload = {
-  posDayId?: string;
-  businessDate?: string;
-  finalizedAt?: string;
-  openOrders?: number;
-  billedOrders?: number;
-  paidBills?: number;
-  unpaidBills?: number;
-  cancelledOrders?: number;
-  billCount?: number;
-  grossSalesPaise?: number;
-  discountPaise?: number;
-  tipPaise?: number;
-  finalSalesPaise?: number;
-  cashPaymentsPaise?: number;
-  upiPaymentsPaise?: number;
-  cardPaymentsPaise?: number;
-  onlinePaymentsPaise?: number;
-  totalPaymentsPaise?: number;
-  nonCashPaymentsPaise?: number;
-  billSummaries?: Array<{
-    billId: string;
-    orderId: string;
-    tableName: string;
-    status: string;
-    totalPaise: number;
-    discountPaise: number;
-    tipPaise: number;
-    finalTotalPaise: number;
-    paidPaise: number;
-    settledAt: string | null;
-    payments: Array<{ method: string; amountPaise: number; reference: string | null }>;
-    isNc?: boolean;
-    ncReason?: string | null;
-    revisionNumber?: number;
-  }>;
-  itemSummaries?: Array<{
-    menuItemId: string;
-    name: string;
-    saleGroupId?: string;
-    saleGroupName?: string;
-    saleGroupKind?: string;
-    quantity: number;
-    grossSalesPaise: number;
-    ncQuantity?: number;
-    ncGrossSalesPaise?: number;
-  }>;
-  groupSummaries?: Array<{
-    saleGroupId: string;
-    name: string;
-    kind: string;
-    quantity: number;
-    grossSalesPaise: number;
-    taxPaise: number;
-    finalSalesPaise: number;
-    ncQuantity: number;
-    ncGrossSalesPaise: number;
-  }>;
-};
-
-function numberOrZero(value: unknown): number {
-  return typeof value === "number" && Number.isFinite(value) ? value : 0;
-}
-
-async function upsertDailyReport(
-  ctx: MutationCtx,
-  restaurantId: Id<"restaurants">,
-  payloadJson: string,
-  receivedAt: string
-) {
-  const payload = JSON.parse(payloadJson) as DailyReportPayload;
-  const businessDate = payload.businessDate;
-  const posDayId = payload.posDayId;
-  if (!businessDate || !posDayId) throw new Error("Daily report is missing business date or day id");
-
-  const existing = (
-    await ctx.db
-      .query("dailyReports")
-      .withIndex("by_restaurant_and_businessDate", (q) => q.eq("restaurantId", restaurantId).eq("businessDate", businessDate))
-      .take(1)
-  )[0];
-  const report = {
-    restaurantId,
-    posDayId,
-    businessDate,
-    status: "finalized" as const,
-    grossSalesPaise: numberOrZero(payload.grossSalesPaise),
-    discountPaise: numberOrZero(payload.discountPaise),
-    tipPaise: numberOrZero(payload.tipPaise),
-    finalSalesPaise: numberOrZero(payload.finalSalesPaise),
-    cashPaymentsPaise: numberOrZero(payload.cashPaymentsPaise),
-    upiPaymentsPaise: numberOrZero(payload.upiPaymentsPaise),
-    cardPaymentsPaise: numberOrZero(payload.cardPaymentsPaise),
-    onlinePaymentsPaise: numberOrZero(payload.onlinePaymentsPaise),
-    totalPaymentsPaise: numberOrZero(payload.totalPaymentsPaise),
-    nonCashPaymentsPaise: numberOrZero(payload.nonCashPaymentsPaise),
-    billCount: numberOrZero(payload.billCount),
-    openOrders: numberOrZero(payload.openOrders),
-    billedOrders: numberOrZero(payload.billedOrders),
-    paidBills: numberOrZero(payload.paidBills),
-    unpaidBills: numberOrZero(payload.unpaidBills),
-    cancelledOrders: numberOrZero(payload.cancelledOrders),
-    finalizedAt: payload.finalizedAt ?? receivedAt,
-    updatedAt: receivedAt
-  };
-
-  if (existing) await ctx.db.patch(existing._id, report);
-  else await ctx.db.insert("dailyReports", report);
-
-  for (const bill of payload.billSummaries ?? []) {
-    const existingBill = await ctx.db
-      .query("dailyReportBills")
-      .withIndex("by_restaurant_and_billId", (q) => q.eq("restaurantId", restaurantId).eq("billId", bill.billId))
-      .unique();
-    const billDoc = {
-      restaurantId,
-      businessDate,
-      posDayId,
-      billId: bill.billId,
-      orderId: bill.orderId,
-      tableName: bill.tableName,
-      status: bill.status,
-      totalPaise: numberOrZero(bill.totalPaise),
-      discountPaise: numberOrZero(bill.discountPaise),
-      tipPaise: numberOrZero(bill.tipPaise),
-      finalTotalPaise: numberOrZero(bill.finalTotalPaise),
-      paidPaise: numberOrZero(bill.paidPaise),
-      isNc: Boolean(bill.isNc),
-      ...(bill.ncReason ? { ncReason: bill.ncReason } : {}),
-      revisionNumber: numberOrZero(bill.revisionNumber),
-      paymentsJson: JSON.stringify(bill.payments ?? []),
-      ...(bill.settledAt ? { settledAt: bill.settledAt } : {}),
-      updatedAt: receivedAt
-    };
-    if (existingBill) await ctx.db.patch(existingBill._id, billDoc);
-    else await ctx.db.insert("dailyReportBills", billDoc);
-  }
-
-  for (const item of payload.itemSummaries ?? []) {
-    const existingItem = (
-      await ctx.db
-        .query("dailyReportItems")
-        .withIndex("by_restaurant_date_and_menuItem", (q) =>
-          q.eq("restaurantId", restaurantId).eq("businessDate", businessDate).eq("menuItemId", item.menuItemId)
-        )
-        .take(1)
-    )[0];
-    const itemDoc = {
-      restaurantId,
-      businessDate,
-      posDayId,
-      menuItemId: item.menuItemId,
-      name: item.name,
-      saleGroupId: item.saleGroupId ?? "",
-      saleGroupName: item.saleGroupName ?? "",
-      saleGroupKind: item.saleGroupKind ?? "",
-      quantity: numberOrZero(item.quantity),
-      grossSalesPaise: numberOrZero(item.grossSalesPaise),
-      ncQuantity: numberOrZero(item.ncQuantity),
-      ncGrossSalesPaise: numberOrZero(item.ncGrossSalesPaise),
-      updatedAt: receivedAt
-    };
-    if (existingItem) await ctx.db.patch(existingItem._id, itemDoc);
-    else await ctx.db.insert("dailyReportItems", itemDoc);
-  }
-
-  for (const group of payload.groupSummaries ?? []) {
-    const existingGroup = (
-      await ctx.db
-        .query("dailyReportGroups")
-        .withIndex("by_restaurant_date_and_group", (q) =>
-          q.eq("restaurantId", restaurantId).eq("businessDate", businessDate).eq("saleGroupId", group.saleGroupId)
-        )
-        .take(1)
-    )[0];
-    const groupDoc = {
-      restaurantId,
-      businessDate,
-      posDayId,
-      saleGroupId: group.saleGroupId,
-      name: group.name,
-      kind: group.kind,
-      quantity: numberOrZero(group.quantity),
-      grossSalesPaise: numberOrZero(group.grossSalesPaise),
-      taxPaise: numberOrZero(group.taxPaise),
-      finalSalesPaise: numberOrZero(group.finalSalesPaise),
-      ncQuantity: numberOrZero(group.ncQuantity),
-      ncGrossSalesPaise: numberOrZero(group.ncGrossSalesPaise),
-      updatedAt: receivedAt
-    };
-    if (existingGroup) await ctx.db.patch(existingGroup._id, groupDoc);
-    else await ctx.db.insert("dailyReportGroups", groupDoc);
-  }
 }
 
 export const ingestEvents = internalMutation({
@@ -252,30 +48,7 @@ export const ingestEvents = internalMutation({
       throw new Error("Unauthorized installation");
     }
     await ctx.db.patch(installation._id, { lastSeenAt: new Date().toISOString() });
-
-    let inserted = 0;
-    const receivedAt = new Date().toISOString();
-    for (const event of args.events) {
-      const existing = await ctx.db
-        .query("syncedEvents")
-        .withIndex("by_event_id", (q) => q.eq("eventId", event.eventId))
-        .unique();
-
-      if (existing) continue;
-
-      if (event.type === "daily_report.finalized") {
-        await upsertDailyReport(ctx, installation.restaurantId, event.payloadJson, receivedAt);
-      }
-
-      await ctx.db.insert("syncedEvents", {
-        ...event,
-        restaurantId: installation.restaurantId,
-        receivedAt
-      });
-      inserted += 1;
-    }
-
-    return { inserted };
+    return { inserted: 0 };
   }
 });
 
@@ -301,51 +74,11 @@ export const pullHubSnapshot = internalMutation({
       .query("installations")
       .withIndex("by_installation_id", (q) => q.eq("installationId", args.installationId))
       .unique();
-
     if (!installation || installation.status !== "active" || installation.syncSecret !== args.syncSecret) {
       throw new Error("Unauthorized installation");
     }
-
     await ctx.db.patch(installation._id, { lastSeenAt: new Date().toISOString() });
-
-    const cursor = parseHubCommandCursor(args.cursor);
-    const commands = cursor
-      ? [
-          ...(await ctx.db
-            .query("hubCommands")
-            .withIndex("by_restaurant_createdAt_and_commandId", (q) =>
-              q.eq("restaurantId", installation.restaurantId).eq("createdAt", cursor.createdAt).gt("commandId", cursor.commandId)
-            )
-            .order("asc")
-            .take(100))
-        ]
-      : await ctx.db
-          .query("hubCommands")
-          .withIndex("by_restaurant_createdAt_and_commandId", (q) => q.eq("restaurantId", installation.restaurantId))
-          .order("asc")
-          .take(100);
-
-    if (cursor && commands.length < 100) {
-      const newerCommands = await ctx.db
-        .query("hubCommands")
-        .withIndex("by_restaurant_createdAt_and_commandId", (q) =>
-          q.eq("restaurantId", installation.restaurantId).gt("createdAt", cursor.createdAt)
-        )
-        .order("asc")
-        .take(100 - commands.length);
-      commands.push(...newerCommands);
-    }
-
-    const last = commands.at(-1);
-    return {
-      cursor: last ? serializeHubCommandCursor(last) : args.cursor ?? "",
-      commands: commands.map((command) => ({
-        commandId: command.commandId,
-        type: command.type,
-        payloadJson: command.payloadJson,
-        createdAt: command.createdAt
-      }))
-    };
+    return { cursor: args.cursor ?? "", commands: [] };
   }
 });
 
@@ -359,19 +92,7 @@ export const enqueueHubCommand = mutation({
   returns: v.object({ commandId: v.string(), inserted: v.boolean() }),
   handler: async (ctx, args) => {
     await requireRestaurantAdmin(ctx, args.restaurantId);
-    const payloadJson = normalizeHubCommandPayload(args.type, args.payloadJson);
-    const existing = await ctx.db
-      .query("hubCommands")
-      .withIndex("by_command_id", (q) => q.eq("commandId", args.commandId))
-      .unique();
-    if (existing) return { commandId: args.commandId, inserted: false };
-
-    await ctx.db.insert("hubCommands", {
-      ...args,
-      payloadJson,
-      createdAt: new Date().toISOString()
-    });
-    return { commandId: args.commandId, inserted: true };
+    throw new Error("Cloud support commands were removed. Use hub-local admin tools instead.");
   }
 });
 

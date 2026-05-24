@@ -35,6 +35,17 @@ export interface HubBootstrap {
   }>;
   menuPopularity?: Array<{ menuItemId: string; quantity: number }>;
   syncStatus?: { counts: Record<string, number> };
+  setup?: {
+    license?: {
+      status: "missing" | "active" | "warning" | "locked";
+      reason?: string;
+      message: string;
+      checkedAt?: string;
+      licenseValidUntil?: string;
+      leaseExpiresAt?: string;
+      hoursUntilOfflineLock?: number;
+    };
+  };
 }
 
 export interface HubDeviceSession {

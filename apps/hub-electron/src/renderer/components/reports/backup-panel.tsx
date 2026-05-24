@@ -16,6 +16,9 @@ export function BackupPanel({
 }) {
   const [label, setLabel] = useState("");
   const [restoreFile, setRestoreFile] = useState<string | null>(null);
+  const [cloudRestoreKind, setCloudRestoreKind] = useState<"order_history" | "menu_catalog" | "alcohol_stock" | "table_layout">("order_history");
+  const [cloudRestoreDate, setCloudRestoreDate] = useState("");
+  const [masterPin, setMasterPin] = useState("");
   const createBackup = useMutation({
     mutationFn: () => hubApi.createBackup(label.trim() || "manual"),
     onSuccess: async () => {
@@ -27,6 +30,20 @@ export function BackupPanel({
     mutationFn: hubApi.scheduleRestore,
     onSuccess: async () => {
       setRestoreFile(null);
+      await onChanged();
+    },
+  });
+  const cloudRestore = useMutation({
+    mutationFn: () =>
+      hubApi.restoreCloudBackup(
+        {
+          kind: cloudRestoreKind,
+          throughBusinessDate: cloudRestoreKind === "order_history" ? cloudRestoreDate : undefined,
+        },
+        masterPin
+      ),
+    onSuccess: async () => {
+      setMasterPin("");
       await onChanged();
     },
   });
@@ -118,6 +135,48 @@ export function BackupPanel({
           Restore is scheduled for the next hub restart. Use this only when you
           really want to roll the local DB back.
         </p>
+      ) : null}
+      <div className="panel-title mt-6">
+        <h2>Cloud restore</h2>
+        <span>{cloudRestore.isPending ? "Restoring" : "Ready"}</span>
+      </div>
+      <form
+        className="inline-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          cloudRestore.mutate();
+        }}
+      >
+        <label>
+          Restore
+          <select value={cloudRestoreKind} onChange={(event) => setCloudRestoreKind(event.target.value as typeof cloudRestoreKind)}>
+            <option value="order_history">Order history</option>
+            <option value="menu_catalog">Menu/catalog</option>
+            <option value="alcohol_stock">Alcohol stock</option>
+            <option value="table_layout">Table layout</option>
+          </select>
+        </label>
+        {cloudRestoreKind === "order_history" ? (
+          <label>
+            Through date
+            <input type="date" value={cloudRestoreDate} onChange={(event) => setCloudRestoreDate(event.target.value)} />
+          </label>
+        ) : null}
+        <label>
+          Master PIN
+          <input type="password" value={masterPin} onChange={(event) => setMasterPin(event.target.value)} autoComplete="current-password" />
+        </label>
+        <button
+          type="submit"
+          className="danger-button"
+          disabled={cloudRestore.isPending || !masterPin || (cloudRestoreKind === "order_history" && !cloudRestoreDate)}
+        >
+          Restore from cloud
+        </button>
+      </form>
+      {cloudRestore.error ? <p className="text-sm text-muted bad">{messageOf(cloudRestore.error)}</p> : null}
+      {cloudRestore.data ? (
+        <p className="text-sm text-muted">Restored {cloudRestore.data.imported} cloud rows for {cloudRestore.data.kind.replace("_", " ")}.</p>
       ) : null}
     </section>
   );

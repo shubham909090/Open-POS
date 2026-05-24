@@ -22,8 +22,10 @@ export function HubConnectionCard({
   const [installationId, setInstallationId] = useState(bootstrap.setup?.hubConnection?.installationId ?? "");
   const [syncSecret, setSyncSecret] = useState(bootstrap.setup?.hubConnection?.syncSecret ?? "");
   const [hubPublicUrl, setHubPublicUrl] = useState(bootstrap.setup?.hubConnection?.hubPublicUrl ?? "");
+  const [setupKey, setSetupKey] = useState("");
   const [connectionEditing, setConnectionEditing] = useState(!bootstrap.setup?.hubConnection?.configured);
   const connectionConfigured = Boolean(bootstrap.setup?.hubConnection?.configured);
+  const license = bootstrap.setup?.license;
 
   useEffect(() => {
     const connection = bootstrap.setup?.hubConnection;
@@ -63,6 +65,26 @@ export function HubConnectionCard({
     onError: (error) => setNotice({ tone: "bad", text: messageOf(error) }),
   });
 
+  const activateLicense = useMutation({
+    mutationFn: () => hubApi.activateLicense({ cloudUrl, setupKey, hubLabel: "Main hub" }),
+    onSuccess: async (result) => {
+      setSetupKey("");
+      await onSaved();
+      setConnectionEditing(false);
+      setNotice({ tone: result?.status === "locked" ? "bad" : "good", text: result?.message ?? "License activated." });
+    },
+    onError: (error) => setNotice({ tone: "bad", text: messageOf(error) }),
+  });
+
+  const checkLicense = useMutation({
+    mutationFn: () => hubApi.checkLicense(),
+    onSuccess: async (result) => {
+      await onSaved();
+      setNotice({ tone: result?.status === "locked" ? "bad" : "good", text: result?.message ?? "License checked." });
+    },
+    onError: (error) => setNotice({ tone: "bad", text: messageOf(error) }),
+  });
+
   const approveConnectionAction = async (title: string, defaultReason: string) =>
     requestManagerApproval({ title, defaultReason, confirmLabel: "Continue" }).catch(() => null);
 
@@ -79,6 +101,10 @@ export function HubConnectionCard({
             <strong>{bootstrap.setup?.hubConnection?.cloudUrl || "Cloud connection saved"}</strong>
             <span>
               ID {bootstrap.setup?.hubConnection?.installationId || "saved"} · Secret hidden · Public URL {bootstrap.setup?.hubConnection?.hubPublicUrl || "not set"}
+            </span>
+            <span>
+              License {license?.status ?? "missing"}{license?.licenseValidUntil ? ` · valid until ${license.licenseValidUntil.slice(0, 10)}` : ""}
+              {license?.hoursUntilOfflineLock !== undefined ? ` · offline lock in ${license.hoursUntilOfflineLock}h` : ""}
             </span>
           </div>
           <div className="row-actions">
@@ -106,16 +132,23 @@ export function HubConnectionCard({
             >
               Test cloud connection
             </button>
+            <button type="button" className="secondary-button" onClick={() => checkLicense.mutate()} disabled={checkLicense.isPending}>
+              Check license
+            </button>
           </div>
         </div>
       ) : (
         <>
-          <p className="text-sm text-muted">Paste the hub connection values from the cloud portal here. These fields are saved on this hub and hidden unless the Manager PIN is entered.</p>
-          <form className="template-form" onSubmit={(event) => event.preventDefault()}>
+          <p className="text-sm text-muted">Activate with the platform setup key, or paste existing connection values for an older install.</p>
+          <form className="template-form hub-connection-form" onSubmit={(event) => event.preventDefault()}>
             <input className="sr-only" name="username" tabIndex={-1} autoComplete="username" value="hub-sync" readOnly aria-hidden="true" />
             <label>
               Cloud URL
               <input value={cloudUrl} onChange={(event) => setCloudUrl(event.target.value)} placeholder="https://your-deployment.convex.site" autoComplete="off" />
+            </label>
+            <label>
+              Setup key
+              <input value={setupKey} onChange={(event) => setSetupKey(event.target.value)} placeholder="GAV-..." autoComplete="off" />
             </label>
             <label>
               Hub connection ID
@@ -129,7 +162,15 @@ export function HubConnectionCard({
               Hub public URL
               <input value={hubPublicUrl} onChange={(event) => setHubPublicUrl(event.target.value)} placeholder="http://192.168.1.20:3737" autoComplete="off" />
             </label>
-            <div className="flex flex-wrap gap-2">
+            <div className="row-actions hub-connection-actions">
+              <button
+                type="button"
+                className="secondary-button"
+                disabled={activateLicense.isPending || !cloudUrl.trim() || !setupKey.trim()}
+                onClick={() => activateLicense.mutate()}
+              >
+                Activate license
+              </button>
               <button
                 type="button"
                 disabled={saveHubConnection.isPending}

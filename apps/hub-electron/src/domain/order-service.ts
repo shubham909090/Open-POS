@@ -370,6 +370,16 @@ export class OrderService {
     verifyManagerPinForSessionModel(this.settingsActionContext(), pin);
   }
 
+  verifyMasterPinForSession(pin: string): void {
+    this.verifyMasterApproval(
+      { pin, reason: "Cloud restore", approvedBy: "owner" },
+      "cloud_restore",
+      "hub_setting",
+      "cloud_restore",
+      "owner"
+    );
+  }
+
   getHubConnectionSettings(reveal = false): {
     configured: boolean;
     cloudUrl: string;
@@ -1292,7 +1302,7 @@ export class OrderService {
     receivedBy: string,
     now: string
   ): void {
-    replaceHistoryEditPaymentsModel(this.orm, bill, requestedPayments, finalTotalPaise, receivedBy, now);
+    replaceHistoryEditPaymentsModel(this.orm, this.db, bill, requestedPayments, finalTotalPaise, receivedBy, now);
   }
 
   private deleteLocalBillRecord(billId: string): void {

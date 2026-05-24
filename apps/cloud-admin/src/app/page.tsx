@@ -2,8 +2,10 @@
 
 import { useAuth } from "@workos-inc/authkit-nextjs/components";
 import { Authenticated, AuthLoading, Unauthenticated } from "convex/react";
+import { useQuery } from "convex/react";
 import Link from "next/link";
 
+import { api } from "../../../../convex/_generated/api";
 import { CloudDashboard } from "../components/cloud-dashboard";
 
 export default function CloudAdminHome() {
@@ -14,8 +16,8 @@ export default function CloudAdminHome() {
       <header className="admin-topbar">
         <div>
           <span className="product-mark">Gaurav POS</span>
-          <h1>Owner Portal</h1>
-          <p>Connect the restaurant hub, invite cloud users, and read finalized business-day reports.</p>
+          <h1>Admin Command Center</h1>
+          <p>Issue licenses, reset hub activations, and watch cloud backup health.</p>
         </div>
         {user ? (
           <div className="topbar-actions">
@@ -40,7 +42,7 @@ export default function CloudAdminHome() {
           <div>
             <span className="eyebrow">Authentication</span>
             <h2>Google sign-in required</h2>
-            <p>Use the Google account that owns or manages this restaurant.</p>
+            <p>Use the allowlisted platform admin Google account.</p>
           </div>
           <Link href="/sign-in" className="button-link">
             Continue with Google
@@ -49,8 +51,37 @@ export default function CloudAdminHome() {
       </Unauthenticated>
 
       <Authenticated>
-        <CloudDashboard userLabel={user?.firstName ?? user?.email ?? "Owner"} />
+        <AdminGate userLabel={user?.firstName ?? user?.email ?? "Owner"} />
       </Authenticated>
     </main>
   );
+}
+
+function AdminGate({ userLabel }: { userLabel: string }) {
+  const status = useQuery(api.viewer.platformAdminStatus);
+
+  if (status === undefined) {
+    return <section className="admin-panel loading-panel">Checking platform admin access...</section>;
+  }
+
+  if (!status.allowed) {
+    return (
+      <section className="auth-panel">
+        <div>
+          <span className="eyebrow">Platform admin</span>
+          <h2>Admin access required</h2>
+          <p>
+            {status.allowlistConfigured
+              ? `${status.email ?? status.tokenIdentifier ?? "This Google account"} is signed in, but it is not allowlisted for the command center.`
+              : "Set PLATFORM_ADMIN_EMAILS or PLATFORM_ADMIN_TOKEN_IDENTIFIERS in Convex before opening the command center."}
+          </p>
+        </div>
+        <Link href="/sign-in" className="button-link">
+          Switch account
+        </Link>
+      </section>
+    );
+  }
+
+  return <CloudDashboard userLabel={userLabel} />;
 }

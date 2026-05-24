@@ -14,7 +14,7 @@ describe("OrderService KOT lifecycle", () => {
     database.close();
   });
 
-  it("creates an order, KOT, print job, event, and sync outbox in one transaction", () => {
+  it("creates an order, KOT, print job, and local events without cloud event outbox rows", () => {
     const { database, orderService } = createTestHub();
 
     const result = orderService.submitOrder({
@@ -33,9 +33,8 @@ describe("OrderService KOT lifecycle", () => {
     expect(database.db.prepare("SELECT COUNT(*) AS count FROM print_jobs WHERE status = 'pending'").get()).toEqual({
       count: 2
     });
-    expect(database.db.prepare("SELECT COUNT(*) AS count FROM sync_outbox WHERE status = 'pending'").get()).toEqual({
-      count: 4
-    });
+    expect(database.db.prepare("SELECT COUNT(*) AS count FROM event_log").get()).toEqual({ count: 4 });
+    expect(database.db.prepare("SELECT COUNT(*) AS count FROM sync_outbox WHERE status = 'pending'").get()).toEqual({ count: 0 });
     expect(database.db.prepare("SELECT status FROM restaurant_tables WHERE id = 'table-t1'").get()).toEqual({
       status: "occupied"
     });

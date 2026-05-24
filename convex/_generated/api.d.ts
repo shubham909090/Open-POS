@@ -11,10 +11,10 @@
 import type * as admin from "../admin.js";
 import type * as admin_access from "../admin/access.js";
 import type * as admin_membership from "../admin/membership.js";
-import type * as admin_reportModels from "../admin/reportModels.js";
+import type * as backup from "../backup.js";
+import type * as backupModel from "../backupModel.js";
 import type * as http from "../http.js";
-import type * as hubCommandCursor from "../hubCommandCursor.js";
-import type * as hubCommands from "../hubCommands.js";
+import type * as license from "../license.js";
 import type * as sync from "../sync.js";
 import type * as viewer from "../viewer.js";
 
@@ -28,10 +28,10 @@ declare const fullApi: ApiFromModules<{
   admin: typeof admin;
   "admin/access": typeof admin_access;
   "admin/membership": typeof admin_membership;
-  "admin/reportModels": typeof admin_reportModels;
+  backup: typeof backup;
+  backupModel: typeof backupModel;
   http: typeof http;
-  hubCommandCursor: typeof hubCommandCursor;
-  hubCommands: typeof hubCommands;
+  license: typeof license;
   sync: typeof sync;
   viewer: typeof viewer;
 }>;

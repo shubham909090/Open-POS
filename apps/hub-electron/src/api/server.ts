@@ -78,6 +78,31 @@ export function createHubServer(input: HubServerInput) {
     const { ticketTemplate: _ticketTemplate, printJobs: _printJobs, syncStatus: _syncStatus, ...safeBootstrap } = bootstrap;
     return safeBootstrap;
   };
+  const currentLicenseState = () =>
+    input.syncBridge?.getLicenseState() ?? { status: "missing", reason: "missing_license", message: "Cloud license service is not configured." };
+  const isLicenseRequired = () => input.licenseRequired === true || currentLicenseState().status !== "missing";
+  const requireServiceLicense = async () => {
+    if (!input.syncBridge || !isLicenseRequired()) return;
+    const license = currentLicenseState();
+    if (license.status === "missing" || license.status === "locked") {
+      throw new DomainError(license.message, 402);
+    }
+  };
+  const withServiceLicense =
+    (handler: typeof routeAuth.anyRole) =>
+    async (request: Parameters<typeof handler>[0]) => {
+      await handler(request);
+      await requireServiceLicense();
+    };
+  const licensedAuth = {
+    ...routeAuth,
+    anyRole: withServiceLicense(routeAuth.anyRole),
+    adminOnly: withServiceLicense(routeAuth.adminOnly),
+    captainOrAdmin: withServiceLicense(routeAuth.captainOrAdmin),
+    orderRole: withServiceLicense(routeAuth.orderRole),
+    orderMoveRole: withServiceLicense(routeAuth.orderMoveRole),
+    kitchenRole: withServiceLicense(routeAuth.kitchenRole)
+  };
   const tableOrderForRole = (tableOrder: unknown, role: UserRole): unknown => {
     if (role === "admin" || role === "captain" || tableOrder === null || typeof tableOrder !== "object") return tableOrder;
     const order = tableOrder as Record<string, unknown>;
@@ -155,9 +180,35 @@ export function createHubServer(input: HubServerInput) {
         printerOutputMode: input.orderService.getPrinterOutputMode(),
         managerPinConfigured: input.orderService.isManagerPinConfigured(),
         masterPinConfigured: input.orderService.isMasterPinConfigured(),
-        hubConnection: input.orderService.getHubConnectionSettings(false)
+        hubConnection: input.orderService.getHubConnectionSettings(false),
+        license: currentLicenseState()
       }
     };
+  });
+  app.get("/license/status", { preHandler: anyRole }, async () => currentLicenseState());
+  app.post("/license/activate", { preHandler: adminOnly }, async (request) => {
+    if (!input.syncBridge) throw new DomainError("Cloud sync is not available", 503);
+    const body = request.body as { cloudUrl?: string; setupKey?: string; hubLabel?: string };
+    if (!body.cloudUrl || !body.setupKey) throw new DomainError("Cloud URL and setup key are required", 400);
+    return input.syncBridge.activateLicense({ cloudUrl: body.cloudUrl, setupKey: body.setupKey, hubLabel: body.hubLabel });
+  });
+  app.post("/license/check", { preHandler: adminOnly }, async () => {
+    if (!input.syncBridge) throw new DomainError("Cloud sync is not available", 503);
+    return input.syncBridge.checkLicenseOnline();
+  });
+  app.get("/cloud-backup/manifest", { preHandler: adminOnly }, async () => {
+    if (!input.syncBridge) return { manifests: [] };
+    return input.syncBridge.fetchBackupManifest();
+  });
+  app.post("/cloud-backup/restore", { preHandler: adminOnly }, async (request) => {
+    if (!input.syncBridge) throw new DomainError("Cloud sync is not available", 503);
+    const masterPin = String(request.headers["x-master-pin"] ?? "");
+    input.orderService.verifyMasterPinForSession(masterPin);
+    const body = request.body as { kind?: "order_history" | "menu_catalog" | "alcohol_stock" | "table_layout"; throughBusinessDate?: string };
+    if (!body.kind || !["order_history", "menu_catalog", "alcohol_stock", "table_layout"].includes(body.kind)) {
+      throw new DomainError("Valid restore kind is required", 400);
+    }
+    return input.syncBridge.restoreFromCloud({ kind: body.kind, throughBusinessDate: body.throughBusinessDate });
   });
   app.get("/sync/status", { preHandler: captainOrAdmin }, async () => input.orderService.getSyncStatus());
   app.post("/sync/push", { preHandler: adminOnly }, async () =>
@@ -171,8 +222,8 @@ export function createHubServer(input: HubServerInput) {
     const result = input.database.orm.delete(cloudCommandFailures).where(eq(cloudCommandFailures.commandId, params.commandId)).run();
     return { commandId: params.commandId, resolved: Number(result.changes ?? 0) > 0 };
   });
-  registerCatalogRoutes({ app, input, auth: routeAuth });
-  app.get("/tables/:id/order", { preHandler: orderRole }, async (request) => {
+  registerCatalogRoutes({ app, input, auth: licensedAuth });
+  app.get("/tables/:id/order", { preHandler: licensedAuth.orderRole }, async (request) => {
     const params = request.params as { id: string };
     const session = getSession(request);
     return tableOrderForRole(input.orderService.getTableOrder(params.id), session.role);
@@ -212,22 +263,22 @@ export function createHubServer(input: HubServerInput) {
     return input.authService.revokeDevice(params.id, revokeDeviceSchema.parse(request.body));
   });
   app.get("/devices/me", { preHandler: anyRole }, async (request) => getSession(request));
-  app.get("/kds/:productionUnitId", { preHandler: kitchenRole }, async (request) => {
+  app.get("/kds/:productionUnitId", { preHandler: licensedAuth.kitchenRole }, async (request) => {
     const params = request.params as { productionUnitId: string };
     return input.orderService.listKds(params.productionUnitId);
   });
-  app.patch("/kot/:id/status", { preHandler: kitchenRole }, async (request) => {
+  app.patch("/kot/:id/status", { preHandler: licensedAuth.kitchenRole }, async (request) => {
     const params = request.params as { id: string };
     const result = input.orderService.updateKotStatus(params.id, updateKotStatusSchema.parse(request.body));
     input.eventBus.publish({ type: "kot.status_changed", result });
     return result;
   });
-  app.get("/orders/:id", { preHandler: orderRole }, async (request) => {
+  app.get("/orders/:id", { preHandler: licensedAuth.orderRole }, async (request) => {
     const params = request.params as { id: string };
     const session = getSession(request);
     return tableOrderForRole(input.orderService.getOrder(params.id), session.role);
   });
-  app.get("/notifications/ready", { preHandler: orderRole }, async (request) => input.orderService.listReadyNotifications(getSession(request)));
+  app.get("/notifications/ready", { preHandler: licensedAuth.orderRole }, async (request) => input.orderService.listReadyNotifications(getSession(request)));
 
   app.after(() => {
     app.get("/realtime", { websocket: true }, (socket, request) => {
@@ -247,9 +298,9 @@ export function createHubServer(input: HubServerInput) {
     });
   });
 
-  registerReportRoutes({ app, input, auth: routeAuth });
+  registerReportRoutes({ app, input, auth: licensedAuth });
 
-  app.post("/orders/submit", { preHandler: orderRole }, async (request) => {
+  app.post("/orders/submit", { preHandler: licensedAuth.orderRole }, async (request) => {
     const { result, replayed } = await withIdempotency(request, "orders.submit", () =>
       input.orderService.submitOrder(submitOrderSchema.parse(request.body), getSession(request))
     );
@@ -258,21 +309,21 @@ export function createHubServer(input: HubServerInput) {
     return { ...result, ...(processed ? { processed } : {}) };
   });
 
-  app.post("/tables/move", { preHandler: orderMoveRole }, async (request) => {
+  app.post("/tables/move", { preHandler: licensedAuth.orderMoveRole }, async (request) => {
     const result = input.orderService.moveTable(moveTableSchema.parse(request.body), getSession(request));
     const processed = await processCreatedPrintJobs(result.printJobIds);
     input.eventBus.publish({ type: "table.shifted", result: { ...result, processed } });
     return { ...result, processed };
   });
 
-  app.post("/orders/items/move", { preHandler: orderMoveRole }, async (request) => {
+  app.post("/orders/items/move", { preHandler: licensedAuth.orderMoveRole }, async (request) => {
     const result = input.orderService.moveOrderItems(moveOrderItemsSchema.parse(request.body), getSession(request));
     const processed = await processCreatedPrintJobs(result.printJobIds);
     input.eventBus.publish({ type: "order_items.shifted", result: { ...result, processed } });
     return { ...result, processed };
   });
 
-  app.post("/orders/:id/cancel", { preHandler: captainOrAdmin }, async (request) => {
+  app.post("/orders/:id/cancel", { preHandler: licensedAuth.captainOrAdmin }, async (request) => {
     const params = request.params as { id: string };
     const session = getSession(request);
     const result = input.orderService.cancelOrder(
@@ -284,7 +335,7 @@ export function createHubServer(input: HubServerInput) {
     return { ...result, processed };
   });
 
-  app.post("/orders/:id/items/cancel", { preHandler: captainOrAdmin }, async (request) => {
+  app.post("/orders/:id/items/cancel", { preHandler: licensedAuth.captainOrAdmin }, async (request) => {
     const params = request.params as { id: string };
     const session = getSession(request);
     const result = input.orderService.cancelOrderItems(
@@ -296,7 +347,7 @@ export function createHubServer(input: HubServerInput) {
     return { ...result, processed };
   });
 
-  app.post("/orders/:id/state", { preHandler: captainOrAdmin }, async (request) => {
+  app.post("/orders/:id/state", { preHandler: licensedAuth.captainOrAdmin }, async (request) => {
     const params = request.params as { id: string };
     const { result, replayed } = await withIdempotency(request, `orders.state.${params.id}`, () =>
       input.orderService.updateOrderState(params.id, updateOrderStateSchema.parse(request.body))
@@ -311,7 +362,7 @@ export function createHubServer(input: HubServerInput) {
     return { ...result, ...(processed ? { processed } : {}) };
   });
 
-  app.post("/kot/:id/reprint", { preHandler: captainOrAdmin }, async (request) => {
+  app.post("/kot/:id/reprint", { preHandler: licensedAuth.captainOrAdmin }, async (request) => {
     const params = request.params as { id: string };
     const session = getSession(request);
     const { result, replayed } = await withIdempotency(request, `kot.reprint.${params.id}`, () =>
@@ -328,12 +379,12 @@ export function createHubServer(input: HubServerInput) {
   registerBillingRoutes({
     app,
     input,
-    auth: routeAuth,
+    auth: licensedAuth,
     withIdempotency,
     processCreatedPrintJobs
   });
 
-  registerPrintRoutes({ app, input, auth: routeAuth });
+  registerPrintRoutes({ app, input, auth: licensedAuth });
 
   registerMaintenanceRoutes({ app, input, auth: routeAuth });
 

@@ -5,12 +5,20 @@ import { tmpdir } from "node:os";
 import { searchMenuItems } from "@gaurav-pos/shared";
 import { HubDatabase } from "../src/db/database.js";
 import { OrderService } from "../src/domain/order-service.js";
+import { ConvexSyncBridge } from "../src/sync/convex-sync.js";
 
 type Metric = { name: string; ms: number; note?: string };
 
 function time<T>(name: string, fn: () => T, metrics: Metric[], note?: string): T {
   const start = performance.now();
   const value = fn();
+  metrics.push({ name, ms: performance.now() - start, note });
+  return value;
+}
+
+async function timeAsync<T>(name: string, fn: () => Promise<T>, metrics: Metric[], note?: string): Promise<T> {
+  const start = performance.now();
+  const value = await fn();
   metrics.push({ name, ms: performance.now() - start, note });
   return value;
 }
@@ -89,6 +97,28 @@ try {
   if (unusedItem) {
     time("menu.remove.unused_service_only", () => orderService.removeMenuItem(unusedItem.id), metrics, unusedItem.name);
     time("bootstrap.after_remove", () => orderService.bootstrap(), metrics);
+  }
+
+  database.db
+    .prepare(
+      `INSERT INTO hub_settings (key, value, updated_at)
+       VALUES (?, ?, ?)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`
+    )
+    .run("license_last_online_check_at", new Date().toISOString(), new Date().toISOString());
+  let backupRows = 0;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (_input, init) => {
+    const body = JSON.parse(String(init?.body ?? "{}")) as { rows?: unknown[] };
+    backupRows = body.rows?.length ?? 0;
+    return new Response(JSON.stringify({ upserted: backupRows, skipped: 0 }), { status: 200 });
+  };
+  try {
+    const syncBridge = new ConvexSyncBridge(database.orm, "https://perf.convex.site", "perf-secret", "perf-install");
+    await timeAsync("cloud_backup.batch100", () => syncBridge.pushPending(), metrics);
+    metrics.at(-1)!.note = `${backupRows} backup rows`;
+  } finally {
+    globalThis.fetch = originalFetch;
   }
 
   console.table(

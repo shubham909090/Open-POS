@@ -184,6 +184,23 @@ export const hubApi = {
       headers: { "x-manager-pin": managerPin },
       body: JSON.stringify({})
     }),
+  licenseStatus: () => apiFetch<NonNullable<Bootstrap["setup"]>["license"]>("/license/status"),
+  activateLicense: (payload: { cloudUrl: string; setupKey: string; hubLabel?: string }) =>
+    apiFetch<NonNullable<Bootstrap["setup"]>["license"]>("/license/activate", {
+      method: "POST",
+      body: JSON.stringify(payload)
+    }),
+  checkLicense: () => apiFetch<NonNullable<Bootstrap["setup"]>["license"]>("/license/check", { method: "POST", body: JSON.stringify({}) }),
+  cloudBackupManifest: () => apiFetch<unknown>("/cloud-backup/manifest"),
+  restoreCloudBackup: (
+    payload: { kind: "order_history" | "menu_catalog" | "alcohol_stock" | "table_layout"; throughBusinessDate?: string },
+    masterPin: string
+  ) =>
+    apiFetch<{ restored: true; imported: number; kind: typeof payload.kind }>("/cloud-backup/restore", {
+      method: "POST",
+      headers: { "x-master-pin": masterPin },
+      body: JSON.stringify(payload)
+    }),
   updateTicketTemplate: (payload: { billHeader?: string; billFooter?: string; kotHeader?: string; kotFooter?: string; restaurantName?: string; restaurantAddress?: string; taxRegistrationText?: string; lineWidthChars?: number }) =>
     apiFetch("/settings/ticket-template", { method: "PUT", body: JSON.stringify(payload) }),
   printLayouts: () => apiFetch<PrintLayouts>("/print-layouts"),

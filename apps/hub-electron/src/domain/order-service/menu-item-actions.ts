@@ -11,6 +11,7 @@ import {
   menuItemVariants,
   orderItems
 } from "../../db/drizzle-schema.js";
+import { queueCloudBackupTombstone, queueCloudBackupTombstones } from "../../sync/backup-tombstones.js";
 import { DomainError } from "../errors.js";
 import { makeId } from "../ids.js";
 import { ensureDefaultMenuItemVariant, updateDefaultMenuItemVariant } from "./menu-catalog.js";
@@ -145,6 +146,16 @@ export function removeMenuItem(ctx: MenuItemActionContext, id: string): RemoveMe
     setMenuItemActive(ctx, id, false);
     return { id, deleted: false, active: false };
   }
+  const deletedAt = new Date().toISOString();
+  const recipeIds = ctx.db
+    .prepare("SELECT id FROM alcohol_recipe_ingredients WHERE product_menu_item_id = ? OR liquor_menu_item_id = ?")
+    .all(id, id) as Array<{ id: string }>;
+  const variantIds = ctx.db.prepare("SELECT id FROM menu_item_variants WHERE menu_item_id = ?").all(id) as Array<{ id: string }>;
+  queueCloudBackupTombstones(ctx.db, "alcohol_recipe_ingredients", recipeIds.map((row) => row.id), deletedAt);
+  queueCloudBackupTombstone(ctx.db, { domain: "alcohol_stock_levels", localId: id, deletedAt });
+  queueCloudBackupTombstone(ctx.db, { domain: "alcohol_profiles", localId: id, deletedAt });
+  queueCloudBackupTombstones(ctx.db, "menu_item_variants", variantIds.map((row) => row.id), deletedAt);
+  queueCloudBackupTombstone(ctx.db, { domain: "menu_items", localId: id, deletedAt });
   ctx.orm.delete(alcoholRecipeIngredients).where(eq(alcoholRecipeIngredients.productMenuItemId, id)).run();
   ctx.orm.delete(alcoholRecipeIngredients).where(eq(alcoholRecipeIngredients.liquorMenuItemId, id)).run();
   ctx.orm.delete(alcoholStockLevels).where(eq(alcoholStockLevels.menuItemId, id)).run();

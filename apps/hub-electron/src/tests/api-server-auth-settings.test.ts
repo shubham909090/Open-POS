@@ -104,6 +104,79 @@ describe("Hub API auth, settings, and pairing routes", () => {
     database.close();
   });
 
+  it("blocks service APIs server-side when the local license is locked", async () => {
+    const hub = createTestHub();
+    const app = createHubServer({
+      database: hub.database,
+      backupService: new BackupService(hub.database, ":memory:", "./data/test-backups"),
+      authService: hub.authService,
+      orderService: hub.orderService,
+      printJobService: new PrintJobService(hub.database.orm, new DryRunPrinterAdapter()),
+      syncBridge: {
+        getLicenseState: () => ({ status: "locked", reason: "expired", message: "License expired. Contact support to renew." })
+      } as unknown as ConvexSyncBridge,
+      eventBus: new EventBus<unknown>()
+    });
+
+    const blockedOrder = await app.inject({
+      method: "POST",
+      url: "/orders/submit",
+      headers: { "x-device-token": "test-admin-token" },
+      payload: {}
+    });
+    const licenseStatus = await app.inject({
+      method: "GET",
+      url: "/license/status",
+      headers: { "x-device-token": "test-admin-token" }
+    });
+
+    expect(blockedOrder.statusCode).toBe(402);
+    expect(blockedOrder.json()).toEqual({ error: "License expired. Contact support to renew." });
+    expect(licenseStatus.statusCode).toBe(200);
+
+    await app.close();
+    hub.database.close();
+  });
+
+  it("uses strict build license policy without relying on process env", async () => {
+    const previousRequired = process.env.POS_LICENSE_REQUIRED;
+    delete process.env.POS_LICENSE_REQUIRED;
+    const hub = createTestHub();
+    const app = createHubServer({
+      database: hub.database,
+      backupService: new BackupService(hub.database, ":memory:", "./data/test-backups"),
+      authService: hub.authService,
+      orderService: hub.orderService,
+      printJobService: new PrintJobService(hub.database.orm, new DryRunPrinterAdapter()),
+      syncBridge: {
+        getLicenseState: () => ({
+          status: "missing",
+          reason: "missing_license",
+          message: "Activate this hub with a setup key before using cloud backup."
+        })
+      } as unknown as ConvexSyncBridge,
+      eventBus: new EventBus<unknown>(),
+      licenseRequired: true
+    });
+
+    try {
+      const blockedOrder = await app.inject({
+        method: "POST",
+        url: "/orders/submit",
+        headers: { "x-device-token": "test-admin-token" },
+        payload: {}
+      });
+
+      expect(blockedOrder.statusCode).toBe(402);
+      expect(blockedOrder.json()).toEqual({ error: "Activate this hub with a setup key before using cloud backup." });
+    } finally {
+      if (previousRequired === undefined) delete process.env.POS_LICENSE_REQUIRED;
+      else process.env.POS_LICENSE_REQUIRED = previousRequired;
+      await app.close();
+      hub.database.close();
+    }
+  });
+
   it("dedupes overlapping cloud pull sync requests so repeated clicks do not stack work", async () => {
     const hub = createTestHub();
     let releasePull!: () => void;
@@ -333,7 +406,7 @@ describe("Hub API auth, settings, and pairing routes", () => {
       headers: { "x-device-token": "test-admin-token" },
       payload: { newPin: "1234", updatedBy: "admin" }
     });
-    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ inserted: 0 }), { status: 200 }));
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ status: "active" }), { status: 200 }));
 
     const save = await app.inject({
       method: "PUT",
@@ -354,7 +427,7 @@ describe("Hub API auth, settings, and pairing routes", () => {
     expect(masked.json()).toMatchObject({ configured: true, syncSecret: "••••••••••••" });
     expect(revealed.json()).toMatchObject({ syncSecret: "secret-main" });
     expect(test.json()).toMatchObject({ status: "connected" });
-    expect(fetchSpy).toHaveBeenCalledWith("https://example.convex.site/pos/ingest-events", expect.any(Object));
+    expect(fetchSpy).toHaveBeenCalledWith("https://example.convex.site/pos/license-check", expect.any(Object));
 
     await app.close();
     database.close();
@@ -504,7 +577,7 @@ describe("Hub API auth, settings, and pairing routes", () => {
     database.close();
   });
 
-  it("requeues failed sync outbox rows from the admin endpoint", async () => {
+  it("leaves legacy sync outbox rows untouched from the deprecated admin endpoint", async () => {
     const { app, database } = createTestServer();
     database.db
       .prepare("INSERT INTO event_log (event_id, type, aggregate_type, aggregate_id, payload, created_at) VALUES (?, ?, ?, ?, ?, ?)")
@@ -520,11 +593,11 @@ describe("Hub API auth, settings, and pairing routes", () => {
     });
 
     expect(response.statusCode).toBe(200);
-    expect(response.json()).toEqual({ requeued: 1 });
+    expect(response.json()).toEqual({ requeued: 0 });
     expect(database.db.prepare("SELECT status, attempts, last_error FROM sync_outbox").get()).toEqual({
-      status: "pending",
-      attempts: 0,
-      last_error: null
+      status: "failed",
+      attempts: 10,
+      last_error: "old outage"
     });
 
     await app.close();

@@ -92,6 +92,20 @@
       "when": 1779145000000,
       "tag": "0012_item_level_kot_notes",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "6",
+      "when": 1779607000000,
+      "tag": "0013_deprecated_cloud_sync_cleanup",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "6",
+      "when": 1779632000000,
+      "tag": "0014_cloud_backup_tombstones",
+      "breakpoints": true
     }
   ]
 }

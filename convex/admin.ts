@@ -1,6 +1,5 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
-import { normalizeHubCommandPayload, type HubCommandType } from "./hubCommands";
 import { hubCommandType, randomHex, requireRestaurantAdmin, requireRestaurantMember, requireRestaurantOwner } from "./admin/access";
 import {
   acceptPendingInvitation,
@@ -16,12 +15,9 @@ import {
   staffListValidator,
   updateRestaurantMemberRole
 } from "./admin/membership";
-import {
-  dailyReportDetailValidator,
-  dailyReportListValidator,
-  toDailyReportDetail,
-  toDailyReportListItem
-} from "./admin/reportModels";
+
+const dailyReportListValidator = v.array(v.any());
+const dailyReportDetailValidator = v.union(v.null(), v.any());
 
 export const listRestaurants = query({
   args: {},
@@ -223,17 +219,7 @@ export const listHubCommands = query({
   ),
   handler: async (ctx, args) => {
     await requireRestaurantAdmin(ctx, args.restaurantId);
-    const rows = await ctx.db
-      .query("hubCommands")
-      .withIndex("by_restaurant_and_createdAt", (q) => q.eq("restaurantId", args.restaurantId))
-      .order("desc")
-      .take(50);
-    return rows.map((row) => ({
-      commandId: row.commandId,
-      type: row.type,
-      payloadJson: row.payloadJson,
-      createdAt: row.createdAt
-    }));
+    return [];
   }
 });
 
@@ -246,16 +232,7 @@ export const enqueueHubCommand = mutation({
   returns: v.object({ commandId: v.string(), inserted: v.boolean() }),
   handler: async (ctx, args) => {
     await requireRestaurantAdmin(ctx, args.restaurantId);
-    const payloadJson = normalizeHubCommandPayload(args.type, args.payloadJson);
-    const commandId = `cmd_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
-    await ctx.db.insert("hubCommands", {
-      commandId,
-      restaurantId: args.restaurantId,
-      type: args.type,
-      payloadJson,
-      createdAt: new Date().toISOString()
-    });
-    return { commandId, inserted: true };
+    throw new Error("Cloud support commands were removed. Use hub-local admin tools instead.");
   }
 });
 
@@ -273,20 +250,7 @@ export const listRecentEvents = query({
   ),
   handler: async (ctx, args) => {
     await requireRestaurantMember(ctx, args.restaurantId);
-    const rows = await ctx.db
-      .query("syncedEvents")
-      .withIndex("by_restaurant_and_receivedAt", (q) => q.eq("restaurantId", args.restaurantId))
-      .order("desc")
-      .take(50);
-    return rows
-      .map((row) => ({
-        eventId: row.eventId,
-        type: row.type,
-        aggregateType: row.aggregateType,
-        aggregateId: row.aggregateId,
-        createdAt: row.createdAt,
-        receivedAt: row.receivedAt
-      }));
+    return [];
   }
 });
 
@@ -295,12 +259,7 @@ export const listDailyReports = query({
   returns: dailyReportListValidator,
   handler: async (ctx, args) => {
     await requireRestaurantMember(ctx, args.restaurantId);
-    const rows = await ctx.db
-      .query("dailyReports")
-      .withIndex("by_restaurant_and_updatedAt", (q) => q.eq("restaurantId", args.restaurantId))
-      .order("desc")
-      .take(60);
-    return rows.map(toDailyReportListItem);
+    return [];
   }
 });
 
@@ -309,35 +268,6 @@ export const getDailyReport = query({
   returns: dailyReportDetailValidator,
   handler: async (ctx, args) => {
     await requireRestaurantMember(ctx, args.restaurantId);
-    const report = (
-      await ctx.db
-        .query("dailyReports")
-        .withIndex("by_restaurant_and_businessDate", (q) =>
-          q.eq("restaurantId", args.restaurantId).eq("businessDate", args.businessDate)
-        )
-        .take(1)
-    )[0];
-    if (!report) return null;
-
-    const bills = await ctx.db
-      .query("dailyReportBills")
-      .withIndex("by_restaurant_and_businessDate", (q) =>
-        q.eq("restaurantId", args.restaurantId).eq("businessDate", args.businessDate)
-      )
-      .take(500);
-    const items = await ctx.db
-      .query("dailyReportItems")
-      .withIndex("by_restaurant_and_businessDate", (q) =>
-        q.eq("restaurantId", args.restaurantId).eq("businessDate", args.businessDate)
-      )
-      .take(500);
-    const groups = await ctx.db
-      .query("dailyReportGroups")
-      .withIndex("by_restaurant_and_businessDate", (q) =>
-        q.eq("restaurantId", args.restaurantId).eq("businessDate", args.businessDate)
-      )
-      .take(100);
-
-    return toDailyReportDetail(report, bills, items, groups);
+    return null;
   }
 });

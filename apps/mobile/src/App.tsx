@@ -204,6 +204,9 @@ export default function App() {
   const isKitchenDevice = deviceRole === "kitchen";
   const shouldShowOnboarding = shouldShowMobileOnboarding({ setupOpen, deviceToken, connection });
   const useVirtualMenu = mode === "menu" && !isWide;
+  const license = bootstrap?.setup?.license;
+  const licenseBlocked = license?.status === "locked" || license?.status === "missing";
+  const licenseWarning = license?.status === "warning";
   const {
     submitOrder,
     shiftTable,
@@ -343,7 +346,22 @@ export default function App() {
     </View>
   );
 
-  const serviceContent = isKitchenDevice ? (
+  const licenseBlockContent = (
+    <>
+      <ConnectionBanner message={license?.message ?? "This POS needs an active license check."} savingDraft={false} />
+      <View style={styles.stepCard}>
+        <Text style={styles.kicker}>License</Text>
+        <Text style={styles.heroTitle}>{license?.status === "missing" ? "Activation required" : "Service locked"}</Text>
+        <Text style={styles.muted}>
+          {license?.hoursUntilOfflineLock !== undefined && license.hoursUntilOfflineLock > 0
+            ? `${license.message} ${license.hoursUntilOfflineLock} hours remain before offline lock.`
+            : license?.message ?? "Ask the hub admin to connect the hub to the internet and refresh the license."}
+        </Text>
+      </View>
+    </>
+  );
+
+  const serviceContent = licenseBlocked ? licenseBlockContent : isKitchenDevice ? (
     <>
       <ConnectionBanner message={message} savingDraft={false} />
       <KitchenScreen
@@ -358,7 +376,7 @@ export default function App() {
     </>
   ) : (
     <>
-      <ConnectionBanner message={message} savingDraft={savingDraft} />
+      <ConnectionBanner message={licenseWarning ? license.message : message} savingDraft={savingDraft} />
       <ModeTabs mode={mode} onModeChange={setMode} newItemCount={items.reduce((total, item) => total + item.quantity, 0)} showHistory={canBill} />
       {workArea}
     </>

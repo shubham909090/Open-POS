@@ -184,6 +184,47 @@ describe("OrderService bill history edits", () => {
     database.close();
   });
 
+  it("queues cloud backup tombstones for replaced history payments", () => {
+    const { database, orderService } = createTestHub();
+    orderService.setMasterPin({ newPin: "9876", confirmPin: "9876", updatedBy: "owner" });
+    const order = orderService.submitOrder({
+      tableId: "table-t1",
+      captainId: "waiter-1",
+      pax: 1,
+      orderType: "dine_in",
+      printMode: "kot",
+      items: [{ menuItemId: "item-dal-fry", quantity: 1 }]
+    });
+    const bill = orderService.generateBill(order.orderId);
+    orderService.settleBill(bill.billId, {
+      receivedBy: "captain-1",
+      payments: [
+        { method: "cash", amountPaise: 10_000 },
+        { method: "upi", amountPaise: 8_000, reference: "UPI-1" }
+      ]
+    });
+    const oldPayments = database.db.prepare("SELECT id FROM payments WHERE bill_id = ? ORDER BY id").all(bill.billId) as Array<{ id: string }>;
+
+    orderService.editHistoryBill(bill.billId, {
+      items: [{ menuItemId: "item-dal-fry", quantity: 2 }],
+      payments: [
+        { method: "upi", amountPaise: 20_000, reference: "UPI-2" },
+        { method: "card", amountPaise: 16_000, reference: "UPI-2" }
+      ],
+      masterApproval: { pin: "9876", reason: "Owner history edit", approvedBy: "owner" }
+    });
+
+    expect(database.db.prepare("SELECT domain, local_id, pushed_at FROM cloud_backup_tombstones ORDER BY local_id").all()).toEqual(
+      oldPayments.map((payment) => ({
+        domain: "payments",
+        local_id: payment.id,
+        pushed_at: null
+      }))
+    );
+
+    database.close();
+  });
+
   it("rejects paid history payment edits when the split is not exact", () => {
     const { database, orderService } = createTestHub();
     orderService.setMasterPin({ newPin: "9876", confirmPin: "9876", updatedBy: "owner" });

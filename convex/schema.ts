@@ -1,12 +1,13 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
+import { activationStatusValidator, backupDomainValidator, leaseStatusValidator, licenseStatusValidator } from "./backupModel";
 
 export default defineSchema({
   restaurants: defineTable({
     name: v.string(),
     timezone: v.string(),
     createdAt: v.string()
-  }),
+  }).index("by_createdAt", ["createdAt"]),
   memberships: defineTable({
     restaurantId: v.id("restaurants"),
     userTokenIdentifier: v.string(),
@@ -52,114 +53,80 @@ export default defineSchema({
   })
     .index("by_installation_id", ["installationId"])
     .index("by_restaurant", ["restaurantId"]),
-  hubCommands: defineTable({
-    commandId: v.string(),
+  licenseKeys: defineTable({
     restaurantId: v.id("restaurants"),
-    type: v.union(
-      v.literal("device.revoked"),
-      v.literal("device.updated"),
-      v.literal("menu_item.upsert"),
-      v.literal("menu_item.disabled"),
-      v.literal("production_unit.upsert"),
-      v.literal("receipt_printer.updated")
-    ),
-    payloadJson: v.string(),
-    createdAt: v.string()
-  }).index("by_restaurant_and_createdAt", ["restaurantId", "createdAt"])
-    .index("by_restaurant_createdAt_and_commandId", ["restaurantId", "createdAt", "commandId"])
-    .index("by_command_id", ["commandId"]),
-  syncedEvents: defineTable({
-    eventId: v.string(),
-    restaurantId: v.id("restaurants"),
-    type: v.string(),
-    aggregateType: v.string(),
-    aggregateId: v.string(),
-    payloadJson: v.string(),
+    keyHash: v.string(),
+    keyPrefix: v.string(),
+    keySuffix: v.string(),
+    label: v.string(),
+    months: v.number(),
+    validFrom: v.string(),
+    validUntil: v.string(),
+    status: licenseStatusValidator,
     createdAt: v.string(),
+    createdByUserTokenIdentifier: v.string(),
+    redeemedAt: v.optional(v.string()),
+    revokedAt: v.optional(v.string())
+  })
+    .index("by_hash", ["keyHash"])
+    .index("by_restaurant", ["restaurantId"])
+    .index("by_restaurant_and_status", ["restaurantId", "status"]),
+  licenseActivations: defineTable({
+    restaurantId: v.id("restaurants"),
+    licenseKeyId: v.id("licenseKeys"),
+    installationId: v.string(),
+    syncSecret: v.string(),
+    hubFingerprint: v.string(),
+    hubLabel: v.optional(v.string()),
+    status: activationStatusValidator,
+    activatedAt: v.string(),
+    lastSeenAt: v.optional(v.string()),
+    lastLicenseCheckAt: v.optional(v.string()),
+    leaseExpiresAt: v.string(),
+    licenseValidUntil: v.string(),
+    suspendedAt: v.optional(v.string()),
+    resetAt: v.optional(v.string()),
+    revokedAt: v.optional(v.string())
+  })
+    .index("by_installation_id", ["installationId"])
+    .index("by_restaurant", ["restaurantId"])
+    .index("by_restaurant_and_status", ["restaurantId", "status"]),
+  licenseCheckRecords: defineTable({
+    restaurantId: v.id("restaurants"),
+    activationId: v.id("licenseActivations"),
+    installationId: v.string(),
+    checkedAt: v.string(),
+    result: leaseStatusValidator,
+    leaseExpiresAt: v.string(),
+    licenseValidUntil: v.string()
+  })
+    .index("by_activation_and_checkedAt", ["activationId", "checkedAt"])
+    .index("by_restaurant_and_checkedAt", ["restaurantId", "checkedAt"]),
+  backupRows: defineTable({
+    restaurantId: v.id("restaurants"),
+    activationId: v.optional(v.id("licenseActivations")),
+    domain: backupDomainValidator,
+    localId: v.string(),
+    businessDate: v.optional(v.string()),
+    localUpdatedAt: v.optional(v.string()),
+    payloadJson: v.string(),
+    payloadHash: v.string(),
+    deletedAt: v.optional(v.string()),
+    sourceVersion: v.number(),
+    updatedAt: v.string(),
     receivedAt: v.string()
   })
-    .index("by_event_id", ["eventId"])
-    .index("by_restaurant_and_receivedAt", ["restaurantId", "receivedAt"]),
-  dailyReports: defineTable({
+    .index("by_restaurant_domain_localId", ["restaurantId", "domain", "localId"])
+    .index("by_restaurant_domain_businessDate_localId", ["restaurantId", "domain", "businessDate", "localId"])
+    .index("by_restaurant_domain_updatedAt_localId", ["restaurantId", "domain", "updatedAt", "localId"]),
+  backupManifests: defineTable({
     restaurantId: v.id("restaurants"),
-    posDayId: v.string(),
-    businessDate: v.string(),
-    status: v.union(v.literal("finalized")),
-    grossSalesPaise: v.number(),
-    discountPaise: v.number(),
-    tipPaise: v.number(),
-    finalSalesPaise: v.number(),
-    cashPaymentsPaise: v.number(),
-    upiPaymentsPaise: v.number(),
-    cardPaymentsPaise: v.number(),
-    onlinePaymentsPaise: v.number(),
-    totalPaymentsPaise: v.number(),
-    nonCashPaymentsPaise: v.number(),
-    billCount: v.number(),
-    openOrders: v.number(),
-    billedOrders: v.number(),
-    paidBills: v.number(),
-    unpaidBills: v.number(),
-    cancelledOrders: v.number(),
-    finalizedAt: v.string(),
-    updatedAt: v.string()
+    domain: backupDomainValidator,
+    lastBatchRowCount: v.number(),
+    lastBusinessDate: v.optional(v.string()),
+    lastUpdatedAt: v.optional(v.string()),
+    lastReceivedAt: v.string()
   })
-    .index("by_restaurant_and_businessDate", ["restaurantId", "businessDate"])
-    .index("by_restaurant_and_updatedAt", ["restaurantId", "updatedAt"]),
-  dailyReportBills: defineTable({
-    restaurantId: v.id("restaurants"),
-    businessDate: v.string(),
-    posDayId: v.string(),
-    billId: v.string(),
-    orderId: v.string(),
-    tableName: v.string(),
-    status: v.string(),
-    totalPaise: v.number(),
-    discountPaise: v.number(),
-    tipPaise: v.number(),
-    finalTotalPaise: v.number(),
-    paidPaise: v.number(),
-    isNc: v.optional(v.boolean()),
-    ncReason: v.optional(v.string()),
-    revisionNumber: v.optional(v.number()),
-    paymentsJson: v.string(),
-    settledAt: v.optional(v.string()),
-    updatedAt: v.string()
-  })
-    .index("by_restaurant_and_businessDate", ["restaurantId", "businessDate"])
-    .index("by_restaurant_and_billId", ["restaurantId", "billId"]),
-  dailyReportItems: defineTable({
-    restaurantId: v.id("restaurants"),
-    businessDate: v.string(),
-    posDayId: v.string(),
-    menuItemId: v.string(),
-    name: v.string(),
-    saleGroupId: v.optional(v.string()),
-    saleGroupName: v.optional(v.string()),
-    saleGroupKind: v.optional(v.string()),
-    quantity: v.number(),
-    grossSalesPaise: v.number(),
-    ncQuantity: v.optional(v.number()),
-    ncGrossSalesPaise: v.optional(v.number()),
-    updatedAt: v.string()
-  })
-    .index("by_restaurant_and_businessDate", ["restaurantId", "businessDate"])
-    .index("by_restaurant_date_and_menuItem", ["restaurantId", "businessDate", "menuItemId"]),
-  dailyReportGroups: defineTable({
-    restaurantId: v.id("restaurants"),
-    businessDate: v.string(),
-    posDayId: v.string(),
-    saleGroupId: v.string(),
-    name: v.string(),
-    kind: v.string(),
-    quantity: v.number(),
-    grossSalesPaise: v.number(),
-    taxPaise: v.number(),
-    finalSalesPaise: v.number(),
-    ncQuantity: v.number(),
-    ncGrossSalesPaise: v.number(),
-    updatedAt: v.string()
-  })
-    .index("by_restaurant_and_businessDate", ["restaurantId", "businessDate"])
-    .index("by_restaurant_date_and_group", ["restaurantId", "businessDate", "saleGroupId"])
+    .index("by_restaurant_and_domain", ["restaurantId", "domain"])
+    .index("by_restaurant_and_receivedAt", ["restaurantId", "lastReceivedAt"])
 });

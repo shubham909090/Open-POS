@@ -1,5 +1,23 @@
 # Devlog
 
+## 2026-05-24
+
+- POS cloud licensing pass started: added `.agent/pos-cloud-licensing-plan.md` and `.agent/pos-cloud-licensing-context.md`.
+- Decisions captured: backup rows only, no cloud report source, one setup key, one hub activation, Master-PIN restore gate, temp restore backup cleanup, admin-only command center, and removal of raw cloud support commands.
+- Convex: added platform admin guard, license key/activation/check tables, generic backup row/manifests tables, activation/license-check/backup/restore HTTP endpoints, and made old `/pos/ingest-events` a no-op compatibility endpoint.
+- Hub: replaced raw event upload with bounded cloud backup row scanning on the existing sync tick, stopped adding new `sync_outbox` rows, added license activation/check/offline-lock state, and added cloud restore with Master PIN, open-table blocker, temp rollback backup, domain wipe/import, report rebuild, FK check, and integrity check.
+- UI: replaced the cloud owner/report portal with a platform command center, added hub setup-key activation/license status and cloud restore controls, and added mobile license lock/warning rendering from bootstrap.
+- Performance: extended `hub-load-probe` with `cloud_backup.batch100`; latest run showed 100 backup rows scanned/pushed in 24.27 ms.
+- Verification: `pnpm test`, `pnpm typecheck`, `pnpm lint`, `pnpm --filter @gaurav-pos/cloud-admin build`, `pnpm --filter @gaurav-pos/hub-electron build`, and `pnpm --filter @gaurav-pos/hub-electron perf:load` passed.
+- Review hardening: hub service APIs now enforce locked/missing licenses server-side for paid builds (`BUILD_LICENSE_REQUIRED=true`) and for locked leases; license/setup recovery endpoints remain reachable.
+- Review hardening: order-history restore now pulls floor/table and menu/catalog dependency rows without date filters, then date-filters only the real history rows through the selected business date.
+- Review hardening: old Convex raw event/report ingest no longer writes `syncedEvents` or `dailyReport*`; old support-command functions no longer enqueue or return cloud commands; activation re-enable keeps one-active-hub.
+- Review hardening: `DEV-SHA256` leases require explicit dev env plus a matching secret, while production signing fails closed without `POS_LICENSE_PRIVATE_KEY_PEM`.
+- Review hardening verification: `pnpm lint`, `pnpm typecheck`, `pnpm test`, targeted hub license/restore tests, Convex tests, and isolated perf smoke passed.
+- Review hardening 2: moved paid hub license strictness/public verification to build-time constants, generated and rotated RSA license keys, set the Convex private signing env on `dev:fine-camel-186`, and updated the brother env setup doc so `hub.env` no longer carries license policy. RSA verification now requires the packaged public key option instead of reading `POS_LICENSE_PUBLIC_KEY_PEM` from the process environment.
+- Review hardening 2: added cloud backup tombstones for replaced payments and unused catalog/layout hard deletes, pushed tombstones before sweeper rows, streamed restore page imports, kept suspended activations visible in command center, and removed old raw cloud event/report/support-command schema/helper files.
+- Review hardening 2 verification: targeted hub/Convex tests passed, hub/cloud/mobile typechecks/builds passed, and `pnpm --filter @gaurav-pos/hub-electron perf:load` passed with `cloud_backup.batch100` at 13.25 ms.
+
 ## 2026-05-20
 
 - Hub CSS feature split: moved printer setup styles from root `apps/hub-electron/src/renderer/styles.css` into `apps/hub-electron/src/renderer/styles/printer.css` and app update styles into `apps/hub-electron/src/renderer/styles/app-update.css`.
@@ -797,3 +815,10 @@
 - Expo cleanup: ignored local `.expo` state, removed tracked `.expo` device files, switched the cleartext plugin to `expo/config-plugins`, added `expo-asset`, and aligned Expo to `~55.0.25`.
 - Verification: `pnpm install --frozen-lockfile`, `pnpm --filter @gaurav-pos/hub-electron test`, `pnpm --filter @gaurav-pos/hub-electron typecheck`, `pnpm --filter @gaurav-pos/mobile typecheck`, `lint`, `test`, `pnpm --filter @gaurav-pos/mobile exec expo install --check`, and `pnpm --filter @gaurav-pos/mobile exec npx -y expo-doctor` passed.
 - Build note: local EAS Android build reached Gradle but failed because this Mac has no Java runtime or Android SDK installed. Hub Windows release packaging was not attempted on macOS arm64 because `docs/release-build-workflow.md` requires Windows x64 for trusted Hub artifacts.
+
+## 2026-05-24 hub local storage cleanup hardening
+- Task: Fixed the local storage review findings that could keep growing after raw cloud event sync was deprecated.
+- Print failure path: `apps/hub-electron/src/printing/print-job-service.ts` now keeps the local `print_job.failed` audit event but no longer inserts deprecated `sync_outbox` rows.
+- Daily maintenance: `apps/hub-electron/src/db/local-maintenance.ts` runs on startup and hourly wake, once per calendar day, clearing deprecated cloud sync tables and pruning short-lived local scratch rows: 30-day `event_log`, 30-day printed/failed print jobs, 7/30-day ready notifications, 14/1-day idempotency cache, and 7-day pairing codes.
+- Backup retention: `apps/hub-electron/src/db/backup-service.ts` prunes only automatic `pre-update-*`/`pre-restore-*` safety backups to 30 days and 5 per prefix; manual backups remain untouched.
+- Verification: `pnpm --filter @gaurav-pos/hub-electron exec vitest run src/tests/local-maintenance.test.ts src/tests/print-job-service.test.ts src/tests/backup-service.test.ts src/tests/runtime.test.ts`, `pnpm --filter @gaurav-pos/hub-electron typecheck`, `pnpm --filter @gaurav-pos/hub-electron lint`, and `git diff --check` passed.

@@ -62,6 +62,16 @@
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
 }
 
+.hub-connection-form {
+  @apply items-start;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.hub-connection-actions {
+  @apply justify-start;
+  grid-column: 1 / -1;
+}
+
 .layout-editor {
   @apply grid gap-4;
   grid-template-columns: minmax(0, 1fr) minmax(320px, 520px);

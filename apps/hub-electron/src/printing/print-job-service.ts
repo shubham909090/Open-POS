@@ -1,6 +1,6 @@
 import { and, asc, eq, inArray, lt, sql } from "drizzle-orm";
 import type { HubOrm } from "../db/database.js";
-import { eventLog, hubSettings, printJobs, syncOutbox } from "../db/drizzle-schema.js";
+import { eventLog, hubSettings, printJobs } from "../db/drizzle-schema.js";
 import { makeId } from "../domain/ids.js";
 import { DryRunPrinterAdapter, type PrinterAdapter } from "./escpos.js";
 
@@ -127,9 +127,5 @@ export class PrintJobService {
       createdAt: now
     };
     this.db.insert(eventLog).values(event).run();
-    this.db
-      .insert(syncOutbox)
-      .values({ eventId: event.eventId, status: "pending", attempts: 0, createdAt: now, updatedAt: now })
-      .run();
   }
 }

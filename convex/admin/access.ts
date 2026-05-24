@@ -23,10 +23,48 @@ export function normalizeEmail(email: string) {
   return email.trim().toLowerCase();
 }
 
+function platformAdminAllowlist() {
+  const raw = process.env.PLATFORM_ADMIN_EMAILS ?? "";
+  return raw
+    .split(",")
+    .map((value) => normalizeEmail(value))
+    .filter(Boolean);
+}
+
+function platformAdminTokenAllowlist() {
+  const raw = process.env.PLATFORM_ADMIN_TOKEN_IDENTIFIERS ?? "";
+  return raw
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+}
+
 export function randomHex(bytes: number) {
   const values = new Uint8Array(bytes);
   crypto.getRandomValues(values);
   return Array.from(values, (value) => value.toString(16).padStart(2, "0")).join("");
+}
+
+export function platformAdminAccess(identity: { email?: string; tokenIdentifier: string } | null) {
+  const allowedEmails = platformAdminAllowlist();
+  const allowedTokens = platformAdminTokenAllowlist();
+  const email = identity?.email ? normalizeEmail(identity.email) : "";
+  const tokenIdentifier = identity?.tokenIdentifier ?? "";
+  const emailAllowed = Boolean(email && allowedEmails.includes(email));
+  const tokenAllowed = Boolean(tokenIdentifier && allowedTokens.includes(tokenIdentifier));
+  return {
+    email,
+    tokenIdentifier,
+    allowed: emailAllowed || tokenAllowed,
+    allowlistConfigured: allowedEmails.length > 0 || allowedTokens.length > 0
+  };
+}
+
+export async function requirePlatformAdmin(ctx: QueryCtx | MutationCtx) {
+  const identity = await requireIdentity(ctx);
+  const access = platformAdminAccess(identity);
+  if (!access.allowed) throw new Error("Only platform admins can do that");
+  return { identity, email: access.email, tokenIdentifier: access.tokenIdentifier };
 }
 
 export async function requireRestaurantAdmin(ctx: QueryCtx | MutationCtx, restaurantId: Id<"restaurants">) {

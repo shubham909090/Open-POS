@@ -107,6 +107,33 @@ describe("BackupService", () => {
     expect(readdirContainsPrefix(backupDir, "reset-pending.json.invalid-")).toBe(true);
     rmSync(root, { recursive: true, force: true });
   });
+
+  it("prunes only automatic safety backups", () => {
+    const root = mkdtempSync(join(tmpdir(), "gaurav-pos-backup-prune-"));
+    const databasePath = join(root, "hub.sqlite");
+    const backupDir = join(root, "backups");
+    const database = new HubDatabase(databasePath);
+    database.migrate();
+    const service = new BackupService(database, databasePath, backupDir);
+    const files = [
+      "pre-update-0-1-to-0-2-2026-04-01T00-00-00-000Z.sqlite",
+      "pre-update-0-1-to-0-2-2026-05-20T00-00-00-000Z.sqlite",
+      "pre-update-0-1-to-0-2-2026-05-21T00-00-00-000Z.sqlite",
+      "pre-restore-2026-04-01T00-00-00-000Z.sqlite",
+      "manual-2026-04-01T00-00-00-000Z.sqlite"
+    ];
+    for (const file of files) writeFileSync(join(backupDir, file), "");
+
+    const result = service.pruneAutomaticBackups({ maxAgeDays: 30, maxPerPrefix: 1, now: new Date("2026-05-24T12:00:00.000Z") });
+
+    expect(result).toEqual({ deleted: 3, kept: 1 });
+    expect(readdirSync(backupDir).sort()).toEqual([
+      "manual-2026-04-01T00-00-00-000Z.sqlite",
+      "pre-update-0-1-to-0-2-2026-05-21T00-00-00-000Z.sqlite"
+    ]);
+    database.close();
+    rmSync(root, { recursive: true, force: true });
+  });
 });
 
 function readdirContainsPrefix(dir: string, prefix: string) {

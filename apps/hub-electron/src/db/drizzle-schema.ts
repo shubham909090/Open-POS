@@ -404,6 +404,22 @@ export const hubSettings = sqliteTable("hub_settings", {
   updatedAt: text("updated_at").notNull()
 });
 
+export const cloudBackupTombstones = sqliteTable(
+  "cloud_backup_tombstones",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    domain: text("domain").notNull(),
+    localId: text("local_id").notNull(),
+    businessDate: text("business_date"),
+    deletedAt: text("deleted_at").notNull(),
+    pushedAt: text("pushed_at")
+  },
+  (table) => [
+    index("idx_cloud_backup_tombstones_pending").on(table.pushedAt, table.id),
+    uniqueIndex("idx_cloud_backup_tombstones_domain_local").on(table.domain, table.localId)
+  ]
+);
+
 export const cloudCommandFailures = sqliteTable(
   "cloud_command_failures",
   {

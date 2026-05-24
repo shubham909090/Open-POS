@@ -17,6 +17,7 @@ export type HubServerInput = {
   orderService: OrderService;
   printJobService: PrintJobService;
   syncBridge?: ConvexSyncBridge;
+  licenseRequired?: boolean;
   eventBus: EventBus<unknown>;
   publicUrl?: string;
   requestRestart?: () => void;

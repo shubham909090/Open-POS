@@ -31,5 +31,14 @@ export interface Bootstrap {
     managerPinConfigured?: boolean;
     masterPinConfigured?: boolean;
     hubConnection?: HubConnectionSettings;
+    license?: {
+      status: "missing" | "active" | "warning" | "locked";
+      reason?: string;
+      message: string;
+      checkedAt?: string;
+      licenseValidUntil?: string;
+      leaseExpiresAt?: string;
+      hoursUntilOfflineLock?: number;
+    };
   };
 }
