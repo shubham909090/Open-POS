@@ -131,6 +131,7 @@ export interface BillRow {
   print_count: number;
   is_nc: boolean;
   nc_reason: string | null;
+  created_at: string;
 }
 
 export interface SaleGroupRow {

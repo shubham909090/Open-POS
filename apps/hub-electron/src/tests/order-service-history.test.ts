@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { stripPrintStyleMarkers } from "../domain/tickets.js";
 import { createTestHub } from "./helpers.js";
 
@@ -75,6 +75,41 @@ describe("OrderService bill history edits", () => {
     expect(printJob.payload).not.toContain("REPRINT");
 
     database.close();
+  });
+
+  it("keeps the original bill date when a history edit prints the modified bill", () => {
+    vi.useFakeTimers();
+    const hub = createTestHub();
+    const { database, orderService } = hub;
+    try {
+      orderService.setMasterPin({ newPin: "9876", confirmPin: "9876", updatedBy: "owner" });
+      vi.setSystemTime(new Date("2026-05-08T12:00:00.000Z"));
+      const order = orderService.submitOrder({
+        tableId: "table-t1",
+        captainId: "waiter-1",
+        pax: 1,
+        orderType: "dine_in",
+        printMode: "kot",
+        items: [{ menuItemId: "item-dal-fry", quantity: 1 }]
+      });
+      const bill = orderService.generateBill(order.orderId);
+      orderService.settleBill(bill.billId, { method: "cash", amountPaise: bill.totalPaise, receivedBy: "captain-1" });
+
+      vi.setSystemTime(new Date("2026-05-29T12:00:00.000Z"));
+      const edited = orderService.editHistoryBill(bill.billId, {
+        items: [{ menuItemId: "item-dal-fry", quantity: 2 }],
+        payments: [{ method: "cash", amountPaise: 36_000 }],
+        masterApproval: { pin: "9876", reason: "Owner history edit", approvedBy: "owner" }
+      });
+
+      const printJob = database.db.prepare("SELECT payload FROM print_jobs WHERE id = ?").get(edited.printJobId) as { payload: string };
+      const payload = stripPrintStyleMarkers(printJob.payload);
+      expect(payload).toContain("Date: 8 May 2026");
+      expect(payload).not.toContain("Date: 29 May 2026");
+    } finally {
+      database.close();
+      vi.useRealTimers();
+    }
   });
 
   it("rejects pending history edits so active billed orders stay on the table editor flow", () => {

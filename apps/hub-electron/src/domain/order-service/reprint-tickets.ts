@@ -129,7 +129,7 @@ export function enqueueBillReprint(input: {
     buildBillTicket({
       bill,
       tableName: bill.table_name,
-      createdAt: new Date().toISOString()
+      createdAt: bill.created_at
     })
   )}${suffix ? `\n${suffix}` : ""}`;
 

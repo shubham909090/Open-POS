@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { stripPrintStyleMarkers } from "../domain/tickets.js";
 import { createTestHub } from "./helpers.js";
 
@@ -58,6 +58,34 @@ describe("OrderService billing and bill printing", () => {
     expect(printJob.payload).toContain("Reason: Customer copy");
 
     database.close();
+  });
+
+  it("keeps the original bill date on order history reprints", () => {
+    vi.useFakeTimers();
+    const hub = createTestHub();
+    const { database, orderService } = hub;
+    try {
+      vi.setSystemTime(new Date("2026-05-08T12:00:00.000Z"));
+      const order = orderService.submitOrder({
+        tableId: "table-t1",
+        captainId: "waiter-1",
+        pax: 1,
+        orderType: "dine_in",
+        items: [{ menuItemId: "item-dal-fry", quantity: 1 }]
+      });
+      const bill = orderService.generateBill(order.orderId);
+
+      vi.setSystemTime(new Date("2026-05-29T12:00:00.000Z"));
+      const reprint = orderService.reprintBillFromHistory(bill.billId, "captain-1");
+
+      const printJob = database.db.prepare("SELECT payload FROM print_jobs WHERE id = ?").get(reprint.printJobId) as { payload: string };
+      const payload = stripPrintStyleMarkers(printJob.payload);
+      expect(payload).toContain("Date: 8 May 2026");
+      expect(payload).not.toContain("Date: 29 May 2026");
+    } finally {
+      database.close();
+      vi.useRealTimers();
+    }
   });
 
   it("prints generated and reprinted bills with the latest saved discount amount", () => {

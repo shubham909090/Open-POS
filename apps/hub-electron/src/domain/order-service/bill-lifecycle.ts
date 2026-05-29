@@ -116,7 +116,7 @@ export function generateBill(ctx: BillLifecycleContext, orderId: string, printer
       targetId: billId,
       productionUnitId: null,
       ...ctx.resolveBillPrinter(printerSlot),
-      payload: renderBillTicketForPrint(ctx.buildBillTicket({ bill, tableName: table.name, createdAt: now }))
+      payload: renderBillTicketForPrint(ctx.buildBillTicket({ bill, tableName: table.name, createdAt: bill.created_at }))
     });
     ctx.orm.update(bills).set({ printCount: sql`${bills.printCount} + 1` }).where(eq(bills.id, billId)).run();
 

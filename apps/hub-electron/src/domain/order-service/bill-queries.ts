@@ -19,7 +19,8 @@ const billSelection = {
   revision_number: bills.revisionNumber,
   print_count: bills.printCount,
   is_nc: bills.isNc,
-  nc_reason: bills.ncReason
+  nc_reason: bills.ncReason,
+  created_at: bills.createdAt
 };
 
 export function getBillById(orm: HubOrm, billId: string): BillRow | undefined {

@@ -275,7 +275,7 @@ export function editHistoryBill(ctx: BillActionContext, billId: string, input: H
       targetId: billId,
       productionUnitId: null,
       ...ctx.resolveBillPrinter(input.printerSlot ?? "default"),
-      payload: renderBillTicketForPrint(ctx.buildBillTicket({ bill: updatedBill, tableName: table.name, createdAt: now }))
+      payload: renderBillTicketForPrint(ctx.buildBillTicket({ bill: updatedBill, tableName: table.name, createdAt: updatedBill.created_at }))
     });
     ctx.orm.update(bills).set({ printCount: sql`${bills.printCount} + 1` }).where(eq(bills.id, billId)).run();
     ctx.refreshDailyReportSnapshot(order.pos_day_id, now);
@@ -326,7 +326,7 @@ export function markBillNc(ctx: BillActionContext, billId: string, input: MarkNc
         ctx.buildBillTicket({
           bill: adjustedBill,
           tableName: table.name,
-          createdAt: now,
+          createdAt: adjustedBill.created_at,
           ncReason: input.managerApproval.reason
         })
       )
@@ -357,7 +357,7 @@ export function printBill(ctx: BillActionContext, billId: string, requestedBy: s
         ctx.buildBillTicket({
           bill,
           tableName: table.name,
-          createdAt: now
+          createdAt: bill.created_at
         })
       )
     });
