@@ -9,8 +9,8 @@ Use this when preparing files for the restaurant.
 After a clean release, the Hub release folder should contain only:
 
 ```text
-apps/hub-electron/release/Gaurav POS Hub Setup 0.1.7.exe
-apps/hub-electron/release/Gaurav POS Hub-0.1.7.gpos-update.zip
+apps/hub-electron/release/Gaurav POS Hub Setup 0.1.8.exe
+apps/hub-electron/release/Gaurav POS Hub-0.1.8.gpos-update.zip
 ```
 
 Use the `.exe` for first-time install.
@@ -53,7 +53,7 @@ Fresh means:
 - clean the release folder so only the current `.exe` and `.gpos-update.zip` remain
 - start a fresh EAS Android build with `--no-wait` when Android is requested
 
-Do not ship a same-version update package over the previous installed app. The app update cache and rollback baseline are version-keyed, so a real update should move from something like `0.1.2` to `0.1.7`.
+Do not ship a same-version update package over the previous installed app. The app update cache and rollback baseline are version-keyed, so a real update should move from something like `0.1.2` to `0.1.8`.
 
 ## One-Command Release Helpers
 
@@ -81,7 +81,7 @@ That command:
 Optional flags:
 
 ```bash
-pnpm release:hub:fresh -- --version 0.1.7
+pnpm release:hub:fresh -- --version 0.1.8
 pnpm release:hub:fresh -- --publish
 pnpm release:hub:fresh -- --skip-tests
 ```
@@ -165,14 +165,14 @@ After the `.exe` and `.gpos-update.zip` are created and validated, publish them 
 Tag format:
 
 ```text
-hub-v0.1.7
+hub-v0.1.8
 ```
 
 Required release assets:
 
 ```text
-Gaurav POS Hub-0.1.7.gpos-update.zip
-Gaurav POS Hub Setup 0.1.7.exe
+Gaurav POS Hub-0.1.8.gpos-update.zip
+Gaurav POS Hub Setup 0.1.8.exe
 Gaurav POS Mobile-0.1.5.apk
 ```
 
@@ -269,8 +269,8 @@ Only `better_sqlite3.node` should remain, and it must be Windows x64 `PE32+`.
 5. Rebuild the installer from corrected `win-unpacked`:
 
 ```bash
-rm -f "apps/hub-electron/release/Gaurav POS Hub Setup 0.1.7.exe" \
-  "apps/hub-electron/release/Gaurav POS Hub Setup 0.1.7.exe.blockmap" \
+rm -f "apps/hub-electron/release/Gaurav POS Hub Setup 0.1.8.exe" \
+  "apps/hub-electron/release/Gaurav POS Hub Setup 0.1.8.exe.blockmap" \
   apps/hub-electron/release/builder-debug.yml
 pnpm --filter @gaurav-pos/hub-electron exec electron-builder --win nsis --x64 --prepackaged release/win-unpacked
 ```
@@ -283,7 +283,7 @@ On macOS cross-builds, `package:update` intentionally stops before creating the 
 node_modules/.pnpm/node_modules/@electron/asar/bin/asar.js list \
   "apps/hub-electron/release/win-unpacked/resources/app.asar" | rg "^/preload\\.cjs$|^/dist/electron\\.js$"
 
-pnpm --filter @gaurav-pos/hub-electron exec tsx -e "import { readFileSync } from 'node:fs'; import { validateInstallerContainsSQLiteNative, validateWindowsX64NativeModule, sha256 } from './src/update/update-package.ts'; const native=readFileSync('./release/win-unpacked/resources/app.asar.unpacked/node_modules/better-sqlite3/build/Release/better_sqlite3.node'); validateWindowsX64NativeModule(native); validateInstallerContainsSQLiteNative(readFileSync('./release/Gaurav POS Hub Setup 0.1.7.exe'), sha256(native)); console.log({ sqliteNativeSha256: sha256(native) });"
+pnpm --filter @gaurav-pos/hub-electron exec tsx -e "import { readFileSync } from 'node:fs'; import { validateInstallerContainsSQLiteNative, validateWindowsX64NativeModule, sha256 } from './src/update/update-package.ts'; const native=readFileSync('./release/win-unpacked/resources/app.asar.unpacked/node_modules/better-sqlite3/build/Release/better_sqlite3.node'); validateWindowsX64NativeModule(native); validateInstallerContainsSQLiteNative(readFileSync('./release/Gaurav POS Hub Setup 0.1.8.exe'), sha256(native)); console.log({ sqliteNativeSha256: sha256(native) });"
 ```
 
 Then create the zip using the app's update manifest format and immediately run the final validator below. If this feels clumsy, stop and build on Windows x64 instead.
@@ -327,8 +327,8 @@ After the build, remove stale files so nobody chooses the wrong artifact.
 Keep only:
 
 ```text
-Gaurav POS Hub Setup 0.1.7.exe
-Gaurav POS Hub-0.1.7.gpos-update.zip
+Gaurav POS Hub Setup 0.1.8.exe
+Gaurav POS Hub-0.1.8.gpos-update.zip
 ```
 
 Delete old files such as:
@@ -346,8 +346,8 @@ On macOS/Linux:
 
 ```bash
 find apps/hub-electron/release -mindepth 1 -maxdepth 1 \
-  ! -name "Gaurav POS Hub Setup 0.1.7.exe" \
-  ! -name "Gaurav POS Hub-0.1.7.gpos-update.zip" \
+  ! -name "Gaurav POS Hub Setup 0.1.8.exe" \
+  ! -name "Gaurav POS Hub-0.1.8.gpos-update.zip" \
   -exec rm -rf {} +
 ```
 
@@ -355,8 +355,8 @@ On Windows PowerShell:
 
 ```powershell
 Get-ChildItem apps/hub-electron/release | Where-Object {
-  $_.Name -ne "Gaurav POS Hub Setup 0.1.7.exe" -and
-  $_.Name -ne "Gaurav POS Hub-0.1.7.gpos-update.zip"
+  $_.Name -ne "Gaurav POS Hub Setup 0.1.8.exe" -and
+  $_.Name -ne "Gaurav POS Hub-0.1.8.gpos-update.zip"
 } | Remove-Item -Recurse -Force
 ```
 
@@ -367,7 +367,7 @@ Update the file names when the app version changes.
 From `apps/hub-electron`, validate the update package:
 
 ```bash
-pnpm exec tsx -e "import { validateUpdatePackage } from './src/update/update-package.ts'; const r = validateUpdatePackage('./release/Gaurav POS Hub-0.1.7.gpos-update.zip', 0); console.log(r.manifest)"
+pnpm exec tsx -e "import { validateUpdatePackage } from './src/update/update-package.ts'; const r = validateUpdatePackage('./release/Gaurav POS Hub-0.1.8.gpos-update.zip', 0); console.log(r.manifest)"
 ```
 
 Expected important fields:
@@ -393,15 +393,15 @@ Also record hashes:
 
 ```bash
 shasum -a 256 \
-  "release/Gaurav POS Hub Setup 0.1.7.exe" \
-  "release/Gaurav POS Hub-0.1.7.gpos-update.zip"
+  "release/Gaurav POS Hub Setup 0.1.8.exe" \
+  "release/Gaurav POS Hub-0.1.8.gpos-update.zip"
 ```
 
 On Windows PowerShell:
 
 ```powershell
-Get-FileHash "release/Gaurav POS Hub Setup 0.1.7.exe" -Algorithm SHA256
-Get-FileHash "release/Gaurav POS Hub-0.1.7.gpos-update.zip" -Algorithm SHA256
+Get-FileHash "release/Gaurav POS Hub Setup 0.1.8.exe" -Algorithm SHA256
+Get-FileHash "release/Gaurav POS Hub-0.1.8.gpos-update.zip" -Algorithm SHA256
 ```
 
 ## Build Android Expo APK
@@ -443,14 +443,14 @@ The local APK is then picked up by `pnpm release:github` and attached to the sam
 For a brand-new Hub machine:
 
 ```text
-Gaurav POS Hub Setup 0.1.7.exe
+Gaurav POS Hub Setup 0.1.8.exe
 Gaurav POS Mobile-0.1.5.apk
 ```
 
 For a Hub update:
 
 ```text
-Gaurav POS Hub-0.1.7.gpos-update.zip
+Gaurav POS Hub-0.1.8.gpos-update.zip
 Gaurav POS Mobile-0.1.5.apk, only if the mobile app changed
 ```
 
