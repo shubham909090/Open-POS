@@ -1,4 +1,5 @@
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { copyFileSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { currentDbSchemaVersion } from "../src/db/schema-version.js";
@@ -20,13 +21,21 @@ const installerBlockmapPath = join(releaseDir, installerBlockmapName);
 const packagePath = join(releaseDir, packageName);
 const latestYmlPath = join(releaseDir, "latest.yml");
 const onlineMetadataPath = join(releaseDir, ONLINE_UPDATE_METADATA);
+const latestYml = readFileSync(latestYmlPath, "utf8");
+const updaterInstallerName = readLatestYmlPath(latestYml);
+const updaterInstallerBlockmapName = `${updaterInstallerName}.blockmap`;
+const uploadAliasDir = mkdtempSync(join(tmpdir(), "gpos-release-assets-"));
+const updaterInstallerPath = join(uploadAliasDir, updaterInstallerName);
+const updaterInstallerBlockmapPath = join(uploadAliasDir, updaterInstallerBlockmapName);
 const mobilePackagePath = join(root, "..", "mobile", "package.json");
 const mobileVersion = existsSync(mobilePackagePath)
   ? (JSON.parse(readFileSync(mobilePackagePath, "utf8")).version as string)
   : null;
 const mobileApkName = mobileVersion ? `Gaurav POS Mobile-${mobileVersion}.apk` : null;
 const mobileApkPath = mobileApkName ? join(root, "..", "mobile", "release-local", mobileApkName) : null;
-const releaseAssets = [installerPath, installerBlockmapPath, latestYmlPath, onlineMetadataPath, packagePath, ...(mobileApkPath && existsSync(mobileApkPath) ? [mobileApkPath] : [])];
+copyFileSync(installerPath, updaterInstallerPath);
+copyFileSync(installerBlockmapPath, updaterInstallerBlockmapPath);
+const releaseAssets = [updaterInstallerPath, updaterInstallerBlockmapPath, latestYmlPath, onlineMetadataPath, packagePath, ...(mobileApkPath && existsSync(mobileApkPath) ? [mobileApkPath] : [])];
 const dryRun = process.argv.includes("--dry-run");
 const clobber = process.argv.includes("--clobber");
 
@@ -55,11 +64,11 @@ const notes = [
   `Gaurav POS Hub ${version}`,
   "",
   "Assets:",
-	  `- ${installerName} (one-click Windows updater / first-time install)`,
-	  `- ${installerBlockmapName} (Electron updater differential metadata)`,
-	  "- latest.yml (Electron updater channel metadata)",
-	  `- ${ONLINE_UPDATE_METADATA} (Hub DB compatibility metadata)`,
-	  `- ${packageName} (in-app update package)`,
+  `- ${updaterInstallerName} (one-click Windows updater / first-time install)`,
+  `- ${updaterInstallerBlockmapName} (Electron updater differential metadata)`,
+  "- latest.yml (Electron updater channel metadata)",
+  `- ${ONLINE_UPDATE_METADATA} (Hub DB compatibility metadata)`,
+  `- ${packageName} (fallback DB-safe update package)`,
   ...(mobileApkName && mobileApkPath && existsSync(mobileApkPath) ? [`- ${mobileApkName} (Android APK)`] : []),
   "",
   "Update safety:",
@@ -75,6 +84,7 @@ console.log(`Ready to publish ${owner}/${repo} ${tag}`);
 for (const asset of releaseAssets) console.log(`- ${asset}`);
 if (dryRun) {
   console.log("Dry run only. No GitHub release created.");
+  rmSync(uploadAliasDir, { recursive: true, force: true });
   process.exit(0);
 }
 
@@ -98,10 +108,21 @@ if (run("gh", ["release", "view", tag, "--repo", `${owner}/${repo}`], { allowFai
       notes
     ]);
 }
+rmSync(uploadAliasDir, { recursive: true, force: true });
 
 function run(command: string, args: string[], options: { allowFailure?: boolean } = {}): boolean {
   const result = spawnSync(command, args, { cwd: root, stdio: "inherit", shell: process.platform === "win32" });
   if (result.status === 0) return true;
   if (options.allowFailure) return false;
   throw new Error(`${command} ${args.join(" ")} failed`);
+}
+
+function readLatestYmlPath(contents: string): string {
+  const match = /^path:\s*['"]?([^'"\r\n]+)['"]?\s*$/m.exec(contents);
+  if (!match) throw new Error("latest.yml is missing installer path");
+  const value = match[1].trim();
+  if (!value.endsWith(".exe") || value.includes("/") || value.includes("\\")) {
+    throw new Error(`latest.yml installer path is not a plain .exe file name: ${value}`);
+  }
+  return value;
 }
