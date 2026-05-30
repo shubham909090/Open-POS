@@ -1,5 +1,13 @@
 # Devlog
 
+## 2026-05-30
+
+- Hub one-click online updates: replaced the primary Advanced app-update UI with one `Update app` action backed by `electron-updater`, added online update state to Hub status, and added `/system/update/online/install` for admin-only check/download/backup/install without local zip/exe baseline setup.
+- Update safety: online install blocks running orders, runs DB integrity check, creates a pre-update SQLite backup, then calls Electron updater install/restart. Existing custom `.gpos-update.zip` validation remains as fallback/release packaging support.
+- Release packaging/docs: Hub Windows NSIS now builds one-click per-user installers, publishes GitHub updater metadata for `shubham909090/Open-POS`, release helpers keep/upload `latest.yml`, installer `.exe`, `.exe.blockmap`, and fallback `.gpos-update.zip`, and update docs now describe the one-click path.
+- Reference: cloned `pingdotgg/t3code` to `/Users/shubhamtemak/Documents/ExampleRepos/t3code` and used its `electron-updater` + GitHub Releases metadata pattern.
+- Verification: targeted updater tests, full Hub test suite, Hub typecheck, and non-bumping release build `pnpm release:hub:fresh -- --version 0.1.8 --skip-tests` passed; release folder contains `latest.yml`, `.exe`, `.exe.blockmap`, and `.gpos-update.zip`.
+
 ## 2026-05-24
 
 - POS cloud licensing pass started: added `.agent/pos-cloud-licensing-plan.md` and `.agent/pos-cloud-licensing-context.md`.
@@ -822,3 +830,10 @@
 - Daily maintenance: `apps/hub-electron/src/db/local-maintenance.ts` runs on startup and hourly wake, once per calendar day, clearing deprecated cloud sync tables and pruning short-lived local scratch rows: 30-day `event_log`, 30-day printed/failed print jobs, 7/30-day ready notifications, 14/1-day idempotency cache, and 7-day pairing codes.
 - Backup retention: `apps/hub-electron/src/db/backup-service.ts` prunes only automatic `pre-update-*`/`pre-restore-*` safety backups to 30 days and 5 per prefix; manual backups remain untouched.
 - Verification: `pnpm --filter @gaurav-pos/hub-electron exec vitest run src/tests/local-maintenance.test.ts src/tests/print-job-service.test.ts src/tests/backup-service.test.ts src/tests/runtime.test.ts`, `pnpm --filter @gaurav-pos/hub-electron typecheck`, `pnpm --filter @gaurav-pos/hub-electron lint`, and `git diff --check` passed.
+
+## 2026-05-30 hub one-click updater DB safety hardening
+- Task: Fixed review findings in the one-click online updater so valuable local SQLite data is protected before Electron updater downloads/installs.
+- Online update safety: releases now include `hub-update-metadata.json`; Hub validates `appId`, platform, version, `dbSchemaVersion`, and `minSourceDbSchemaVersion` before download/install.
+- Installer handoff: online update lock remains held after `quitAndInstall()` handoff, and Electron startup reuses one Hub runtime/updater instance across window recreation.
+- Release workflow: fresh and publish scripts require `latest.yml`, installer `.exe`, `.exe.blockmap`, `hub-update-metadata.json`, and fallback `.gpos-update.zip`; publish dry-run validates metadata against the update package.
+- Verification: targeted update tests, full hub test suite, typecheck, fresh release dry build, publish dry-run, and `git diff --check` passed.

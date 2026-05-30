@@ -13,10 +13,59 @@ import { OrderService } from "../domain/order-service.js";
 import { DryRunPrinterAdapter } from "../printing/escpos.js";
 import { PrintJobService } from "../printing/print-job-service.js";
 import { ConvexSyncBridge } from "../sync/convex-sync.js";
-import { AppUpdateService } from "../update/app-update-service.js";
-import { PACKAGED_SQLITE_NATIVE_PATH, sha256, type UpdatePackageManifest } from "../update/update-package.js";
+import { AppUpdateService, type OnlineAppUpdater } from "../update/app-update-service.js";
+import { PACKAGED_SQLITE_NATIVE_PATH, sha256, type OnlineUpdateMetadata, type UpdatePackageManifest } from "../update/update-package.js";
 
 describe("app update API", () => {
+  it("installs a one-click online update through an admin-only API without Manager PIN", async () => {
+    const onlineUpdater = createOnlineUpdater({ availableVersion: "0.2.0" });
+    const fixture = createFixture({ onlineUpdater });
+
+    const blocked = await fixture.app.inject({
+      method: "POST",
+      url: "/system/update/online/install"
+    });
+    expect(blocked.statusCode).toBe(401);
+
+    const response = await fixture.app.inject({
+      method: "POST",
+      url: "/system/update/online/install",
+      headers: { "x-device-token": "test-admin-token" }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json<{ installing: true; version: string }>().installing).toBe(true);
+    expect(response.json<{ installing: true; version: string }>().version).toBe("0.2.0");
+    expect(onlineUpdater.quitAndInstall).toHaveBeenCalledTimes(1);
+
+    await fixture.close();
+  });
+
+  it("blocks one-click online update through the API when orders are still running", async () => {
+    const onlineUpdater = createOnlineUpdater();
+    const fixture = createFixture({ onlineUpdater });
+    fixture.orderService.submitOrder({
+      tableId: "table-t1",
+      captainId: "waiter-1",
+      pax: 2,
+      orderType: "dine_in",
+      items: [{ menuItemId: "item-paneer-tikka", quantity: 1 }]
+    });
+
+    const response = await fixture.app.inject({
+      method: "POST",
+      url: "/system/update/online/install",
+      headers: { "x-device-token": "test-admin-token" }
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json<{ error: string }>().error).toContain("running order");
+    expect(onlineUpdater.checkForUpdates).not.toHaveBeenCalled();
+    expect(onlineUpdater.quitAndInstall).not.toHaveBeenCalled();
+
+    await fixture.close();
+  });
+
   it("requires Manager PIN to install an update", async () => {
     const fixture = createFixture();
     await setManagerPin(fixture.app);
@@ -183,6 +232,30 @@ function createFixture(overrides: Partial<ConstructorParameters<typeof AppUpdate
       database.close();
       rmSync(root, { recursive: true, force: true });
     }
+  };
+}
+
+function createOnlineUpdater(input: { updateAvailable?: boolean; availableVersion?: string; metadata?: Record<string, unknown> } = {}): OnlineAppUpdater {
+  const version = input.availableVersion ?? "0.2.0";
+  return {
+    checkForUpdates: vi.fn(async () => ({
+      updateAvailable: input.updateAvailable ?? true,
+      version
+    })),
+    readUpdateMetadata: vi.fn(async () => ({
+      schemaVersion: 1,
+      appId: "in.gaurav.pos.hub",
+      productName: "Gaurav POS Hub",
+      version,
+      platform: "win32",
+      arch: "x64",
+      dbSchemaVersion: currentDbSchemaVersion(),
+      minSourceDbSchemaVersion: 0,
+      createdAt: new Date().toISOString(),
+      ...(input.metadata ?? {})
+    }) as OnlineUpdateMetadata),
+    downloadUpdate: vi.fn(async () => undefined),
+    quitAndInstall: vi.fn()
   };
 }
 

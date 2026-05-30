@@ -3,8 +3,11 @@ import { fileURLToPath } from "node:url";
 import { chooseUpdateFile, restoreRendererFocus, type UpdateFileDialogKind } from "./electron-dialogs.js";
 import { startHub } from "./runtime.js";
 import { runSqliteSelfTest } from "./self-test.js";
+import { createElectronOnlineUpdater } from "./update/electron-online-updater.js";
 
 let mainWindow: BrowserWindow | null = null;
+let hubPromise: ReturnType<typeof startHub> | null = null;
+let onlineUpdater: ReturnType<typeof createElectronOnlineUpdater> | null = null;
 
 const selfTestOnly = process.argv.includes("--self-test-sqlite");
 if (selfTestOnly) {
@@ -31,12 +34,7 @@ if (selfTestOnly) {
 }
 
 async function createWindow() {
-  const hub = await startHub({
-    requestRestart: () => {
-      app.relaunch();
-      app.exit(0);
-    }
-  });
+  const hub = await getHub();
 
   const preloadPath = fileURLToPath(new URL("../preload.cjs", import.meta.url));
   mainWindow = new BrowserWindow({
@@ -56,6 +54,18 @@ async function createWindow() {
   mainWindow.on("closed", () => {
     mainWindow = null;
   });
+}
+
+function getHub(): ReturnType<typeof startHub> {
+  onlineUpdater ??= createElectronOnlineUpdater();
+  hubPromise ??= startHub({
+    onlineUpdater,
+    requestRestart: () => {
+      app.relaunch();
+      app.exit(0);
+    }
+  });
+  return hubPromise;
 }
 
 if (!selfTestOnly) {

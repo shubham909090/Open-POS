@@ -35,6 +35,7 @@ export interface AppUpdateStatus {
   appVersion: string;
   dbSchemaVersion: number;
   activeOrderCount: number;
+  online: OnlineUpdateState;
   baselineRegistered: boolean;
   rollbackAvailable: boolean;
   current?: CachedUpdatePackage;
@@ -42,6 +43,32 @@ export interface AppUpdateStatus {
   previous?: CachedUpdatePackage;
   recoveryScriptPath?: string;
 }
+
+export type OnlineUpdateStateStatus =
+  | "disabled"
+  | "idle"
+  | "checking"
+  | "available"
+  | "downloading"
+  | "downloaded"
+  | "installing"
+  | "up_to_date"
+  | "error";
+
+export interface OnlineUpdateState {
+  enabled: boolean;
+  status: OnlineUpdateStateStatus;
+  currentVersion: string;
+  availableVersion: string | null;
+  downloadPercent: number | null;
+  message: string | null;
+  checkedAt: string | null;
+  lastBackupFileName?: string;
+}
+
+export type OnlineUpdateInstallResult =
+  | { status: "up_to_date"; currentVersion: string }
+  | { installing: true; backup: BackupSummary; version: string };
 
 export interface ValidatedUpdatePackage {
   ok: true;

@@ -3,31 +3,18 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ComponentType } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { ManagerApprovalRequest } from "../renderer/hooks/use-manager-approval.js";
 import type { NoticeSetter } from "../renderer/lib/format.js";
 
 const mocks = vi.hoisted(() => ({
   updateStatusMock: vi.fn(),
-  validateUpdatePackageMock: vi.fn(),
-  registerUpdateBaselineMock: vi.fn(),
-  registerInstallerBaselineMock: vi.fn(),
-  installUpdateMock: vi.fn(),
-  githubUpdateLatestMock: vi.fn(),
-  installGithubUpdateMock: vi.fn(),
-  rollbackUpdateMock: vi.fn()
+  installOnlineUpdateMock: vi.fn()
 }));
-const { updateStatusMock, validateUpdatePackageMock, registerUpdateBaselineMock, registerInstallerBaselineMock, installUpdateMock, githubUpdateLatestMock, installGithubUpdateMock, rollbackUpdateMock } = mocks;
+const { updateStatusMock, installOnlineUpdateMock } = mocks;
 
 vi.mock("../renderer/hub-api.js", () => ({
   hubApi: {
     updateStatus: updateStatusMock,
-    validateUpdatePackage: validateUpdatePackageMock,
-    registerUpdateBaseline: registerUpdateBaselineMock,
-    registerInstallerBaseline: registerInstallerBaselineMock,
-    installUpdate: installUpdateMock,
-    githubUpdateLatest: githubUpdateLatestMock,
-    installGithubUpdate: installGithubUpdateMock,
-    rollbackUpdate: rollbackUpdateMock
+    installOnlineUpdate: installOnlineUpdateMock
   }
 }));
 
@@ -39,218 +26,89 @@ describe("AppUpdatePanel", () => {
     delete window.gauravPos;
   });
 
-  it("opens the package picker from Install update when no package path is selected", async () => {
-    updateStatusMock.mockResolvedValue(updateStatus({ baselineRegistered: true }));
-    installUpdateMock.mockResolvedValue({
+  it("runs the online update from one primary button without local package setup", async () => {
+    updateStatusMock.mockResolvedValue(updateStatus());
+    installOnlineUpdateMock.mockResolvedValue({
       installing: true,
       backup: { fileName: "pre-update.sqlite" },
-      package: {},
-      recoveryScriptPath: "recovery.cmd"
+      version: "0.2.0"
     });
-    const chooseUpdatePackage = vi.fn().mockResolvedValue("C:\\updates\\Gaurav POS Hub.gpos-update.zip");
-    window.gauravPos = { chooseUpdatePackage };
-    const requestManagerApproval = vi.fn().mockResolvedValue({ pin: "1234", reason: "Install app update", approvedBy: "admin" });
+    const setNotice = vi.fn();
 
     const { AppUpdatePanel } = await import("../renderer/components/advanced/advanced-view.js");
-    renderAppUpdatePanel(AppUpdatePanel, { requestManagerApproval });
+    renderAppUpdatePanel(AppUpdatePanel, { setNotice });
 
     expect(await screen.findByText("App 0.1.0 · DB 10")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Install update" }));
+    expect(screen.queryByText("Choose package")).toBeNull();
+    expect(screen.queryByText("Register package baseline")).toBeNull();
+    expect(screen.queryByText("Register current installer baseline")).toBeNull();
+    expect(screen.queryByText("Validate")).toBeNull();
 
-    await waitFor(() => expect(chooseUpdatePackage).toHaveBeenCalledTimes(1));
-    await waitFor(() => expect(requestManagerApproval).toHaveBeenCalledWith(expect.objectContaining({ title: "Install app update" })));
+    fireEvent.click(screen.getByRole("button", { name: "Update app" }));
+
+    await waitFor(() => expect(installOnlineUpdateMock).toHaveBeenCalledTimes(1));
     await waitFor(() =>
-      expect(installUpdateMock).toHaveBeenCalledWith("C:\\updates\\Gaurav POS Hub.gpos-update.zip", "1234")
+      expect(setNotice).toHaveBeenCalledWith({
+        tone: "good",
+        text: "Update downloaded. Backup created: pre-update.sqlite. Installing now."
+      })
     );
   });
 
-  it("shows chooser progress and no-selection feedback", async () => {
-    updateStatusMock.mockResolvedValue(updateStatus({ baselineRegistered: true }));
-    let resolveChoice: (value: string | null) => void = () => undefined;
-    const chooseUpdatePackage = vi.fn().mockReturnValue(new Promise<string | null>((resolve) => {
-      resolveChoice = resolve;
-    }));
-    window.gauravPos = { chooseUpdatePackage };
+  it("does not start an online update while orders are running", async () => {
+    updateStatusMock.mockResolvedValue(updateStatus({ activeOrderCount: 2 }));
     const setNotice = vi.fn();
 
     const { AppUpdatePanel } = await import("../renderer/components/advanced/advanced-view.js");
     renderAppUpdatePanel(AppUpdatePanel, { setNotice });
 
     expect(await screen.findByText("App 0.1.0 · DB 10")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Choose package" }));
-
-    expect(await screen.findByText("Opening file picker...")).toBeTruthy();
-    resolveChoice(null);
-    await waitFor(() => expect(setNotice).toHaveBeenCalledWith({ tone: "bad", text: "No package selected." }));
-  });
-
-  it("shows picker errors instead of failing silently", async () => {
-    updateStatusMock.mockResolvedValue(updateStatus({ baselineRegistered: true }));
-    window.gauravPos = { chooseUpdatePackage: vi.fn().mockRejectedValue(new Error("dialog failed")) };
-    const setNotice = vi.fn();
-
-    const { AppUpdatePanel } = await import("../renderer/components/advanced/advanced-view.js");
-    renderAppUpdatePanel(AppUpdatePanel, { setNotice });
-
-    expect(await screen.findByText("App 0.1.0 · DB 10")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Choose package" }));
-
-    await waitFor(() => expect(setNotice).toHaveBeenCalledWith({ tone: "bad", text: "dialog failed" }));
-  });
-
-  it("keeps a visible paste fallback when Electron picker is unavailable", async () => {
-    updateStatusMock.mockResolvedValue(updateStatus({ baselineRegistered: true }));
-
-    const { AppUpdatePanel } = await import("../renderer/components/advanced/advanced-view.js");
-    renderAppUpdatePanel(AppUpdatePanel);
-
-    expect(await screen.findByText("App 0.1.0 · DB 10")).toBeTruthy();
-    expect(screen.getByText("File picker unavailable. Paste the path manually.")).toBeTruthy();
-  });
-
-  it("registers the current installer as a rollback baseline", async () => {
-    updateStatusMock.mockResolvedValue(updateStatus({ baselineRegistered: false }));
-    registerInstallerBaselineMock.mockResolvedValue({ version: "0.1.0" });
-
-    const { AppUpdatePanel } = await import("../renderer/components/advanced/advanced-view.js");
-    renderAppUpdatePanel(AppUpdatePanel);
-
-    expect(await screen.findByText("App 0.1.0 · DB 10")).toBeTruthy();
-    fireEvent.change(screen.getByLabelText("Update package or current installer"), {
-      target: { value: "C:\\updates\\Gaurav POS Hub Setup 0.1.0.exe" }
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Register current installer baseline" }));
-
-    await waitFor(() => expect(registerInstallerBaselineMock).toHaveBeenCalled());
-    expect(registerInstallerBaselineMock.mock.calls[0]?.[0]).toBe("C:\\updates\\Gaurav POS Hub Setup 0.1.0.exe");
-  });
-
-  it("enables only the baseline action that matches the selected file type", async () => {
-    updateStatusMock.mockResolvedValue(updateStatus({ baselineRegistered: false }));
-
-    const { AppUpdatePanel } = await import("../renderer/components/advanced/advanced-view.js");
-    renderAppUpdatePanel(AppUpdatePanel);
-
-    expect(await screen.findByText("App 0.1.0 · DB 10")).toBeTruthy();
-    const packageBaseline = screen.getByRole("button", { name: "Register package baseline" }) as HTMLButtonElement;
-    const installerBaseline = screen.getByRole("button", { name: "Register current installer baseline" }) as HTMLButtonElement;
-    const validate = screen.getByRole("button", { name: "Validate" }) as HTMLButtonElement;
-
-    fireEvent.change(screen.getByLabelText("Update package or current installer"), {
-      target: { value: "C:\\updates\\Gaurav POS Hub-0.1.0.gpos-update.zip" }
-    });
-    expect(validate.disabled).toBe(false);
-    expect(packageBaseline.disabled).toBe(false);
-    expect(installerBaseline.disabled).toBe(true);
-
-    fireEvent.change(screen.getByLabelText("Update package or current installer"), {
-      target: { value: "C:\\updates\\Gaurav POS Hub Setup 0.1.0.exe" }
-    });
-    expect(validate.disabled).toBe(true);
-    expect(packageBaseline.disabled).toBe(true);
-    expect(installerBaseline.disabled).toBe(false);
-  });
-
-  it("explains why install cannot continue when rollback baseline is missing", async () => {
-    updateStatusMock.mockResolvedValue(updateStatus({ baselineRegistered: false }));
-    const chooseUpdatePackage = vi.fn().mockResolvedValue("C:\\updates\\Gaurav POS Hub.gpos-update.zip");
-    window.gauravPos = { chooseUpdatePackage };
-    const requestManagerApproval = vi.fn();
-    const setNotice = vi.fn();
-
-    const { AppUpdatePanel } = await import("../renderer/components/advanced/advanced-view.js");
-    renderAppUpdatePanel(AppUpdatePanel, { requestManagerApproval, setNotice });
-
-    expect(await screen.findByText("App 0.1.0 · DB 10")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Install update" }));
+    fireEvent.click(screen.getByRole("button", { name: "Update app" }));
 
     await waitFor(() =>
       expect(setNotice).toHaveBeenCalledWith({
         tone: "bad",
-        text: "Register the current version as rollback baseline before installing updates. Use the current .gpos-update.zip or the current installer .exe."
+        text: "Close or settle 2 running order(s) before updating."
       })
     );
-    expect(requestManagerApproval).not.toHaveBeenCalled();
-    expect(installUpdateMock).not.toHaveBeenCalled();
+    expect(installOnlineUpdateMock).not.toHaveBeenCalled();
   });
 
-  it("does not ask for Manager PIN when Install update is pointed at an installer exe", async () => {
-    updateStatusMock.mockResolvedValue(updateStatus({ baselineRegistered: true }));
-    const requestManagerApproval = vi.fn();
-    const setNotice = vi.fn();
-
-    const { AppUpdatePanel } = await import("../renderer/components/advanced/advanced-view.js");
-    renderAppUpdatePanel(AppUpdatePanel, { requestManagerApproval, setNotice });
-
-    expect(await screen.findByText("App 0.1.0 · DB 10")).toBeTruthy();
-    fireEvent.change(screen.getByLabelText("Update package or current installer"), {
-      target: { value: "C:\\updates\\Gaurav POS Hub Setup 0.1.0.exe" }
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Install update" }));
-
-    await waitFor(() =>
-      expect(setNotice).toHaveBeenCalledWith({
-        tone: "bad",
-        text: "Install update requires a .gpos-update.zip package. Use the installer only for baseline registration."
-      })
-    );
-    expect(requestManagerApproval).not.toHaveBeenCalled();
-    expect(installUpdateMock).not.toHaveBeenCalled();
-  });
-
-  it("checks GitHub releases and installs an available update with Manager PIN", async () => {
-    updateStatusMock.mockResolvedValue(updateStatus({ baselineRegistered: true }));
-    githubUpdateLatestMock.mockResolvedValue(githubUpdate({ status: "update_available" }));
-    installGithubUpdateMock.mockResolvedValue({
-      installing: true,
-      backup: { fileName: "pre-update.sqlite" },
-      package: {},
-      recoveryScriptPath: "recovery.cmd"
-    });
-    const requestManagerApproval = vi.fn().mockResolvedValue({ pin: "1234", reason: "Install GitHub update", approvedBy: "admin" });
-
-    const { AppUpdatePanel } = await import("../renderer/components/advanced/advanced-view.js");
-    renderAppUpdatePanel(AppUpdatePanel, { requestManagerApproval });
-
-    expect(await screen.findByText("App 0.1.0 · DB 10")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Check GitHub for update" }));
-
-    expect(await screen.findByText("GitHub update available: 0.2.0")).toBeTruthy();
-    expect(screen.getByText("Gaurav POS Hub-0.2.0.gpos-update.zip · 2 MB")).toBeTruthy();
-
-    fireEvent.click(screen.getByRole("button", { name: "Install GitHub update" }));
-
-    await waitFor(() => expect(requestManagerApproval).toHaveBeenCalledWith(expect.objectContaining({ title: "Install GitHub update" })));
-    await waitFor(() => expect(installGithubUpdateMock).toHaveBeenCalledWith({
-      tagName: "hub-v0.2.0",
-      assetName: "Gaurav POS Hub-0.2.0.gpos-update.zip",
-      expectedVersion: "0.2.0"
-    }, "1234"));
-  });
-
-  it("shows exact GitHub update errors", async () => {
-    updateStatusMock.mockResolvedValue(updateStatus({ baselineRegistered: true }));
-    githubUpdateLatestMock.mockRejectedValue(new Error("GitHub unreachable"));
+  it("shows when the online updater reports the app is already current", async () => {
+    updateStatusMock.mockResolvedValue(updateStatus());
+    installOnlineUpdateMock.mockResolvedValue({ status: "up_to_date", currentVersion: "0.1.0" });
     const setNotice = vi.fn();
 
     const { AppUpdatePanel } = await import("../renderer/components/advanced/advanced-view.js");
     renderAppUpdatePanel(AppUpdatePanel, { setNotice });
 
     expect(await screen.findByText("App 0.1.0 · DB 10")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Check GitHub for update" }));
+    fireEvent.click(screen.getByRole("button", { name: "Update app" }));
 
-    await waitFor(() => expect(setNotice).toHaveBeenCalledWith({ tone: "bad", text: "GitHub unreachable" }));
+    await waitFor(() => expect(setNotice).toHaveBeenCalledWith({ tone: "good", text: "Hub is up to date: 0.1.0" }));
+  });
+
+  it("shows exact online update errors", async () => {
+    updateStatusMock.mockResolvedValue(updateStatus());
+    installOnlineUpdateMock.mockRejectedValue(new Error("GitHub update feed unavailable"));
+    const setNotice = vi.fn();
+
+    const { AppUpdatePanel } = await import("../renderer/components/advanced/advanced-view.js");
+    renderAppUpdatePanel(AppUpdatePanel, { setNotice });
+
+    expect(await screen.findByText("App 0.1.0 · DB 10")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Update app" }));
+
+    await waitFor(() => expect(setNotice).toHaveBeenCalledWith({ tone: "bad", text: "GitHub update feed unavailable" }));
   });
 });
 
 function renderAppUpdatePanel(
   AppUpdatePanel: ComponentType<{
     setNotice: NoticeSetter;
-    requestManagerApproval: ManagerApprovalRequest;
   }>,
   options: {
     setNotice?: NoticeSetter;
-    requestManagerApproval?: ManagerApprovalRequest;
   } = {}
 ) {
   const queryClient = new QueryClient({
@@ -261,47 +119,24 @@ function renderAppUpdatePanel(
   });
   return render(
     <QueryClientProvider client={queryClient}>
-      <AppUpdatePanel
-        setNotice={options.setNotice ?? vi.fn()}
-        requestManagerApproval={options.requestManagerApproval ?? vi.fn()}
-      />
+      <AppUpdatePanel setNotice={options.setNotice ?? vi.fn()} />
     </QueryClientProvider>
   );
 }
 
-function updateStatus(overrides: { baselineRegistered: boolean; activeOrderCount?: number }) {
+function updateStatus(overrides: { activeOrderCount?: number } = {}) {
   return {
     appVersion: "0.1.0",
     dbSchemaVersion: 10,
     activeOrderCount: overrides.activeOrderCount ?? 0,
-    baselineRegistered: overrides.baselineRegistered,
-    rollbackAvailable: false,
-    current: overrides.baselineRegistered ? { version: "0.1.0" } : undefined,
-    previous: undefined
-  };
-}
-
-function githubUpdate(overrides: { status: "up_to_date" | "update_available" | "unavailable" }) {
-  return {
-    status: overrides.status,
-    currentVersion: "0.1.0",
-    latestVersion: overrides.status === "update_available" ? "0.2.0" : "0.1.0",
-    release: {
-      tagName: "hub-v0.2.0",
-      title: "Hub 0.2.0",
-      url: "https://github.com/shubham909090/Open-POS/releases/tag/hub-v0.2.0",
-      publishedAt: "2026-05-20T00:00:00Z",
-      notes: "Release notes"
-    },
-    asset: {
-      name: "Gaurav POS Hub-0.2.0.gpos-update.zip",
-      sizeBytes: 2 * 1024 * 1024,
-      downloadUrl: "https://github.com/download"
-    },
-    installRequest: {
-      tagName: "hub-v0.2.0",
-      assetName: "Gaurav POS Hub-0.2.0.gpos-update.zip",
-      expectedVersion: "0.2.0"
+    online: {
+      enabled: true,
+      status: "idle",
+      currentVersion: "0.1.0",
+      availableVersion: null,
+      downloadPercent: null,
+      message: null,
+      checkedAt: null
     }
   };
 }

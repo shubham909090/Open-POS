@@ -319,7 +319,6 @@ export function AdvancedView({
 
       <AppUpdatePanel
         setNotice={setNotice}
-        requestManagerApproval={requestManagerApproval}
       />
 
       <section className="panel danger-zone">

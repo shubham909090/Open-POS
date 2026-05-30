@@ -8,6 +8,7 @@ import { createRequire } from "node:module";
 import { z } from "zod";
 
 export const UPDATE_PACKAGE_MANIFEST = "gpos-update.json";
+export const ONLINE_UPDATE_METADATA = "hub-update-metadata.json";
 export const UPDATE_APP_ID = "in.gaurav.pos.hub";
 export const UPDATE_PLATFORM = "win32";
 export const UPDATE_ARCH = "x64";
@@ -49,6 +50,20 @@ export const updatePackageManifestSchema = z.object({
 
 export type UpdatePackageManifest = z.infer<typeof updatePackageManifestSchema>;
 
+export const onlineUpdateMetadataSchema = updatePackageManifestSchema.pick({
+  schemaVersion: true,
+  appId: true,
+  productName: true,
+  version: true,
+  platform: true,
+  arch: true,
+  dbSchemaVersion: true,
+  minSourceDbSchemaVersion: true,
+  createdAt: true
+});
+
+export type OnlineUpdateMetadata = z.infer<typeof onlineUpdateMetadataSchema>;
+
 export interface ValidatedUpdatePackage {
   packagePath: string;
   packageFileName: string;
@@ -84,22 +99,17 @@ export function validateUpdatePackage(packagePath: string, currentDbSchemaVersio
   const manifestEntry = zip.getEntry(UPDATE_PACKAGE_MANIFEST);
   if (!manifestEntry) throw new Error("Update package is missing gpos-update.json");
   const manifest = updatePackageManifestSchema.parse(JSON.parse(manifestEntry.getData().toString("utf8")));
-  if (currentDbSchemaVersion < manifest.minSourceDbSchemaVersion) {
-    throw new Error(`Update requires DB schema ${manifest.minSourceDbSchemaVersion}, current DB schema is ${currentDbSchemaVersion}`);
-  }
-  if (manifest.dbSchemaVersion < currentDbSchemaVersion) {
-    throw new Error(`Update DB schema ${manifest.dbSchemaVersion} is older than current DB schema ${currentDbSchemaVersion}`);
-  }
+  validateUpdateMetadataCompatibility(manifest, currentDbSchemaVersion);
 
   const installerEntry = zip.getEntry(manifest.installer.fileName);
   if (!installerEntry) throw new Error("Update package is missing installer");
-	  const installerBytes = installerEntry.getData();
-	  if (installerBytes.length !== manifest.installer.sizeBytes || sha256(installerBytes) !== manifest.installer.sha256) {
-	    throw new Error("Installer checksum mismatch");
-	  }
-	  if (installerBytes.length < 2 || installerBytes.toString("ascii", 0, 2) !== "MZ") {
-	    throw new Error("Installer is not a Windows executable");
-	  }
+  const installerBytes = installerEntry.getData();
+  if (installerBytes.length !== manifest.installer.sizeBytes || sha256(installerBytes) !== manifest.installer.sha256) {
+    throw new Error("Installer checksum mismatch");
+  }
+  if (installerBytes.length < 2 || installerBytes.toString("ascii", 0, 2) !== "MZ") {
+    throw new Error("Installer is not a Windows executable");
+  }
 
   const sqliteEntry = zip.getEntry(manifest.sqliteNative.fileName);
   if (!sqliteEntry) throw new Error("Update package is missing packaged SQLite native binary");
@@ -117,6 +127,24 @@ export function validateUpdatePackage(packagePath: string, currentDbSchemaVersio
     installerBytes,
     sqliteNativeBytes
   };
+}
+
+export function validateOnlineUpdateMetadata(value: unknown, currentDbSchemaVersion: number, expectedVersion?: string): OnlineUpdateMetadata {
+  const metadata = onlineUpdateMetadataSchema.parse(value);
+  if (expectedVersion && metadata.version !== expectedVersion) {
+    throw new Error(`Update metadata version ${metadata.version} does not match updater version ${expectedVersion}`);
+  }
+  validateUpdateMetadataCompatibility(metadata, currentDbSchemaVersion);
+  return metadata;
+}
+
+function validateUpdateMetadataCompatibility(metadata: OnlineUpdateMetadata, currentDbSchemaVersion: number): void {
+  if (currentDbSchemaVersion < metadata.minSourceDbSchemaVersion) {
+    throw new Error(`Update requires DB schema ${metadata.minSourceDbSchemaVersion}, current DB schema is ${currentDbSchemaVersion}`);
+  }
+  if (metadata.dbSchemaVersion < currentDbSchemaVersion) {
+    throw new Error(`Update DB schema ${metadata.dbSchemaVersion} is older than current DB schema ${currentDbSchemaVersion}`);
+  }
 }
 
 export function validateInstallerContainsSQLiteNative(installerBytes: Buffer, expectedSha256: string): void {

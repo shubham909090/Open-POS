@@ -7,8 +7,8 @@ import { readAppMetadata } from "../app-metadata.js";
 import type { BackupService, BackupSummary } from "../db/backup-service.js";
 import type { HubDatabase } from "../db/database.js";
 import { DomainError } from "../domain/errors.js";
-import type { UpdatePackageManifest } from "./update-package.js";
-import { PACKAGED_SQLITE_NATIVE_PATH, UPDATE_APP_ID, sha256, validateUpdatePackage, validateWindowsX64NativeModule } from "./update-package.js";
+import type { OnlineUpdateMetadata, UpdatePackageManifest } from "./update-package.js";
+import { PACKAGED_SQLITE_NATIVE_PATH, UPDATE_APP_ID, sha256, validateOnlineUpdateMetadata, validateUpdatePackage, validateWindowsX64NativeModule } from "./update-package.js";
 import { GithubUpdateSource, compareVersions, type GithubFetch, type GithubUpdateCheckResult, type GithubUpdateInstallRequest } from "./github-update-source.js";
 export type { GithubFetch, GithubFetchResponse, GithubRelease, GithubReleaseAsset, GithubUpdateCheckResult, GithubUpdateCheckStatus, GithubUpdateInstallRequest } from "./github-update-source.js";
 
@@ -40,6 +40,7 @@ export interface AppUpdateStatus {
   appVersion: string;
   dbSchemaVersion: number;
   activeOrderCount: number;
+  online: OnlineUpdateState;
   baselineRegistered: boolean;
   rollbackAvailable: boolean;
   current?: CachedUpdatePackage;
@@ -55,7 +56,49 @@ export interface ValidatedPackageResult {
   manifest: UpdatePackageManifest;
 }
 
+export type OnlineUpdateStateStatus =
+  | "disabled"
+  | "idle"
+  | "checking"
+  | "available"
+  | "downloading"
+  | "downloaded"
+  | "installing"
+  | "up_to_date"
+  | "error";
+
+export interface OnlineUpdateState {
+  enabled: boolean;
+  status: OnlineUpdateStateStatus;
+  currentVersion: string;
+  availableVersion: string | null;
+  downloadPercent: number | null;
+  message: string | null;
+  checkedAt: string | null;
+  lastBackupFileName?: string;
+}
+
+export interface OnlineUpdateCheckResult {
+  updateAvailable: boolean;
+  version?: string;
+}
+
+export interface OnlineAppUpdater {
+  checkForUpdates(): Promise<OnlineUpdateCheckResult>;
+  readUpdateMetadata(version: string): Promise<OnlineUpdateMetadata>;
+  downloadUpdate(): Promise<void>;
+  quitAndInstall(): void;
+  onDownloadProgress?(handler: (percent: number) => void): void;
+}
+
+export type OnlineUpdateInstallResult =
+  | { status: "up_to_date"; currentVersion: string }
+  | { installing: true; backup: BackupSummary; version: string };
+
 export class AppUpdateService {
+  private onlineState: OnlineUpdateState;
+  private onlineUpdateRunning = false;
+
   constructor(
     private readonly input: {
       database: HubDatabase;
@@ -66,10 +109,19 @@ export class AppUpdateService {
       databasePath: string;
       sqliteNativePath?: string;
       githubFetch?: GithubFetch;
+      onlineUpdater?: OnlineAppUpdater;
       launchInstaller?: (installerPath: string) => Promise<void> | void;
       exitApp?: () => void;
     }
   ) {
+    this.onlineState = createOnlineState(this.input.appVersion, Boolean(this.input.onlineUpdater));
+    this.input.onlineUpdater?.onDownloadProgress?.((percent) => {
+      this.setOnlineState({
+        status: "downloading",
+        downloadPercent: Math.max(0, Math.min(100, Math.round(percent))),
+        message: null
+      });
+    });
     mkdirSync(this.input.updateDir, { recursive: true });
     this.completePendingInstall();
   }
@@ -80,6 +132,7 @@ export class AppUpdateService {
       appVersion: this.input.appVersion,
       dbSchemaVersion: this.input.dbSchemaVersion,
       activeOrderCount: this.activeOrderCount(),
+      online: this.onlineState,
       baselineRegistered: state.current?.version === this.input.appVersion,
       rollbackAvailable: Boolean(state.previous && existsSync(state.previous.installerPath) && existsSync(state.previous.preUpdateBackupPath)),
       ...state
@@ -214,6 +267,54 @@ export class AppUpdateService {
     return this.installUpdate(candidate.validated.packagePath);
   }
 
+  async installOnlineUpdate(): Promise<OnlineUpdateInstallResult> {
+    const onlineUpdater = this.input.onlineUpdater;
+    if (!onlineUpdater) throw new DomainError("Online app updates are not available in this build", 503);
+    if (this.onlineUpdateRunning) throw new DomainError("App update already in progress", 409);
+
+    const activeOrderCount = this.activeOrderCount();
+    if (activeOrderCount > 0) throw new DomainError(`Close or settle ${activeOrderCount} running order(s) before installing update`, 400);
+
+    this.onlineUpdateRunning = true;
+    try {
+      const checkedAt = new Date().toISOString();
+      this.setOnlineState({ status: "checking", checkedAt, message: null, downloadPercent: null, availableVersion: null });
+      const check = await onlineUpdater.checkForUpdates();
+      if (!check.updateAvailable) {
+        this.setOnlineState({ status: "up_to_date", checkedAt, message: null, availableVersion: null, downloadPercent: null });
+        return { status: "up_to_date", currentVersion: this.input.appVersion };
+      }
+
+      if (!check.version) throw new DomainError("Online update metadata is unavailable because the updater did not report a version", 400);
+      const version = check.version;
+      this.setOnlineState({ status: "available", checkedAt, availableVersion: version, message: null });
+      try {
+        validateOnlineUpdateMetadata(await onlineUpdater.readUpdateMetadata(version), this.input.dbSchemaVersion, version);
+      } catch (error) {
+        throw new DomainError(error instanceof Error ? error.message : "Online update metadata is invalid", 400);
+      }
+      this.setOnlineState({ status: "downloading", downloadPercent: 0, message: null });
+      await onlineUpdater.downloadUpdate();
+      this.setOnlineState({ status: "downloaded", downloadPercent: 100, message: null });
+
+      const finalActiveOrderCount = this.activeOrderCount();
+      if (finalActiveOrderCount > 0) throw new DomainError(`Close or settle ${finalActiveOrderCount} running order(s) before installing update`, 400);
+      this.input.database.integrityCheck();
+      const backup = await this.input.backupService.createBackup(`pre-update-${this.input.appVersion}-to-${version}`);
+      this.setOnlineState({ status: "installing", lastBackupFileName: backup.fileName, message: null });
+      onlineUpdater.quitAndInstall();
+      this.onlineUpdateRunning = true;
+      return { installing: true, backup, version };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Online update failed";
+      this.setOnlineState({ status: "error", message });
+      if (error instanceof DomainError) throw error;
+      throw new DomainError(message, 400);
+    } finally {
+      if (this.onlineState.status !== "installing") this.onlineUpdateRunning = false;
+    }
+  }
+
   private cachePackage(validated: ReturnType<typeof validateUpdatePackage>): CachedUpdatePackage {
     const cacheRoot = this.safeCacheRoot(validated.manifest.version);
     mkdirSync(cacheRoot, { recursive: true });
@@ -306,6 +407,10 @@ export class AppUpdateService {
     writeFileSync(this.statePath(), JSON.stringify(state, null, 2));
   }
 
+  private setOnlineState(patch: Partial<OnlineUpdateState>): void {
+    this.onlineState = { ...this.onlineState, ...patch };
+  }
+
   private statePath(): string {
     return join(this.input.updateDir, STATE_FILE);
   }
@@ -371,4 +476,16 @@ function readBaselineFile(path: string, label: string): Buffer {
 
 function resolveInstalledSqliteNativePath(): string {
   return require.resolve("better-sqlite3/build/Release/better_sqlite3.node");
+}
+
+function createOnlineState(appVersion: string, enabled: boolean): OnlineUpdateState {
+  return {
+    enabled,
+    status: enabled ? "idle" : "disabled",
+    currentVersion: appVersion,
+    availableVersion: null,
+    downloadPercent: null,
+    message: enabled ? null : "Online app updates are not available in this build",
+    checkedAt: null
+  };
 }

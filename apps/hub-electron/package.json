@@ -1,6 +1,6 @@
 {
   "name": "@gaurav-pos/hub-electron",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "description": "Offline-first restaurant POS hub for Windows.",
   "author": "Gaurav POS",
   "private": true,
@@ -24,6 +24,7 @@
     "typecheck": "pnpm --filter @gaurav-pos/shared build && tsc --noEmit"
   },
   "dependencies": {
+    "7zip-bin": "5.2.0",
     "@fastify/merge-json-schemas": "0.2.1",
     "@fastify/static": "^9.1.3",
     "@fastify/websocket": "^11.0.1",
@@ -43,6 +44,7 @@
     "clsx": "^2.1.1",
     "dequal": "2.0.3",
     "drizzle-orm": "^0.45.2",
+    "electron-updater": "^6.8.3",
     "fast-json-stringify": "6.4.0",
     "fast-uri": "3.1.2",
     "fastify": "^5.3.3",
@@ -55,8 +57,7 @@
     "tailwind-merge": "^3.6.0",
     "wrappy": "^1.0.2",
     "zod": "^3.24.4",
-    "zustand": "^5.0.13",
-    "7zip-bin": "5.2.0"
+    "zustand": "^5.0.13"
   },
   "devDependencies": {
     "@testing-library/react": "^16.3.2",
@@ -82,6 +83,14 @@
   "build": {
     "appId": "in.gaurav.pos.hub",
     "productName": "Gaurav POS Hub",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "shubham909090",
+        "repo": "Open-POS",
+        "releaseType": "release"
+      }
+    ],
     "directories": {
       "output": "release"
     },
@@ -111,9 +120,9 @@
       "identity": null
     },
     "nsis": {
-      "oneClick": false,
+      "oneClick": true,
       "perMachine": false,
-      "allowToChangeInstallationDirectory": true,
+      "allowToChangeInstallationDirectory": false,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "Gaurav POS Hub"

@@ -36,6 +36,7 @@ export function registerMaintenanceRoutes({ app, input, auth }: HubRouteContext)
   });
 
   app.get("/system/update/status", { preHandler: adminOnly }, async () => requireAppUpdateService().status());
+  app.post("/system/update/online/install", { preHandler: adminOnly }, async () => requireAppUpdateService().installOnlineUpdate());
   app.get("/system/update/github/latest", { preHandler: adminOnly }, async () => requireAppUpdateService().checkGithubLatest());
   app.post("/system/update/validate", { preHandler: adminOnly }, async (request) => {
     const body = updatePackagePathSchema.parse(request.body);

@@ -1,10 +1,10 @@
 import AdmZip from "adm-zip";
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { currentDbSchemaVersion } from "../src/db/schema-version.js";
 import { readAppMetadata } from "../src/app-metadata.js";
-import { PACKAGED_SQLITE_NATIVE_PATH, UPDATE_APP_ID, sha256, validateInstallerContainsSQLiteNative, validateWindowsX64NativeModule, type UpdatePackageManifest } from "../src/update/update-package.js";
+import { ONLINE_UPDATE_METADATA, PACKAGED_SQLITE_NATIVE_PATH, UPDATE_APP_ID, sha256, validateInstallerContainsSQLiteNative, validateWindowsX64NativeModule, type UpdatePackageManifest } from "../src/update/update-package.js";
 
 const root = process.cwd();
 const releaseDir = join(root, "release");
@@ -26,6 +26,7 @@ const sqliteNativePath = join(
   "better_sqlite3.node"
 );
 const packagePath = join(releaseDir, `${productName}-${metadata.version}.gpos-update.zip`);
+const onlineMetadataPath = join(releaseDir, ONLINE_UPDATE_METADATA);
 
 run("pnpm", ["build"]);
 run("electron-builder", ["--win", "nsis", "--x64"]);
@@ -84,9 +85,25 @@ zip.addFile("gpos-update.json", Buffer.from(JSON.stringify(manifest, null, 2), "
 zip.addFile(installerName, installerBytes);
 zip.addFile(manifest.sqliteNative.fileName, sqliteBytes);
 zip.writeZip(packagePath);
+writeFileSync(onlineMetadataPath, JSON.stringify(toOnlineMetadata(manifest), null, 2));
 console.log(`Created ${packagePath}`);
+console.log(`Created ${onlineMetadataPath}`);
 
 function run(command: string, args: string[]) {
   const result = spawnSync(command, args, { cwd: root, stdio: "inherit", shell: process.platform === "win32" });
   if (result.status !== 0) throw new Error(`${command} ${args.join(" ")} failed`);
+}
+
+function toOnlineMetadata(manifest: UpdatePackageManifest) {
+  return {
+    schemaVersion: manifest.schemaVersion,
+    appId: manifest.appId,
+    productName: manifest.productName,
+    version: manifest.version,
+    platform: manifest.platform,
+    arch: manifest.arch,
+    dbSchemaVersion: manifest.dbSchemaVersion,
+    minSourceDbSchemaVersion: manifest.minSourceDbSchemaVersion,
+    createdAt: manifest.createdAt
+  };
 }

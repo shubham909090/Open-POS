@@ -8,10 +8,96 @@ import { HubDatabase } from "../db/database.js";
 import { currentDbSchemaVersion } from "../db/schema-version.js";
 import { AuthService } from "../domain/auth-service.js";
 import { OrderService } from "../domain/order-service.js";
-import { AppUpdateService } from "../update/app-update-service.js";
-import { PACKAGED_SQLITE_NATIVE_PATH, sha256, type UpdatePackageManifest } from "../update/update-package.js";
+import { AppUpdateService, type OnlineAppUpdater } from "../update/app-update-service.js";
+import { PACKAGED_SQLITE_NATIVE_PATH, sha256, type OnlineUpdateMetadata, type UpdatePackageManifest } from "../update/update-package.js";
 
 describe("AppUpdateService", () => {
+  it("blocks one-click online update while running orders exist", async () => {
+    const fixture = createFixture();
+    const onlineUpdater = createOnlineUpdater();
+    const service = createService(fixture, { onlineUpdater });
+    fixture.orderService.submitOrder({
+      tableId: "table-t1",
+      captainId: "waiter-1",
+      pax: 2,
+      orderType: "dine_in",
+      items: [{ menuItemId: "item-paneer-tikka", quantity: 1 }]
+    });
+
+    await expect(service.installOnlineUpdate()).rejects.toThrow("running order");
+
+    expect(onlineUpdater.checkForUpdates).not.toHaveBeenCalled();
+    expect(onlineUpdater.downloadUpdate).not.toHaveBeenCalled();
+    expect(onlineUpdater.quitAndInstall).not.toHaveBeenCalled();
+
+    fixture.close();
+  });
+
+  it("creates a pre-update backup before installing a one-click online update", async () => {
+    const fixture = createFixture();
+    const onlineUpdater = createOnlineUpdater({ availableVersion: "0.2.0" });
+    const service = createService(fixture, { onlineUpdater });
+
+    const result = await service.installOnlineUpdate();
+
+    expect(result).toMatchObject({ installing: true, version: "0.2.0" });
+    if (!("installing" in result)) throw new Error("Expected online update install to start");
+    expect(existsSync(result.backup.path)).toBe(true);
+    expect(onlineUpdater.checkForUpdates).toHaveBeenCalledTimes(1);
+    expect(onlineUpdater.downloadUpdate).toHaveBeenCalledTimes(1);
+    expect(onlineUpdater.quitAndInstall).toHaveBeenCalledTimes(1);
+    expect(service.status().online.status).toBe("installing");
+
+    fixture.close();
+  });
+
+  it("rejects a one-click online update with incompatible DB metadata before downloading or backing up", async () => {
+    const fixture = createFixture();
+    const onlineUpdater = createOnlineUpdater({
+      availableVersion: "0.2.0",
+      metadata: { minSourceDbSchemaVersion: currentDbSchemaVersion() + 1 }
+    });
+    const service = createService(fixture, { onlineUpdater });
+
+    await expect(service.installOnlineUpdate()).rejects.toThrow(`Update requires DB schema ${currentDbSchemaVersion() + 1}`);
+
+    expect(onlineUpdater.readUpdateMetadata).toHaveBeenCalledWith("0.2.0");
+    expect(onlineUpdater.downloadUpdate).not.toHaveBeenCalled();
+    expect(onlineUpdater.quitAndInstall).not.toHaveBeenCalled();
+    expect(existsSync(fixture.backupDir) ? readdirSync(fixture.backupDir) : []).toEqual([]);
+
+    fixture.close();
+  });
+
+  it("keeps one-click online update locked after handing off to installer", async () => {
+    const fixture = createFixture();
+    const onlineUpdater = createOnlineUpdater({ availableVersion: "0.2.0" });
+    const service = createService(fixture, { onlineUpdater });
+
+    await service.installOnlineUpdate();
+
+    await expect(service.installOnlineUpdate()).rejects.toThrow("already in progress");
+    expect(onlineUpdater.checkForUpdates).toHaveBeenCalledTimes(1);
+    expect(onlineUpdater.quitAndInstall).toHaveBeenCalledTimes(1);
+
+    fixture.close();
+  });
+
+  it("reports up to date when the one-click online updater finds no newer version", async () => {
+    const fixture = createFixture();
+    const onlineUpdater = createOnlineUpdater({ updateAvailable: false });
+    const service = createService(fixture, { onlineUpdater });
+
+    const result = await service.installOnlineUpdate();
+
+    expect(result).toEqual({ status: "up_to_date", currentVersion: "0.1.0" });
+    expect(onlineUpdater.downloadUpdate).not.toHaveBeenCalled();
+    expect(onlineUpdater.quitAndInstall).not.toHaveBeenCalled();
+    expect(service.status().online.status).toBe("up_to_date");
+
+    fixture.close();
+  });
+
   it("blocks update install while running orders exist", async () => {
     const fixture = createFixture();
     const service = createService(fixture);
@@ -262,6 +348,30 @@ function createService(
     exitApp: () => undefined,
     ...overrides
   });
+}
+
+function createOnlineUpdater(input: { updateAvailable?: boolean; availableVersion?: string; metadata?: Record<string, unknown> } = {}): OnlineAppUpdater {
+  const version = input.availableVersion ?? "0.2.0";
+  return {
+    checkForUpdates: vi.fn(async () => ({
+      updateAvailable: input.updateAvailable ?? true,
+      version
+    })),
+    readUpdateMetadata: vi.fn(async () => ({
+      schemaVersion: 1,
+      appId: "in.gaurav.pos.hub",
+      productName: "Gaurav POS Hub",
+      version,
+      platform: "win32",
+      arch: "x64",
+      dbSchemaVersion: currentDbSchemaVersion(),
+      minSourceDbSchemaVersion: 0,
+      createdAt: new Date().toISOString(),
+      ...(input.metadata ?? {})
+    }) as OnlineUpdateMetadata),
+    downloadUpdate: vi.fn(async () => undefined),
+    quitAndInstall: vi.fn()
+  };
 }
 
 function writePackage(root: string, version: string, patch: PartialDeep<Record<string, unknown>> = {}) {

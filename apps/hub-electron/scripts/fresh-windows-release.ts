@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { currentDbSchemaVersion } from "../src/db/schema-version.js";
 import { readAppMetadata } from "../src/app-metadata.js";
 import {
+  ONLINE_UPDATE_METADATA,
   PACKAGED_SQLITE_NATIVE_PATH,
   UPDATE_APP_ID,
   sha256,
@@ -72,19 +73,29 @@ validatePreloadBridge();
 createCleanReleaseFolder();
 const manifest = validateFinalPackage();
 const installerName = `${manifest.productName} Setup ${manifest.version}.exe`;
+const installerBlockmapName = `${installerName}.blockmap`;
 const packageName = `${manifest.productName}-${manifest.version}.gpos-update.zip`;
 const installerPath = join(hubRoot, "release", installerName);
+const installerBlockmapPath = join(hubRoot, "release", installerBlockmapName);
 const packagePath = join(hubRoot, "release", packageName);
+const latestYmlPath = join(hubRoot, "release", "latest.yml");
+const onlineMetadataPath = join(hubRoot, "release", ONLINE_UPDATE_METADATA);
 
 console.log("");
 console.log("Fresh Hub Windows release created:");
 console.log(`- ${installerPath}`);
+console.log(`- ${installerBlockmapPath}`);
+console.log(`- ${latestYmlPath}`);
+console.log(`- ${onlineMetadataPath}`);
 console.log(`- ${packagePath}`);
 console.log(`- DB schema: ${manifest.dbSchemaVersion}`);
 console.log(`- SQLite native: ${manifest.sqliteNative.format}`);
 console.log("");
 console.log("SHA-256:");
 console.log(`${sha256(readFileSync(installerPath))}  ${installerName}`);
+console.log(`${sha256(readFileSync(installerBlockmapPath))}  ${installerBlockmapName}`);
+console.log(`${sha256(readFileSync(latestYmlPath))}  latest.yml`);
+console.log(`${sha256(readFileSync(onlineMetadataPath))}  ${ONLINE_UPDATE_METADATA}`);
 console.log(`${sha256(readFileSync(packagePath))}  ${packageName}`);
 
 if (publish) {
@@ -187,6 +198,7 @@ function createUpdatePackage(): void {
     installer: { fileName: installerName, sha256: sha256(installerBytes), sizeBytes: statSync(installerPath).size },
     sqliteNative: { fileName: PACKAGED_SQLITE_NATIVE_PATH, sha256: sha256(nativeBytes), sizeBytes: statSync(nativePath).size, format: "pe32plus-x64" }
   };
+  writeFileSync(join(releaseDir, ONLINE_UPDATE_METADATA), JSON.stringify(toOnlineMetadata(manifest), null, 2));
   const zip = new AdmZip();
   zip.addFile("gpos-update.json", Buffer.from(JSON.stringify(manifest, null, 2), "utf8"));
   zip.addFile(installerName, installerBytes);
@@ -211,15 +223,45 @@ function validatePreloadBridge(): void {
 
 function createCleanReleaseFolder(): void {
   const metadata = readAppMetadata();
-  const keep = new Set([`${metadata.productName} Setup ${metadata.version}.exe`, `${metadata.productName}-${metadata.version}.gpos-update.zip`]);
+  const installerName = `${metadata.productName} Setup ${metadata.version}.exe`;
+  const keep = new Set([
+    installerName,
+    `${installerName}.blockmap`,
+    "latest.yml",
+    ONLINE_UPDATE_METADATA,
+    `${metadata.productName}-${metadata.version}.gpos-update.zip`
+  ]);
   const releaseDir = join(hubRoot, "release");
   for (const name of require("node:fs").readdirSync(releaseDir) as string[]) {
     if (!keep.has(name)) rmSync(join(releaseDir, name), { recursive: true, force: true });
+  }
+  for (const name of keep) {
+    const path = join(releaseDir, name);
+    if (!existsSync(path)) throw new Error(`Required release file missing: ${path}`);
   }
 }
 
 function validateFinalPackage(): UpdatePackageManifest {
   const metadata = readAppMetadata();
   const packagePath = join(hubRoot, "release", `${metadata.productName}-${metadata.version}.gpos-update.zip`);
-  return validateUpdatePackage(packagePath, currentDbSchemaVersion()).manifest;
+  const manifest = validateUpdatePackage(packagePath, currentDbSchemaVersion()).manifest;
+  const onlineMetadata = JSON.parse(readFileSync(join(hubRoot, "release", ONLINE_UPDATE_METADATA), "utf8")) as Record<string, unknown>;
+  for (const key of ["schemaVersion", "appId", "productName", "version", "platform", "arch", "dbSchemaVersion", "minSourceDbSchemaVersion"]) {
+    if (onlineMetadata[key] !== (manifest as unknown as Record<string, unknown>)[key]) throw new Error(`${ONLINE_UPDATE_METADATA} does not match package manifest field ${key}`);
+  }
+  return manifest;
+}
+
+function toOnlineMetadata(manifest: UpdatePackageManifest) {
+  return {
+    schemaVersion: manifest.schemaVersion,
+    appId: manifest.appId,
+    productName: manifest.productName,
+    version: manifest.version,
+    platform: manifest.platform,
+    arch: manifest.arch,
+    dbSchemaVersion: manifest.dbSchemaVersion,
+    minSourceDbSchemaVersion: manifest.minSourceDbSchemaVersion,
+    createdAt: manifest.createdAt
+  };
 }

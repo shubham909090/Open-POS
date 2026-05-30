@@ -20,6 +20,7 @@ import type {
   LocalDevice,
   ManagerApprovalPayload,
   MasterApprovalPayload,
+  OnlineUpdateInstallResult,
   PairingCodeResult,
   PrintLayoutSettings,
   PrintLayouts,
@@ -93,6 +94,7 @@ export const hubApi = {
   scheduleRestore: (fileName: string) =>
     apiFetch<{ scheduled: true; restartRequired: true; backup: BackupSummary }>("/backups/restore", { method: "POST", body: JSON.stringify({ fileName }) }),
   updateStatus: () => apiFetch<AppUpdateStatus>("/system/update/status"),
+  installOnlineUpdate: () => apiFetch<OnlineUpdateInstallResult>("/system/update/online/install", { method: "POST", body: JSON.stringify({}) }),
   githubUpdateLatest: () => apiFetch<GithubUpdateCheckResult>("/system/update/github/latest"),
   validateUpdatePackage: (packagePath: string) =>
     apiFetch<ValidatedUpdatePackage>("/system/update/validate", { method: "POST", body: JSON.stringify({ packagePath }) }),

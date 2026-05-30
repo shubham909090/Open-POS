@@ -13,6 +13,7 @@ import { DryRunPrinterAdapter, RoutedPrinterAdapter } from "./printing/escpos.js
 import { PrintJobService } from "./printing/print-job-service.js";
 import { ConvexSyncBridge } from "./sync/convex-sync.js";
 import { AppUpdateService } from "./update/app-update-service.js";
+import type { OnlineAppUpdater } from "./update/app-update-service.js";
 
 type SyncBridgeLike = Pick<ConvexSyncBridge, "pushPending" | "pullCloudSnapshot">;
 type SyncLogger = { warn: (error: unknown, message: string) => void };
@@ -35,7 +36,7 @@ export function createSyncTick(syncBridge: SyncBridgeLike, log: SyncLogger) {
   };
 }
 
-export async function startHub(options: { requestRestart?: () => void } = {}) {
+export async function startHub(options: { requestRestart?: () => void; onlineUpdater?: OnlineAppUpdater } = {}) {
   const config = loadHubConfig();
   BackupService.applyPendingReset(config.databasePath, config.backupDir);
   BackupService.applyPendingRestore(config.databasePath, config.backupDir);
@@ -55,6 +56,7 @@ export async function startHub(options: { requestRestart?: () => void } = {}) {
     appVersion: appMetadata.version,
     dbSchemaVersion: appSchemaVersion,
     databasePath: config.databasePath,
+    onlineUpdater: options.onlineUpdater,
     exitApp: () => {
       setTimeout(() => process.exit(0), 500).unref();
     }
