@@ -26,4 +26,13 @@ describe("Hub update release config", () => {
       allowToChangeInstallationDirectory: false
     });
   });
+
+  it("loads electron-updater through a CommonJS-safe import in packaged ESM", () => {
+    const updaterPath = fileURLToPath(new URL("../update/electron-online-updater.ts", import.meta.url));
+    const source = readFileSync(updaterPath, "utf8");
+
+    expect(source).not.toMatch(/import\s*\{\s*autoUpdater\s*\}\s*from\s*["']electron-updater["']/);
+    expect(source).toMatch(/import\s+\w+\s+from\s+["']electron-updater["']/);
+    expect(source).toMatch(/const\s*\{\s*autoUpdater\s*\}\s*=\s*\w+/);
+  });
 });

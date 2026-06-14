@@ -837,3 +837,15 @@
 - Installer handoff: online update lock remains held after `quitAndInstall()` handoff, and Electron startup reuses one Hub runtime/updater instance across window recreation.
 - Release workflow: fresh and publish scripts require `latest.yml`, installer `.exe`, `.exe.blockmap`, `hub-update-metadata.json`, and fallback `.gpos-update.zip`; publish dry-run validates metadata against the update package.
 - Verification: targeted update tests, full hub test suite, typecheck, fresh release dry build, publish dry-run, and `git diff --check` passed.
+
+## 2026-06-14 hub packaged updater import fix
+- Task: Fixed packaged Hub startup crash caused by ESM named import from CommonJS `electron-updater`.
+- Hub update: `apps/hub-electron/src/update/electron-online-updater.ts` now imports the `electron-updater` CommonJS package through the default export and destructures `autoUpdater`.
+- Regression guard: `apps/hub-electron/src/tests/app-update-release-config.test.ts` asserts packaged ESM updater code keeps the CommonJS-safe import shape.
+- Verification: targeted release config test, hub typecheck, and hub build passed.
+
+## 2026-06-14 hub 0.1.10 Windows release
+- Task: Created and published a fresh Windows Hub release after the packaged updater import fix.
+- Release: `apps/hub-electron/package.json` bumped to `0.1.10`; `docs/release-build-workflow.md` examples updated to the new Hub version.
+- Artifacts: regenerated installer, blockmap, `latest.yml`, `hub-update-metadata.json`, and fallback `.gpos-update.zip`; published GitHub release `hub-v0.1.10`.
+- Verification: `pnpm release:hub:fresh -- --publish` ran hub tests, typecheck, Windows build, SQLite native repair/validation, preload bridge validation, update package validation, GitHub dry-run, and publish.
