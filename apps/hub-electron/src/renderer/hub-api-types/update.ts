@@ -1,8 +1,15 @@
 export interface BackupSummary {
   fileName: string;
   path: string;
+  label: string;
+  kind: "manual" | "automatic";
   sizeBytes: number;
   createdAt: string;
+}
+
+export interface PendingRestoreSummary {
+  requestedAt: string;
+  backup: BackupSummary;
 }
 
 export interface UpdatePackageManifest {

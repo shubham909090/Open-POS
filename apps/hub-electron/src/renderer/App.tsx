@@ -276,7 +276,7 @@ function HubShell() {
             {view === "orders" ? <OrdersView bootstrap={bootstrap.data} setNotice={setNotice} requestManagerApproval={managerApproval.request} /> : null}
             {view === "alcohol" ? <AlcoholView bootstrap={bootstrap.data} setNotice={setNotice} requestManagerApproval={managerApproval.request} /> : null}
             {view === "kitchen" ? <KitchenView bootstrap={bootstrap.data} setNotice={setNotice} /> : null}
-            {view === "reports" ? <ReportsView /> : null}
+            {view === "reports" ? <ReportsView requestManagerApproval={managerApproval.request} /> : null}
             {view === "advanced" ? <AdvancedView bootstrap={bootstrap.data} setNotice={setNotice} requestManagerApproval={managerApproval.request} onLocked={lockHub} /> : null}
           </>
         ) : null}

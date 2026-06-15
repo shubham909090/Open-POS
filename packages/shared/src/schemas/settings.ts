@@ -135,7 +135,23 @@ export const createBackupSchema = z.object({
 });
 
 export const scheduleRestoreSchema = z.object({
-  fileName: z.string().trim().min(1).max(260)
+  fileName: z.string().trim().min(1).max(260),
+  confirmationText: z.string().min(1).max(260).optional(),
+  restartNow: z.boolean().default(false),
+  masterApproval: masterApprovalSchema.optional()
+});
+
+export const deleteBackupSchema = z.object({
+  confirmationText: z.string().min(1).max(260),
+  masterApproval: masterApprovalSchema.optional()
+});
+
+export const cancelPendingRestoreSchema = z.object({
+  masterApproval: masterApprovalSchema.optional()
+});
+
+export const restartPendingRestoreSchema = z.object({
+  masterApproval: masterApprovalSchema.optional()
 });
 
 export const fullResetSchema = z.object({
@@ -163,4 +179,7 @@ export type ExchangePairingCodeInput = z.infer<typeof exchangePairingCodeSchema>
 export type RevokeDeviceInput = z.infer<typeof revokeDeviceSchema>;
 export type CreateBackupInput = z.infer<typeof createBackupSchema>;
 export type ScheduleRestoreInput = z.infer<typeof scheduleRestoreSchema>;
+export type DeleteBackupInput = z.infer<typeof deleteBackupSchema>;
+export type CancelPendingRestoreInput = z.infer<typeof cancelPendingRestoreSchema>;
+export type RestartPendingRestoreInput = z.infer<typeof restartPendingRestoreSchema>;
 export type FullResetInput = z.infer<typeof fullResetSchema>;

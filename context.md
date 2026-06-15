@@ -731,7 +731,11 @@ Routes currently registered:
 - `POST /print-jobs/:id/retry`
 - `GET /backups`
 - `POST /backups`
+- `DELETE /backups/:fileName`
 - `POST /backups/restore`
+- `GET /backups/restore-pending`
+- `DELETE /backups/restore-pending`
+- `POST /backups/restore-pending/restart`
 
 ## Convex Schema
 
@@ -771,8 +775,10 @@ SQLite `hub_settings` stores:
 - receipt printer config
 - per-printer print layouts
 - Manager PIN hash
+- Master PIN hash
 
 The Manager PIN is hashed; the raw PIN cannot be read back. It unlocks setup and approves sensitive actions. The hub UI must not show scattered inline PIN fields: sensitive actions use the shared Manager Approval modal, and changing the Manager PIN locks setup so the new PIN must be entered again.
+The Master PIN is separate owner-grade approval for destructive backup/cloud controls.
 
 Full local reset:
 
@@ -799,11 +805,19 @@ Cloud/WorkOS envs are documented in `docs/workos-authkit-setup.md`.
 
 ## Backups
 
-Hub includes a backup service:
+Hub includes a local SQLite backup service:
 
-- list backups,
-- create backup,
-- schedule restore.
+- Manual Backup: an admin-created local SQLite `.sqlite` backup with an exact display label stored in a metadata sidecar. Manual backups appear in **Reports → Backups**, can be restored, and can be permanently deleted only with Master PIN plus exact filename confirmation.
+- Automatic Safety Backup: a protected local backup created by system workflows such as app update or restore (`pre-update-*`, `pre-restore-*`). These are intentionally hidden from the manual backup list and cannot be deleted through the manual delete API.
+- Pending Restore: a restore marker written after Master PIN approval and exact filename confirmation. The backup is applied on restart before SQLite opens; the current DB becomes a `pre-restore-*` safety backup first.
+
+Restore safety:
+
+- restore scheduling is blocked while any order is `open` or `billed`,
+- the selected backup is SQLite-integrity checked before scheduling,
+- startup validates the pending marker and backup before replacing the current DB,
+- corrupt pending markers are renamed aside and the current DB remains in place,
+- pending restore can be restarted now or cancelled before restart, both with Master PIN.
 
 Backups are local to the hub PC. Cloud Convex is not the SQLite backup mechanism.
 

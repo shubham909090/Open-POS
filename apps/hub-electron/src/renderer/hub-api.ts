@@ -22,6 +22,7 @@ import type {
   MasterApprovalPayload,
   OnlineUpdateInstallResult,
   PairingCodeResult,
+  PendingRestoreSummary,
   PrintLayoutSettings,
   PrintLayouts,
   PrintProcessSummary,
@@ -91,8 +92,18 @@ export const hubApi = {
     apiFetch<RangeReportDetail>(`/reports/range?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&includeBills=${includeBills ? "true" : "false"}`),
   backups: () => apiFetch<BackupSummary[]>("/backups"),
   createBackup: (label: string) => apiFetch<BackupSummary>("/backups", { method: "POST", body: JSON.stringify({ label }) }),
-  scheduleRestore: (fileName: string) =>
-    apiFetch<{ scheduled: true; restartRequired: true; backup: BackupSummary }>("/backups/restore", { method: "POST", body: JSON.stringify({ fileName }) }),
+  deleteBackup: (fileName: string, payload: { confirmationText: string; masterApproval: MasterApprovalPayload["masterApproval"] }) =>
+    apiFetch<{ deleted: true; fileName: string }>(`/backups/${encodeURIComponent(fileName)}`, { method: "DELETE", body: JSON.stringify(payload) }),
+  pendingRestore: () => apiFetch<PendingRestoreSummary | null>("/backups/restore-pending"),
+  cancelPendingRestore: (masterApproval: MasterApprovalPayload["masterApproval"]) =>
+    apiFetch<{ canceled: boolean }>("/backups/restore-pending", { method: "DELETE", body: JSON.stringify({ masterApproval }) }),
+  restartPendingRestore: (masterApproval: MasterApprovalPayload["masterApproval"]) =>
+    apiFetch<{ restarting: true; pendingRestore: PendingRestoreSummary }>("/backups/restore-pending/restart", {
+      method: "POST",
+      body: JSON.stringify({ masterApproval })
+    }),
+  scheduleRestore: (payload: { fileName: string; confirmationText: string; restartNow?: boolean; masterApproval: MasterApprovalPayload["masterApproval"] }) =>
+    apiFetch<{ scheduled: true; restartRequired: true; restartNow: boolean; backup: BackupSummary }>("/backups/restore", { method: "POST", body: JSON.stringify(payload) }),
   updateStatus: () => apiFetch<AppUpdateStatus>("/system/update/status"),
   installOnlineUpdate: () => apiFetch<OnlineUpdateInstallResult>("/system/update/online/install", { method: "POST", body: JSON.stringify({}) }),
   githubUpdateLatest: () => apiFetch<GithubUpdateCheckResult>("/system/update/github/latest"),

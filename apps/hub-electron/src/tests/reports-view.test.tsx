@@ -6,6 +6,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 const historyEditBillMock = vi.fn();
 const billPrintersMock = vi.fn();
 const rangeReportMock = vi.fn();
+const backupsMock = vi.fn();
+const pendingRestoreMock = vi.fn();
+const createBackupMock = vi.fn();
+const scheduleRestoreMock = vi.fn();
+const deleteBackupMock = vi.fn();
+const cancelPendingRestoreMock = vi.fn();
+const restartPendingRestoreMock = vi.fn();
 
 describe("reports history payment edit", () => {
   afterEach(() => {
@@ -15,6 +22,13 @@ describe("reports history payment edit", () => {
     historyEditBillMock.mockReset();
     billPrintersMock.mockReset();
     rangeReportMock.mockReset();
+    backupsMock.mockReset();
+    pendingRestoreMock.mockReset();
+    createBackupMock.mockReset();
+    scheduleRestoreMock.mockReset();
+    deleteBackupMock.mockReset();
+    cancelPendingRestoreMock.mockReset();
+    restartPendingRestoreMock.mockReset();
   });
 
   it("requires exact edited payment split and sends shared reference with history edit", async () => {
@@ -74,6 +88,86 @@ describe("reports history payment edit", () => {
 
     await waitFor(() => expect(rangeReportMock).toHaveBeenCalledWith(expect.any(String), expect.any(String), true));
   });
+
+  it("creates manual backups and guards restore and delete with filename confirmation", async () => {
+    const backup = manualBackup();
+    const approval = { pin: "9876", reason: "Backup action", approvedBy: "owner" };
+    const requestManagerApproval = vi.fn().mockResolvedValue(approval);
+    backupsMock.mockResolvedValue([backup]);
+    pendingRestoreMock.mockResolvedValue(null);
+    createBackupMock.mockResolvedValue({ ...backup, label: "Before tax change" });
+    scheduleRestoreMock.mockResolvedValue({ scheduled: true, restartRequired: true, restartNow: false, backup });
+    deleteBackupMock.mockResolvedValue({ deleted: true, fileName: backup.fileName });
+
+    const { ReportsView } = await importReportsView();
+    renderReportsView(ReportsView, { requestManagerApproval });
+
+    fireEvent.click(await screen.findByRole("tab", { name: "Backups" }));
+    expect(await screen.findByText("Before festival menu")).toBeTruthy();
+    expect(screen.getByText(backup.fileName)).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText("Backup name"), { target: { value: "Before tax change" } });
+    fireEvent.click(screen.getByRole("button", { name: /Create backup/ }));
+    await waitFor(() => expect(createBackupMock).toHaveBeenCalledWith("Before tax change"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Restore" }));
+    const scheduleButton = screen.getByRole("button", { name: "Schedule restore" });
+    expect((scheduleButton as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText("Filename confirmation"), { target: { value: backup.fileName } });
+    expect((scheduleButton as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(scheduleButton);
+
+    await waitFor(() => expect(scheduleRestoreMock).toHaveBeenCalledWith({
+      fileName: backup.fileName,
+      confirmationText: backup.fileName,
+      restartNow: false,
+      masterApproval: approval,
+    }));
+    expect(requestManagerApproval).toHaveBeenCalledWith(expect.objectContaining({
+      pinLabel: "Master PIN",
+      approvedBy: "owner",
+      danger: true,
+    }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    const deleteButton = screen.getByRole("button", { name: "Delete backup" });
+    expect((deleteButton as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText("Filename confirmation"), { target: { value: backup.fileName } });
+    expect((deleteButton as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(deleteButton);
+
+    await waitFor(() => expect(deleteBackupMock).toHaveBeenCalledWith(backup.fileName, {
+      confirmationText: backup.fileName,
+      masterApproval: approval,
+    }));
+  });
+
+  it("shows pending restore banner and handles restart and cancel approvals", async () => {
+    const backup = manualBackup();
+    const secondBackup = manualBackup({
+      fileName: "after-tax-change-2026-05-20T11-00-00-000Z.sqlite",
+      label: "After tax change",
+    });
+    const approval = { pin: "9876", reason: "Pending restore", approvedBy: "owner" };
+    const requestManagerApproval = vi.fn().mockResolvedValue(approval);
+    backupsMock.mockResolvedValue([backup, secondBackup]);
+    pendingRestoreMock.mockResolvedValue({ requestedAt: "2026-05-20T10:00:00.000Z", backup });
+    restartPendingRestoreMock.mockResolvedValue({ restarting: true, pendingRestore: { requestedAt: "2026-05-20T10:00:00.000Z", backup } });
+    cancelPendingRestoreMock.mockResolvedValue({ canceled: true });
+
+    const { ReportsView } = await importReportsView();
+    renderReportsView(ReportsView, { requestManagerApproval });
+
+    fireEvent.click(await screen.findByRole("tab", { name: "Backups" }));
+    expect(await screen.findByText(/Restore pending: Before festival menu/)).toBeTruthy();
+    expect(screen.getAllByRole("button", { name: "Restore" }).every((button) => (button as HTMLButtonElement).disabled)).toBe(true);
+
+    fireEvent.click(screen.getByRole("button", { name: "Restart Hub now" }));
+    await waitFor(() => expect(restartPendingRestoreMock).toHaveBeenCalledWith(approval));
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel pending restore" }));
+    await waitFor(() => expect(cancelPendingRestoreMock).toHaveBeenCalledWith(approval));
+  });
 });
 
 async function importReportsView() {
@@ -81,6 +175,8 @@ async function importReportsView() {
     default: { label: "Main bill printer", printerMode: "system", printerName: "EPSON", printerPort: 9100, configured: true },
     alternate: { label: "Second bill printer", printerMode: "system", printerPort: 9100, configured: false }
   });
+  if (!backupsMock.getMockImplementation()) backupsMock.mockResolvedValue([]);
+  if (!pendingRestoreMock.getMockImplementation()) pendingRestoreMock.mockResolvedValue(null);
   vi.doMock("../renderer/hub-api.js", () => ({
     hubApi: {
       currentBusinessDaySummary: vi.fn().mockResolvedValue(summary()),
@@ -88,7 +184,14 @@ async function importReportsView() {
 	      dailyReport: vi.fn(),
 	      rangeReport: rangeReportMock,
 	      alcoholStockMovements: vi.fn().mockResolvedValue([]),
-      bootstrap: vi.fn().mockResolvedValue({ menuItems: [] }),
+      bootstrap: vi.fn().mockResolvedValue({ menuItems: [], setup: { masterPinConfigured: true } }),
+      backups: backupsMock,
+      pendingRestore: pendingRestoreMock,
+      createBackup: createBackupMock,
+      scheduleRestore: scheduleRestoreMock,
+      deleteBackup: deleteBackupMock,
+      cancelPendingRestore: cancelPendingRestoreMock,
+      restartPendingRestore: restartPendingRestoreMock,
       historyEditBill: historyEditBillMock,
       historyReprintBill: vi.fn(),
       billPrinters: billPrintersMock
@@ -142,13 +245,31 @@ function rangeSummary(includeBills: boolean) {
   };
 }
 
-function renderReportsView(ReportsView: typeof import("../renderer/components/reports/reports-view.js").ReportsView) {
+function renderReportsView(
+  ReportsView: typeof import("../renderer/components/reports/reports-view.js").ReportsView,
+  options: { requestManagerApproval?: ReturnType<typeof vi.fn> } = {}
+) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
-      <ReportsView />
+      <ReportsView requestManagerApproval={options.requestManagerApproval ?? vi.fn()} />
     </QueryClientProvider>
   );
+}
+
+function manualBackup(overrides: Partial<ReturnType<typeof manualBackupShape>> = {}) {
+  return { ...manualBackupShape(), ...overrides };
+}
+
+function manualBackupShape() {
+  return {
+    fileName: "before-festival-menu-2026-05-20T10-00-00-000Z.sqlite",
+    path: "/tmp/backups/before-festival-menu-2026-05-20T10-00-00-000Z.sqlite",
+    label: "Before festival menu",
+    kind: "manual" as const,
+    sizeBytes: 1024 * 512,
+    createdAt: "2026-05-20T10:00:00.000Z",
+  };
 }
 
 function summary() {

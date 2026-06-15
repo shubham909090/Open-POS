@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createHash } from "node:crypto";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import WebSocket from "ws";
@@ -405,6 +405,195 @@ describe("Hub API auth, settings, and pairing routes", () => {
     database.close();
     BackupService.applyPendingReset(databasePath, join(root, "backups"));
     expect(existsSync(databasePath)).toBe(false);
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("manages manual backup create, delete, restore, and pending restore with Master PIN", async () => {
+    const root = mkdtempSync(join(tmpdir(), "gaurav-pos-api-backups-"));
+    const requestRestart = vi.fn();
+    const { app, database } = createFileBackedTestServer(root, { requestRestart });
+    const headers = { "x-device-token": "test-admin-token" };
+
+    await app.inject({
+      method: "PUT",
+      url: "/settings/master-pin",
+      headers,
+      payload: { newPin: "9876", confirmPin: "9876", updatedBy: "owner" }
+    });
+    const created = await app.inject({ method: "POST", url: "/backups", headers, payload: { label: "Before festival menu" } });
+    const backup = created.json<{ fileName: string; label: string; kind: string }>();
+    const list = await app.inject({ method: "GET", url: "/backups", headers });
+    const deleteWithoutPin = await app.inject({
+      method: "DELETE",
+      url: `/backups/${encodeURIComponent(backup.fileName)}`,
+      headers,
+      payload: { confirmationText: backup.fileName }
+    });
+    const deleteWrongConfirm = await app.inject({
+      method: "DELETE",
+      url: `/backups/${encodeURIComponent(backup.fileName)}`,
+      headers,
+      payload: { confirmationText: "wrong", masterApproval: { pin: "9876", reason: "Delete backup", approvedBy: "owner" } }
+    });
+    const deleteSpacedConfirm = await app.inject({
+      method: "DELETE",
+      url: `/backups/${encodeURIComponent(backup.fileName)}`,
+      headers,
+      payload: { confirmationText: ` ${backup.fileName} `, masterApproval: { pin: "9876", reason: "Delete backup", approvedBy: "owner" } }
+    });
+    const deleted = await app.inject({
+      method: "DELETE",
+      url: `/backups/${encodeURIComponent(backup.fileName)}`,
+      headers,
+      payload: { confirmationText: backup.fileName, masterApproval: { pin: "9876", reason: "Delete backup", approvedBy: "owner" } }
+    });
+
+    expect(created.statusCode).toBe(200);
+    expect(backup).toMatchObject({ label: "Before festival menu", kind: "manual" });
+    expect(list.json()).toEqual([expect.objectContaining({ fileName: backup.fileName, label: "Before festival menu", kind: "manual" })]);
+    expect(deleteWithoutPin.statusCode).toBe(403);
+    expect(deleteWrongConfirm.statusCode).toBe(400);
+    expect(deleteSpacedConfirm.statusCode).toBe(400);
+    expect(deleted.statusCode).toBe(200);
+    expect(deleted.json()).toEqual({ deleted: true, fileName: backup.fileName });
+
+    const directBackupService = new BackupService(database, join(root, "hub.sqlite"), join(root, "backups"));
+    const corruptManualBackup = await directBackupService.createBackup("Corrupt manual backup");
+    writeFileSync(join(root, "backups", corruptManualBackup.fileName), "not sqlite");
+    const automaticBackup = await directBackupService.createBackup("pre-update-test", "automatic");
+    const deleteCorruptManual = await app.inject({
+      method: "DELETE",
+      url: `/backups/${encodeURIComponent(corruptManualBackup.fileName)}`,
+      headers,
+      payload: { confirmationText: corruptManualBackup.fileName, masterApproval: { pin: "9876", reason: "Delete corrupt manual backup", approvedBy: "owner" } }
+    });
+    const deleteAutomatic = await app.inject({
+      method: "DELETE",
+      url: `/backups/${encodeURIComponent(automaticBackup.fileName)}`,
+      headers,
+      payload: { confirmationText: automaticBackup.fileName, masterApproval: { pin: "9876", reason: "Delete automatic backup", approvedBy: "owner" } }
+    });
+    const deleteTraversal = await app.inject({
+      method: "DELETE",
+      url: `/backups/${encodeURIComponent("../outside.sqlite")}`,
+      headers,
+      payload: { confirmationText: "../outside.sqlite", masterApproval: { pin: "9876", reason: "Delete bad path", approvedBy: "owner" } }
+    });
+    const deleteNonSqlite = await app.inject({
+      method: "DELETE",
+      url: "/backups/notes.txt",
+      headers,
+      payload: { confirmationText: "notes.txt", masterApproval: { pin: "9876", reason: "Delete bad file", approvedBy: "owner" } }
+    });
+    const deleteMissing = await app.inject({
+      method: "DELETE",
+      url: "/backups/missing.sqlite",
+      headers,
+      payload: { confirmationText: "missing.sqlite", masterApproval: { pin: "9876", reason: "Delete missing backup", approvedBy: "owner" } }
+    });
+
+    expect(deleteCorruptManual.statusCode).toBe(200);
+    expect(deleteCorruptManual.json()).toEqual({ deleted: true, fileName: corruptManualBackup.fileName });
+    expect(deleteAutomatic.statusCode).toBe(400);
+    expect(deleteAutomatic.json()).toEqual({ error: "Automatic safety backups cannot be deleted" });
+    expect(deleteTraversal.statusCode).toBe(400);
+    expect(deleteNonSqlite.statusCode).toBe(400);
+    expect(deleteMissing.statusCode).toBe(400);
+
+    const restoreBackup = (await app.inject({ method: "POST", url: "/backups", headers, payload: { label: "Before restore test" } })).json<{ fileName: string }>();
+    const secondRestoreBackup = (await app.inject({ method: "POST", url: "/backups", headers, payload: { label: "Second restore test" } })).json<{ fileName: string }>();
+    insertApiDailySnapshot(database, { id: "api-restore-open", businessDate: "2026-05-30", finalSalesPaise: 0, status: "active" });
+    const activeOrderRestore = await app.inject({
+      method: "POST",
+      url: "/backups/restore",
+      headers,
+      payload: { fileName: restoreBackup.fileName, confirmationText: restoreBackup.fileName, masterApproval: { pin: "9876", reason: "Restore backup", approvedBy: "owner" } }
+    });
+    database.db.prepare("UPDATE orders SET status = 'cancelled' WHERE status IN ('open', 'billed')").run();
+    const spacedRestoreConfirm = await app.inject({
+      method: "POST",
+      url: "/backups/restore",
+      headers,
+      payload: {
+        fileName: restoreBackup.fileName,
+        confirmationText: ` ${restoreBackup.fileName} `,
+        masterApproval: { pin: "9876", reason: "Restore backup", approvedBy: "owner" }
+      }
+    });
+    const scheduled = await app.inject({
+      method: "POST",
+      url: "/backups/restore",
+      headers,
+      payload: {
+        fileName: restoreBackup.fileName,
+        confirmationText: restoreBackup.fileName,
+        masterApproval: { pin: "9876", reason: "Restore backup", approvedBy: "owner" }
+      }
+    });
+    const overwritePending = await app.inject({
+      method: "POST",
+      url: "/backups/restore",
+      headers,
+      payload: {
+        fileName: secondRestoreBackup.fileName,
+        confirmationText: secondRestoreBackup.fileName,
+        masterApproval: { pin: "9876", reason: "Restore backup", approvedBy: "owner" }
+      }
+    });
+    const pending = await app.inject({ method: "GET", url: "/backups/restore-pending", headers });
+    const restarted = await app.inject({
+      method: "POST",
+      url: "/backups/restore-pending/restart",
+      headers,
+      payload: { masterApproval: { pin: "9876", reason: "Restart pending restore", approvedBy: "owner" } }
+    });
+    const cancelWrongPin = await app.inject({
+      method: "DELETE",
+      url: "/backups/restore-pending",
+      headers,
+      payload: { masterApproval: { pin: "0000", reason: "Cancel restore", approvedBy: "owner" } }
+    });
+    const canceled = await app.inject({
+      method: "DELETE",
+      url: "/backups/restore-pending",
+      headers,
+      payload: { masterApproval: { pin: "9876", reason: "Cancel restore", approvedBy: "owner" } }
+    });
+
+    expect(activeOrderRestore.statusCode).toBe(400);
+    expect(activeOrderRestore.json()).toEqual({ error: "Close or settle running orders before restoring a backup" });
+    expect(spacedRestoreConfirm.statusCode).toBe(400);
+    expect(scheduled.statusCode).toBe(200);
+    expect(scheduled.json()).toMatchObject({ scheduled: true, restartRequired: true, restartNow: false });
+    expect(overwritePending.statusCode).toBe(400);
+    expect(overwritePending.json()).toEqual({ error: "A restore is already scheduled. Cancel pending restore before scheduling another." });
+    expect(restarted.statusCode).toBe(200);
+    expect(restarted.json()).toMatchObject({ restarting: true, pendingRestore: { backup: { fileName: restoreBackup.fileName } } });
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(requestRestart).toHaveBeenCalledTimes(1);
+    expect(pending.json()).toMatchObject({ backup: { fileName: restoreBackup.fileName } });
+    expect(cancelWrongPin.statusCode).toBe(403);
+    expect(canceled.json()).toEqual({ canceled: true });
+    expect(existsSync(join(root, "backups", "restore-pending.json"))).toBe(false);
+
+    const immediateScheduled = await app.inject({
+      method: "POST",
+      url: "/backups/restore",
+      headers,
+      payload: {
+        fileName: restoreBackup.fileName,
+        confirmationText: restoreBackup.fileName,
+        restartNow: true,
+        masterApproval: { pin: "9876", reason: "Restore backup now", approvedBy: "owner" }
+      }
+    });
+    expect(immediateScheduled.statusCode).toBe(200);
+    expect(immediateScheduled.json()).toMatchObject({ scheduled: true, restartRequired: true, restartNow: true });
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(requestRestart).toHaveBeenCalledTimes(2);
+
+    await app.close();
+    database.close();
     rmSync(root, { recursive: true, force: true });
   });
 

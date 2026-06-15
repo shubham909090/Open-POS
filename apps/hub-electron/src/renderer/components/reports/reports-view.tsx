@@ -1,15 +1,21 @@
 import { Fragment, type KeyboardEvent, useEffect, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { formatInr, formatPosDateTime } from "@gaurav-pos/shared";
 import { hubApi, type RangeReportDetail } from "../../hub-api.js";
+import type { ManagerApprovalRequest } from "../../hooks/use-manager-approval.js";
 import { alcoholMovementSourceLabel, alcoholMovementDeltaText } from "../../lib/format.js";
 import { EmptyState } from "../ui/empty-state.js";
 import { Metric } from "../ui/metric.js";
+import { BackupPanel } from "./backup-panel.js";
 import { ReportDetailPanels } from "./report-detail-panels.js";
 
 const REPORT_PAGE_SIZE = 8;
-export function ReportsView() {
-  const [reportTab, setReportTab] = useState("daily");
+const REPORT_TABS = ["daily", "range", "backups"] as const;
+type ReportTab = (typeof REPORT_TABS)[number];
+
+export function ReportsView({ requestManagerApproval }: { requestManagerApproval: ManagerApprovalRequest }) {
+  const queryClient = useQueryClient();
+  const [reportTab, setReportTab] = useState<ReportTab>("daily");
   const [expandedReportId, setExpandedReportId] = useState<string | null>(null);
   const [closedLimit, setClosedLimit] = useState(REPORT_PAGE_SIZE);
   const [stockLimit, setStockLimit] = useState(REPORT_PAGE_SIZE);
@@ -29,6 +35,20 @@ export function ReportsView() {
   const alcoholStockMovements = useQuery({
     queryKey: ["alcoholStockMovements"],
     queryFn: hubApi.alcoholStockMovements,
+  });
+  const bootstrap = useQuery({
+    queryKey: ["bootstrap"],
+    queryFn: hubApi.bootstrap,
+  });
+  const backups = useQuery({
+    queryKey: ["backups"],
+    queryFn: hubApi.backups,
+    enabled: reportTab === "backups",
+  });
+  const pendingRestore = useQuery({
+    queryKey: ["pendingRestore"],
+    queryFn: hubApi.pendingRestore,
+    enabled: reportTab === "backups",
   });
   const dailyReportDetail = useQuery({
     queryKey: ["dailyReport", expandedReportId],
@@ -52,13 +72,28 @@ export function ReportsView() {
     queryFn: () => hubApi.rangeReport(rangeRequest.from, rangeRequest.to, rangeRequest.includeBills),
     enabled: reportTab === "range" && Boolean(rangeRequest.from && rangeRequest.to)
   });
-  const selectReportTab = (nextTab: "daily" | "range") => setReportTab(nextTab);
+  const selectReportTab = (nextTab: ReportTab) => setReportTab(nextTab);
   const handleReportTabKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
     event.preventDefault();
-    const nextTab = event.key === "ArrowLeft" || event.key === "Home" ? "daily" : "range";
+    const currentIndex = REPORT_TABS.indexOf(reportTab);
+    const nextIndex =
+      event.key === "Home"
+        ? 0
+        : event.key === "End"
+          ? REPORT_TABS.length - 1
+          : event.key === "ArrowLeft"
+            ? Math.max(0, currentIndex - 1)
+            : Math.min(REPORT_TABS.length - 1, currentIndex + 1);
+    const nextTab = REPORT_TABS[nextIndex] ?? reportTab;
     selectReportTab(nextTab);
     window.requestAnimationFrame(() => document.getElementById(`report-tab-${nextTab}`)?.focus());
+  };
+  const refreshBackups = async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["backups"] }),
+      queryClient.invalidateQueries({ queryKey: ["pendingRestore"] }),
+    ]);
   };
 
   return (
@@ -90,6 +125,18 @@ export function ReportsView() {
               onClick={() => selectReportTab("range")}
             >
               Monthly / Range
+            </button>
+            <button
+              id="report-tab-backups"
+              type="button"
+              role="tab"
+              aria-selected={reportTab === "backups"}
+              aria-controls="report-panel-backups"
+              tabIndex={reportTab === "backups" ? 0 : -1}
+              className={reportTab === "backups" ? "active" : ""}
+              onClick={() => selectReportTab("backups")}
+            >
+              Backups
             </button>
           </div>
         </div>
@@ -201,7 +248,9 @@ export function ReportsView() {
         </div>
       </section>
         </div>
-      ) : (
+      ) : null}
+
+      {reportTab === "range" ? (
         <section id="report-panel-range" role="tabpanel" aria-labelledby="report-tab-range" className="panel reports-wide">
           <div className="panel-title">
             <h2>Monthly / date range</h2>
@@ -238,7 +287,21 @@ export function ReportsView() {
             <EmptyState title="Range report loading" description="The hub is reading finalized daily report snapshots." />
           ) : null}
         </section>
-      )}
+      ) : null}
+
+      {reportTab === "backups" ? (
+        <div id="report-panel-backups" role="tabpanel" aria-labelledby="report-tab-backups" className="reports-tab-panel">
+          <BackupPanel
+            backups={backups.data ?? []}
+            loading={backups.isLoading}
+            pendingRestore={pendingRestore.data ?? null}
+            pendingLoading={pendingRestore.isLoading}
+            masterPinConfigured={Boolean(bootstrap.data?.setup?.masterPinConfigured)}
+            requestManagerApproval={requestManagerApproval}
+            onChanged={refreshBackups}
+          />
+        </div>
+      ) : null}
 
       {reportTab === "daily" ? (
       <section className="panel reports-wide">

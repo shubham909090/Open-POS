@@ -2,6 +2,14 @@
 
 ## 2026-06-16
 
+- Task: Added the Hub local manual backup create/restore/delete cycle.
+- Hub behavior/API: manual backups now store exact labels in sidecar metadata, list newest-first, and can be deleted only with Master PIN plus exact filename confirmation; automatic `pre-update-*` / `pre-restore-*` safety backups stay hidden and protected. Restore requires Master PIN plus exact filename confirmation, blocks open/billed orders, validates SQLite backups, writes a pending restore marker, supports immediate restart, and exposes pending read/cancel/restart endpoints.
+- Restore safety: backup creation writes a temp file then integrity-checks before rename; startup validates pending restore state through a temp copy, preserves the current DB as a `pre-restore-*` safety backup, and renames corrupt restore markers aside instead of crashing.
+- Hub UI/docs: added **Reports → Backups** with manual create, restore, restart-now, pending banner, cancel, and delete flows; updated `CONTEXT.md` and `docs/windows-hub-runbook.md` with Manual Backup, Automatic Safety Backup, and Pending Restore rules.
+- Review follow-up: pruning now respects backup metadata so manual labels that look like `pre-update-*` are not auto-deleted; startup restore now renames invalid/missing/corrupt pending restore markers aside; corrupt manual backup files can still be deleted with Master PIN and exact filename confirmation.
+- Reusable pieces: check `BackupService` in `apps/hub-electron/src/db/backup-service.ts`, maintenance backup routes in `apps/hub-electron/src/api/maintenance-routes.ts`, and the renderer `BackupPanel` before adding backup/recovery behavior.
+- Verification: targeted backup service/API/Reports tests, full Hub test suite, Hub typecheck, and `git diff --check` passed. Visual pass used a disposable temp-path Hub on `127.0.0.1:3801`; desktop and narrow screenshots confirmed pending restore, disabled restore actions, wrapped filename confirmations, and no horizontal overflow. Independent visual QA subagent findings were fixed before final verification.
+
 - Task: Added the Hub Cloud Backup kill switch so fresh installs and upgraded hubs default to `cloud_backup_enabled` off unless explicitly enabled.
 - Hub behavior: background backup push skips all backup-row collection and `/pos/backup/push` work while off; the runtime sync tick also skips cloud pull while off; manual cloud backup/sync routes now return disabled/403 while off; license activation/check/refresh paths remain allowed.
 - Hub UI/API: added `GET/PUT /settings/cloud-backup`, exposed `setup.cloudBackupEnabled` in bootstrap, added a Cloud Backup Off/On control to Hub Connection gated by Master PIN, and disabled Advanced manual cloud sync affordances when off.

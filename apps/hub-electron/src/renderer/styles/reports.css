@@ -19,6 +19,56 @@
   @apply contents;
 }
 
+.backup-panel {
+  @apply gap-4;
+}
+
+.backup-create-form {
+  grid-template-columns: minmax(220px, 1fr) auto;
+}
+
+.backup-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.backup-details {
+  @apply grid min-w-0 gap-1;
+}
+
+.backup-details code {
+  @apply break-all rounded border border-line bg-wash px-2 py-1 text-xs font-bold text-muted;
+}
+
+.backup-row-actions,
+.pending-restore-banner .row-actions {
+  @apply flex flex-wrap items-center justify-end gap-2;
+}
+
+.backup-confirmation-panel {
+  @apply gap-3;
+}
+
+.backup-confirmation-target {
+  @apply block break-all rounded-md border border-line bg-wash px-3 py-2 text-xs font-bold leading-5 text-muted;
+}
+
+.backup-confirmation-panel label {
+  @apply grid min-w-0 gap-1 text-sm font-bold text-ink;
+}
+
+.pending-restore-banner {
+  @apply flex min-w-0 flex-wrap items-center justify-between gap-3 rounded-lg border border-warning bg-warning-soft p-3 text-warning;
+}
+
+.pending-restore-banner > div:first-child {
+  @apply grid min-w-0 gap-1;
+}
+
+.pending-restore-banner strong,
+.pending-restore-banner span {
+  @apply min-w-0 break-words;
+}
+
 .range-report-controls label,
 .range-report-result {
   @apply grid min-w-0 gap-3;
@@ -207,6 +257,16 @@
 @media (max-width: 720px) {
   .range-report-controls {
     grid-template-columns: 1fr;
+  }
+
+  .backup-create-form,
+  .backup-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .backup-row-actions,
+  .pending-restore-banner .row-actions {
+    @apply justify-start;
   }
 
   .report-tabs {

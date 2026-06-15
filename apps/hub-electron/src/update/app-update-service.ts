@@ -218,7 +218,7 @@ export class AppUpdateService {
 
     const validated = this.validatePackageForCurrentDb(packagePath);
     this.input.database.integrityCheck();
-    const backup = await this.input.backupService.createBackup(`pre-update-${this.input.appVersion}-to-${validated.manifest.version}`);
+    const backup = await this.input.backupService.createBackup(`pre-update-${this.input.appVersion}-to-${validated.manifest.version}`, "automatic");
     const pending = this.cachePackage(validated);
     const previous: RollbackPackage = {
       ...state.current,
@@ -300,7 +300,7 @@ export class AppUpdateService {
       const finalActiveOrderCount = this.activeOrderCount();
       if (finalActiveOrderCount > 0) throw new DomainError(`Close or settle ${finalActiveOrderCount} running order(s) before installing update`, 400);
       this.input.database.integrityCheck();
-      const backup = await this.input.backupService.createBackup(`pre-update-${this.input.appVersion}-to-${version}`);
+      const backup = await this.input.backupService.createBackup(`pre-update-${this.input.appVersion}-to-${version}`, "automatic");
       this.setOnlineState({ status: "installing", lastBackupFileName: backup.fileName, message: null });
       onlineUpdater.quitAndInstall();
       this.onlineUpdateRunning = true;

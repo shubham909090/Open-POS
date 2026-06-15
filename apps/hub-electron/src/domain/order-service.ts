@@ -383,6 +383,10 @@ export class OrderService {
     );
   }
 
+  verifyMasterApprovalForAction(input: MasterApprovalInput | undefined, action: string, aggregateType: string, aggregateId: string, requestedBy = "owner"): void {
+    this.verifyMasterApproval(input, action, aggregateType, aggregateId, requestedBy);
+  }
+
   getHubConnectionSettings(reveal = false): {
     configured: boolean;
     cloudUrl: string;

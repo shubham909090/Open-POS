@@ -56,7 +56,17 @@ Use Windows Startup Apps or Task Scheduler to start `Gaurav POS Hub` when the hu
 
 ## Backups
 
-The hub UI can create hot SQLite backups while service is running. Restore is intentionally scheduled for the next app restart so the open SQLite file is never replaced while active.
+Open **Reports → Backups** for local manual backups.
+
+- **Create backup** writes a hot SQLite backup while the hub is running. The typed backup name is preserved as the display label, while the filename is made filesystem-safe.
+- **Restore** requires Master PIN approval and typing the exact backup filename. Restore is scheduled for restart so the open SQLite file is never replaced while active. Use **Restore + restart now** when service is stopped and the restore should apply immediately.
+- Restore is blocked until all open or billed orders are settled or cancelled.
+- A scheduled restore shows a pending banner. Use **Restart Hub now** to apply it, or **Cancel pending restore** to remove the marker. Both require Master PIN.
+- **Delete** is permanent, requires Master PIN approval, and requires typing the exact filename. Only manual backups can be deleted.
+
+Automatic safety backups such as `pre-update-*` and `pre-restore-*` are protected. They are not listed with manual backups and are not user-deletable from the backup screen.
+
+Cloud Backup is separate from local backups. Local manual backups continue to work even when Cloud Backup is turned off.
 
 ## Hardware Checks
 
