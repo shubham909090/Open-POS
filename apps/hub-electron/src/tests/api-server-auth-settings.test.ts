@@ -28,6 +28,16 @@ import {
   waitForSocketOpen
 } from "./api-server-helpers.js";
 
+function enableCloudBackup(database: ReturnType<typeof createTestHub>["database"]) {
+  database.db
+    .prepare(
+      `INSERT INTO hub_settings (key, value, updated_at)
+       VALUES ('cloud_backup_enabled', '1', ?)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`
+    )
+    .run(new Date().toISOString());
+}
+
 describe("Hub API auth, settings, and pairing routes", () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -179,6 +189,7 @@ describe("Hub API auth, settings, and pairing routes", () => {
 
   it("dedupes overlapping cloud pull sync requests so repeated clicks do not stack work", async () => {
     const hub = createTestHub();
+    enableCloudBackup(hub.database);
     let releasePull!: () => void;
     const pullCloudSnapshot = vi.fn(
       () =>
@@ -433,6 +444,105 @@ describe("Hub API auth, settings, and pairing routes", () => {
     database.close();
   });
 
+  it("keeps cloud backup off by default and requires Master PIN to toggle it", async () => {
+    const { app, database } = createTestServer();
+    await app.inject({
+      method: "PUT",
+      url: "/settings/master-pin",
+      headers: { "x-device-token": "test-admin-token" },
+      payload: { newPin: "9876", confirmPin: "9876", updatedBy: "owner" }
+    });
+
+    const initial = await app.inject({ method: "GET", url: "/settings/cloud-backup", headers: { "x-device-token": "test-admin-token" } });
+    const withoutPin = await app.inject({
+      method: "PUT",
+      url: "/settings/cloud-backup",
+      headers: { "x-device-token": "test-admin-token" },
+      payload: { enabled: true }
+    });
+    const withMasterPin = await app.inject({
+      method: "PUT",
+      url: "/settings/cloud-backup",
+      headers: { "x-device-token": "test-admin-token" },
+      payload: { enabled: true, masterApproval: { pin: "9876", reason: "Enable cloud backup", approvedBy: "owner" } }
+    });
+    const bootstrap = await app.inject({ method: "GET", url: "/sync/bootstrap", headers: { "x-device-token": "test-admin-token" } });
+    const badPin = await app.inject({
+      method: "PUT",
+      url: "/settings/cloud-backup",
+      headers: { "x-device-token": "test-admin-token" },
+      payload: { enabled: false, masterApproval: { pin: "1234", reason: "Disable cloud backup", approvedBy: "owner" } }
+    });
+
+    expect(initial.statusCode).toBe(200);
+    expect(initial.json()).toEqual({ enabled: false });
+    expect(withoutPin.statusCode).toBe(403);
+    expect(withoutPin.json()).toEqual({ error: "Master PIN is required for this action" });
+    expect(withMasterPin.statusCode).toBe(200);
+    expect(withMasterPin.json()).toEqual({ enabled: true });
+    expect(bootstrap.json<{ setup: { cloudBackupEnabled: boolean } }>().setup.cloudBackupEnabled).toBe(true);
+    expect(badPin.statusCode).toBe(403);
+    expect(badPin.json()).toEqual({ error: "Master PIN is incorrect" });
+
+    await app.close();
+    database.close();
+  });
+
+  it("blocks manual cloud backup routes while off but still allows license checks", async () => {
+    const hub = createTestHub();
+    const pushPending = vi.fn().mockResolvedValue({ pushed: 1, skipped: false });
+    const pullCloudSnapshot = vi.fn().mockResolvedValue({ applied: 1, failed: 0, skipped: false });
+    const requeueFailedEvents = vi.fn().mockReturnValue({ requeued: 1 });
+    const fetchBackupManifest = vi.fn().mockResolvedValue({ manifests: [] });
+    const restoreFromCloud = vi.fn().mockResolvedValue({ restored: true, imported: 0, kind: "table_layout" });
+    const checkLicenseOnline = vi.fn().mockResolvedValue({ status: "active", message: "License is active." });
+    const app = createHubServer({
+      database: hub.database,
+      backupService: new BackupService(hub.database, ":memory:", "./data/test-backups"),
+      authService: hub.authService,
+      orderService: hub.orderService,
+      printJobService: new PrintJobService(hub.database.orm, new DryRunPrinterAdapter()),
+      syncBridge: {
+        pushPending,
+        pullCloudSnapshot,
+        requeueFailedEvents,
+        fetchBackupManifest,
+        restoreFromCloud,
+        checkLicenseOnline,
+        getLicenseState: () => ({ status: "active", message: "License is active." })
+      } as unknown as ConvexSyncBridge,
+      eventBus: new EventBus<unknown>()
+    });
+    const headers = { "x-device-token": "test-admin-token" };
+
+    const push = await app.inject({ method: "POST", url: "/sync/push", headers });
+    const pull = await app.inject({ method: "POST", url: "/sync/pull", headers });
+    const requeue = await app.inject({ method: "POST", url: "/sync/requeue-failed", headers });
+    const manifest = await app.inject({ method: "GET", url: "/cloud-backup/manifest", headers });
+    const restore = await app.inject({
+      method: "POST",
+      url: "/cloud-backup/restore",
+      headers,
+      payload: { kind: "table_layout" }
+    });
+    const license = await app.inject({ method: "POST", url: "/license/check", headers, payload: {} });
+
+    for (const response of [push, pull, requeue, manifest, restore]) {
+      expect(response.statusCode).toBe(403);
+      expect(response.json()).toEqual({ error: "Cloud Backup is off. Enable it with Master PIN before using cloud backup." });
+    }
+    expect(pushPending).not.toHaveBeenCalled();
+    expect(pullCloudSnapshot).not.toHaveBeenCalled();
+    expect(requeueFailedEvents).not.toHaveBeenCalled();
+    expect(fetchBackupManifest).not.toHaveBeenCalled();
+    expect(restoreFromCloud).not.toHaveBeenCalled();
+    expect(license.statusCode).toBe(200);
+    expect(checkLicenseOnline).toHaveBeenCalledTimes(1);
+
+    await app.close();
+    hub.database.close();
+  });
+
   it("pairs a waiter device and enforces role permissions", async () => {
     const { app, database } = createTestServer();
     const adminHeaders = { "x-device-token": "test-admin-token" };
@@ -579,6 +689,7 @@ describe("Hub API auth, settings, and pairing routes", () => {
 
   it("leaves legacy sync outbox rows untouched from the deprecated admin endpoint", async () => {
     const { app, database } = createTestServer();
+    enableCloudBackup(database);
     database.db
       .prepare("INSERT INTO event_log (event_id, type, aggregate_type, aggregate_id, payload, created_at) VALUES (?, ?, ?, ?, ?, ?)")
       .run("event-requeue-1", "test.event", "test", "test-1", "{}", new Date().toISOString());

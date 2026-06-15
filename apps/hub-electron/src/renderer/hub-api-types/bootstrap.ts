@@ -30,6 +30,7 @@ export interface Bootstrap {
     printerOutputMode: "test" | "live";
     managerPinConfigured?: boolean;
     masterPinConfigured?: boolean;
+    cloudBackupEnabled?: boolean;
     hubConnection?: HubConnectionSettings;
     license?: {
       status: "missing" | "active" | "warning" | "locked";

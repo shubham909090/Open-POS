@@ -6,7 +6,8 @@ import type {
   MasterApprovalInput,
   PrintLayoutSettingsInput,
   SetMasterPinInput,
-  TicketTemplateInput
+  TicketTemplateInput,
+  UpdateCloudBackupInput
 } from "@gaurav-pos/shared";
 
 import { DomainError } from "../errors.js";
@@ -106,6 +107,23 @@ export function updateHubConnectionSettings(ctx: SettingsActionContext, input: H
     syncSecretConfigured: Boolean(input.syncSecret)
   });
   return result;
+}
+
+export function isCloudBackupEnabled(ctx: SettingsActionContext): boolean {
+  return ctx.readSetting("cloud_backup_enabled") === "1";
+}
+
+export function updateCloudBackupEnabled(ctx: SettingsActionContext, input: UpdateCloudBackupInput): { enabled: boolean } {
+  ctx.verifyMasterApproval(
+    input.masterApproval,
+    input.enabled ? "cloud_backup.enable" : "cloud_backup.disable",
+    "hub_setting",
+    "cloud_backup",
+    input.masterApproval?.approvedBy ?? "owner"
+  );
+  ctx.writeSetting("cloud_backup_enabled", input.enabled ? "1" : "0");
+  ctx.appendEvent("cloud_backup.updated", "hub_setting", "cloud_backup", { enabled: input.enabled });
+  return { enabled: input.enabled };
 }
 
 export function ensureHubConnectionSettings(ctx: SettingsActionContext, input: HubConnectionSettingsInput): void {

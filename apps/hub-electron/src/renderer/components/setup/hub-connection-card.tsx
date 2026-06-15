@@ -1,5 +1,5 @@
 import { useMutation } from "@tanstack/react-query";
-import { Settings } from "lucide-react";
+import { CloudOff, CloudUpload, Settings } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { hubApi, type Bootstrap } from "../../hub-api.js";
@@ -25,6 +25,8 @@ export function HubConnectionCard({
   const [setupKey, setSetupKey] = useState("");
   const [connectionEditing, setConnectionEditing] = useState(!bootstrap.setup?.hubConnection?.configured);
   const connectionConfigured = Boolean(bootstrap.setup?.hubConnection?.configured);
+  const cloudBackupEnabled = Boolean(bootstrap.setup?.cloudBackupEnabled);
+  const masterPinConfigured = Boolean(bootstrap.setup?.masterPinConfigured);
   const license = bootstrap.setup?.license;
 
   useEffect(() => {
@@ -85,8 +87,34 @@ export function HubConnectionCard({
     onError: (error) => setNotice({ tone: "bad", text: messageOf(error) }),
   });
 
+  const updateCloudBackup = useMutation({
+    mutationFn: ({ enabled, masterApproval }: { enabled: boolean; masterApproval: { pin: string; reason: string; approvedBy: string } }) =>
+      hubApi.updateCloudBackup({ enabled, masterApproval }),
+    onSuccess: async (result) => {
+      await onSaved();
+      setNotice({ tone: "good", text: result.enabled ? "Cloud Backup enabled." : "Cloud Backup disabled." });
+    },
+    onError: (error) => setNotice({ tone: "bad", text: messageOf(error) }),
+  });
+
   const approveConnectionAction = async (title: string, defaultReason: string) =>
     requestManagerApproval({ title, defaultReason, confirmLabel: "Continue" }).catch(() => null);
+
+  const toggleCloudBackup = async () => {
+    const enabled = !cloudBackupEnabled;
+    const approval = await requestManagerApproval({
+      title: enabled ? "Enable Cloud Backup" : "Disable Cloud Backup",
+      defaultReason: enabled ? "Enable cloud backup" : "Disable cloud backup",
+      message: enabled
+        ? "Cloud Backup will start sending local backup rows to cloud storage."
+        : "Cloud Backup will stop sending backup rows to cloud storage. License checks and app updates will continue.",
+      pinLabel: "Master PIN",
+      approvedBy: "owner",
+      confirmLabel: enabled ? "Turn On" : "Turn Off",
+      danger: !enabled
+    }).catch(() => null);
+    if (approval) updateCloudBackup.mutate({ enabled, masterApproval: approval });
+  };
 
   return (
     <SetupCard
@@ -96,47 +124,62 @@ export function HubConnectionCard({
       summary={connectionConfigured ? "Cloud connection saved" : "Add cloud connection"}
     >
       {connectionConfigured && !connectionEditing ? (
-        <div className="saved-settings-card">
-          <div>
-            <strong>{bootstrap.setup?.hubConnection?.cloudUrl || "Cloud connection saved"}</strong>
-            <span>
-              ID {bootstrap.setup?.hubConnection?.installationId || "saved"} · Secret hidden · Public URL {bootstrap.setup?.hubConnection?.hubPublicUrl || "not set"}
-            </span>
-            <span>
-              License {license?.status ?? "missing"}{license?.licenseValidUntil ? ` · valid until ${license.licenseValidUntil.slice(0, 10)}` : ""}
-              {license?.hoursUntilOfflineLock !== undefined ? ` · offline lock in ${license.hoursUntilOfflineLock}h` : ""}
-            </span>
+        <>
+          <div className="saved-settings-card">
+            <div>
+              <strong>{bootstrap.setup?.hubConnection?.cloudUrl || "Cloud connection saved"}</strong>
+              <span>
+                ID {bootstrap.setup?.hubConnection?.installationId || "saved"} · Secret hidden · Public URL {bootstrap.setup?.hubConnection?.hubPublicUrl || "not set"}
+              </span>
+              <span>
+                License {license?.status ?? "missing"}{license?.licenseValidUntil ? ` · valid until ${license.licenseValidUntil.slice(0, 10)}` : ""}
+                {license?.hoursUntilOfflineLock !== undefined ? ` · offline lock in ${license.hoursUntilOfflineLock}h` : ""}
+              </span>
+              <span>
+                Cloud Backup {cloudBackupEnabled ? "On" : "Off"} · License checks and app updates stay active
+              </span>
+            </div>
+            <div className="row-actions">
+              <button
+                type="button"
+                className={cloudBackupEnabled ? "secondary-button" : undefined}
+                onClick={() => void toggleCloudBackup()}
+                disabled={!masterPinConfigured || updateCloudBackup.isPending}
+              >
+                {cloudBackupEnabled ? <CloudOff size={18} /> : <CloudUpload size={18} />}
+                {cloudBackupEnabled ? "Turn Off Cloud Backup" : "Turn On Cloud Backup"}
+              </button>
+              <button type="button" className="secondary-button" onClick={() => setConnectionEditing(true)}>
+                Edit
+              </button>
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={async () => {
+                  const approval = await approveConnectionAction("Show cloud connection secrets", "Reveal saved hub cloud connection");
+                  if (approval) revealHubConnection.mutate(approval.pin);
+                }}
+                disabled={revealHubConnection.isPending}
+              >
+                Show saved details
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  const approval = await approveConnectionAction("Test cloud connection", "Test hub cloud connection");
+                  if (approval) testHubConnection.mutate(approval.pin);
+                }}
+                disabled={testHubConnection.isPending}
+              >
+                Test cloud connection
+              </button>
+              <button type="button" className="secondary-button" onClick={() => checkLicense.mutate()} disabled={checkLicense.isPending}>
+                Check license
+              </button>
+            </div>
           </div>
-          <div className="row-actions">
-            <button type="button" className="secondary-button" onClick={() => setConnectionEditing(true)}>
-              Edit
-            </button>
-            <button
-              type="button"
-              className="secondary-button"
-              onClick={async () => {
-                const approval = await approveConnectionAction("Show cloud connection secrets", "Reveal saved hub cloud connection");
-                if (approval) revealHubConnection.mutate(approval.pin);
-              }}
-              disabled={revealHubConnection.isPending}
-            >
-              Show saved details
-            </button>
-            <button
-              type="button"
-              onClick={async () => {
-                const approval = await approveConnectionAction("Test cloud connection", "Test hub cloud connection");
-                if (approval) testHubConnection.mutate(approval.pin);
-              }}
-              disabled={testHubConnection.isPending}
-            >
-              Test cloud connection
-            </button>
-            <button type="button" className="secondary-button" onClick={() => checkLicense.mutate()} disabled={checkLicense.isPending}>
-              Check license
-            </button>
-          </div>
-        </div>
+          {!masterPinConfigured ? <p className="soft-note">Create Master PIN first to change Cloud Backup.</p> : null}
+        </>
       ) : (
         <>
           <p className="text-sm text-muted">Activate with the platform setup key, or paste existing connection values for an older install.</p>

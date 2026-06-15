@@ -14,6 +14,7 @@ export type ManagerApprovalRequest = (options: {
   requireReason?: boolean;
   confirmLabel?: string;
   danger?: boolean;
+  approvedBy?: string;
 }) => Promise<ManagerApproval>;
 
 export type ManagerApprovalState = {
@@ -26,6 +27,7 @@ export type ManagerApprovalState = {
   requireReason: boolean;
   confirmLabel: string;
   danger: boolean;
+  approvedBy: string;
   pin: string;
   resolve?: (approval: ManagerApproval) => void;
   reject?: () => void;
@@ -41,6 +43,7 @@ export function useManagerApproval() {
     requireReason: true,
     confirmLabel: "Approve",
     danger: false,
+    approvedBy: "manager",
     pin: "",
   });
 
@@ -56,6 +59,7 @@ export function useManagerApproval() {
         requireReason: options.requireReason ?? true,
         confirmLabel: options.confirmLabel ?? "Approve",
         danger: Boolean(options.danger),
+        approvedBy: options.approvedBy ?? "manager",
         pin: "",
         resolve,
         reject,
@@ -86,7 +90,7 @@ export function ManagerApprovalModal({
         onSubmit={(event) => {
           event.preventDefault();
           if (!canSubmit) return;
-          state.resolve?.({ pin: state.pin, reason: state.reason.trim(), approvedBy: "manager" });
+          state.resolve?.({ pin: state.pin, reason: state.reason.trim(), approvedBy: state.approvedBy });
           setState({ ...state, open: false, pin: "", resolve: undefined, reject: undefined });
         }}
       >

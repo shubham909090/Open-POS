@@ -29,6 +29,7 @@ export function AdvancedView({
   const [resetPhrase, setResetPhrase] = useState("");
   const [resetBackups, setResetBackups] = useState(false);
   const masterPinConfigured = Boolean(bootstrap.setup?.masterPinConfigured);
+  const cloudBackupEnabled = Boolean(bootstrap.setup?.cloudBackupEnabled);
 
   const pullCloud = useMutation({
     mutationFn: hubApi.pullCloud,
@@ -242,9 +243,9 @@ export function AdvancedView({
             type="button"
             className="utility-action"
             onClick={() => {
-              if (!syncBusy) pullCloud.mutate();
+              if (!syncBusy && cloudBackupEnabled) pullCloud.mutate();
             }}
-            disabled={syncBusy}
+            disabled={syncBusy || !cloudBackupEnabled}
           >
             <CloudDownload size={18} /> {pullCloud.isPending ? "Syncing..." : "Get cloud updates"}
           </button>
@@ -252,9 +253,9 @@ export function AdvancedView({
             type="button"
             className="utility-action"
             onClick={() => {
-              if (!syncBusy) requeueSync.mutate();
+              if (!syncBusy && cloudBackupEnabled) requeueSync.mutate();
             }}
-            disabled={syncBusy}
+            disabled={syncBusy || !cloudBackupEnabled}
           >
             {requeueSync.isPending ? "Retrying..." : "Retry failed sync"}
           </button>
@@ -267,6 +268,7 @@ export function AdvancedView({
             <Printer size={18} /> Run print queue
           </button>
         </div>
+        {!cloudBackupEnabled ? <p className="soft-note">Cloud Backup is off. License checks and app updates still run.</p> : null}
         {bootstrap.syncStatus.commandFailures?.length ? (
           <div className="record-list compact-list">
             <p className="soft-note">

@@ -42,10 +42,25 @@ describe("ConvexSyncBridge", () => {
     database.close();
   });
 
+  it("keeps cloud backup off by default even when cloud connection is configured", async () => {
+    const { database, orderService } = createTestHub();
+    orderService.createFloor({ name: "Garden" });
+    markLicenseFresh(database);
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ upserted: 1, skipped: 0 }), { status: 200 }));
+
+    const sync = new ConvexSyncBridge(database.orm, "https://example.convex.site", "secret", "install-main");
+
+    await expect(sync.pushPending()).resolves.toEqual({ pushed: 0, skipped: true });
+    expect(fetchSpy).not.toHaveBeenCalled();
+
+    database.close();
+  });
+
   it("pushes restorable backup rows instead of raw event rows", async () => {
     const { database, orderService } = createTestHub();
     orderService.createFloor({ name: "Garden" });
     markLicenseFresh(database);
+    writeSetting(database, "cloud_backup_enabled", "1");
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ upserted: 1, skipped: 0 }), { status: 200 }));
 
     const sync = new ConvexSyncBridge(database.orm, "https://example.convex.site", "secret", "install-main");
@@ -73,6 +88,7 @@ describe("ConvexSyncBridge", () => {
   it("pushes pending tombstones before table sweep rows", async () => {
     const { database } = createTestHub();
     markLicenseFresh(database);
+    writeSetting(database, "cloud_backup_enabled", "1");
     database.db
       .prepare(
         `INSERT INTO cloud_backup_tombstones (domain, local_id, business_date, deleted_at, pushed_at)
@@ -106,6 +122,7 @@ describe("ConvexSyncBridge", () => {
       hubPublicUrl: "http://192.168.1.20:3737"
     });
     markLicenseFresh(database);
+    writeSetting(database, "cloud_backup_enabled", "1");
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ upserted: 1, skipped: 0 }), { status: 200 }));
 
     const sync = new ConvexSyncBridge(database.orm, undefined, undefined);
@@ -128,6 +145,7 @@ describe("ConvexSyncBridge", () => {
   it("reports backup push failures without writing event failure state", async () => {
     const { database } = createTestHub();
     markLicenseFresh(database);
+    writeSetting(database, "cloud_backup_enabled", "1");
     vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("nope", { status: 500 }));
 
     const sync = new ConvexSyncBridge(database.orm, "https://example.convex.site", "secret", "install-main");
@@ -146,7 +164,19 @@ describe("ConvexSyncBridge", () => {
 
     const sync = new ConvexSyncBridge(database.orm, "https://example.convex.site", "secret", "install-main");
 
-    await expect(sync.pullCloudSnapshot()).resolves.toEqual({ applied: 0, failed: 0, skipped: false, cursor: undefined });
+    await expect(sync.pullCloudSnapshot()).resolves.toEqual({ applied: 0, failed: 0, skipped: true, cursor: undefined });
+    expect(fetchSpy).not.toHaveBeenCalled();
+
+    database.close();
+  });
+
+  it("does not fetch manifest or restore pages when Cloud Backup is off", async () => {
+    const { database } = createTestHub();
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ rows: [] }), { status: 200 }));
+    const sync = new ConvexSyncBridge(database.orm, "https://example.convex.site", "secret", "install-main");
+
+    await expect(sync.fetchBackupManifest()).resolves.toEqual({ manifests: [], skipped: true });
+    await expect(sync.restoreFromCloud({ kind: "menu_catalog" })).rejects.toThrow("Cloud Backup is off");
     expect(fetchSpy).not.toHaveBeenCalled();
 
     database.close();
@@ -154,6 +184,7 @@ describe("ConvexSyncBridge", () => {
 
   it("does not date-filter layout or catalog dependency rows during order-history restore", async () => {
     const { database } = createTestHub();
+    writeSetting(database, "cloud_backup_enabled", "1");
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
       .mockImplementation(() => Promise.resolve(new Response(JSON.stringify({ rows: [] }), { status: 200 })));
@@ -184,6 +215,7 @@ describe("ConvexSyncBridge", () => {
 
   it("imports restore pages as they arrive instead of waiting for the whole domain", async () => {
     const { database } = createTestHub();
+    writeSetting(database, "cloud_backup_enabled", "1");
     let saleGroupPage = 0;
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async (_url, init) => {
       const request = JSON.parse((init as RequestInit).body as string) as { domain: string; cursor?: string };

@@ -180,6 +180,11 @@ export const hubApi = {
       headers: { "x-manager-pin": managerPin },
       body: JSON.stringify(payload)
     }),
+  updateCloudBackup: (payload: { enabled: boolean; masterApproval: MasterApprovalPayload["masterApproval"] }) =>
+    apiFetch<{ enabled: boolean }>("/settings/cloud-backup", {
+      method: "PUT",
+      body: JSON.stringify(payload)
+    }),
   testHubConnection: (managerPin: string) =>
     apiFetch<{ status: "missing" | "connected" | "unauthorized" | "server_error"; message: string }>("/settings/hub-connection/test", {
       method: "POST",

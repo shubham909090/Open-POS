@@ -1,5 +1,13 @@
 # Devlog
 
+## 2026-06-16
+
+- Task: Added the Hub Cloud Backup kill switch so fresh installs and upgraded hubs default to `cloud_backup_enabled` off unless explicitly enabled.
+- Hub behavior: background backup push skips all backup-row collection and `/pos/backup/push` work while off; the runtime sync tick also skips cloud pull while off; manual cloud backup/sync routes now return disabled/403 while off; license activation/check/refresh paths remain allowed.
+- Hub UI/API: added `GET/PUT /settings/cloud-backup`, exposed `setup.cloudBackupEnabled` in bootstrap, added a Cloud Backup Off/On control to Hub Connection gated by Master PIN, and disabled Advanced manual cloud sync affordances when off.
+- Admin access: aligned Convex dev deployment `WORKOS_CLIENT_ID` with the local cloud-admin WorkOS client and confirmed `PLATFORM_ADMIN_EMAILS` contains the owner email.
+- Verification: targeted hub tests passed (37 tests), hub/cloud-admin typechecks passed, hub/cloud-admin production builds passed, and disposable Chrome/CDP visual checks showed clean setup and Advanced disabled states with no overflow.
+
 ## 2026-05-30
 
 - Hub one-click online updates: replaced the primary Advanced app-update UI with one `Update app` action backed by `electron-updater`, added online update state to Hub status, and added `/system/update/online/install` for admin-only check/download/backup/install without local zip/exe baseline setup.
@@ -849,3 +857,9 @@
 - Release: `apps/hub-electron/package.json` bumped to `0.1.10`; `docs/release-build-workflow.md` examples updated to the new Hub version.
 - Artifacts: regenerated installer, blockmap, `latest.yml`, `hub-update-metadata.json`, and fallback `.gpos-update.zip`; published GitHub release `hub-v0.1.10`.
 - Verification: `pnpm release:hub:fresh -- --publish` ran hub tests, typecheck, Windows build, SQLite native repair/validation, preload bridge validation, update package validation, GitHub dry-run, and publish.
+
+## 2026-06-16 hub Cloud Backup bridge guard
+- Task: Closed the Cloud Backup kill-switch boundary gap found in review.
+- Hub sync: `ConvexSyncBridge.fetchBackupManifest()` now returns a disabled empty manifest without fetching when Cloud Backup is off, and `restoreFromCloud()` throws before cloud calls or restore work.
+- Regression guard: `apps/hub-electron/src/tests/convex-sync.test.ts` now verifies manifest and restore make zero fetch calls while Cloud Backup is off; restore behavior tests explicitly enable Cloud Backup.
+- Verification: targeted sync/API tests, hub typecheck, and `git diff --check` passed.

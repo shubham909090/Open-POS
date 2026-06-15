@@ -15,7 +15,7 @@ import { ConvexSyncBridge } from "./sync/convex-sync.js";
 import { AppUpdateService } from "./update/app-update-service.js";
 import type { OnlineAppUpdater } from "./update/app-update-service.js";
 
-type SyncBridgeLike = Pick<ConvexSyncBridge, "pushPending" | "pullCloudSnapshot">;
+type SyncBridgeLike = Pick<ConvexSyncBridge, "pushPending" | "pullCloudSnapshot" | "isCloudBackupEnabled">;
 type SyncLogger = { warn: (error: unknown, message: string) => void };
 
 export function createSyncTick(syncBridge: SyncBridgeLike, log: SyncLogger) {
@@ -25,6 +25,9 @@ export function createSyncTick(syncBridge: SyncBridgeLike, log: SyncLogger) {
     running = true;
     try {
       const pushed = await syncBridge.pushPending();
+      if (!syncBridge.isCloudBackupEnabled()) {
+        return { skipped: false, pushed, pulled: { applied: 0, failed: 0, skipped: true as const } };
+      }
       const pulled = await syncBridge.pullCloudSnapshot();
       return { skipped: false, pushed, pulled };
     } catch (error) {

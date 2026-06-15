@@ -41,6 +41,31 @@ describe("app update API", () => {
     await fixture.close();
   });
 
+  it("keeps app updates available when Cloud Backup is off", async () => {
+    const onlineUpdater = createOnlineUpdater({ availableVersion: "0.2.0" });
+    const fixture = createFixture({ onlineUpdater });
+
+    const status = await fixture.app.inject({
+      method: "GET",
+      url: "/system/update/status",
+      headers: { "x-device-token": "test-admin-token" }
+    });
+    const install = await fixture.app.inject({
+      method: "POST",
+      url: "/system/update/online/install",
+      headers: { "x-device-token": "test-admin-token" }
+    });
+
+    expect(status.statusCode).toBe(200);
+    expect(status.json<{ online: { enabled: boolean } }>().online.enabled).toBe(true);
+    expect(fixture.orderService.isCloudBackupEnabled()).toBe(false);
+    expect(install.statusCode).toBe(200);
+    expect(install.json<{ installing: true; version: string }>().installing).toBe(true);
+    expect(onlineUpdater.quitAndInstall).toHaveBeenCalledTimes(1);
+
+    await fixture.close();
+  });
+
   it("blocks one-click online update through the API when orders are still running", async () => {
     const onlineUpdater = createOnlineUpdater();
     const fixture = createFixture({ onlineUpdater });

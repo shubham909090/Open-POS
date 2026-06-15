@@ -31,6 +31,7 @@ import {
   type SettleBillInput,
   type SubmitOrderInput,
   type TicketTemplateInput,
+  type UpdateCloudBackupInput,
   type UpdateAlcoholItemInput,
   type UpdateFloorInput,
   type UpdateKotStatusInput,
@@ -229,10 +230,12 @@ import {
   getPrintLayout as getPrintLayoutModel,
   getPrintLayouts as getPrintLayoutsModel,
   getTicketTemplate as getTicketTemplateModel,
+  isCloudBackupEnabled as isCloudBackupEnabledModel,
   isManagerPinConfigured as isManagerPinConfiguredModel,
   isMasterPinConfigured as isMasterPinConfiguredModel,
   setManagerPin as setManagerPinModel,
   setMasterPin as setMasterPinModel,
+  updateCloudBackupEnabled as updateCloudBackupEnabledModel,
   updateHubConnectionSettings as updateHubConnectionSettingsModel,
   updatePrintLayout as updatePrintLayoutModel,
   updateTicketTemplate as updateTicketTemplateModel,
@@ -396,6 +399,14 @@ export class OrderService {
 
   updateHubConnectionSettings(input: HubConnectionSettingsInput): { configured: boolean } {
     return updateHubConnectionSettingsModel(this.settingsActionContext(), input);
+  }
+
+  isCloudBackupEnabled(): boolean {
+    return isCloudBackupEnabledModel(this.settingsActionContext());
+  }
+
+  updateCloudBackupEnabled(input: UpdateCloudBackupInput): { enabled: boolean } {
+    return updateCloudBackupEnabledModel(this.settingsActionContext(), input);
   }
 
   ensureHubConnectionSettings(input: HubConnectionSettingsInput): void {

@@ -5,6 +5,7 @@ import {
   printLayoutSettingsSchema,
   setMasterPinSchema,
   ticketTemplateSchema,
+  updateCloudBackupSchema,
   updateBillPrintersSchema,
   updatePrinterOutputModeSchema,
   updateReceiptPrinterSchema
@@ -81,6 +82,12 @@ export function registerSettingsRoutes({ app, input, auth }: HubRouteContext): v
     requireManagerPinHeader(request);
     const result = input.orderService.updateHubConnectionSettings(hubConnectionSettingsSchema.parse(request.body));
     input.eventBus.publish({ type: "hub_connection.updated", result });
+    return result;
+  });
+  app.get("/settings/cloud-backup", { preHandler: adminOnly }, async () => ({ enabled: input.orderService.isCloudBackupEnabled() }));
+  app.put("/settings/cloud-backup", { preHandler: adminOnly }, async (request) => {
+    const result = input.orderService.updateCloudBackupEnabled(updateCloudBackupSchema.parse(request.body));
+    input.eventBus.publish({ type: "cloud_backup.updated", result });
     return result;
   });
   app.post("/settings/hub-connection/test", { preHandler: adminOnly }, async (request) => {

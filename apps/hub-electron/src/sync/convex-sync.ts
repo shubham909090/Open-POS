@@ -352,6 +352,8 @@ export class ConvexSyncBridge {
       this.writeSetting("license_last_error", error instanceof Error ? error.message : "License check failed");
     });
 
+    if (!this.isCloudBackupEnabled()) return { pushed: 0, skipped: true };
+
     const backupBatch = this.collectBackupRows(BACKUP_BATCH_LIMIT);
     const { rows } = backupBatch;
     this.archiveLegacyEventOutbox();
@@ -381,6 +383,7 @@ export class ConvexSyncBridge {
   }
 
   async pullCloudSnapshot(): Promise<{ applied: number; failed: number; skipped: boolean; cursor?: string }> {
+    if (!this.isCloudBackupEnabled()) return { applied: 0, failed: 0, skipped: true, cursor: this.getSetting("cloud_snapshot_cursor") };
     return { applied: 0, failed: 0, skipped: false, cursor: this.getSetting("cloud_snapshot_cursor") };
   }
 
@@ -487,6 +490,7 @@ export class ConvexSyncBridge {
   }
 
   async fetchBackupManifest(): Promise<unknown> {
+    if (!this.isCloudBackupEnabled()) return { manifests: [], skipped: true };
     const config = this.resolveConfig();
     if (!config.cloudUrl || !config.syncSecret || !config.installationId) return { manifests: [] };
     const response = await fetch(`${config.cloudUrl}/pos/backup/manifest`, {
@@ -499,6 +503,7 @@ export class ConvexSyncBridge {
   }
 
   async restoreFromCloud(input: { kind: RestoreKind; throughBusinessDate?: string }): Promise<{ restored: true; imported: number; kind: RestoreKind }> {
+    if (!this.isCloudBackupEnabled()) throw new Error("Cloud Backup is off");
     const config = this.resolveConfig();
     if (!config.cloudUrl || !config.syncSecret || !config.installationId) throw new Error("Cloud connection is not configured");
     this.assertNoActiveService();
@@ -782,6 +787,10 @@ export class ConvexSyncBridge {
     const next = `hubfp_${randomUUID()}`;
     this.writeSetting("license_hub_fingerprint", next);
     return next;
+  }
+
+  isCloudBackupEnabled(): boolean {
+    return this.getSetting("cloud_backup_enabled") === "1";
   }
 
   private getSetting(key: string): string | undefined {

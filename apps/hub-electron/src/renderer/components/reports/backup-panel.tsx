@@ -8,10 +8,12 @@ import { EmptyState } from "../ui/empty-state.js";
 export function BackupPanel({
   backups,
   loading,
+  cloudBackupEnabled = false,
   onChanged,
 }: {
   backups: BackupSummary[];
   loading: boolean;
+  cloudBackupEnabled?: boolean;
   onChanged: () => Promise<unknown>;
 }) {
   const [label, setLabel] = useState("");
@@ -169,11 +171,12 @@ export function BackupPanel({
         <button
           type="submit"
           className="danger-button"
-          disabled={cloudRestore.isPending || !masterPin || (cloudRestoreKind === "order_history" && !cloudRestoreDate)}
+          disabled={!cloudBackupEnabled || cloudRestore.isPending || !masterPin || (cloudRestoreKind === "order_history" && !cloudRestoreDate)}
         >
           Restore from cloud
         </button>
       </form>
+      {!cloudBackupEnabled ? <p className="text-sm text-muted">Cloud Backup is off. Cloud restore is unavailable.</p> : null}
       {cloudRestore.error ? <p className="text-sm text-muted bad">{messageOf(cloudRestore.error)}</p> : null}
       {cloudRestore.data ? (
         <p className="text-sm text-muted">Restored {cloudRestore.data.imported} cloud rows for {cloudRestore.data.kind.replace("_", " ")}.</p>

@@ -80,6 +80,7 @@ export function createHubServer(input: HubServerInput) {
   };
   const currentLicenseState = () =>
     input.syncBridge?.getLicenseState() ?? { status: "missing", reason: "missing_license", message: "Cloud license service is not configured." };
+  const cloudBackupOffMessage = "Cloud Backup is off. Enable it with Master PIN before using cloud backup.";
   const isLicenseRequired = () => input.licenseRequired === true || currentLicenseState().status !== "missing";
   const requireServiceLicense = async () => {
     if (!input.syncBridge || !isLicenseRequired()) return;
@@ -87,6 +88,9 @@ export function createHubServer(input: HubServerInput) {
     if (license.status === "missing" || license.status === "locked") {
       throw new DomainError(license.message, 402);
     }
+  };
+  const requireCloudBackupEnabled = () => {
+    if (!input.orderService.isCloudBackupEnabled()) throw new DomainError(cloudBackupOffMessage, 403);
   };
   const withServiceLicense =
     (handler: typeof routeAuth.anyRole) =>
@@ -180,6 +184,7 @@ export function createHubServer(input: HubServerInput) {
         printerOutputMode: input.orderService.getPrinterOutputMode(),
         managerPinConfigured: input.orderService.isManagerPinConfigured(),
         masterPinConfigured: input.orderService.isMasterPinConfigured(),
+        cloudBackupEnabled: input.orderService.isCloudBackupEnabled(),
         hubConnection: input.orderService.getHubConnectionSettings(false),
         license: currentLicenseState()
       }
@@ -197,10 +202,12 @@ export function createHubServer(input: HubServerInput) {
     return input.syncBridge.checkLicenseOnline();
   });
   app.get("/cloud-backup/manifest", { preHandler: adminOnly }, async () => {
+    requireCloudBackupEnabled();
     if (!input.syncBridge) return { manifests: [] };
     return input.syncBridge.fetchBackupManifest();
   });
   app.post("/cloud-backup/restore", { preHandler: adminOnly }, async (request) => {
+    requireCloudBackupEnabled();
     if (!input.syncBridge) throw new DomainError("Cloud sync is not available", 503);
     const masterPin = String(request.headers["x-master-pin"] ?? "");
     input.orderService.verifyMasterPinForSession(masterPin);
@@ -211,13 +218,18 @@ export function createHubServer(input: HubServerInput) {
     return input.syncBridge.restoreFromCloud({ kind: body.kind, throughBusinessDate: body.throughBusinessDate });
   });
   app.get("/sync/status", { preHandler: captainOrAdmin }, async () => input.orderService.getSyncStatus());
-  app.post("/sync/push", { preHandler: adminOnly }, async () =>
-    input.syncBridge ? dedupeInFlight(syncPushState, () => input.syncBridge!.pushPending()) : { pushed: 0, skipped: true }
-  );
-  app.post("/sync/pull", { preHandler: adminOnly }, async () =>
-    input.syncBridge ? dedupeInFlight(syncPullState, () => input.syncBridge!.pullCloudSnapshot()) : { applied: 0, skipped: true }
-  );
-  app.post("/sync/requeue-failed", { preHandler: adminOnly }, async () => input.syncBridge?.requeueFailedEvents() ?? { requeued: 0 });
+  app.post("/sync/push", { preHandler: adminOnly }, async () => {
+    requireCloudBackupEnabled();
+    return input.syncBridge ? dedupeInFlight(syncPushState, () => input.syncBridge!.pushPending()) : { pushed: 0, skipped: true };
+  });
+  app.post("/sync/pull", { preHandler: adminOnly }, async () => {
+    requireCloudBackupEnabled();
+    return input.syncBridge ? dedupeInFlight(syncPullState, () => input.syncBridge!.pullCloudSnapshot()) : { applied: 0, skipped: true };
+  });
+  app.post("/sync/requeue-failed", { preHandler: adminOnly }, async () => {
+    requireCloudBackupEnabled();
+    return input.syncBridge?.requeueFailedEvents() ?? { requeued: 0 };
+  });
   app.delete<{ Params: { commandId: string } }>("/sync/cloud-command-failures/:commandId", { preHandler: adminOnly }, async ({ params }) => {
     const result = input.database.orm.delete(cloudCommandFailures).where(eq(cloudCommandFailures.commandId, params.commandId)).run();
     return { commandId: params.commandId, resolved: Number(result.changes ?? 0) > 0 };

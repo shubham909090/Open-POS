@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { managerApprovalSchema } from "./common.js";
+import { managerApprovalSchema, masterApprovalSchema } from "./common.js";
 
 export const managerPinSchema = z.object({
   currentPin: z.string().trim().min(4).max(32).optional(),
@@ -60,6 +60,11 @@ export const hubConnectionSettingsSchema = z.object({
   installationId: z.string().trim().max(160).optional().default(""),
   syncSecret: z.string().trim().max(400).optional().default(""),
   hubPublicUrl: z.string().trim().max(400).optional().default("")
+});
+
+export const updateCloudBackupSchema = z.object({
+  enabled: z.boolean(),
+  masterApproval: masterApprovalSchema.optional()
 });
 
 export const printLayoutScopeSchema = z.enum(["default", "receipt", "unit"]);
@@ -150,6 +155,7 @@ export type UpdateBillPrintersInput = z.infer<typeof updateBillPrintersSchema>;
 export type PrintActionInput = z.infer<typeof printActionSchema>;
 export type TicketTemplateInput = z.infer<typeof ticketTemplateSchema>;
 export type HubConnectionSettingsInput = z.infer<typeof hubConnectionSettingsSchema>;
+export type UpdateCloudBackupInput = z.infer<typeof updateCloudBackupSchema>;
 export type PrintLayoutScope = z.infer<typeof printLayoutScopeSchema>;
 export type PrintLayoutSettingsInput = z.infer<typeof printLayoutSettingsSchema>;
 export type CreatePairingCodeInput = z.infer<typeof createPairingCodeSchema>;
