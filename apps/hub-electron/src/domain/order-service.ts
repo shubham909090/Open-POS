@@ -30,6 +30,7 @@ import {
   type SetMasterPinInput,
   type SettleBillInput,
   type SubmitOrderInput,
+  type TallyExportSettingsInput,
   type TicketTemplateInput,
   type UpdateCloudBackupInput,
   type UpdateAlcoholItemInput,
@@ -201,6 +202,7 @@ import {
   enqueueKotReprint as enqueueKotReprintModel
 } from "./order-service/reprint-tickets.js";
 import { buildRangeReport } from "./order-service/report-range.js";
+import { exportRangeCsvZip, exportRangeTallyXml, type ReportExportFile } from "./order-service/report-exports.js";
 import { getDailyReportSnapshot, listDailyReportSnapshots } from "./order-service/report-snapshots.js";
 import { buildDaySummary } from "./order-service/report-summary.js";
 import { getOrderReadModel, getSyncStatusReadModel, listKdsTickets, listPrintJobReadModels } from "./order-service/read-models.js";
@@ -229,6 +231,7 @@ import {
   getHubConnectionSettings as getHubConnectionSettingsModel,
   getPrintLayout as getPrintLayoutModel,
   getPrintLayouts as getPrintLayoutsModel,
+  getTallyExportSettings as getTallyExportSettingsModel,
   getTicketTemplate as getTicketTemplateModel,
   isCloudBackupEnabled as isCloudBackupEnabledModel,
   isManagerPinConfigured as isManagerPinConfiguredModel,
@@ -238,6 +241,7 @@ import {
   updateCloudBackupEnabled as updateCloudBackupEnabledModel,
   updateHubConnectionSettings as updateHubConnectionSettingsModel,
   updatePrintLayout as updatePrintLayoutModel,
+  updateTallyExportSettings as updateTallyExportSettingsModel,
   updateTicketTemplate as updateTicketTemplateModel,
   verifyManagerPinForSession as verifyManagerPinForSessionModel,
   type SettingsActionContext
@@ -411,6 +415,14 @@ export class OrderService {
 
   updateCloudBackupEnabled(input: UpdateCloudBackupInput): { enabled: boolean } {
     return updateCloudBackupEnabledModel(this.settingsActionContext(), input);
+  }
+
+  getTallyExportSettings(): TallyExportSettingsInput {
+    return getTallyExportSettingsModel(this.settingsActionContext());
+  }
+
+  updateTallyExportSettings(input: TallyExportSettingsInput): TallyExportSettingsInput {
+    return updateTallyExportSettingsModel(this.settingsActionContext(), input);
   }
 
   ensureHubConnectionSettings(input: HubConnectionSettingsInput): void {
@@ -703,6 +715,18 @@ export class OrderService {
     this.finalizeCompletedBusinessDays();
     this.removeEmptyPendingBills();
     return buildRangeReport(this.db, input);
+  }
+
+  exportRangeCsv(input: ReportRangeQueryInput): ReportExportFile {
+    this.finalizeCompletedBusinessDays();
+    this.removeEmptyPendingBills();
+    return exportRangeCsvZip(this.db, input);
+  }
+
+  exportRangeTally(input: ReportRangeQueryInput): ReportExportFile {
+    this.finalizeCompletedBusinessDays();
+    this.removeEmptyPendingBills();
+    return exportRangeTallyXml(this.db, input, this.getTallyExportSettings());
   }
 
   reviseBill(billId: string, input: ReviseBillInput): { billId: string; revisionNumber: number; totalPaise: number; kotIds: string[]; printJobIds: string[] } {

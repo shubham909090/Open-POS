@@ -6,6 +6,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 const historyEditBillMock = vi.fn();
 const billPrintersMock = vi.fn();
 const rangeReportMock = vi.fn();
+const rangeReportCsvMock = vi.fn();
+const rangeReportTallyMock = vi.fn();
+const tallyExportSettingsMock = vi.fn();
+const updateTallyExportSettingsMock = vi.fn();
 const backupsMock = vi.fn();
 const pendingRestoreMock = vi.fn();
 const createBackupMock = vi.fn();
@@ -22,6 +26,10 @@ describe("reports history payment edit", () => {
     historyEditBillMock.mockReset();
     billPrintersMock.mockReset();
     rangeReportMock.mockReset();
+    rangeReportCsvMock.mockReset();
+    rangeReportTallyMock.mockReset();
+    tallyExportSettingsMock.mockReset();
+    updateTallyExportSettingsMock.mockReset();
     backupsMock.mockReset();
     pendingRestoreMock.mockReset();
     createBackupMock.mockReset();
@@ -80,6 +88,8 @@ describe("reports history payment edit", () => {
     expect(await screen.findByText("Finalized business days only")).toBeTruthy();
     expect(await screen.findByText("Some selected dates have no finalized report.")).toBeTruthy();
     expect(screen.getByText("Missing: 2026-05-02")).toBeTruthy();
+    expect((screen.getByRole("button", { name: "Download CSV" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Download Tally" }) as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByText("Daily breakdown")).toBeTruthy();
     expect(screen.getByText("Bill history is collapsed for performance.")).toBeTruthy();
 
@@ -87,6 +97,82 @@ describe("reports history payment edit", () => {
     fireEvent.click(screen.getByRole("button", { name: "Load bill history" }));
 
     await waitFor(() => expect(rangeReportMock).toHaveBeenCalledWith(expect.any(String), expect.any(String), true));
+  });
+
+  it("downloads complete range exports as CSV and Tally files", async () => {
+    const originalCreateObjectUrl = URL.createObjectURL;
+    const originalRevokeObjectUrl = URL.revokeObjectURL;
+    Object.defineProperty(URL, "createObjectURL", { configurable: true, value: vi.fn(() => "blob:report-export") });
+    Object.defineProperty(URL, "revokeObjectURL", { configurable: true, value: vi.fn() });
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+
+    rangeReportMock.mockResolvedValue(rangeSummary(false, { missingDates: [], groupSummaries: [foodGroupSummary()] }));
+    rangeReportCsvMock.mockResolvedValue(downloadedFile("gaurav-pos-report-2026-05-01-to-2026-05-03.zip"));
+    rangeReportTallyMock.mockResolvedValue(downloadedFile("tally-vouchers-2026-05-01-to-2026-05-03.xml"));
+
+    const { ReportsView } = await importReportsView();
+    renderReportsView(ReportsView);
+
+    fireEvent.click(await screen.findByRole("tab", { name: "Monthly / Range" }));
+
+    const csvButton = await screen.findByRole("button", { name: "Download CSV" });
+    const tallyButton = await screen.findByRole("button", { name: "Download Tally" });
+    expect((csvButton as HTMLButtonElement).disabled).toBe(false);
+    expect((tallyButton as HTMLButtonElement).disabled).toBe(false);
+
+    fireEvent.click(csvButton);
+    await waitFor(() => expect(rangeReportCsvMock).toHaveBeenCalledWith(expect.any(String), expect.any(String)));
+
+    fireEvent.click(tallyButton);
+    await waitFor(() => expect(rangeReportTallyMock).toHaveBeenCalledWith(expect.any(String), expect.any(String)));
+
+    Object.defineProperty(URL, "createObjectURL", { configurable: true, value: originalCreateObjectUrl });
+    Object.defineProperty(URL, "revokeObjectURL", { configurable: true, value: originalRevokeObjectUrl });
+  });
+
+  it("saves Tally ledger settings from the range report", async () => {
+    rangeReportMock.mockResolvedValue(rangeSummary(false, { missingDates: [], groupSummaries: [foodGroupSummary()] }));
+    updateTallyExportSettingsMock.mockImplementation(async (payload: unknown) => payload);
+
+    const { ReportsView } = await importReportsView();
+    renderReportsView(ReportsView);
+
+    fireEvent.click(await screen.findByRole("tab", { name: "Monthly / Range" }));
+    fireEvent.click(await screen.findByText("Tally ledger settings"));
+    fireEvent.change(await screen.findByLabelText("Cash ledger"), { target: { value: "Main Cash" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save Tally settings" }));
+
+    await waitFor(() => expect(updateTallyExportSettingsMock).toHaveBeenCalledWith(expect.objectContaining({
+      cashLedgerName: "Main Cash",
+      saleLedgerNames: expect.objectContaining({ "sg-food": "Sales - Food" }),
+    })));
+  });
+
+  it("blocks Tally download until edited ledger settings are saved", async () => {
+    rangeReportMock.mockResolvedValue(rangeSummary(false, { missingDates: [], groupSummaries: [foodGroupSummary()] }));
+    updateTallyExportSettingsMock.mockImplementation(async (payload: unknown) => payload);
+
+    const { ReportsView } = await importReportsView();
+    renderReportsView(ReportsView);
+
+    fireEvent.click(await screen.findByRole("tab", { name: "Monthly / Range" }));
+    const csvButton = await screen.findByRole("button", { name: "Download CSV" });
+    const tallyButton = await screen.findByRole("button", { name: "Download Tally" });
+
+    fireEvent.click(await screen.findByText("Tally ledger settings"));
+    fireEvent.change(await screen.findByLabelText("Cash ledger"), { target: { value: "Main Cash" } });
+
+    expect(screen.getByText("Save Tally settings before Tally export.")).toBeTruthy();
+    expect((csvButton as HTMLButtonElement).disabled).toBe(false);
+    expect((tallyButton as HTMLButtonElement).disabled).toBe(true);
+
+    fireEvent.click(csvButton);
+    await waitFor(() => expect(rangeReportCsvMock).toHaveBeenCalledWith(expect.any(String), expect.any(String)));
+    expect(rangeReportTallyMock).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Save Tally settings" }));
+    await waitFor(() => expect(updateTallyExportSettingsMock).toHaveBeenCalled());
+    await waitFor(() => expect((tallyButton as HTMLButtonElement).disabled).toBe(false));
   });
 
   it("creates manual backups and guards restore and delete with filename confirmation", async () => {
@@ -177,13 +263,21 @@ async function importReportsView() {
   });
   if (!backupsMock.getMockImplementation()) backupsMock.mockResolvedValue([]);
   if (!pendingRestoreMock.getMockImplementation()) pendingRestoreMock.mockResolvedValue(null);
+  if (!rangeReportCsvMock.getMockImplementation()) rangeReportCsvMock.mockResolvedValue(downloadedFile("range-report.zip"));
+  if (!rangeReportTallyMock.getMockImplementation()) rangeReportTallyMock.mockResolvedValue(downloadedFile("range-report.xml"));
+  if (!tallyExportSettingsMock.getMockImplementation()) tallyExportSettingsMock.mockResolvedValue(tallySettings());
+  if (!updateTallyExportSettingsMock.getMockImplementation()) updateTallyExportSettingsMock.mockImplementation(async (payload: unknown) => payload);
   vi.doMock("../renderer/hub-api.js", () => ({
     hubApi: {
       currentBusinessDaySummary: vi.fn().mockResolvedValue(summary()),
-	      dailyReports: vi.fn().mockResolvedValue([]),
-	      dailyReport: vi.fn(),
-	      rangeReport: rangeReportMock,
-	      alcoholStockMovements: vi.fn().mockResolvedValue([]),
+      dailyReports: vi.fn().mockResolvedValue([]),
+      dailyReport: vi.fn(),
+      rangeReport: rangeReportMock,
+      rangeReportCsv: rangeReportCsvMock,
+      rangeReportTally: rangeReportTallyMock,
+      tallyExportSettings: tallyExportSettingsMock,
+      updateTallyExportSettings: updateTallyExportSettingsMock,
+      alcoholStockMovements: vi.fn().mockResolvedValue([]),
       bootstrap: vi.fn().mockResolvedValue({ menuItems: [], setup: { masterPinConfigured: true } }),
       backups: backupsMock,
       pendingRestore: pendingRestoreMock,
@@ -200,7 +294,7 @@ async function importReportsView() {
   return import("../renderer/components/reports/reports-view.js");
 }
 
-function rangeSummary(includeBills: boolean) {
+function rangeSummary(includeBills: boolean, overrides: Record<string, unknown> = {}) {
   return {
     range: { from: "2026-05-01", to: "2026-05-03" },
     availableDays: [
@@ -241,8 +335,40 @@ function rangeSummary(includeBills: boolean) {
     nonCashPaymentsPaise: 0,
     itemSummaries: [],
     groupSummaries: [],
-    ...(includeBills ? { billSummaries: summary().billSummaries } : {})
+    ...(includeBills ? { billSummaries: summary().billSummaries } : {}),
+    ...overrides,
   };
+}
+
+function foodGroupSummary() {
+  return {
+    saleGroupId: "sg-food",
+    name: "Food",
+    kind: "food",
+    quantity: 1,
+    grossSalesPaise: 50_000,
+    taxPaise: 0,
+    finalSalesPaise: 50_000,
+    ncQuantity: 0,
+    ncGrossSalesPaise: 0,
+  };
+}
+
+function tallySettings() {
+  return {
+    voucherTypeName: "Sales",
+    cashLedgerName: "Cash",
+    upiLedgerName: "UPI",
+    cardLedgerName: "Card",
+    onlineLedgerName: "Online",
+    discountLedgerName: "Discounts Given",
+    tipLedgerName: "Tips Received",
+    saleLedgerNames: {},
+  };
+}
+
+function downloadedFile(fileName: string) {
+  return { blob: new Blob(["ok"]), fileName };
 }
 
 function renderReportsView(

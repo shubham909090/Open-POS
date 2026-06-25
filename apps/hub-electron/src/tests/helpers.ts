@@ -19,6 +19,9 @@ export function insertDailySnapshot(
     businessDate: string;
     billCount: number;
     finalSalesPaise: number;
+    grossSalesPaise?: number;
+    discountPaise?: number;
+    tipPaise?: number;
     cashPaise?: number;
     upiPaise?: number;
     cardPaise?: number;
@@ -50,6 +53,9 @@ export function insertDailySnapshot(
   const card = input.cardPaise ?? 0;
   const online = input.onlinePaise ?? 0;
   const totalPayments = cash + upi + card + online;
+  const grossSales = input.grossSalesPaise ?? input.finalSalesPaise;
+  const discount = input.discountPaise ?? 0;
+  const tip = input.tipPaise ?? 0;
   database.db
     .prepare(
       `INSERT INTO daily_report_snapshots (
@@ -57,14 +63,16 @@ export function insertDailySnapshot(
         gross_sales_paise, discount_paise, tip_paise, final_sales_paise,
         cash_payments_paise, upi_payments_paise, card_payments_paise, online_payments_paise, total_payments_paise, non_cash_payments_paise,
         bill_summaries_json, item_summaries_json, group_summaries_json, finalized_at, updated_at
-      ) VALUES (?, ?, 'finalized', ?, 0, 0, ?, 0, 0, ?, 0, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ) VALUES (?, ?, 'finalized', ?, 0, 0, ?, 0, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       input.id,
       input.businessDate,
       input.billCount,
       input.billCount,
-      input.finalSalesPaise,
+      grossSales,
+      discount,
+      tip,
       input.finalSalesPaise,
       cash,
       upi,

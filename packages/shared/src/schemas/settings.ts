@@ -67,6 +67,28 @@ export const updateCloudBackupSchema = z.object({
   masterApproval: masterApprovalSchema.optional()
 });
 
+const tallyLedgerNameSchema = z.string().trim().min(1).max(120);
+
+export const tallyExportSettingsSchema = z.object({
+  voucherTypeName: tallyLedgerNameSchema.default("Sales"),
+  cashLedgerName: tallyLedgerNameSchema.default("Cash"),
+  upiLedgerName: tallyLedgerNameSchema.default("UPI"),
+  cardLedgerName: tallyLedgerNameSchema.default("Card"),
+  onlineLedgerName: tallyLedgerNameSchema.default("Online"),
+  discountLedgerName: tallyLedgerNameSchema.default("Discounts Given"),
+  tipLedgerName: tallyLedgerNameSchema.default("Tips Received"),
+  saleLedgerNames: z.record(tallyLedgerNameSchema).default({})
+});
+
+export function defaultTallyExportSettings(): TallyExportSettingsInput {
+  return tallyExportSettingsSchema.parse({});
+}
+
+export function defaultTallySaleLedgerName(groupName: string): string {
+  const cleanName = groupName.trim();
+  return cleanName ? `Sales - ${cleanName}` : "Sales";
+}
+
 export const printLayoutScopeSchema = z.enum(["default", "receipt", "unit"]);
 export const printTextSizeSchema = z.enum(["small", "normal", "large"]);
 export const printAlignSchema = z.enum(["left", "center", "right"]);
@@ -172,6 +194,7 @@ export type PrintActionInput = z.infer<typeof printActionSchema>;
 export type TicketTemplateInput = z.infer<typeof ticketTemplateSchema>;
 export type HubConnectionSettingsInput = z.infer<typeof hubConnectionSettingsSchema>;
 export type UpdateCloudBackupInput = z.infer<typeof updateCloudBackupSchema>;
+export type TallyExportSettingsInput = z.infer<typeof tallyExportSettingsSchema>;
 export type PrintLayoutScope = z.infer<typeof printLayoutScopeSchema>;
 export type PrintLayoutSettingsInput = z.infer<typeof printLayoutSettingsSchema>;
 export type CreatePairingCodeInput = z.infer<typeof createPairingCodeSchema>;

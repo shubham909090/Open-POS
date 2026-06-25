@@ -6,9 +6,11 @@ import type {
   MasterApprovalInput,
   PrintLayoutSettingsInput,
   SetMasterPinInput,
+  TallyExportSettingsInput,
   TicketTemplateInput,
   UpdateCloudBackupInput
 } from "@gaurav-pos/shared";
+import { tallyExportSettingsSchema } from "@gaurav-pos/shared";
 
 import { DomainError } from "../errors.js";
 import { hashApprovalPin, verifyApprovalPin } from "./approvals.js";
@@ -19,8 +21,10 @@ import {
   readHubConnectionRuntimeSettings,
   readHubConnectionSettings,
   readPrintLayout,
+  readTallyExportSettings,
   readTicketTemplate,
   writeHubConnectionSettings,
+  writeTallyExportSettings,
   writeTicketTemplate
 } from "./settings-models.js";
 
@@ -124,6 +128,17 @@ export function updateCloudBackupEnabled(ctx: SettingsActionContext, input: Upda
   ctx.writeSetting("cloud_backup_enabled", input.enabled ? "1" : "0");
   ctx.appendEvent("cloud_backup.updated", "hub_setting", "cloud_backup", { enabled: input.enabled });
   return { enabled: input.enabled };
+}
+
+export function getTallyExportSettings(ctx: SettingsActionContext): TallyExportSettingsInput {
+  return readTallyExportSettings(ctx.readSetting);
+}
+
+export function updateTallyExportSettings(ctx: SettingsActionContext, input: TallyExportSettingsInput): TallyExportSettingsInput {
+  const settings = tallyExportSettingsSchema.parse(input);
+  writeTallyExportSettings(ctx.writeSetting, settings);
+  ctx.appendEvent("tally_export_settings.updated", "hub_setting", "tally_export_settings", settings);
+  return getTallyExportSettings(ctx);
 }
 
 export function ensureHubConnectionSettings(ctx: SettingsActionContext, input: HubConnectionSettingsInput): void {

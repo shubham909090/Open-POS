@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import AdmZip from "adm-zip";
 import WebSocket from "ws";
 import { createHubServer, isRealtimeEventVisibleForRole, realtimeEventForRole, resolvePairingHubUrl, selectPairingLanAddress } from "../api/server.js";
 import { BackupService } from "../db/backup-service.js";
@@ -145,6 +146,104 @@ describe("Hub API order and billing routes", () => {
     expect(summaryResponse.json()).not.toHaveProperty("billSummaries");
     expect(billsResponse.json()).toMatchObject({ billSummaries: [expect.objectContaining({ billId: "bill-1" })] });
     expect(invalidResponse.statusCode).toBe(400);
+
+    await app.close();
+    database.close();
+  });
+
+  it("serves full CSV packs and configured Tally XML for finalized ranges", async () => {
+    const { app, database } = createTestServer();
+    const headers = { "x-device-token": "test-admin-token" };
+    insertApiDailySnapshot(database, {
+      id: "api-export-day",
+      businessDate: "2026-05-04",
+      grossSalesPaise: 12_000,
+      discountPaise: 3_000,
+      tipPaise: 1_000,
+      finalSalesPaise: 10_000,
+      cashPaise: 6_000,
+      upiPaise: 4_000,
+      groupSummaries: [
+        { saleGroupId: "sg-food", name: "Food", kind: "food", quantity: 2, grossSalesPaise: 12_000, taxPaise: 600, finalSalesPaise: 10_000, ncQuantity: 0, ncGrossSalesPaise: 0 }
+      ],
+      billSummaries: [{ billId: "bill-api-export", billNumber: 9, orderId: "order-api-export", tableName: "T1", status: "paid", totalPaise: 12_000, discountPaise: 3_000, tipPaise: 1_000, finalTotalPaise: 10_000, paidPaise: 10_000, settledAt: "2026-05-04T19:00:00.000Z", payments: [], items: [] }]
+    });
+
+    const saved = await app.inject({
+      method: "PUT",
+      url: "/settings/tally-export",
+      headers,
+      payload: {
+        voucherTypeName: "Sales",
+        cashLedgerName: "Cash in Hand",
+        upiLedgerName: "UPI Clearing",
+        cardLedgerName: "Card Clearing",
+        onlineLedgerName: "Online Aggregator",
+        discountLedgerName: "Discount Allowed",
+        tipLedgerName: "Tips Collected",
+        saleLedgerNames: { "sg-food": "Food Revenue" }
+      }
+    });
+    const invalid = await app.inject({
+      method: "PUT",
+      url: "/settings/tally-export",
+      headers,
+      payload: {
+        voucherTypeName: "Sales",
+        cashLedgerName: "",
+        upiLedgerName: "UPI",
+        cardLedgerName: "Card",
+        onlineLedgerName: "Online",
+        discountLedgerName: "Discounts Given",
+        tipLedgerName: "Tips Received",
+        saleLedgerNames: {}
+      }
+    });
+    const csvResponse = await app.inject({ method: "GET", url: "/reports/range/export-csv?from=2026-05-04&to=2026-05-04", headers });
+    const tallyResponse = await app.inject({ method: "GET", url: "/reports/range/export-tally?from=2026-05-04&to=2026-05-04", headers });
+    const incompleteResponse = await app.inject({ method: "GET", url: "/reports/range/export-csv?from=2026-05-04&to=2026-05-05", headers });
+
+    expect(saved.statusCode).toBe(200);
+    expect(saved.json()).toMatchObject({ cashLedgerName: "Cash in Hand", saleLedgerNames: { "sg-food": "Food Revenue" } });
+    expect(invalid.statusCode).toBe(400);
+    expect(csvResponse.statusCode).toBe(200);
+    expect(csvResponse.headers["content-disposition"]).toBe('attachment; filename="reports-2026-05-04-to-2026-05-04.zip"');
+    expect(new AdmZip(csvResponse.rawPayload).readAsText("bill-history.csv")).toContain("bill-api-export");
+    expect(tallyResponse.statusCode).toBe(200);
+    expect(tallyResponse.headers["content-disposition"]).toBe('attachment; filename="tally-2026-05-04-to-2026-05-04.xml"');
+    expect(tallyResponse.body).toContain("<LEDGERNAME>Food Revenue</LEDGERNAME>");
+    expect(tallyResponse.body).toContain("<AMOUNT>120.00</AMOUNT>");
+    expect(incompleteResponse.statusCode).toBe(400);
+    expect(incompleteResponse.json()).toMatchObject({ error: expect.stringContaining("Export needs every selected date finalized") });
+
+    await app.close();
+    database.close();
+  });
+
+  it("lets captain devices save Tally export ledger settings for report exports", async () => {
+    const { app, database } = createTestServer();
+    await setTestManagerPin(app);
+    const captain = await pairTestDevice(app, "captain", "Captain reports");
+    const captainHeaders = { "x-device-token": captain.token };
+
+    const response = await app.inject({
+      method: "PUT",
+      url: "/settings/tally-export",
+      headers: captainHeaders,
+      payload: {
+        voucherTypeName: "Sales",
+        cashLedgerName: "Counter Cash",
+        upiLedgerName: "UPI",
+        cardLedgerName: "Card",
+        onlineLedgerName: "Online",
+        discountLedgerName: "Discounts Given",
+        tipLedgerName: "Tips Received",
+        saleLedgerNames: { "sg-food": "Sales - Food" }
+      }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ cashLedgerName: "Counter Cash", saleLedgerNames: { "sg-food": "Sales - Food" } });
 
     await app.close();
     database.close();

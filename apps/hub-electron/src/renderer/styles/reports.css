@@ -91,6 +91,89 @@
   @apply text-sm font-medium text-muted;
 }
 
+.range-export-bar {
+  @apply grid min-w-0 items-center gap-3 rounded-lg border border-line bg-wash p-3;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.range-export-copy {
+  @apply grid min-w-0 gap-1;
+}
+
+.range-export-copy strong {
+  @apply min-w-0 text-base font-black leading-6 text-ink;
+}
+
+.range-export-copy span,
+.range-export-copy em {
+  @apply min-w-0 text-sm font-semibold leading-5 text-muted;
+}
+
+.range-export-copy em {
+  @apply not-italic text-warning;
+}
+
+.range-export-copy .warning-text {
+  @apply m-0;
+}
+
+.range-export-actions {
+  @apply flex min-w-0 flex-wrap items-center justify-end gap-2;
+}
+
+.range-export-actions .secondary-button {
+  @apply min-w-40;
+}
+
+.range-export-actions svg,
+.tally-settings-actions svg {
+  @apply shrink-0;
+}
+
+.tally-settings-details {
+  @apply overflow-hidden border-line bg-panel;
+}
+
+.tally-settings-details summary {
+  @apply grid min-h-12 items-center gap-3 px-3 py-2;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+}
+
+.tally-settings-details summary span {
+  @apply min-w-0 text-sm font-black leading-5 text-ink;
+}
+
+.tally-settings-details summary small {
+  @apply max-w-[220px] truncate rounded-md border border-line bg-white px-2 py-1 text-xs font-black uppercase text-muted;
+}
+
+.tally-settings-body {
+  @apply grid min-w-0 gap-3 bg-white p-3;
+}
+
+.tally-settings-grid {
+  @apply grid min-w-0 gap-3;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.tally-settings-grid label,
+.tally-settings-grid input {
+  @apply min-w-0;
+}
+
+.tally-settings-actions {
+  @apply flex min-w-0 flex-wrap items-center justify-between gap-2 border-t border-line pt-3;
+}
+
+.tally-settings-actions span,
+.tally-settings-status {
+  @apply min-w-0 text-sm font-semibold leading-5 text-muted;
+}
+
+.tally-settings-actions .secondary-button {
+  @apply min-w-44;
+}
+
 .reports-layout .report-detail-grid {
   @apply grid gap-3;
   grid-template-columns: minmax(260px, 0.8fr) minmax(360px, 1fr);
@@ -257,6 +340,20 @@
 @media (max-width: 720px) {
   .range-report-controls {
     grid-template-columns: 1fr;
+  }
+
+  .range-export-bar,
+  .tally-settings-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .range-export-actions {
+    @apply justify-start;
+  }
+
+  .range-export-actions .secondary-button,
+  .tally-settings-actions .secondary-button {
+    @apply w-full min-w-0;
   }
 
   .backup-create-form,

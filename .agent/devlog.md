@@ -1,5 +1,12 @@
 # Devlog
 
+## 2026-06-25
+
+- Task: Added full finalized date-range report exports for Hub Reports with two download actions: detailed CSV ZIP and TallyPrime XML.
+- Hub behavior/API: range exports require every selected business date to have a finalized daily snapshot; CSV ZIP includes daily totals, category totals, item totals, bill history, bill items, and export summary; Tally XML creates balanced day vouchers using configurable payment/discount/tip/sales ledgers.
+- Hub UI: Monthly / Range reports now expose the two export buttons and a focused Tally ledger settings panel while keeping bill history lazy-loaded for large ranges.
+- Review hardening: shared Tally defaults now drive both renderer and backend ledgers, so unsaved sale groups use `Sales - <Group>` consistently; finalized-range snapshot loading now has one backend helper shared by report display and exports; renderer Tally settings use the shared schema-derived type; export/settings UI moved into `range-report-exports.tsx`.
+
 ## 2026-06-16
 
 - Task: Added the Hub local manual backup create/restore/delete cycle.
@@ -871,3 +878,9 @@
 - Hub sync: `ConvexSyncBridge.fetchBackupManifest()` now returns a disabled empty manifest without fetching when Cloud Backup is off, and `restoreFromCloud()` throws before cloud calls or restore work.
 - Regression guard: `apps/hub-electron/src/tests/convex-sync.test.ts` now verifies manifest and restore make zero fetch calls while Cloud Backup is off; restore behavior tests explicitly enable Cloud Backup.
 - Verification: targeted sync/API tests, hub typecheck, and `git diff --check` passed.
+
+## 2026-06-25 hub full range report exports
+- Task: Added two Monthly / Range report download actions for finalized date ranges: detailed CSV zip and TallyPrime XML.
+- Backend: `apps/hub-electron/src/domain/order-service/report-exports.ts` builds full CSV packs (`daily-totals`, `category-totals`, `item-totals`, `bill-history`, `bill-items`, `export-summary`) and balanced daily Tally vouchers, blocking both exports until every selected business date has a finalized report.
+- Settings/UI: Tally ledger defaults are stored in hub settings and editable from the range report surface; export buttons remain tied to the applied range and disabled for missing/unfinalized ranges.
+- Verification: targeted export/API/UI tests, full Hub Electron test suite, typecheck, renderer build, and Playwright visual checks at 1440px and 390px widths passed.

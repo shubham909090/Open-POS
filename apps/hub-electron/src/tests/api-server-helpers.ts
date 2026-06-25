@@ -77,7 +77,25 @@ export function createFailingPrintTestServer() {
 
 export const testManagerApproval = { pin: "1234", reason: "Pair device", approvedBy: "manager" };
 
-export function insertApiDailySnapshot(database: HubDatabase, input: { id: string; businessDate: string; finalSalesPaise: number; cashPaise?: number; billSummaries?: unknown[]; status?: "finalized" | "active" }) {
+export function insertApiDailySnapshot(
+  database: HubDatabase,
+  input: {
+    id: string;
+    businessDate: string;
+    finalSalesPaise: number;
+    grossSalesPaise?: number;
+    discountPaise?: number;
+    tipPaise?: number;
+    cashPaise?: number;
+    upiPaise?: number;
+    cardPaise?: number;
+    onlinePaise?: number;
+    billSummaries?: unknown[];
+    itemSummaries?: unknown[];
+    groupSummaries?: unknown[];
+    status?: "finalized" | "active";
+  }
+) {
   const status = input.status ?? "finalized";
   database.db
     .prepare(
@@ -94,6 +112,11 @@ export function insertApiDailySnapshot(database: HubDatabase, input: { id: strin
       .run(`order-${input.id}`, input.id, `${input.businessDate}T12:00:00.000Z`, `${input.businessDate}T12:00:00.000Z`);
     return;
   }
+  const cash = input.cashPaise ?? input.finalSalesPaise;
+  const upi = input.upiPaise ?? 0;
+  const card = input.cardPaise ?? 0;
+  const online = input.onlinePaise ?? 0;
+  const totalPayments = cash + upi + card + online;
   database.db
     .prepare(
       `INSERT INTO daily_report_snapshots (
@@ -101,16 +124,24 @@ export function insertApiDailySnapshot(database: HubDatabase, input: { id: strin
         gross_sales_paise, discount_paise, tip_paise, final_sales_paise,
         cash_payments_paise, upi_payments_paise, card_payments_paise, online_payments_paise, total_payments_paise, non_cash_payments_paise,
         bill_summaries_json, item_summaries_json, group_summaries_json, finalized_at, updated_at
-      ) VALUES (?, ?, 'finalized', 1, 0, 0, 1, 0, 0, ?, 0, 0, ?, ?, 0, 0, 0, ?, 0, ?, '[]', '[]', ?, ?)`
+      ) VALUES (?, ?, 'finalized', 1, 0, 0, 1, 0, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       input.id,
       input.businessDate,
+      input.grossSalesPaise ?? input.finalSalesPaise,
+      input.discountPaise ?? 0,
+      input.tipPaise ?? 0,
       input.finalSalesPaise,
-      input.finalSalesPaise,
-      input.cashPaise ?? input.finalSalesPaise,
-      input.cashPaise ?? input.finalSalesPaise,
+      cash,
+      upi,
+      card,
+      online,
+      totalPayments,
+      upi + card + online,
       JSON.stringify(input.billSummaries ?? []),
+      JSON.stringify(input.itemSummaries ?? []),
+      JSON.stringify(input.groupSummaries ?? []),
       `${input.businessDate}T19:00:00.000Z`,
       `${input.businessDate}T19:00:00.000Z`
     );

@@ -1,4 +1,11 @@
-import type { HubConnectionSettingsInput, PrintLayoutSettingsInput, TicketTemplateInput } from "@gaurav-pos/shared";
+import {
+  defaultTallyExportSettings,
+  tallyExportSettingsSchema,
+  type HubConnectionSettingsInput,
+  type PrintLayoutSettingsInput,
+  type TallyExportSettingsInput,
+  type TicketTemplateInput
+} from "@gaurav-pos/shared";
 
 import {
   defaultPrintLayout,
@@ -7,6 +14,8 @@ import {
 } from "./printer-settings.js";
 
 export type SettingWriter = (key: string, value: string) => void;
+
+const TALLY_EXPORT_SETTINGS_KEY = "tally_export_settings_json";
 
 export function readHubConnectionSettings(read: SettingReader, reveal = false): {
   configured: boolean;
@@ -50,6 +59,21 @@ export function ensureHubConnectionSettings(read: SettingReader, write: SettingW
   if (!read("hub_connection_installation_id") && input.installationId) write("hub_connection_installation_id", input.installationId);
   if (!read("hub_connection_sync_secret") && input.syncSecret) write("hub_connection_sync_secret", input.syncSecret);
   if (!read("hub_connection_public_url") && input.hubPublicUrl) write("hub_connection_public_url", input.hubPublicUrl);
+}
+
+export function readTallyExportSettings(read: SettingReader): TallyExportSettingsInput {
+  const fallback = defaultTallyExportSettings();
+  const stored = read(TALLY_EXPORT_SETTINGS_KEY);
+  if (!stored) return fallback;
+  try {
+    return tallyExportSettingsSchema.parse({ ...fallback, ...(JSON.parse(stored) as Partial<TallyExportSettingsInput>) });
+  } catch {
+    return fallback;
+  }
+}
+
+export function writeTallyExportSettings(write: SettingWriter, input: TallyExportSettingsInput): void {
+  write(TALLY_EXPORT_SETTINGS_KEY, JSON.stringify(tallyExportSettingsSchema.parse(input)));
 }
 
 export function readTicketTemplate(getPrintLayout: (scope: PrintLayoutSettingsInput["scope"], productionUnitId?: string) => PrintLayoutSettingsInput): TicketTemplateInput {

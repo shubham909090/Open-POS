@@ -7,6 +7,7 @@ import { alcoholMovementSourceLabel, alcoholMovementDeltaText } from "../../lib/
 import { EmptyState } from "../ui/empty-state.js";
 import { Metric } from "../ui/metric.js";
 import { BackupPanel } from "./backup-panel.js";
+import { RangeReportExports } from "./range-report-exports.js";
 import { ReportDetailPanels } from "./report-detail-panels.js";
 
 const REPORT_PAGE_SIZE = 8;
@@ -95,7 +96,6 @@ export function ReportsView({ requestManagerApproval }: { requestManagerApproval
       queryClient.invalidateQueries({ queryKey: ["pendingRestore"] }),
     ]);
   };
-
   return (
     <div className="reports-layout">
       <section className="panel reports-wide">
@@ -281,6 +281,10 @@ export function ReportsView({ requestManagerApproval }: { requestManagerApproval
             <RangeReportSummary
               report={rangeReport.data}
               billHistoryLoading={rangeReport.isFetching && rangeRequest.includeBills}
+              rangeFrom={rangeFrom}
+              rangeTo={rangeTo}
+              rangeRequest={rangeRequest}
+              rangeIsFetching={rangeReport.isFetching}
               onLoadBills={() => setRangeRequest((current) => ({ ...current, includeBills: true }))}
             />
           ) : rangeReport.isLoading ? (
@@ -354,7 +358,23 @@ export function ReportsView({ requestManagerApproval }: { requestManagerApproval
   );
 }
 
-function RangeReportSummary({ report, billHistoryLoading, onLoadBills }: { report: RangeReportDetail; billHistoryLoading: boolean; onLoadBills: () => void }) {
+function RangeReportSummary({
+  report,
+  billHistoryLoading,
+  rangeFrom,
+  rangeTo,
+  rangeRequest,
+  rangeIsFetching,
+  onLoadBills,
+}: {
+  report: RangeReportDetail;
+  billHistoryLoading: boolean;
+  rangeFrom: string;
+  rangeTo: string;
+  rangeRequest: { from: string; to: string };
+  rangeIsFetching: boolean;
+  onLoadBills: () => void;
+}) {
   const hasWarnings = report.missingDates.length > 0 || report.unfinalizedDates.length > 0;
   return (
     <div className="range-report-result">
@@ -373,6 +393,7 @@ function RangeReportSummary({ report, billHistoryLoading, onLoadBills }: { repor
           {report.missingDates.length ? <span>Missing: {report.missingDates.join(", ")}</span> : null}
         </div>
       ) : null}
+      <RangeReportExports report={report} rangeFrom={rangeFrom} rangeTo={rangeTo} rangeRequest={rangeRequest} rangeIsFetching={rangeIsFetching} />
       <section className="report-detail-card">
         <div className="mini-title">
           <strong>Daily breakdown</strong>

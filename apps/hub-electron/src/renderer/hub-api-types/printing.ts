@@ -1,3 +1,5 @@
+export type { TallyExportSettingsInput as TallyExportSettings } from "@gaurav-pos/shared";
+
 export interface PrintJob {
   id: string;
   target_type: string;
@@ -44,6 +46,11 @@ export interface HubConnectionSettings {
   installationId: string;
   syncSecret: string;
   hubPublicUrl: string;
+}
+
+export interface DownloadedFile {
+  blob: Blob;
+  fileName: string;
 }
 
 export interface PrintLayoutSettings {

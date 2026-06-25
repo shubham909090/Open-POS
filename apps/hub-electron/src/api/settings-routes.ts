@@ -4,6 +4,7 @@ import {
   managerPinUnlockSchema,
   printLayoutSettingsSchema,
   setMasterPinSchema,
+  tallyExportSettingsSchema,
   ticketTemplateSchema,
   updateCloudBackupSchema,
   updateBillPrintersSchema,
@@ -88,6 +89,14 @@ export function registerSettingsRoutes({ app, input, auth }: HubRouteContext): v
   app.put("/settings/cloud-backup", { preHandler: adminOnly }, async (request) => {
     const result = input.orderService.updateCloudBackupEnabled(updateCloudBackupSchema.parse(request.body));
     input.eventBus.publish({ type: "cloud_backup.updated", result });
+    return result;
+  });
+  app.get("/settings/tally-export", { preHandler: captainOrAdmin }, async () => input.orderService.getTallyExportSettings());
+  app.put("/settings/tally-export", { preHandler: captainOrAdmin }, async (request) => {
+    const parsed = tallyExportSettingsSchema.safeParse(request.body);
+    if (!parsed.success) throw new DomainError(parsed.error.issues[0]?.message ?? "Invalid Tally export settings", 400);
+    const result = input.orderService.updateTallyExportSettings(parsed.data);
+    input.eventBus.publish({ type: "tally_export_settings.updated", result });
     return result;
   });
   app.post("/settings/hub-connection/test", { preHandler: adminOnly }, async (request) => {

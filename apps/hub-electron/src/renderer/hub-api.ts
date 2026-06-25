@@ -13,6 +13,7 @@ import type {
   CsvImportResult,
   DailyReportDetail,
   DailyReportRow,
+  DownloadedFile,
   GithubUpdateCheckResult,
   GithubUpdateInstallRequest,
   HubConnectionSettings,
@@ -30,6 +31,7 @@ import type {
   Role,
   SystemPrinterInfo,
   TableOrder,
+  TallyExportSettings,
   ValidatedUpdatePackage,
 } from "./hub-api-types.js";
 
@@ -79,6 +81,29 @@ export async function apiFetch<T>(path: string, options: RequestInit & { idempot
   return body as T;
 }
 
+async function apiDownload(path: string): Promise<DownloadedFile> {
+  const headers = new Headers();
+  headers.set("authorization", `Bearer ${authToken}`);
+  const response = await fetch(path, { headers });
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    throw new Error(typeof body.error === "string" ? body.error : `Request failed: ${response.status}`);
+  }
+  return {
+    blob: await response.blob(),
+    fileName: fileNameFromContentDisposition(response.headers.get("content-disposition")) ?? "report-download",
+  };
+}
+
+function fileNameFromContentDisposition(value: string | null) {
+  const utf8Match = value?.match(/filename\*=UTF-8''([^;]+)/i);
+  if (utf8Match?.[1]) return decodeURIComponent(utf8Match[1]);
+  const quotedMatch = value?.match(/filename="([^"]+)"/i);
+  if (quotedMatch?.[1]) return quotedMatch[1];
+  const bareMatch = value?.match(/filename=([^;]+)/i);
+  return bareMatch?.[1]?.trim() ?? null;
+}
+
 export const hubApi = {
   adminSessionStatus: () => apiFetch<{ managerPinConfigured: boolean }>("/admin/session/status"),
   unlockAdminSession: (pin: string) => apiFetch<{ token: string; role: "admin" }>("/admin/session/unlock", { method: "POST", body: JSON.stringify({ pin }) }),
@@ -90,6 +115,10 @@ export const hubApi = {
   dailyReport: (posDayId: string) => apiFetch<DailyReportDetail>(`/reports/daily/${posDayId}`),
   rangeReport: (from: string, to: string, includeBills = false) =>
     apiFetch<RangeReportDetail>(`/reports/range?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&includeBills=${includeBills ? "true" : "false"}`),
+  rangeReportCsv: (from: string, to: string) =>
+    apiDownload(`/reports/range/export-csv?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`),
+  rangeReportTally: (from: string, to: string) =>
+    apiDownload(`/reports/range/export-tally?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`),
   backups: () => apiFetch<BackupSummary[]>("/backups"),
   createBackup: (label: string) => apiFetch<BackupSummary>("/backups", { method: "POST", body: JSON.stringify({ label }) }),
   deleteBackup: (fileName: string, payload: { confirmationText: string; masterApproval: MasterApprovalPayload["masterApproval"] }) =>
@@ -178,6 +207,9 @@ export const hubApi = {
     apiFetch<BulkDeleteResult>("/menu-items/bulk-delete", { method: "POST", body: JSON.stringify({ managerApproval }) }),
   setManagerPin: (payload: { currentPin?: string; newPin: string; updatedBy: string }) =>
     apiFetch<{ configured: boolean }>("/settings/manager-pin", { method: "PUT", body: JSON.stringify(payload) }),
+  tallyExportSettings: () => apiFetch<TallyExportSettings>("/settings/tally-export"),
+  updateTallyExportSettings: (payload: TallyExportSettings) =>
+    apiFetch<TallyExportSettings>("/settings/tally-export", { method: "PUT", body: JSON.stringify(payload) }),
   masterPinStatus: () => apiFetch<{ masterPinConfigured: boolean }>("/settings/master-pin/status"),
   setMasterPin: (payload: { currentPin?: string; newPin: string; confirmPin: string; updatedBy: string }) =>
     apiFetch<{ configured: boolean }>("/settings/master-pin", { method: "PUT", body: JSON.stringify(payload) }),
