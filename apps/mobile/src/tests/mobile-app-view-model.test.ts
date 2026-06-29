@@ -66,11 +66,47 @@ describe("mobile service view model", () => {
     expect(viewModel.draftTotal).toBe(45_000);
     expect(viewModel.tableTotal).toBe(95_000);
     expect(viewModel.hasNewItems).toBe(true);
+    expect(viewModel.draftQuantitiesByMenuItemId).toEqual({ "item-2": 1 });
+    expect(viewModel.draftSelectionLabelsByMenuItemId).toEqual({ "item-2": "1x 180 ml" });
     expect(viewModel.saleGroupFilters).toEqual([
       ["food", "Food"],
       ["alcohol", "Alcohol"]
     ]);
     expect(viewModel.visibleMenu.map((item) => item.id)).toEqual(["item-2"]);
     expect(viewModel.activeKdsUnits.map((unit) => unit.id)).toEqual(["kitchen"]);
+  });
+
+  it("summarizes mixed draft quantities per visible menu item", () => {
+    const viewModel = getMobileServiceViewModel({
+      bootstrap,
+      selectedTableId: "table-1",
+      currentOrder: null,
+      draftItems: [
+        { menuItemId: "item-1", quantity: 2 },
+        { menuItemId: "item-2", menuItemVariantId: "v180", quantity: 3 }
+      ],
+      menuSearch: "",
+      menuGroupFilter: null
+    });
+
+    expect(viewModel.draftQuantitiesByMenuItemId).toEqual({ "item-1": 2, "item-2": 3 });
+    expect(viewModel.draftSelectionLabelsByMenuItemId).toEqual({
+      "item-1": "2x added",
+      "item-2": "3x 180 ml"
+    });
+  });
+
+  it("does not label stale draft variant ids as an active variant", () => {
+    const viewModel = getMobileServiceViewModel({
+      bootstrap,
+      selectedTableId: "table-1",
+      currentOrder: null,
+      draftItems: [{ menuItemId: "item-2", menuItemVariantId: "missing-variant", quantity: 1 }],
+      menuSearch: "",
+      menuGroupFilter: null
+    });
+
+    expect(viewModel.draftQuantitiesByMenuItemId).toEqual({ "item-2": 1 });
+    expect(viewModel.draftSelectionLabelsByMenuItemId).toEqual({ "item-2": "1x added" });
   });
 });

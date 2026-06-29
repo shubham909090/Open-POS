@@ -71,7 +71,7 @@ describe("OrderService bill history edits", () => {
     expect(printJob.payload).toContain("Dal Fry");
     expect(printJob.payload).toContain("360.00");
     expect(stripPrintStyleMarkers(printJob.payload)).toContain("Discount              -50.00");
-    expect(printJob.payload).toContain("Modified");
+    expect(printJob.payload).not.toContain("Modified");
     expect(printJob.payload).not.toContain("REPRINT");
 
     database.close();

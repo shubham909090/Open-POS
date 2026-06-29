@@ -10,6 +10,10 @@ describe("mobile ticket layout", () => {
     expect(ticketStyles).toMatch(/ticketText:\s*\{[^}]*minWidth:\s*160[^}]*flexShrink:\s*1/s);
     expect(ticketStyles).toMatch(/sentName:\s*\{[^}]*minWidth:\s*150[^}]*flexShrink:\s*1/s);
     expect(ticketStyles).toMatch(/qtyControls:\s*\{[^}]*flexShrink:\s*0/s);
+    expect(ticketStyles).toMatch(/menuItem:\s*\{[^}]*position:\s*"relative"/s);
+    expect(ticketStyles).toMatch(/draftMenuBadge:\s*\{[^}]*position:\s*"absolute"[^}]*top:\s*8[^}]*left:\s*8/s);
+    expect(ticketStyles).toMatch(/menuIdentityWithBadge:\s*\{[^}]*paddingLeft:\s*42/s);
+    expect(ticketStyles).toMatch(/draftSelectionText:\s*\{[^}]*fontSize:\s*12[^}]*flexShrink:\s*1/s);
     expect(serviceStyles).toMatch(/itemShiftRow:\s*\{[^}]*flexWrap:\s*"wrap"/s);
   });
 });

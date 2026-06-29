@@ -186,6 +186,8 @@ export default function App() {
     draftTotal,
     tableTotal,
     hasNewItems,
+    draftQuantitiesByMenuItemId,
+    draftSelectionLabelsByMenuItemId,
     hasMenuSearch,
     saleGroupFilters,
     activeMenuGroup,
@@ -287,6 +289,8 @@ export default function App() {
           selectedSaleGroup={activeMenuGroup}
           hasSearch={hasMenuSearch}
           draftTotal={draftTotal}
+          draftQuantitiesByMenuItemId={draftQuantitiesByMenuItemId}
+          draftSelectionLabelsByMenuItemId={draftSelectionLabelsByMenuItemId}
           searchValue={menuSearch}
           virtualized={useVirtualMenu}
           onSearchChange={setMenuSearch}

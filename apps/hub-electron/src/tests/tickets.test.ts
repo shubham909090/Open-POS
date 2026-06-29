@@ -133,6 +133,21 @@ describe("ticket rendering", () => {
     expect(hidden).not.toContain("CASH");
   });
 
+  it("does not print modified revision labels on customer bills", () => {
+    const payload = renderBillTicket({
+      tableName: "T1",
+      billId: "BILL-1",
+      createdAt: "2026-05-15T00:00:00.000Z",
+      subtotalPaise: 50000,
+      taxPaise: 0,
+      totalPaise: 50000,
+      revisionNumber: 3
+    });
+
+    expect(payload).not.toContain("Modified");
+    expect(payload).not.toContain("rev 3");
+  });
+
   it("prints operational KOT headings with readable time and compact shift context", () => {
     const payload = renderKotTicket({
       sequence: 4,

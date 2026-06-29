@@ -1,5 +1,14 @@
 # Devlog
 
+## 2026-06-30
+
+- Task: Fixed three POS operator issues: report history/export date access, mobile menu draft visibility, and modified bill receipt labels.
+- Hub reports: daily finalized reports are no longer capped to 30 rows, report range schema accepts long historical accounting ranges, and range date inputs cap at the latest closed business day so today/active day is not picked by accident.
+- Mobile menu: `getMobileServiceViewModel()` now returns draft menu quantities/selection labels; `MenuScreen` shows a selected item badge (`1x`, `2x`) plus a full-width "Added ..." detail line on menu cards.
+- Review hardening: draft menu labels now avoid falling back from stale variant IDs to an unrelated active variant, and selected cards reserve badge space so the quantity bubble does not cover the category icon.
+- Bill printing: customer bill receipt rendering no longer prints `Modified rev N`; revision/modified metadata remains available in report/history data.
+- Verification: shared/mobile/Hub tests, affected typechecks, Hub renderer build, `git diff --check`, and Browser/Chrome 390px representative menu-card geometry check passed.
+
 ## 2026-06-25
 
 - Task: Added full finalized date-range report exports for Hub Reports with two download actions: detailed CSV ZIP and TallyPrime XML.

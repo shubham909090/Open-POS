@@ -701,7 +701,7 @@ export class OrderService {
     return buildDaySummary(this.db, this.ensureCurrentBusinessDay().id);
   }
 
-  listDailyReports(limit = 30): unknown[] {
+  listDailyReports(limit?: number): unknown[] {
     this.finalizeCompletedBusinessDays();
     this.removeEmptyPendingBills();
     return listDailyReportSnapshots(this.db, limit);

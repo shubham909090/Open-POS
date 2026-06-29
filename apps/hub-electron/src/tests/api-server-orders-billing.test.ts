@@ -151,6 +151,30 @@ describe("Hub API order and billing routes", () => {
     database.close();
   });
 
+  it("lists finalized daily reports older than thirty days", async () => {
+    const { app, database } = createTestServer();
+    const headers = { "x-device-token": "test-admin-token" };
+    for (let offset = 0; offset < 35; offset += 1) {
+      const businessDate = new Date(Date.UTC(2026, 3, 1 + offset)).toISOString().slice(0, 10);
+      insertApiDailySnapshot(database, {
+        id: `api-old-day-${offset}`,
+        businessDate,
+        finalSalesPaise: 10_000 + offset
+      });
+    }
+
+    const response = await app.inject({ method: "GET", url: "/reports/daily", headers });
+    const reports = response.json<Array<{ business_date: string }>>();
+
+    expect(response.statusCode).toBe(200);
+    expect(reports).toHaveLength(35);
+    expect(reports.at(0)?.business_date).toBe("2026-05-05");
+    expect(reports.at(-1)?.business_date).toBe("2026-04-01");
+
+    await app.close();
+    database.close();
+  });
+
   it("serves full CSV packs and configured Tally XML for finalized ranges", async () => {
     const { app, database } = createTestServer();
     const headers = { "x-device-token": "test-admin-token" };

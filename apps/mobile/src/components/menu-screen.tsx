@@ -17,6 +17,8 @@ function MenuScreen({
   selectedSaleGroup,
   hasSearch,
   draftTotal,
+  draftQuantitiesByMenuItemId,
+  draftSelectionLabelsByMenuItemId,
   searchValue,
   virtualized,
   onSearchChange,
@@ -29,6 +31,8 @@ function MenuScreen({
   selectedSaleGroup: SaleGroupKind | null;
   hasSearch: boolean;
   draftTotal: number;
+  draftQuantitiesByMenuItemId: Record<string, number>;
+  draftSelectionLabelsByMenuItemId: Record<string, string>;
   searchValue: string;
   virtualized: boolean;
   onSearchChange: (value: string) => void;
@@ -79,7 +83,14 @@ function MenuScreen({
         <SectionList
           sections={selectedTableName ? sections : []}
           keyExtractor={(item) => item.id}
-          renderItem={({ item }) => <MenuItemRow menuItem={item} onAddItem={onAddItem} />}
+          renderItem={({ item }) => (
+            <MenuItemRow
+              menuItem={item}
+              draftQuantity={draftQuantitiesByMenuItemId[item.id] ?? 0}
+              draftSelectionLabel={draftSelectionLabelsByMenuItemId[item.id]}
+              onAddItem={onAddItem}
+            />
+          )}
           renderSectionHeader={({ section }) => <Text style={[styles.subhead, styles.menuSectionHeader]}>{section.title}</Text>}
           ListHeaderComponent={header}
           ListEmptyComponent={
@@ -105,7 +116,16 @@ function MenuScreen({
       ) : sections.length === 0 ? (
         <EmptyState title="No dishes found" text="Check spelling, clear filters, or add dishes on the hub." />
       ) : (
-        sections.map((section) => <MenuListSection key={section.title} title={section.title} items={section.data} onAddItem={onAddItem} />)
+        sections.map((section) => (
+          <MenuListSection
+            key={section.title}
+            title={section.title}
+            items={section.data}
+            draftQuantitiesByMenuItemId={draftQuantitiesByMenuItemId}
+            draftSelectionLabelsByMenuItemId={draftSelectionLabelsByMenuItemId}
+            onAddItem={onAddItem}
+          />
+        ))
       )}
     </View>
   );
@@ -114,10 +134,14 @@ function MenuScreen({
 function MenuListSection({
   title,
   items,
+  draftQuantitiesByMenuItemId,
+  draftSelectionLabelsByMenuItemId,
   onAddItem
 }: {
   title: string;
   items: HubBootstrap["menuItems"];
+  draftQuantitiesByMenuItemId: Record<string, number>;
+  draftSelectionLabelsByMenuItemId: Record<string, string>;
   onAddItem: (menuItemId: string, variantId?: string) => void;
 }) {
   if (!items.length) return null;
@@ -126,7 +150,13 @@ function MenuListSection({
       <Text style={styles.subhead}>{title}</Text>
       <View style={styles.menuList}>
         {items.map((menuItem) => (
-          <MenuItemRow key={menuItem.id} menuItem={menuItem} onAddItem={onAddItem} />
+          <MenuItemRow
+            key={menuItem.id}
+            menuItem={menuItem}
+            draftQuantity={draftQuantitiesByMenuItemId[menuItem.id] ?? 0}
+            draftSelectionLabel={draftSelectionLabelsByMenuItemId[menuItem.id]}
+            onAddItem={onAddItem}
+          />
         ))}
       </View>
     </View>
@@ -135,9 +165,13 @@ function MenuListSection({
 
 function MenuItemRow({
   menuItem,
+  draftQuantity = 0,
+  draftSelectionLabel,
   onAddItem
 }: {
   menuItem: HubBootstrap["menuItems"][number];
+  draftQuantity?: number;
+  draftSelectionLabel?: string;
   onAddItem: (menuItemId: string, variantId?: string) => void;
 }) {
   const variants = menuItem.variants?.filter((variant) => Boolean(variant.active)) ?? [];
@@ -145,8 +179,13 @@ function MenuItemRow({
   const categoryTone = categoryToneFor(menuItem.sale_group_kind);
   const hasMultipleVariants = activeVariants.length > 1;
   return (
-    <View style={[styles.menuItem, styles.menuItemInline, hasMultipleVariants && styles.menuItemVariantRow]}>
-      <View style={styles.menuIdentity}>
+    <View style={[styles.menuItem, draftQuantity > 0 && styles.menuItemSelected, styles.menuItemInline, draftSelectionLabel && styles.menuItemWithSelection, hasMultipleVariants && styles.menuItemVariantRow]}>
+      {draftQuantity > 0 ? (
+        <View style={styles.draftMenuBadge} accessibilityLabel={`${draftQuantity} selected`}>
+          <Text style={styles.draftMenuBadgeText}>{draftQuantity}x</Text>
+        </View>
+      ) : null}
+      <View style={[styles.menuIdentity, draftQuantity > 0 && styles.menuIdentityWithBadge]}>
         <View style={[styles.menuCategoryIcon, { backgroundColor: categoryTone.soft }]}>
           <Text style={[styles.menuCategoryIconText, { color: categoryTone.ink }]}>{categoryTone.icon}</Text>
         </View>
@@ -175,6 +214,11 @@ function MenuItemRow({
           </ScrollView>
         )}
       </View>
+      {draftSelectionLabel ? (
+        <View style={styles.draftSelectionPill}>
+          <Text style={styles.draftSelectionText} numberOfLines={1}>Added {draftSelectionLabel}</Text>
+        </View>
+      ) : null}
     </View>
   );
 }

@@ -62,6 +62,7 @@ export function ReportsView({ requestManagerApproval }: { requestManagerApproval
   const latestClosedDate = closedReports[0]?.business_date;
   const defaultRangeTo = latestClosedDate ?? previousBusinessDate(summary?.businessDay.business_date ?? new Date().toISOString().slice(0, 10));
   const defaultRangeFrom = monthStart(defaultRangeTo);
+  const maxRangeDate = defaultRangeTo;
   useEffect(() => {
     if (rangeTouched) return;
     setRangeFrom(defaultRangeFrom);
@@ -266,11 +267,11 @@ export function ReportsView({ requestManagerApproval }: { requestManagerApproval
           >
             <label>
               From
-              <input type="date" value={rangeFrom} onChange={(event) => { setRangeTouched(true); setRangeFrom(event.target.value); }} />
+              <input type="date" value={rangeFrom} max={maxRangeDate} onChange={(event) => { setRangeTouched(true); setRangeFrom(event.target.value); }} />
             </label>
             <label>
               To
-              <input type="date" value={rangeTo} onChange={(event) => { setRangeTouched(true); setRangeTo(event.target.value); }} />
+              <input type="date" value={rangeTo} max={maxRangeDate} onChange={(event) => { setRangeTouched(true); setRangeTo(event.target.value); }} />
             </label>
             <button type="submit" className="secondary-button" disabled={rangeReport.isFetching}>
               {rangeReport.isFetching ? "Loading..." : "Apply"}

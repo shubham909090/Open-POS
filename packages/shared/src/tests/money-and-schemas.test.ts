@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { calculateLineTotal, calculateTax, formatCompactInr, formatInr } from "../money.js";
 import { getOrderStateSignature } from "../order-state-signature.js";
-import { billPrintDestinationSchema, billPrinterProfileSchema, createMenuItemSchema, createPairingCodeSchema, markNcBillSchema, printLayoutSettingsSchema, setMasterPinSchema, submitOrderSchema, updateReceiptPrinterSchema } from "../schemas.js";
+import { billPrintDestinationSchema, billPrinterProfileSchema, createMenuItemSchema, createPairingCodeSchema, markNcBillSchema, printLayoutSettingsSchema, reportRangeQuerySchema, setMasterPinSchema, submitOrderSchema, updateReceiptPrinterSchema } from "../schemas.js";
 import { getTableDisplayState, isTransferTargetTable, tableDisplayClass, tableDisplayLabel } from "../table-state.js";
 
 describe("shared money helpers", () => {
@@ -108,6 +108,14 @@ describe("shared command schemas", () => {
   it("requires a positive dish price", () => {
     expect(() => createMenuItemSchema.parse({ name: "Free Tea", pricePaise: 0 })).toThrow();
     expect(createMenuItemSchema.parse({ name: "Tea", pricePaise: 100 })).toMatchObject({ pricePaise: 100 });
+  });
+
+  it("accepts older finalized report ranges beyond one accounting year", () => {
+    expect(reportRangeQuerySchema.parse({ from: "2024-04-01", to: "2026-06-29" })).toMatchObject({
+      from: "2024-04-01",
+      to: "2026-06-29",
+      includeBills: false
+    });
   });
 });
 

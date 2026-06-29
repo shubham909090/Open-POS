@@ -21,6 +21,7 @@ export const menuTicketStyles = {
   menuSectionHeader: { paddingTop: 12, paddingBottom: 8, borderBottomWidth: 2, borderBottomColor: palette.line, backgroundColor: palette.paper },
   menuList: { gap: 10 },
   menuItem: {
+    position: "relative",
     minHeight: 76,
     padding: 10,
     borderRadius: 8,
@@ -34,10 +35,31 @@ export const menuTicketStyles = {
     shadowOpacity: 1,
     elevation: 2
   },
+  menuItemSelected: {
+    borderColor: palette.greenLine,
+    backgroundColor: palette.greenSoft
+  },
+  draftMenuBadge: {
+    position: "absolute",
+    top: 8,
+    left: 8,
+    minWidth: 34,
+    height: 24,
+    borderRadius: 999,
+    paddingHorizontal: 7,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: palette.green,
+    zIndex: 2,
+    elevation: 3
+  },
+  draftMenuBadgeText: { color: palette.inverseText, fontSize: 12, fontWeight: "900" },
   menuItemInline: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  menuItemWithSelection: { flexWrap: "wrap" },
   menuItemVariantRow: { gap: 8 },
   menuItemStacked: { alignItems: "stretch" },
   menuIdentity: { flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center", gap: 9 },
+  menuIdentityWithBadge: { paddingLeft: 42 },
   menuCategoryIcon: {
     width: 38,
     height: 38,
@@ -48,6 +70,13 @@ export const menuTicketStyles = {
   menuCategoryIconText: { fontSize: 16, fontWeight: "900" },
   menuText: { flex: 1, minWidth: 0 },
   menuName: { fontSize: 16, fontWeight: "900", color: palette.ink, lineHeight: 20, marginBottom: 1 },
+  draftSelectionPill: {
+    width: "100%",
+    borderTopWidth: 1,
+    borderTopColor: palette.greenLine,
+    paddingTop: 8
+  },
+  draftSelectionText: { color: palette.greenBold, fontSize: 12, fontWeight: "900", flexShrink: 1 },
   menuPriceBlock: { minWidth: 96, alignItems: "stretch", gap: 4, flexShrink: 0 },
   singleVariantBlock: { alignItems: "stretch" },
   variantStripBlock: { width: "46%", minWidth: 132, maxWidth: 240, flexShrink: 0 },

@@ -7,16 +7,12 @@ type DailyReportSnapshotRow = Record<string, unknown> & {
   group_summaries_json?: string;
 };
 
-export function listDailyReportSnapshots(db: SqliteDatabase, limit = 30): unknown[] {
-  return db
-    .prepare(
-      `SELECT pos_day_id, business_date, status, bill_count, gross_sales_paise, final_sales_paise,
+export function listDailyReportSnapshots(db: SqliteDatabase, limit?: number): unknown[] {
+  const query = `SELECT pos_day_id, business_date, status, bill_count, gross_sales_paise, final_sales_paise,
         total_payments_paise, finalized_at
        FROM daily_report_snapshots
-       ORDER BY business_date DESC, finalized_at DESC
-       LIMIT ?`
-    )
-    .all(limit);
+       ORDER BY business_date DESC, finalized_at DESC`;
+  return limit === undefined ? db.prepare(query).all() : db.prepare(`${query} LIMIT ?`).all(limit);
 }
 
 export function getDailyReportSnapshot(db: SqliteDatabase, posDayId: string): unknown {

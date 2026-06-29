@@ -388,7 +388,6 @@ function buildBillTicketLines(ticket: BillTicket): TicketLine[] {
     ...(ticket.showNcReprintRevision === false
       ? []
       : [
-          ...(ticket.revisionNumber && ticket.revisionNumber > 1 ? sectionLines(`Modified rev ${ticket.revisionNumber}`, "title") : []),
           ...(ticket.ncReason ? sectionLines(alignTicketText("NC / NON CUSTOMER", width, titleAlign), "title") : [])
         ]),
     ...(ticket.showTable === false ? [] : sectionLines(alignTicketText(`Table: ${ticket.tableName}`, width, metadataAlign), "metadata")),
