@@ -2,6 +2,10 @@
 
 ## 2026-06-30
 
+- Release: Published fresh restaurant builds as GitHub release `hub-v0.1.13`; Hub `0.1.13` includes the Windows installer, blockmap, `latest.yml`, `hub-update-metadata.json`, and fallback `.gpos-update.zip`; Mobile `0.1.7` / Android versionCode `7` includes a locally signed APK attached to the same release.
+- Release hardening: moved pnpm native-build policy from the ignored root `package.json` field into `pnpm-workspace.yaml` with both pnpm 10 `onlyBuiltDependencies` and pnpm 11 `allowBuilds`, so EAS local temp installs can run required native postinstall scripts.
+- Mobile release prep: updated Expo SDK 55 patch dependencies until `expo install --check` passed, then rebuilt and verified the APK signature.
+- Release verification: Hub release helper ran Hub tests/typecheck, cross-built Windows NSIS, repaired/validated Windows x64 `better-sqlite3`, verified preload bridge/update package metadata, dry-ran publish, and published `hub-v0.1.13`; post-release mobile tests, workspace typecheck, and `git diff --check` passed.
 - Task: Fixed three POS operator issues: report history/export date access, mobile menu draft visibility, and modified bill receipt labels.
 - Hub reports: daily finalized reports are no longer capped to 30 rows, report range schema accepts long historical accounting ranges, and range date inputs cap at the latest closed business day so today/active day is not picked by accident.
 - Mobile menu: `getMobileServiceViewModel()` now returns draft menu quantities/selection labels; `MenuScreen` shows a selected item badge (`1x`, `2x`) plus a full-width "Added ..." detail line on menu cards.
