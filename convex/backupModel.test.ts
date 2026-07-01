@@ -8,6 +8,7 @@ describe("backup/license model helpers", () => {
 
   it("rejects unknown cloud backup domains", () => {
     expect(isBackupDomain("orders")).toBe(true);
+    expect(isBackupDomain("bill_modification_audits")).toBe(true);
     expect(isBackupDomain("syncedEvents")).toBe(false);
     expect(isBackupDomain("dailyReports")).toBe(false);
   });

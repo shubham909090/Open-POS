@@ -14,7 +14,8 @@ The update system is designed so that:
 - an update cannot run while orders are still open
 - release metadata must prove the target app is compatible with the current DB schema before download/install
 - the database is checked before install
-- a pre-update database backup is created before the Electron updater installs
+- a pre-update database backup is created before the installer is launched
+- the installer is launched from a handoff script that waits for the Hub process to close first
 - rollback restores the pre-update database backup instead of trying to reverse migrations
 
 ## First-Time Install
@@ -36,7 +37,7 @@ After first-time install, future normal updates come from published GitHub Relea
 
 ## Creating An Update Package
 
-Normal updates should be created as one-click Electron updater releases, not by manually replacing app files. The fallback `.gpos-update.zip` is still produced for recovery/diagnostics.
+Normal updates should be created as GitHub Electron updater releases, not by manually replacing app files. The fallback `.gpos-update.zip` is still produced for recovery/diagnostics.
 
 Run this on a Windows x64 machine:
 
@@ -75,10 +76,12 @@ On your brother's Hub app:
 2. Click **Update app**.
 3. The app checks the published GitHub Release metadata and refuses the update if the target build is not compatible with the current local DB schema.
 4. Make sure there are no open or billed/running orders.
-5. The app downloads the update through Electron updater.
+5. The app downloads the update through the Electron updater feed.
 6. The app runs SQLite `integrity_check`.
 7. The app creates a pre-update database backup.
-8. The updater installs and restarts the Hub.
+8. The Hub writes and starts `Install Gaurav POS Update.cmd`.
+9. The Hub quits through its normal shutdown lifecycle.
+10. The handoff script waits until the Hub process is fully closed, then starts the Windows installer.
 
 On startup, the updated app checks the database schema. If the DB is newer than the app supports, startup is blocked instead of corrupting data.
 
@@ -87,6 +90,8 @@ On startup, the updated app checks the database schema. If the DB is newer than 
 Updates can move the DB schema forward.
 
 Rollback does not run reverse migrations. Instead, rollback restores the database backup taken before update. This is the safer professional approach for local SQLite desktop apps.
+
+Installer rollback needs a current installer/package baseline captured before the update. A fresh install that has never registered that baseline still creates the pre-update database backup, but that first online update is DB-backup-only and records the new baseline for later rollback.
 
 ## Rollback Flow
 
@@ -129,7 +134,7 @@ Installer.exe -> app installed -> new local SQLite DB/setup starts
 Normal update:
 
 ```text
-Update app -> check GitHub release -> download -> backup DB -> install/restart -> migrate DB on startup
+Update app -> check GitHub release -> download -> backup DB -> quit cleanly -> handoff script starts installer -> migrate DB on startup
 ```
 
 Rollback:

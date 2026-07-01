@@ -130,3 +130,68 @@ export interface RangeReportDetail {
   itemSummaries: ReportItemSummary[];
   groupSummaries: ReportGroupSummary[];
 }
+
+export interface ModifiedBillAuditChange {
+  kind:
+    | "item_added"
+    | "item_removed"
+    | "item_quantity"
+    | "item_price"
+    | "payment_added"
+    | "payment_removed"
+    | "payment_changed"
+    | "discount"
+    | "tip"
+    | "final_total"
+    | "revision";
+  label: string;
+  before: string;
+  after: string;
+}
+
+export interface ModifiedBillAuditSnapshot {
+  status: string;
+  revisionNumber: number;
+  subtotalPaise: number;
+  taxPaise: number;
+  totalPaise: number;
+  discountPaise: number;
+  tipPaise: number;
+  finalTotalPaise: number;
+  items: Array<{
+    orderItemId: string;
+    menuItemId: string | null;
+    menuItemVariantId: string | null;
+    name: string;
+    quantity: number;
+    unitPricePaise: number;
+    lineTotalPaise: number;
+  }>;
+  payments: Array<{ method: string; amountPaise: number; reference: string | null }>;
+}
+
+export interface ModifiedBillAuditRow {
+  id: string;
+  billId: string;
+  orderId: string;
+  businessDate: string;
+  billNumber: number;
+  tableName: string;
+  changeType: "pending_revision" | "history_edit";
+  fromRevisionNumber: number;
+  toRevisionNumber: number;
+  reason: string;
+  approvalType: "manager" | "master";
+  approvedBy: string;
+  actor: { deviceId: string; name: string; role: string };
+  before: ModifiedBillAuditSnapshot;
+  after: ModifiedBillAuditSnapshot;
+  changes: ModifiedBillAuditChange[];
+  createdAt: string;
+}
+
+export interface ModifiedBillsReport {
+  from: string;
+  to: string;
+  rows: ModifiedBillAuditRow[];
+}

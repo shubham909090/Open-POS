@@ -13,10 +13,12 @@ import { bills, orders, restaurantTables } from "../../db/drizzle-schema.js";
 import { DomainError } from "../errors.js";
 import { renderBillTicketForPrint, type BillTicket } from "../tickets.js";
 import { calculateAlcoholUsageForItems, type AlcoholUsage } from "./alcohol-usage.js";
+import type { BillModificationSnapshot } from "./bill-modification-audit.js";
 import { calculateDiscountPaise } from "./billing-calculations.js";
 import type {
   BillRow,
   BillTotals,
+  DeviceActor,
   KotItemChange,
   MenuItemRow,
   OrderItemRow,
@@ -107,6 +109,20 @@ export type BillActionContext = {
     note?: string
   ) => TicketCreationResult;
   calculateBillTotals: (items: OrderItemRow[]) => BillTotals;
+  buildBillModificationSnapshot: (bill: BillRow, items: OrderItemRow[]) => BillModificationSnapshot;
+  recordBillModificationAudit: (input: {
+    bill: BillRow;
+    order: OrderRow;
+    table: TableRow;
+    changeType: "pending_revision" | "history_edit";
+    approvalType: "manager" | "master";
+    reason: string;
+    approvedBy: string;
+    actor: DeviceActor;
+    before: BillModificationSnapshot;
+    after: BillModificationSnapshot;
+    createdAt: string;
+  }) => void;
   recordBillRevision: (
     billId: string,
     revisionNumber: number,
@@ -134,10 +150,36 @@ export type BillActionContext = {
   appendEvent: (type: string, aggregateType: string, aggregateId: string, payload: unknown) => DomainEvent;
 };
 
-export function reprintBill(ctx: BillActionContext, billId: string, input: ReprintBillInput): { printJobId: string } {
+export function reprintBill(ctx: BillActionContext, billId: string, input: ReprintBillInput, actor: DeviceActor): { printJobId: string } {
   const run = ctx.db.transaction(() => {
-    ctx.verifyManagerApproval(input.managerApproval, "bill.reprint", "bill", billId, input.requestedBy);
+    const managerApproval = input.managerApproval;
+    ctx.verifyManagerApproval(managerApproval, "bill.reprint", "bill", billId, input.requestedBy);
+    if (!managerApproval) throw new DomainError("Manager approval is required for bill reprint", 403);
+    const bill = ctx.getBillById(billId);
+    if (!bill) throw new DomainError("Bill not found", 404);
+    const order = ctx.requireOrderById(bill.order_id);
+    const table = ctx.requireTable(order.table_id);
+    const now = new Date().toISOString();
+    const beforeAudit = ctx.buildBillModificationSnapshot(bill, ctx.getOrderItems(order.id));
     ctx.applyBillAdjustments(billId, input, input.requestedBy, "pending_only");
+    const updatedBill = ctx.getBillById(billId);
+    if (!updatedBill) throw new DomainError("Bill not found after adjustment", 500);
+    const afterAudit = ctx.buildBillModificationSnapshot(updatedBill, ctx.getOrderItems(order.id));
+    if (billModificationSnapshotChanged(beforeAudit, afterAudit)) {
+      ctx.recordBillModificationAudit({
+        bill: updatedBill,
+        order,
+        table,
+        changeType: "pending_revision",
+        approvalType: "manager",
+        reason: managerApproval.reason,
+        approvedBy: managerApproval.approvedBy,
+        actor,
+        before: beforeAudit,
+        after: afterAudit,
+        createdAt: now
+      });
+    }
     const printJobId = ctx.enqueueBillReprint(billId, `REPRINT\nReason: ${input.reason}\nRequested by: ${input.requestedBy}\n`, input.printerSlot ?? "default");
     ctx.appendEvent("bill.reprinted", "bill", billId, { ...input, printJobId });
     return { printJobId };
@@ -156,7 +198,7 @@ export function reprintBillFromHistory(ctx: BillActionContext, billId: string, r
   return run();
 }
 
-export function reviseBill(ctx: BillActionContext, billId: string, input: ReviseBillInput): ReviseBillResult {
+export function reviseBill(ctx: BillActionContext, billId: string, input: ReviseBillInput, actor: DeviceActor): ReviseBillResult {
   const run = ctx.db.transaction(() => {
     ctx.verifyManagerApproval(input.managerApproval, "bill.revise", "bill", billId, input.managerApproval.approvedBy);
     const bill = ctx.getBillById(billId);
@@ -168,6 +210,7 @@ export function reviseBill(ctx: BillActionContext, billId: string, input: Revise
     const table = ctx.requireTable(order.table_id);
     const now = new Date().toISOString();
     const previousItems = ctx.getOrderItems(order.id);
+    const beforeAudit = ctx.buildBillModificationSnapshot(bill, previousItems);
     const previousVariantIds = new Set(previousItems.map((item) => item.menu_item_variant_id).filter((id): id is string => Boolean(id)));
     const previousItemsById = new Map(previousItems.map((item) => [item.id, item]));
     const normalizedItems = ctx.prepareSubmittedItems(input.items, previousVariantIds, previousItemsById);
@@ -201,6 +244,21 @@ export function reviseBill(ctx: BillActionContext, billId: string, input: Revise
       tipPaise: bill.tip_paise,
       finalTotalPaise
     });
+    const updatedBill = ctx.getBillById(billId);
+    if (!updatedBill) throw new DomainError("Bill not found after revision", 500);
+    ctx.recordBillModificationAudit({
+      bill: updatedBill,
+      order,
+      table,
+      changeType: "pending_revision",
+      approvalType: "manager",
+      reason: input.managerApproval.reason,
+      approvedBy: input.managerApproval.approvedBy,
+      actor,
+      before: beforeAudit,
+      after: ctx.buildBillModificationSnapshot(updatedBill, ctx.getOrderItems(order.id)),
+      createdAt: now
+    });
     ctx.appendEvent("bill.revised", "bill", billId, {
       billId,
       revisionNumber,
@@ -214,7 +272,7 @@ export function reviseBill(ctx: BillActionContext, billId: string, input: Revise
   return run();
 }
 
-export function editHistoryBill(ctx: BillActionContext, billId: string, input: HistoryEditBillInput): HistoryEditBillResult {
+export function editHistoryBill(ctx: BillActionContext, billId: string, input: HistoryEditBillInput, actor: DeviceActor): HistoryEditBillResult {
   const run = ctx.db.transaction(() => {
     const bill = ctx.getBillById(billId);
     if (!bill) throw new DomainError("Bill not found", 404);
@@ -226,6 +284,7 @@ export function editHistoryBill(ctx: BillActionContext, billId: string, input: H
     const table = ctx.requireTable(order.table_id);
     const now = new Date().toISOString();
     const previousItems = ctx.getOrderItems(order.id);
+    const beforeAudit = ctx.buildBillModificationSnapshot(bill, previousItems);
     const previousAlcoholUsage = calculateAlcoholUsageForItems(previousItems.filter((item) => item.quantity > 0 && item.status !== "cancelled"));
     const previousVariantIds = new Set(previousItems.map((item) => item.menu_item_variant_id).filter((id): id is string => Boolean(id)));
     const previousItemsById = new Map(previousItems.map((item) => [item.id, item]));
@@ -270,6 +329,19 @@ export function editHistoryBill(ctx: BillActionContext, billId: string, input: H
 
     const updatedBill = ctx.getBillById(billId);
     if (!updatedBill) throw new DomainError("Bill not found after history edit", 500);
+    ctx.recordBillModificationAudit({
+      bill: updatedBill,
+      order,
+      table,
+      changeType: "history_edit",
+      approvalType: "master",
+      reason: input.masterApproval.reason,
+      approvedBy: input.masterApproval.approvedBy,
+      actor,
+      before: beforeAudit,
+      after: ctx.buildBillModificationSnapshot(updatedBill, activeItems),
+      createdAt: now
+    });
     const printJobId = ctx.enqueuePrintJob({
       targetType: "BILL",
       targetId: billId,
@@ -367,4 +439,8 @@ export function printBill(ctx: BillActionContext, billId: string, requestedBy: s
   });
 
   return run();
+}
+
+function billModificationSnapshotChanged(before: BillModificationSnapshot, after: BillModificationSnapshot): boolean {
+  return JSON.stringify(before) !== JSON.stringify(after);
 }

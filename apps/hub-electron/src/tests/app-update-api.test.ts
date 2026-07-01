@@ -18,8 +18,9 @@ import { PACKAGED_SQLITE_NATIVE_PATH, sha256, type OnlineUpdateMetadata, type Up
 
 describe("app update API", () => {
   it("installs a one-click online update through an admin-only API without Manager PIN", async () => {
-    const onlineUpdater = createOnlineUpdater({ availableVersion: "0.2.0" });
-    const fixture = createFixture({ onlineUpdater });
+    const fixtureRoot = mkdtempSync(join(tmpdir(), "gpos-online-api-installer-"));
+    const onlineUpdater = createOnlineUpdater({ availableVersion: "0.2.0", downloadedInstallerPath: writeInstaller(fixtureRoot, "0.2.0") });
+    const fixture = createFixture({ onlineUpdater, platform: "win32" });
 
     const blocked = await fixture.app.inject({
       method: "POST",
@@ -36,14 +37,17 @@ describe("app update API", () => {
     expect(response.statusCode).toBe(200);
     expect(response.json<{ installing: true; version: string }>().installing).toBe(true);
     expect(response.json<{ installing: true; version: string }>().version).toBe("0.2.0");
-    expect(onlineUpdater.quitAndInstall).toHaveBeenCalledTimes(1);
+    expect(fixture.launchInstaller).toHaveBeenCalledTimes(1);
+    expect(fixture.launchInstaller.mock.calls[0]?.[0].filePath).toContain("Install Gaurav POS Update.cmd");
 
+    rmSync(fixtureRoot, { recursive: true, force: true });
     await fixture.close();
   });
 
   it("keeps app updates available when Cloud Backup is off", async () => {
-    const onlineUpdater = createOnlineUpdater({ availableVersion: "0.2.0" });
-    const fixture = createFixture({ onlineUpdater });
+    const fixtureRoot = mkdtempSync(join(tmpdir(), "gpos-online-api-installer-"));
+    const onlineUpdater = createOnlineUpdater({ availableVersion: "0.2.0", downloadedInstallerPath: writeInstaller(fixtureRoot, "0.2.0") });
+    const fixture = createFixture({ onlineUpdater, platform: "win32" });
 
     const status = await fixture.app.inject({
       method: "GET",
@@ -61,8 +65,9 @@ describe("app update API", () => {
     expect(fixture.orderService.isCloudBackupEnabled()).toBe(false);
     expect(install.statusCode).toBe(200);
     expect(install.json<{ installing: true; version: string }>().installing).toBe(true);
-    expect(onlineUpdater.quitAndInstall).toHaveBeenCalledTimes(1);
+    expect(fixture.launchInstaller).toHaveBeenCalledTimes(1);
 
+    rmSync(fixtureRoot, { recursive: true, force: true });
     await fixture.close();
   });
 
@@ -86,7 +91,7 @@ describe("app update API", () => {
     expect(response.statusCode).toBe(400);
     expect(response.json<{ error: string }>().error).toContain("running order");
     expect(onlineUpdater.checkForUpdates).not.toHaveBeenCalled();
-    expect(onlineUpdater.quitAndInstall).not.toHaveBeenCalled();
+    expect(onlineUpdater.downloadUpdate).not.toHaveBeenCalled();
 
     await fixture.close();
   });
@@ -224,6 +229,7 @@ function createFixture(overrides: Partial<ConstructorParameters<typeof AppUpdate
   authService.seedAdminDevice("test-admin-token");
   const orderService = new OrderService(database.orm);
   const backupService = new BackupService(database, databasePath, backupDir);
+  const launchInstaller = vi.fn();
   const updateService = new AppUpdateService({
     database,
     backupService,
@@ -232,7 +238,7 @@ function createFixture(overrides: Partial<ConstructorParameters<typeof AppUpdate
     dbSchemaVersion: currentDbSchemaVersion(),
     databasePath,
     sqliteNativePath,
-    launchInstaller: vi.fn(),
+    launchInstaller,
     exitApp: () => undefined,
     ...overrides
   });
@@ -252,6 +258,7 @@ function createFixture(overrides: Partial<ConstructorParameters<typeof AppUpdate
     database,
     orderService,
     updateService,
+    launchInstaller,
     close: async () => {
       await app.close();
       database.close();
@@ -260,7 +267,7 @@ function createFixture(overrides: Partial<ConstructorParameters<typeof AppUpdate
   };
 }
 
-function createOnlineUpdater(input: { updateAvailable?: boolean; availableVersion?: string; metadata?: Record<string, unknown> } = {}): OnlineAppUpdater {
+function createOnlineUpdater(input: { updateAvailable?: boolean; availableVersion?: string; metadata?: Record<string, unknown>; downloadedInstallerPath?: string } = {}): OnlineAppUpdater {
   const version = input.availableVersion ?? "0.2.0";
   return {
     checkForUpdates: vi.fn(async () => ({
@@ -279,8 +286,10 @@ function createOnlineUpdater(input: { updateAvailable?: boolean; availableVersio
       createdAt: new Date().toISOString(),
       ...(input.metadata ?? {})
     }) as OnlineUpdateMetadata),
-    downloadUpdate: vi.fn(async () => undefined),
-    quitAndInstall: vi.fn()
+    downloadUpdate: vi.fn(async () => ({
+      filePath: input.downloadedInstallerPath ?? join(tmpdir(), `Gaurav POS Hub Setup ${version}.exe`),
+      args: ["--updated", "/S", "--force-run"]
+    }))
   };
 }
 

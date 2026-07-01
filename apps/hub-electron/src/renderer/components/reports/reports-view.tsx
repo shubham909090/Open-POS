@@ -7,11 +7,12 @@ import { alcoholMovementSourceLabel, alcoholMovementDeltaText } from "../../lib/
 import { EmptyState } from "../ui/empty-state.js";
 import { Metric } from "../ui/metric.js";
 import { BackupPanel } from "./backup-panel.js";
+import { ModifiedBillsPanel } from "./modified-bills-panel.js";
 import { RangeReportExports } from "./range-report-exports.js";
 import { ReportDetailPanels } from "./report-detail-panels.js";
 
 const REPORT_PAGE_SIZE = 8;
-const REPORT_TABS = ["daily", "range", "backups"] as const;
+const REPORT_TABS = ["daily", "range", "modified", "backups"] as const;
 type ReportTab = (typeof REPORT_TABS)[number];
 
 export function ReportsView({ requestManagerApproval }: { requestManagerApproval: ManagerApprovalRequest }) {
@@ -57,10 +58,11 @@ export function ReportsView({ requestManagerApproval }: { requestManagerApproval
     enabled: Boolean(expandedReportId),
   });
   const summary = currentSummary.data;
+  const currentBusinessDate = summary?.businessDay.business_date;
   const closedReports = dailyReports.data ?? [];
   const stockMovements = alcoholStockMovements.data ?? [];
   const latestClosedDate = closedReports[0]?.business_date;
-  const defaultRangeTo = latestClosedDate ?? previousBusinessDate(summary?.businessDay.business_date ?? new Date().toISOString().slice(0, 10));
+  const defaultRangeTo = latestClosedDate ?? previousBusinessDate(currentBusinessDate ?? new Date().toISOString().slice(0, 10));
   const defaultRangeFrom = monthStart(defaultRangeTo);
   const maxRangeDate = defaultRangeTo;
   useEffect(() => {
@@ -126,6 +128,18 @@ export function ReportsView({ requestManagerApproval }: { requestManagerApproval
               onClick={() => selectReportTab("range")}
             >
               Monthly / Range
+            </button>
+            <button
+              id="report-tab-modified"
+              type="button"
+              role="tab"
+              aria-selected={reportTab === "modified"}
+              aria-controls="report-panel-modified"
+              tabIndex={reportTab === "modified" ? 0 : -1}
+              className={reportTab === "modified" ? "active" : ""}
+              onClick={() => selectReportTab("modified")}
+            >
+              Modified Bills
             </button>
             <button
               id="report-tab-backups"
@@ -292,6 +306,24 @@ export function ReportsView({ requestManagerApproval }: { requestManagerApproval
             <EmptyState title="Range report loading" description="The hub is reading finalized daily report snapshots." />
           ) : null}
         </section>
+      ) : null}
+
+      {reportTab === "modified" ? (
+        currentBusinessDate ? (
+          <ModifiedBillsPanel
+            currentBusinessDate={currentBusinessDate}
+            masterPinConfigured={Boolean(bootstrap.data?.setup?.masterPinConfigured)}
+            requestManagerApproval={requestManagerApproval}
+          />
+        ) : (
+          <section id="report-panel-modified" role="tabpanel" aria-labelledby="report-tab-modified" className="panel reports-wide modified-bills-panel">
+            <div className="panel-title">
+              <h2>Modified Bills</h2>
+              <span>Loading business day</span>
+            </div>
+            <EmptyState title="Report loading" description="The hub is loading the active business day before audit search." />
+          </section>
+        )
       ) : null}
 
       {reportTab === "backups" ? (

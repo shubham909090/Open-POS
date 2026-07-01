@@ -355,6 +355,284 @@ describe("Hub API order and billing routes", () => {
     database.close();
   });
 
+  it("records exact before/after audit details for paid history bill edits and protects the audit view with Master PIN", async () => {
+    const { app, database } = createTestServer();
+    const headers = { "x-device-token": "test-admin-token" };
+    try {
+      await app.inject({
+        method: "PUT",
+        url: "/settings/master-pin",
+        headers,
+        payload: { newPin: "9876", confirmPin: "9876", updatedBy: "owner" }
+      });
+      const orderResponse = await app.inject({
+        method: "POST",
+        url: "/orders/submit",
+        headers,
+        payload: { tableId: "table-t1", pax: 1, orderType: "dine_in", printMode: "kot", items: [{ menuItemId: "item-dal-fry", quantity: 1 }] }
+      });
+      const order = orderResponse.json<{ orderId: string }>();
+      const billResponse = await app.inject({ method: "POST", url: `/bills/${order.orderId}/generate`, headers });
+      const bill = billResponse.json<{ billId: string; billNumber: number; totalPaise: number }>();
+      const day = database.db.prepare("SELECT business_date FROM pos_days LIMIT 1").get() as { business_date: string };
+      await app.inject({ method: "POST", url: `/bills/${bill.billId}/settle`, headers, payload: { method: "cash", amountPaise: bill.totalPaise } });
+
+      const edited = await app.inject({
+        method: "POST",
+        url: `/bills/${bill.billId}/history-edit`,
+        headers,
+        payload: {
+          items: [{ menuItemId: "item-dal-fry", quantity: 2 }],
+          payments: [{ method: "upi", amountPaise: 36_000, reference: "UPI-edited" }],
+          masterApproval: { pin: "9876", reason: "Owner history edit", approvedBy: "owner" }
+        }
+      });
+      const blocked = await app.inject({
+        method: "POST",
+        url: "/reports/modified-bills/search",
+        headers,
+        payload: { from: day.business_date, to: day.business_date, masterApproval: { pin: "1111", reason: "View modified bills", approvedBy: "owner" } }
+      });
+      const auditResponse = await app.inject({
+        method: "POST",
+        url: "/reports/modified-bills/search",
+        headers,
+        payload: { from: day.business_date, to: day.business_date, exactSearch: String(bill.billNumber), masterApproval: { pin: "9876", reason: "View modified bills", approvedBy: "owner" } }
+      });
+      const emptySearch = await app.inject({
+        method: "POST",
+        url: "/reports/modified-bills/search",
+        headers,
+        payload: { from: day.business_date, to: day.business_date, exactSearch: "9999", masterApproval: { pin: "9876", reason: "View modified bills", approvedBy: "owner" } }
+      });
+
+      expect(edited.statusCode).toBe(200);
+      expect(blocked.statusCode).toBe(403);
+      expect(auditResponse.statusCode).toBe(200);
+      expect(emptySearch.json()).toMatchObject({ rows: [] });
+      const [audit] = auditResponse.json<{ rows: Array<{
+        billId: string;
+        billNumber: number;
+        orderId: string;
+        businessDate: string;
+        changeType: string;
+        approvalType: string;
+        approvedBy: string;
+        actor: { deviceId: string; name: string; role: string };
+        before: { finalTotalPaise: number; items: Array<{ name: string; quantity: number }>; payments: Array<{ method: string; amountPaise: number }> };
+        after: { finalTotalPaise: number; items: Array<{ name: string; quantity: number }>; payments: Array<{ method: string; amountPaise: number }> };
+        changes: Array<{ kind: string; label: string; before: string; after: string }>;
+      }> }>().rows;
+      expect(audit).toMatchObject({
+        billId: bill.billId,
+        billNumber: bill.billNumber,
+        orderId: order.orderId,
+        businessDate: day.business_date,
+        changeType: "history_edit",
+        approvalType: "master",
+        approvedBy: "owner",
+        actor: { deviceId: "device-local-admin", name: "Local Admin", role: "admin" },
+        before: { finalTotalPaise: 18_000, items: [{ name: "Dal Fry", quantity: 1 }], payments: [{ method: "cash", amountPaise: 18_000 }] },
+        after: { finalTotalPaise: 36_000, items: [{ name: "Dal Fry", quantity: 2 }], payments: [{ method: "upi", amountPaise: 36_000 }] }
+      });
+      expect(audit?.changes).toEqual(expect.arrayContaining([
+        { kind: "item_quantity", label: "Dal Fry", before: "1", after: "2" },
+        { kind: "payment_removed", label: "cash", before: "18000", after: "0" },
+        { kind: "payment_added", label: "upi (UPI-edited)", before: "0", after: "36000" },
+        { kind: "final_total", label: "Final total", before: "18000", after: "36000" }
+      ]));
+      expect(database.db.prepare("SELECT COUNT(*) AS count FROM event_log WHERE type = 'bill.history_edited'").get()).toEqual({ count: 1 });
+    } finally {
+      await app.close();
+      database.close();
+    }
+  });
+
+  it("tracks payment reference-only history edits in modified bill audits", async () => {
+    const { app, database } = createTestServer();
+    const headers = { "x-device-token": "test-admin-token" };
+    try {
+      await app.inject({
+        method: "PUT",
+        url: "/settings/master-pin",
+        headers,
+        payload: { newPin: "9876", confirmPin: "9876", updatedBy: "owner" }
+      });
+      const orderResponse = await app.inject({
+        method: "POST",
+        url: "/orders/submit",
+        headers,
+        payload: { tableId: "table-t1", pax: 1, orderType: "dine_in", printMode: "kot", items: [{ menuItemId: "item-dal-fry", quantity: 1 }] }
+      });
+      const order = orderResponse.json<{ orderId: string }>();
+      const billResponse = await app.inject({ method: "POST", url: `/bills/${order.orderId}/generate`, headers });
+      const bill = billResponse.json<{ billId: string; billNumber: number; totalPaise: number }>();
+      const day = database.db.prepare("SELECT business_date FROM pos_days LIMIT 1").get() as { business_date: string };
+      await app.inject({
+        method: "POST",
+        url: `/bills/${bill.billId}/settle`,
+        headers,
+        payload: { receivedBy: "captain", payments: [{ method: "upi", amountPaise: bill.totalPaise, reference: "REF-1" }] }
+      });
+
+      const edited = await app.inject({
+        method: "POST",
+        url: `/bills/${bill.billId}/history-edit`,
+        headers,
+        payload: {
+          items: [{ menuItemId: "item-dal-fry", quantity: 1 }],
+          payments: [{ method: "upi", amountPaise: bill.totalPaise, reference: "REF-2" }],
+          masterApproval: { pin: "9876", reason: "Correct UPI reference", approvedBy: "owner" }
+        }
+      });
+      const auditResponse = await app.inject({
+        method: "POST",
+        url: "/reports/modified-bills/search",
+        headers,
+        payload: { from: day.business_date, to: day.business_date, exactSearch: String(bill.billNumber), masterApproval: { pin: "9876", reason: "View modified bills", approvedBy: "owner" } }
+      });
+
+      expect(edited.statusCode).toBe(200);
+      expect(auditResponse.statusCode).toBe(200);
+      const [audit] = auditResponse.json<{ rows: Array<{ changes: Array<{ kind: string; label: string; before: string; after: string }> }> }>().rows;
+      expect(audit?.changes).toEqual(expect.arrayContaining([
+        { kind: "payment_removed", label: "upi (REF-1)", before: String(bill.totalPaise), after: "0" },
+        { kind: "payment_added", label: "upi (REF-2)", before: "0", after: String(bill.totalPaise) }
+      ]));
+    } finally {
+      await app.close();
+      database.close();
+    }
+  });
+
+  it("records pending bill revisions with the authenticated device actor", async () => {
+    const { app, database } = createTestServer();
+    const headers = { "x-device-token": "test-admin-token" };
+    try {
+      await setTestManagerPin(app);
+      await app.inject({
+        method: "PUT",
+        url: "/settings/master-pin",
+        headers,
+        payload: { newPin: "9876", confirmPin: "9876", updatedBy: "owner" }
+      });
+      const orderResponse = await app.inject({
+        method: "POST",
+        url: "/orders/submit",
+        headers,
+        payload: { tableId: "table-t1", pax: 1, orderType: "dine_in", printMode: "kot", items: [{ menuItemId: "item-dal-fry", quantity: 1 }] }
+      });
+      const order = orderResponse.json<{ orderId: string }>();
+      const billResponse = await app.inject({ method: "POST", url: `/bills/${order.orderId}/generate`, headers });
+      const bill = billResponse.json<{ billId: string; billNumber: number }>();
+      const day = database.db.prepare("SELECT business_date FROM pos_days LIMIT 1").get() as { business_date: string };
+
+      const revised = await app.inject({
+        method: "POST",
+        url: `/bills/${bill.billId}/revise`,
+        headers,
+        payload: {
+          items: [{ menuItemId: "item-dal-fry", quantity: 2 }],
+          managerApproval: { pin: "1234", reason: "Pending bill correction", approvedBy: "manager" }
+        }
+      });
+      const auditResponse = await app.inject({
+        method: "POST",
+        url: "/reports/modified-bills/search",
+        headers,
+        payload: { from: day.business_date, to: day.business_date, exactSearch: order.orderId, masterApproval: { pin: "9876", reason: "View modified bills", approvedBy: "owner" } }
+      });
+
+      expect(revised.statusCode).toBe(200);
+      expect(auditResponse.statusCode).toBe(200);
+      expect(auditResponse.json()).toMatchObject({
+        rows: [
+          expect.objectContaining({
+            billId: bill.billId,
+            billNumber: bill.billNumber,
+            orderId: order.orderId,
+            changeType: "pending_revision",
+            approvalType: "manager",
+            approvedBy: "manager",
+            actor: { deviceId: "device-local-admin", name: "Local Admin", role: "admin" },
+            before: expect.objectContaining({ finalTotalPaise: 18_000 }),
+            after: expect.objectContaining({ finalTotalPaise: 36_000 })
+          })
+        ]
+      });
+    } finally {
+      await app.close();
+      database.close();
+    }
+  });
+
+  it("records adjusted reprints as pending bill modification audits", async () => {
+    const { app, database } = createTestServer();
+    const headers = { "x-device-token": "test-admin-token" };
+    try {
+      await setTestManagerPin(app);
+      await app.inject({
+        method: "PUT",
+        url: "/settings/master-pin",
+        headers,
+        payload: { newPin: "9876", confirmPin: "9876", updatedBy: "owner" }
+      });
+      const orderResponse = await app.inject({
+        method: "POST",
+        url: "/orders/submit",
+        headers,
+        payload: { tableId: "table-t1", pax: 1, orderType: "dine_in", printMode: "kot", items: [{ menuItemId: "item-dal-fry", quantity: 1 }] }
+      });
+      const order = orderResponse.json<{ orderId: string }>();
+      const billResponse = await app.inject({ method: "POST", url: `/bills/${order.orderId}/generate`, headers });
+      const bill = billResponse.json<{ billId: string; billNumber: number }>();
+      const day = database.db.prepare("SELECT business_date FROM pos_days LIMIT 1").get() as { business_date: string };
+
+      const reprint = await app.inject({
+        method: "POST",
+        url: `/bills/${bill.billId}/reprint`,
+        headers,
+        payload: {
+          reason: "Correct pending discount",
+          discountType: "amount",
+          discountValue: 3000,
+          managerApproval: { pin: "1234", reason: "Correct pending discount", approvedBy: "manager" }
+        }
+      });
+      const auditResponse = await app.inject({
+        method: "POST",
+        url: "/reports/modified-bills/search",
+        headers,
+        payload: { from: day.business_date, to: day.business_date, exactSearch: String(bill.billNumber), masterApproval: { pin: "9876", reason: "View modified bills", approvedBy: "owner" } }
+      });
+
+      expect(reprint.statusCode).toBe(200);
+      expect(auditResponse.statusCode).toBe(200);
+      expect(auditResponse.json()).toMatchObject({
+        rows: [
+          expect.objectContaining({
+            billId: bill.billId,
+            billNumber: bill.billNumber,
+            orderId: order.orderId,
+            changeType: "pending_revision",
+            approvalType: "manager",
+            approvedBy: "manager",
+            actor: { deviceId: "device-local-admin", name: "Local Admin", role: "admin" },
+            before: expect.objectContaining({ discountPaise: 0, finalTotalPaise: 18_000 }),
+            after: expect.objectContaining({ discountPaise: 3_000, finalTotalPaise: 15_000 })
+          })
+        ]
+      });
+      expect(auditResponse.json<{ rows: Array<{ changes: Array<{ kind: string; label: string; before: string; after: string }> }> }>().rows[0]?.changes).toEqual(expect.arrayContaining([
+        { kind: "discount", label: "Discount", before: "0", after: "3000" },
+        { kind: "final_total", label: "Final total", before: "18000", after: "15000" }
+      ]));
+    } finally {
+      await app.close();
+      database.close();
+    }
+  });
+
   it("stores order notes on KDS tickets created by a KOT send", async () => {
     const { app, database } = createTestServer();
     const headers = { "x-device-token": "test-admin-token" };

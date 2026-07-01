@@ -25,7 +25,8 @@ export function registerBillingRoutes({ app, input, auth, withIdempotency, proce
     const { result, replayed } = await withIdempotency(request, `bills.reprint.${params.billId}`, () =>
       input.orderService.reprintBill(
         params.billId,
-        reprintBillSchema.parse({ ...(request.body as Record<string, unknown>), requestedBy: session.name })
+        reprintBillSchema.parse({ ...(request.body as Record<string, unknown>), requestedBy: session.name }),
+        session
       )
     );
     const processed = replayed ? undefined : await processCreatedPrintJobs([result.printJobId]);
@@ -59,8 +60,9 @@ export function registerBillingRoutes({ app, input, auth, withIdempotency, proce
 
   app.post("/bills/:billId/revise", { preHandler: captainOrAdmin }, async (request) => {
     const params = request.params as { billId: string };
+    const session = getSession(request);
     const { result, replayed } = await withIdempotency(request, `bills.revise.${params.billId}`, () =>
-      input.orderService.reviseBill(params.billId, reviseBillSchema.parse(request.body))
+      input.orderService.reviseBill(params.billId, reviseBillSchema.parse(request.body), session)
     );
     const processed = replayed ? undefined : await processCreatedPrintJobs(result.printJobIds);
     if (!replayed) input.eventBus.publish({ type: "bill.revised", result: { ...result, processed } });
@@ -69,8 +71,9 @@ export function registerBillingRoutes({ app, input, auth, withIdempotency, proce
 
   app.post("/bills/:billId/history-edit", { preHandler: captainOrAdmin }, async (request) => {
     const params = request.params as { billId: string };
+    const session = getSession(request);
     const { result, replayed } = await withIdempotency(request, `bills.history-edit.${params.billId}`, () =>
-      input.orderService.editHistoryBill(params.billId, historyEditBillSchema.parse(request.body))
+      input.orderService.editHistoryBill(params.billId, historyEditBillSchema.parse(request.body), session)
     );
     const processed = replayed ? undefined : await processCreatedPrintJobs([result.printJobId]);
     if (!replayed) input.eventBus.publish({ type: "bill.history_edited", result: { ...result, processed } });

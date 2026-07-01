@@ -39,6 +39,7 @@ describe("AppUpdatePanel", () => {
     renderAppUpdatePanel(AppUpdatePanel, { setNotice });
 
     expect(await screen.findByText("App 0.1.0 · DB 10")).toBeTruthy();
+    expect(screen.getByText("First update creates DB backup only")).toBeTruthy();
     expect(screen.queryByText("Choose package")).toBeNull();
     expect(screen.queryByText("Register package baseline")).toBeNull();
     expect(screen.queryByText("Register current installer baseline")).toBeNull();
@@ -129,6 +130,8 @@ function updateStatus(overrides: { activeOrderCount?: number } = {}) {
     appVersion: "0.1.0",
     dbSchemaVersion: 10,
     activeOrderCount: overrides.activeOrderCount ?? 0,
+    baselineRegistered: false,
+    rollbackAvailable: false,
     online: {
       enabled: true,
       status: "idle",

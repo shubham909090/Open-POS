@@ -292,6 +292,38 @@ export const billRevisions = sqliteTable(
   (table) => [index("idx_bill_revisions_bill").on(table.billId, table.revisionNumber)]
 );
 
+export const billModificationAudits = sqliteTable(
+  "bill_modification_audits",
+  {
+    id: text("id").primaryKey(),
+    billId: text("bill_id").notNull().references(() => bills.id),
+    orderId: text("order_id").notNull().references(() => orders.id),
+    posDayId: text("pos_day_id").notNull().references(() => posDays.id),
+    businessDate: text("business_date").notNull(),
+    billNumber: integer("bill_number").notNull(),
+    tableNameSnapshot: text("table_name_snapshot").notNull(),
+    changeType: text("change_type").notNull(),
+    fromRevisionNumber: integer("from_revision_number").notNull(),
+    toRevisionNumber: integer("to_revision_number").notNull(),
+    reason: text("reason").notNull(),
+    approvalType: text("approval_type").notNull(),
+    approvedBy: text("approved_by").notNull(),
+    actorDeviceId: text("actor_device_id").notNull(),
+    actorDeviceName: text("actor_device_name").notNull(),
+    actorRole: text("actor_role").notNull(),
+    beforeJson: text("before_json").notNull(),
+    afterJson: text("after_json").notNull(),
+    diffJson: text("diff_json").notNull(),
+    createdAt: text("created_at").notNull()
+  },
+  (table) => [
+    index("idx_bill_modification_audits_date").on(table.businessDate, table.createdAt),
+    index("idx_bill_modification_audits_bill_number").on(table.billNumber),
+    index("idx_bill_modification_audits_bill").on(table.billId, table.createdAt),
+    index("idx_bill_modification_audits_order").on(table.orderId, table.createdAt)
+  ]
+);
+
 export const payments = sqliteTable("payments", {
   id: text("id").primaryKey(),
   billId: text("bill_id").notNull().references(() => bills.id),

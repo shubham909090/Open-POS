@@ -1,4 +1,5 @@
 import AdmZip from "adm-zip";
+import { Buffer } from "node:buffer";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -28,15 +29,16 @@ describe("AppUpdateService", () => {
 
     expect(onlineUpdater.checkForUpdates).not.toHaveBeenCalled();
     expect(onlineUpdater.downloadUpdate).not.toHaveBeenCalled();
-    expect(onlineUpdater.quitAndInstall).not.toHaveBeenCalled();
 
     fixture.close();
   });
 
   it("creates a pre-update backup before installing a one-click online update", async () => {
     const fixture = createFixture();
-    const onlineUpdater = createOnlineUpdater({ availableVersion: "0.2.0" });
-    const service = createService(fixture, { onlineUpdater });
+    const launchInstaller = vi.fn();
+    const onlineUpdater = createOnlineUpdater({ availableVersion: "0.2.0", downloadedInstallerPath: writeInstaller(fixture.root, "0.2.0") });
+    const service = createService(fixture, { onlineUpdater, launchInstaller, platform: "win32" });
+    service.registerBaseline(writePackage(fixture.root, "0.1.0"));
 
     const result = await service.installOnlineUpdate();
 
@@ -45,8 +47,53 @@ describe("AppUpdateService", () => {
     expect(existsSync(result.backup.path)).toBe(true);
     expect(onlineUpdater.checkForUpdates).toHaveBeenCalledTimes(1);
     expect(onlineUpdater.downloadUpdate).toHaveBeenCalledTimes(1);
-    expect(onlineUpdater.quitAndInstall).toHaveBeenCalledTimes(1);
+    expect(launchInstaller).toHaveBeenCalledTimes(1);
+    const launchedPath = launchInstaller.mock.calls[0]?.[0].filePath as string;
+    expect(launchedPath).toContain("Install Gaurav POS Update.cmd");
+    const script = readFileSync(launchedPath, "utf8");
+    const commands = decodePowerShellCommands(script);
+    expect(commands.some((command) => command.includes("Wait-Process -Id $env:GPOS_PARENT_PID"))).toBe(true);
+    const startCommand = commands.find((command) => command.includes("Start-Process -FilePath"));
+    expect(startCommand).toContain("Gaurav POS Hub Setup 0.2.0.exe");
+    expect(startCommand).toContain("-ArgumentList @('--updated','/S','--force-run')");
     expect(service.status().online.status).toBe("installing");
+
+    fixture.close();
+  });
+
+  it("keeps rollback state for one-click online updates when a current baseline exists", async () => {
+    const fixture = createFixture();
+    const launchInstaller = vi.fn();
+    const onlineUpdater = createOnlineUpdater({ availableVersion: "0.2.0", downloadedInstallerPath: writeInstaller(fixture.root, "0.2.0") });
+    const service = createService(fixture, { onlineUpdater, launchInstaller, platform: "win32" });
+    service.registerBaseline(writePackage(fixture.root, "0.1.0"));
+
+    const result = await service.installOnlineUpdate();
+
+    if (!("installing" in result)) throw new Error("Expected online update install to start");
+    expect(result.recoveryScriptPath).toEqual(expect.stringContaining("Rollback Gaurav POS Update.cmd"));
+    expect(existsSync(result.recoveryScriptPath ?? "")).toBe(true);
+    expect(service.status()).toMatchObject({
+      rollbackAvailable: true,
+      current: { version: "0.1.0" },
+      pending: { version: "0.2.0" },
+      previous: {
+        version: "0.1.0",
+        preUpdateBackupFileName: result.backup.fileName,
+        preUpdateBackupPath: result.backup.path
+      },
+      recoveryScriptPath: result.recoveryScriptPath
+    });
+    expect(service.status().pending?.installerPath).toContain("Gaurav POS Hub Setup 0.2.0.exe");
+
+    const restartedService = createService(fixture, { appVersion: "0.2.0", onlineUpdater, launchInstaller: vi.fn(), platform: "win32" });
+    expect(restartedService.status()).toMatchObject({
+      baselineRegistered: true,
+      current: { version: "0.2.0" },
+      rollbackAvailable: true,
+      previous: { version: "0.1.0" }
+    });
+    expect(restartedService.status().pending).toBeUndefined();
 
     fixture.close();
   });
@@ -63,7 +110,6 @@ describe("AppUpdateService", () => {
 
     expect(onlineUpdater.readUpdateMetadata).toHaveBeenCalledWith("0.2.0");
     expect(onlineUpdater.downloadUpdate).not.toHaveBeenCalled();
-    expect(onlineUpdater.quitAndInstall).not.toHaveBeenCalled();
     expect(existsSync(fixture.backupDir) ? readdirSync(fixture.backupDir) : []).toEqual([]);
 
     fixture.close();
@@ -71,14 +117,16 @@ describe("AppUpdateService", () => {
 
   it("keeps one-click online update locked after handing off to installer", async () => {
     const fixture = createFixture();
-    const onlineUpdater = createOnlineUpdater({ availableVersion: "0.2.0" });
-    const service = createService(fixture, { onlineUpdater });
+    const launchInstaller = vi.fn();
+    const onlineUpdater = createOnlineUpdater({ availableVersion: "0.2.0", downloadedInstallerPath: writeInstaller(fixture.root, "0.2.0") });
+    const service = createService(fixture, { onlineUpdater, launchInstaller, platform: "win32" });
+    service.registerBaseline(writePackage(fixture.root, "0.1.0"));
 
     await service.installOnlineUpdate();
 
     await expect(service.installOnlineUpdate()).rejects.toThrow("already in progress");
     expect(onlineUpdater.checkForUpdates).toHaveBeenCalledTimes(1);
-    expect(onlineUpdater.quitAndInstall).toHaveBeenCalledTimes(1);
+    expect(launchInstaller).toHaveBeenCalledTimes(1);
 
     fixture.close();
   });
@@ -92,8 +140,37 @@ describe("AppUpdateService", () => {
 
     expect(result).toEqual({ status: "up_to_date", currentVersion: "0.1.0" });
     expect(onlineUpdater.downloadUpdate).not.toHaveBeenCalled();
-    expect(onlineUpdater.quitAndInstall).not.toHaveBeenCalled();
     expect(service.status().online.status).toBe("up_to_date");
+
+    fixture.close();
+  });
+
+  it("installs one-click online updates without a rollback baseline and records the pending target", async () => {
+    const fixture = createFixture();
+    const launchInstaller = vi.fn();
+    const onlineUpdater = createOnlineUpdater({ availableVersion: "0.2.0", downloadedInstallerPath: writeInstaller(fixture.root, "0.2.0") });
+    const service = createService(fixture, { onlineUpdater, launchInstaller, platform: "win32" });
+
+    const result = await service.installOnlineUpdate();
+
+    if (!("installing" in result)) throw new Error("Expected online update install to start");
+    expect(result.recoveryScriptPath).toBeUndefined();
+    expect(onlineUpdater.readUpdateMetadata).toHaveBeenCalledWith("0.2.0");
+    expect(onlineUpdater.downloadUpdate).toHaveBeenCalledTimes(1);
+    expect(launchInstaller).toHaveBeenCalledTimes(1);
+    expect(service.status()).toMatchObject({
+      baselineRegistered: false,
+      rollbackAvailable: false,
+      pending: { version: "0.2.0" }
+    });
+
+    const restartedService = createService(fixture, { appVersion: "0.2.0", onlineUpdater, launchInstaller: vi.fn(), platform: "win32" });
+    expect(restartedService.status()).toMatchObject({
+      baselineRegistered: true,
+      current: { version: "0.2.0" },
+      rollbackAvailable: false
+    });
+    expect(restartedService.status().pending).toBeUndefined();
 
     fixture.close();
   });
@@ -125,8 +202,29 @@ describe("AppUpdateService", () => {
 
     expect(existsSync(result.backup.path)).toBe(true);
     expect(existsSync(result.recoveryScriptPath)).toBe(true);
-    expect(launchInstaller).toHaveBeenCalledWith(expect.stringContaining("Gaurav POS Hub Setup 0.2.0.exe"));
+    expect(launchInstaller).toHaveBeenCalledWith({
+      filePath: expect.stringContaining("Gaurav POS Hub Setup 0.2.0.exe"),
+      args: []
+    });
     expect(service.status().rollbackAvailable).toBe(true);
+
+    fixture.close();
+  });
+
+  it("launches Windows update installers through a process-exit handoff script", async () => {
+    const fixture = createFixture();
+    const launchInstaller = vi.fn();
+    const service = createService(fixture, { launchInstaller, platform: "win32" });
+    service.registerBaseline(writePackage(fixture.root, "0.1.0"));
+
+    await service.installUpdate(writePackage(fixture.root, "0.2.0"));
+
+    const launchedPath = launchInstaller.mock.calls[0]?.[0].filePath as string;
+    expect(launchedPath).toContain("Install Gaurav POS Update.cmd");
+    const script = readFileSync(launchedPath, "utf8");
+    const commands = decodePowerShellCommands(script);
+    expect(commands.some((command) => command.includes("Wait-Process -Id $env:GPOS_PARENT_PID"))).toBe(true);
+    expect(commands.some((command) => command.includes("Gaurav POS Hub Setup 0.2.0.exe"))).toBe(true);
 
     fixture.close();
   });
@@ -202,13 +300,20 @@ describe("AppUpdateService", () => {
     const service = createService(fixture, { launchInstaller });
     service.registerBaseline(writePackage(fixture.root, "0.1.0"));
     await service.installUpdate(writePackage(fixture.root, "0.2.0"));
+    const recoveryScriptPath = join(fixture.root, "updates", "Rollback Gaurav POS Update.cmd");
+    writeFileSync(recoveryScriptPath, "stale-pid-marker");
 
     const result = await service.rollback();
 
     expect(result.rollingBack).toBe(true);
     expect(existsSync(join(fixture.backupDir, "restore-pending.json"))).toBe(false);
-    expect(launchInstaller).toHaveBeenLastCalledWith(expect.stringContaining("Rollback Gaurav POS Update.cmd"));
-    expect(readFileSync(join(fixture.root, "updates", "Rollback Gaurav POS Update.cmd"), "utf8")).toContain("Wait-Process");
+    expect(launchInstaller).toHaveBeenLastCalledWith({
+      filePath: expect.stringContaining("Rollback Gaurav POS Update.cmd"),
+      args: []
+    });
+    const rollbackScript = readFileSync(recoveryScriptPath, "utf8");
+    expect(rollbackScript).not.toContain("stale-pid-marker");
+    expect(decodePowerShellCommands(rollbackScript).some((command) => command.includes("Wait-Process -Id $env:GPOS_PARENT_PID"))).toBe(true);
 
     fixture.close();
   });
@@ -275,7 +380,10 @@ describe("AppUpdateService", () => {
     });
 
     expect(existsSync(result.backup.path)).toBe(true);
-    expect(launchInstaller).toHaveBeenCalledWith(expect.stringContaining("Gaurav POS Hub Setup 0.2.0.exe"));
+    expect(launchInstaller).toHaveBeenCalledWith({
+      filePath: expect.stringContaining("Gaurav POS Hub Setup 0.2.0.exe"),
+      args: []
+    });
     expect(service.status().rollbackAvailable).toBe(true);
 
     fixture.close();
@@ -345,12 +453,13 @@ function createService(
     appVersion: "0.1.0",
     dbSchemaVersion: currentDbSchemaVersion(),
     databasePath: fixture.databasePath,
+    sqliteNativePath: fixture.sqliteNativePath,
     exitApp: () => undefined,
     ...overrides
   });
 }
 
-function createOnlineUpdater(input: { updateAvailable?: boolean; availableVersion?: string; metadata?: Record<string, unknown> } = {}): OnlineAppUpdater {
+function createOnlineUpdater(input: { updateAvailable?: boolean; availableVersion?: string; metadata?: Record<string, unknown>; downloadedInstallerPath?: string } = {}): OnlineAppUpdater {
   const version = input.availableVersion ?? "0.2.0";
   return {
     checkForUpdates: vi.fn(async () => ({
@@ -369,8 +478,10 @@ function createOnlineUpdater(input: { updateAvailable?: boolean; availableVersio
       createdAt: new Date().toISOString(),
       ...(input.metadata ?? {})
     }) as OnlineUpdateMetadata),
-    downloadUpdate: vi.fn(async () => undefined),
-    quitAndInstall: vi.fn()
+    downloadUpdate: vi.fn(async () => ({
+      filePath: input.downloadedInstallerPath ?? join(tmpdir(), `Gaurav POS Hub Setup ${version}.exe`),
+      args: ["--updated", "/S", "--force-run"]
+    }))
   };
 }
 
@@ -496,4 +607,8 @@ function jsonResponse(value: unknown) {
     json: async () => value,
     arrayBuffer: async () => new ArrayBuffer(0)
   };
+}
+
+function decodePowerShellCommands(script: string): string[] {
+  return [...script.matchAll(/-EncodedCommand\s+([A-Za-z0-9+/=]+)/g)].map((match) => Buffer.from(match[1] ?? "", "base64").toString("utf16le"));
 }

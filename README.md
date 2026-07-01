@@ -50,7 +50,9 @@ hub-v<version>
 
 Each Hub release should include:
 
-- `Gaurav POS Hub-<version>.gpos-update.zip` for in-app updates
+- `latest.yml`, the installer `.exe`, and `.exe.blockmap` for the normal **Update app** flow
+- `hub-update-metadata.json` so Hub can validate DB compatibility before installing
+- `Gaurav POS Hub-<version>.gpos-update.zip` for fallback/recovery updates
 - `Gaurav POS Hub Setup <version>.exe` for first-time install or manual reinstall
 
 

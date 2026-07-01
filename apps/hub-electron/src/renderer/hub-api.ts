@@ -21,6 +21,7 @@ import type {
   LocalDevice,
   ManagerApprovalPayload,
   MasterApprovalPayload,
+  ModifiedBillsReport,
   OnlineUpdateInstallResult,
   PairingCodeResult,
   PendingRestoreSummary,
@@ -119,6 +120,11 @@ export const hubApi = {
     apiDownload(`/reports/range/export-csv?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`),
   rangeReportTally: (from: string, to: string) =>
     apiDownload(`/reports/range/export-tally?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`),
+  modifiedBills: (payload: { from: string; to: string; exactSearch?: string; masterApproval: MasterApprovalPayload["masterApproval"] }) =>
+    apiFetch<ModifiedBillsReport>("/reports/modified-bills/search", {
+      method: "POST",
+      body: JSON.stringify(payload)
+    }),
   backups: () => apiFetch<BackupSummary[]>("/backups"),
   createBackup: (label: string) => apiFetch<BackupSummary>("/backups", { method: "POST", body: JSON.stringify({ label }) }),
   deleteBackup: (fileName: string, payload: { confirmationText: string; masterApproval: MasterApprovalPayload["masterApproval"] }) =>

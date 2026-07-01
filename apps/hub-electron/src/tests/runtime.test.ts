@@ -1,5 +1,20 @@
-import { describe, expect, it, vi } from "vitest";
-import { createSyncTick } from "../runtime.js";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { stopThenSpawnReplacement } from "../process-restart.js";
+import { createSyncTick, startHub } from "../runtime.js";
+
+const managedEnvKeys = ["HUB_DATABASE_PATH", "HUB_BACKUP_DIR", "HUB_UPDATE_DIR", "HUB_PORT", "HUB_HOST"] as const;
+const originalEnv = Object.fromEntries(managedEnvKeys.map((key) => [key, process.env[key]]));
+
+afterEach(() => {
+  for (const key of managedEnvKeys) {
+    const original = originalEnv[key];
+    if (original === undefined) delete process.env[key];
+    else process.env[key] = original;
+  }
+});
 
 describe("runtime sync scheduler", () => {
   it("pushes and pulls on each sync tick", async () => {
@@ -56,5 +71,76 @@ describe("runtime sync scheduler", () => {
 
     expect(syncBridge.pushPending).toHaveBeenCalledTimes(1);
     expect(syncBridge.pullCloudSnapshot).toHaveBeenCalledTimes(1);
+  });
+
+  it("exposes an idempotent shutdown that closes the server and SQLite handle", async () => {
+    const root = mkdtempSync(join(tmpdir(), "gpos-runtime-stop-"));
+    process.env.HUB_HOST = "127.0.0.1";
+    process.env.HUB_PORT = "0";
+    process.env.HUB_DATABASE_PATH = join(root, "hub.sqlite");
+    process.env.HUB_BACKUP_DIR = join(root, "backups");
+    process.env.HUB_UPDATE_DIR = join(root, "updates");
+
+    const hub = await startHub();
+
+    expect(hub.stop).toEqual(expect.any(Function));
+    await hub.stop();
+    await hub.stop();
+    expect(() => hub.database.db.prepare("SELECT 1").get()).toThrow(/closed|not open/i);
+
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("stops the hub before spawning a CLI restart replacement", async () => {
+    const order: string[] = [];
+    const stop = vi.fn(async () => {
+      order.push("stop");
+    });
+    const child = { unref: vi.fn(() => order.push("unref")) };
+    const spawnProcess = vi.fn(() => {
+      order.push("spawn");
+      return child;
+    });
+    const exitProcess = vi.fn(() => {
+      order.push("exit");
+    });
+
+    await stopThenSpawnReplacement({
+      stop,
+      execPath: "/usr/local/bin/node",
+      args: ["main.js"],
+      cwd: "/tmp/gaurav",
+      env: { HUB_PORT: "3737" },
+      spawnProcess: spawnProcess as never,
+      exitProcess
+    });
+
+    expect(spawnProcess).toHaveBeenCalledWith("/usr/local/bin/node", ["main.js"], {
+      cwd: "/tmp/gaurav",
+      detached: true,
+      env: { HUB_PORT: "3737" },
+      stdio: "inherit"
+    });
+    expect(order).toEqual(["stop", "spawn", "unref", "exit"]);
+  });
+
+  it("does not spawn a CLI restart replacement when shutdown fails", async () => {
+    const spawnProcess = vi.fn();
+    const exitProcess = vi.fn();
+
+    await expect(stopThenSpawnReplacement({
+      stop: vi.fn(async () => {
+        throw new Error("database still closing");
+      }),
+      execPath: "/usr/local/bin/node",
+      args: ["main.js"],
+      cwd: "/tmp/gaurav",
+      env: {},
+      spawnProcess: spawnProcess as never,
+      exitProcess
+    })).rejects.toThrow("database still closing");
+
+    expect(spawnProcess).not.toHaveBeenCalled();
+    expect(exitProcess).not.toHaveBeenCalled();
   });
 });

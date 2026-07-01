@@ -12,6 +12,7 @@ type BackupDomain =
   | "order_items"
   | "bills"
   | "bill_revisions"
+  | "bill_modification_audits"
   | "payments"
   | "sale_groups"
   | "floors"
@@ -105,13 +106,14 @@ const restoreDomains: Record<RestoreKind, BackupDomain[]> = {
     "order_items",
     "bills",
     "bill_revisions",
+    "bill_modification_audits",
     "payments"
   ],
   menu_catalog: ["sale_groups", "production_units", "menu_items", "menu_item_variants"],
   alcohol_stock: ["alcohol_profiles", "alcohol_stock_levels", "alcohol_recipe_ingredients", "alcohol_stock_movements"],
   table_layout: ["floors", "restaurant_tables"]
 };
-const businessDateRestoreDomains = new Set<BackupDomain>(["pos_days", "orders", "order_items", "bills", "bill_revisions", "payments"]);
+const businessDateRestoreDomains = new Set<BackupDomain>(["pos_days", "orders", "order_items", "bills", "bill_revisions", "bill_modification_audits", "payments"]);
 const wipeSql: Record<RestoreKind, string[]> = {
   order_history: [
     "DELETE FROM ready_notifications",
@@ -119,6 +121,7 @@ const wipeSql: Record<RestoreKind, string[]> = {
     "DELETE FROM kots",
     "DELETE FROM order_movements",
     "DELETE FROM payments",
+    "DELETE FROM bill_modification_audits",
     "DELETE FROM bill_revisions",
     "DELETE FROM bills",
     "DELETE FROM order_items",
@@ -152,6 +155,7 @@ const restoreTableByDomain: Record<BackupDomain, string> = {
   order_items: "order_items",
   bills: "bills",
   bill_revisions: "bill_revisions",
+  bill_modification_audits: "bill_modification_audits",
   payments: "payments",
   sale_groups: "sale_groups",
   floors: "floors",
@@ -170,6 +174,7 @@ const restorePrimaryKeys: Record<BackupDomain, string[]> = {
   order_items: ["id"],
   bills: ["id"],
   bill_revisions: ["id"],
+  bill_modification_audits: ["id"],
   payments: ["id"],
   sale_groups: ["id"],
   floors: ["id"],
@@ -232,6 +237,15 @@ const backupDomainQueries: DomainQuery[] = [
           JOIN pos_days pd ON pd.id = o.pos_day_id
           WHERE (b.status = 'paid' OR b.is_nc = 1) AND br.id > ?
           ORDER BY br.id
+          LIMIT ?`
+  },
+  {
+    domain: "bill_modification_audits",
+    sql: `SELECT bma.*, bma.id AS __local_id, bma.business_date AS __business_date, bma.created_at AS __local_updated_at
+          FROM bill_modification_audits bma
+          JOIN bills b ON b.id = bma.bill_id
+          WHERE (b.status = 'paid' OR b.is_nc = 1) AND bma.id > ?
+          ORDER BY bma.id
           LIMIT ?`
   },
   {

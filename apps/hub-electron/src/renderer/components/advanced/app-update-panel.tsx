@@ -26,6 +26,9 @@ export function AppUpdatePanel({ setNotice }: { setNotice: NoticeSetter }) {
   const activeOrderCount = status?.activeOrderCount ?? 0;
   const busy = installOnlineUpdate.isPending || online?.status === "checking" || online?.status === "downloading" || online?.status === "installing";
   const updateDisabled = busy || online?.enabled === false;
+  const rollbackReady = Boolean(status && (status.rollbackAvailable || status.baselineRegistered));
+  const rollbackCardClass = status ? (rollbackReady ? "update-status-card ready" : "update-status-card warning") : "update-status-card";
+  const rollbackBadgeClass = status ? (rollbackReady ? "record-status active" : "record-status warning") : "record-status disabled";
 
   return (
     <section className="panel app-update-panel">
@@ -54,6 +57,15 @@ export function AppUpdatePanel({ setNotice }: { setNotice: NoticeSetter }) {
             {activeOrderCount === 0 ? "Clear" : "Blocked"}
           </span>
         </article>
+        <article className={rollbackCardClass}>
+          <div>
+            <strong>Rollback</strong>
+            <span>{rollbackStatusText(status)}</span>
+          </div>
+          <span className={rollbackBadgeClass}>
+            {status ? (rollbackReady ? "Ready" : "Backup only") : "Loading"}
+          </span>
+        </article>
       </div>
       <div className="update-action-card github-update-card">
         <div className="update-action-row">
@@ -77,6 +89,13 @@ export function AppUpdatePanel({ setNotice }: { setNotice: NoticeSetter }) {
       {updateStatus.error ? <p className="warning-text">{messageOf(updateStatus.error)}</p> : null}
     </section>
   );
+}
+
+function rollbackStatusText(status?: { rollbackAvailable: boolean; baselineRegistered: boolean }): string {
+  if (!status) return "Loading";
+  if (status.rollbackAvailable) return "Installer rollback available";
+  if (status.baselineRegistered) return "Baseline ready for next update";
+  return "First update creates DB backup only";
 }
 
 function onlineStatusText(status: OnlineUpdateStateStatus, availableVersion: string | null, downloadPercent: number | null): string {

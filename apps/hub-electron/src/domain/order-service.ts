@@ -17,6 +17,7 @@ import {
   type ManagerApprovalInput,
   type ManagerPinInput,
   type MarkNcBillInput,
+  type ModifiedBillsQueryInput,
   type MasterApprovalInput,
   type MoveOrderItemsInput,
   type MoveTableInput,
@@ -79,6 +80,12 @@ import {
   type AlcoholActionContext
 } from "./order-service/alcohol-actions.js";
 import type { AlcoholUsage } from "./order-service/alcohol-usage.js";
+import {
+  billModificationActor,
+  buildBillModificationSnapshot as buildBillModificationSnapshotModel,
+  listModifiedBillAudits as listModifiedBillAuditsModel,
+  recordBillModificationAudit as recordBillModificationAuditModel
+} from "./order-service/bill-modification-audit.js";
 import { removeEmptyPendingBills as removeEmptyPendingBillsModel, type BillCleanupContext } from "./order-service/bill-cleanup.js";
 import { getBillById, getLatestBillForOrder } from "./order-service/bill-queries.js";
 import { recordBillRevision as recordBillRevisionModel } from "./order-service/bill-revisions.js";
@@ -320,8 +327,8 @@ export class OrderService {
     return run();
   }
 
-  reprintBill(billId: string, input: ReprintBillInput): { printJobId: string } {
-    return reprintBillModel(this.billActionContext(), billId, input);
+  reprintBill(billId: string, input: ReprintBillInput, actor?: DeviceActor): { printJobId: string } {
+    return reprintBillModel(this.billActionContext(), billId, input, billModificationActor(actor));
   }
 
   reprintBillFromHistory(billId: string, requestedBy: string, printerSlot: BillPrinterSlot = "default"): { printJobId: string } {
@@ -729,12 +736,16 @@ export class OrderService {
     return exportRangeTallyXml(this.db, input, this.getTallyExportSettings());
   }
 
-  reviseBill(billId: string, input: ReviseBillInput): { billId: string; revisionNumber: number; totalPaise: number; kotIds: string[]; printJobIds: string[] } {
-    return reviseBillModel(this.billActionContext(), billId, input);
+  listModifiedBillAudits(input: ModifiedBillsQueryInput): unknown {
+    return listModifiedBillAuditsModel(this.db, input);
   }
 
-  editHistoryBill(billId: string, input: HistoryEditBillInput): { billId: string; revisionNumber: number; totalPaise: number; printJobId: string; modified: boolean } {
-    return editHistoryBillModel(this.billActionContext(), billId, input);
+  reviseBill(billId: string, input: ReviseBillInput, actor?: DeviceActor): { billId: string; revisionNumber: number; totalPaise: number; kotIds: string[]; printJobIds: string[] } {
+    return reviseBillModel(this.billActionContext(), billId, input, billModificationActor(actor));
+  }
+
+  editHistoryBill(billId: string, input: HistoryEditBillInput, actor?: DeviceActor): { billId: string; revisionNumber: number; totalPaise: number; printJobId: string; modified: boolean } {
+    return editHistoryBillModel(this.billActionContext(), billId, input, billModificationActor(actor));
   }
 
   markBillNc(billId: string, input: MarkNcBillInput): { billId: string; printJobId: string } {
@@ -869,6 +880,8 @@ export class OrderService {
       createKotsForChanges: (order, table, changes, now, isNewOrder, forceCancelled, reason, typeOverride, sequenceOrderId, printTickets, note) =>
         this.createKotsForChanges(order, table, changes, now, isNewOrder, forceCancelled, reason, typeOverride, sequenceOrderId, printTickets, note),
       calculateBillTotals: (items) => this.calculateBillTotals(items),
+      buildBillModificationSnapshot: (bill, items) => buildBillModificationSnapshotModel(this.db, bill, items),
+      recordBillModificationAudit: (input) => recordBillModificationAuditModel(this.orm, input),
       recordBillRevision: (billId, revisionNumber, totals, reason, changedBy, now, financials) => this.recordBillRevision(billId, revisionNumber, totals, reason, changedBy, now, financials),
       applyAlcoholUsageDeltaForHistoryEdit: (billId, before, after) => this.applyAlcoholUsageDeltaForHistoryEdit(billId, before, after),
       replaceHistoryEditPayments: (bill, requestedPayments, finalTotalPaise, receivedBy, now) => this.replaceHistoryEditPayments(bill, requestedPayments, finalTotalPaise, receivedBy, now),

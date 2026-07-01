@@ -8,6 +8,8 @@ import { createElectronOnlineUpdater } from "./update/electron-online-updater.js
 let mainWindow: BrowserWindow | null = null;
 let hubPromise: ReturnType<typeof startHub> | null = null;
 let onlineUpdater: ReturnType<typeof createElectronOnlineUpdater> | null = null;
+let quitAllowed = false;
+let shutdownPromise: Promise<void> | null = null;
 
 const selfTestOnly = process.argv.includes("--self-test-sqlite");
 if (selfTestOnly) {
@@ -60,12 +62,21 @@ function getHub(): ReturnType<typeof startHub> {
   onlineUpdater ??= createElectronOnlineUpdater();
   hubPromise ??= startHub({
     onlineUpdater,
+    requestExit: () => {
+      app.quit();
+    },
     requestRestart: () => {
       app.relaunch();
-      app.exit(0);
+      app.quit();
     }
   });
   return hubPromise;
+}
+
+async function stopHub(): Promise<void> {
+  if (!hubPromise) return;
+  const hub = await hubPromise;
+  await hub.stop();
 }
 
 if (!selfTestOnly) {
@@ -73,6 +84,18 @@ if (!selfTestOnly) {
     void createWindow();
   });
 }
+
+app.on("before-quit", (event) => {
+  if (selfTestOnly || quitAllowed) return;
+  event.preventDefault();
+  shutdownPromise ??= stopHub().catch((error) => {
+    console.error("Failed to stop Gaurav POS Hub cleanly", error);
+  });
+  void shutdownPromise.finally(() => {
+    quitAllowed = true;
+    app.quit();
+  });
+});
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();

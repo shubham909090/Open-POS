@@ -322,9 +322,92 @@
   grid-column: 1 / -1;
 }
 
+.modified-bill-unlock {
+  @apply grid min-w-0 items-center gap-3 rounded-lg border border-line bg-wash p-4;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.modified-bill-unlock > div {
+  @apply grid min-w-0 gap-1;
+}
+
+.modified-bill-unlock strong {
+  @apply text-base font-black leading-6 text-ink;
+}
+
+.modified-bill-unlock span,
+.audit-subtext {
+  @apply block min-w-0 break-words text-xs font-bold uppercase leading-5 text-muted;
+}
+
+.modified-bills-controls {
+  @apply grid min-w-0 items-end gap-3;
+  grid-template-columns: minmax(150px, 180px) minmax(150px, 180px) minmax(240px, 1fr) auto auto;
+}
+
+.modified-bills-controls label,
+.modified-bills-controls input {
+  @apply min-w-0;
+}
+
+.modified-bills-controls .secondary-button,
+.modified-bill-unlock .secondary-button,
+.modified-bills-panel .panel-title .secondary-button {
+  @apply inline-flex items-center justify-center gap-2;
+}
+
+.modified-bill-metrics {
+  @apply max-w-xl;
+}
+
+.modified-bills-table {
+  @apply min-w-[1120px];
+}
+
+.modified-bill-detail-grid {
+  @apply grid min-w-0 gap-3;
+  grid-template-columns: minmax(260px, 0.9fr) repeat(2, minmax(240px, 1fr));
+}
+
+.modified-bill-detail-grid > section,
+.modified-snapshot-panel {
+  @apply grid min-w-0 gap-2 rounded-md border border-line bg-white p-3;
+}
+
+.modified-change-list,
+.modified-snapshot-lines,
+.modified-payment-lines {
+  @apply grid min-w-0 gap-1;
+}
+
+.modified-change-row {
+  @apply grid min-w-0 gap-2 rounded-md border border-line bg-wash px-3 py-2;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.modified-change-row strong,
+.modified-change-row span,
+.modified-snapshot-lines span,
+.modified-payment-lines span {
+  @apply min-w-0 break-words text-sm font-bold leading-5;
+}
+
+.modified-change-row strong {
+  @apply text-ink;
+}
+
+.modified-change-row span,
+.modified-snapshot-lines span,
+.modified-payment-lines span {
+  @apply text-muted;
+}
+
 @media (max-width: 980px) {
   .reports-layout .report-detail-grid,
-  .closed-report-row {
+  .closed-report-row,
+  .modified-bills-controls,
+  .modified-bill-detail-grid,
+  .modified-bill-unlock {
     grid-template-columns: minmax(0, 1fr);
   }
 
@@ -367,11 +450,12 @@
   }
 
   .report-tabs {
-    @apply w-full;
+    @apply grid w-full;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .report-tabs button {
-    @apply flex-1;
+    @apply min-w-0;
   }
 
   .reports-layout .report-metrics {

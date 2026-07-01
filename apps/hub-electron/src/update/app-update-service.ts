@@ -1,6 +1,6 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { homedir, platform } from "node:os";
+import { platform } from "node:os";
 import { basename, dirname, extname, join, resolve } from "node:path";
 import { spawn } from "node:child_process";
 import { readAppMetadata } from "../app-metadata.js";
@@ -10,7 +10,9 @@ import { DomainError } from "../domain/errors.js";
 import type { OnlineUpdateMetadata, UpdatePackageManifest } from "./update-package.js";
 import { PACKAGED_SQLITE_NATIVE_PATH, UPDATE_APP_ID, sha256, validateOnlineUpdateMetadata, validateUpdatePackage, validateWindowsX64NativeModule } from "./update-package.js";
 import { GithubUpdateSource, compareVersions, type GithubFetch, type GithubUpdateCheckResult, type GithubUpdateInstallRequest } from "./github-update-source.js";
+import { powershellCommand, psQuote, startProcessCommand, writeWindowsHandoffScript, type UpdateLaunchPlan } from "./windows-update-handoff.js";
 export type { GithubFetch, GithubFetchResponse, GithubRelease, GithubReleaseAsset, GithubUpdateCheckResult, GithubUpdateCheckStatus, GithubUpdateInstallRequest } from "./github-update-source.js";
+export type { UpdateLaunchPlan } from "./windows-update-handoff.js";
 
 const STATE_FILE = "app-update-state.json";
 const require = createRequire(import.meta.url);
@@ -86,14 +88,13 @@ export interface OnlineUpdateCheckResult {
 export interface OnlineAppUpdater {
   checkForUpdates(): Promise<OnlineUpdateCheckResult>;
   readUpdateMetadata(version: string): Promise<OnlineUpdateMetadata>;
-  downloadUpdate(): Promise<void>;
-  quitAndInstall(): void;
+  downloadUpdate(): Promise<UpdateLaunchPlan>;
   onDownloadProgress?(handler: (percent: number) => void): void;
 }
 
 export type OnlineUpdateInstallResult =
   | { status: "up_to_date"; currentVersion: string }
-  | { installing: true; backup: BackupSummary; version: string };
+  | { installing: true; backup: BackupSummary; version: string; recoveryScriptPath?: string };
 
 export class AppUpdateService {
   private onlineState: OnlineUpdateState;
@@ -110,8 +111,9 @@ export class AppUpdateService {
       sqliteNativePath?: string;
       githubFetch?: GithubFetch;
       onlineUpdater?: OnlineAppUpdater;
-      launchInstaller?: (installerPath: string) => Promise<void> | void;
+      launchInstaller?: (plan: UpdateLaunchPlan) => Promise<void> | void;
       exitApp?: () => void;
+      platform?: NodeJS.Platform;
     }
   ) {
     this.onlineState = createOnlineState(this.input.appVersion, Boolean(this.input.onlineUpdater));
@@ -228,7 +230,7 @@ export class AppUpdateService {
     };
     const recoveryScriptPath = this.writeRecoveryScript(previous);
     this.writeState({ ...state, pending, previous, recoveryScriptPath });
-    await this.launchAndExit(pending.installerPath);
+    await this.launchAndExit({ filePath: pending.installerPath, args: [] });
     return { installing: true, backup, package: pending, recoveryScriptPath };
   }
 
@@ -237,8 +239,9 @@ export class AppUpdateService {
     if (!state.previous) throw new DomainError("No rollback package is available", 400);
     if (!existsSync(state.previous.installerPath)) throw new DomainError("Previous installer is missing", 400);
     if (!existsSync(state.previous.preUpdateBackupPath)) throw new DomainError("Pre-update database backup is missing", 400);
-    const recoveryScriptPath = state.recoveryScriptPath && existsSync(state.recoveryScriptPath) ? state.recoveryScriptPath : this.writeRecoveryScript(state.previous);
-    await this.launchAndExit(recoveryScriptPath);
+    const recoveryScriptPath = this.writeRecoveryScript(state.previous);
+    this.writeState({ ...state, recoveryScriptPath });
+    await this.launchAndExit({ filePath: recoveryScriptPath, args: [] });
     return { rollingBack: true, package: state.previous };
   }
 
@@ -288,23 +291,39 @@ export class AppUpdateService {
       if (!check.version) throw new DomainError("Online update metadata is unavailable because the updater did not report a version", 400);
       const version = check.version;
       this.setOnlineState({ status: "available", checkedAt, availableVersion: version, message: null });
+      let metadata: OnlineUpdateMetadata;
       try {
-        validateOnlineUpdateMetadata(await onlineUpdater.readUpdateMetadata(version), this.input.dbSchemaVersion, version);
+        metadata = validateOnlineUpdateMetadata(await onlineUpdater.readUpdateMetadata(version), this.input.dbSchemaVersion, version);
       } catch (error) {
         throw new DomainError(error instanceof Error ? error.message : "Online update metadata is invalid", 400);
       }
+      const state = this.readState();
       this.setOnlineState({ status: "downloading", downloadPercent: 0, message: null });
-      await onlineUpdater.downloadUpdate();
+      const installPlan = await onlineUpdater.downloadUpdate();
+      if (!installPlan.filePath) throw new DomainError("Online update installer path is unavailable after download", 400);
       this.setOnlineState({ status: "downloaded", downloadPercent: 100, message: null });
 
       const finalActiveOrderCount = this.activeOrderCount();
       if (finalActiveOrderCount > 0) throw new DomainError(`Close or settle ${finalActiveOrderCount} running order(s) before installing update`, 400);
       this.input.database.integrityCheck();
       const backup = await this.input.backupService.createBackup(`pre-update-${this.input.appVersion}-to-${version}`, "automatic");
+      const pending = this.cacheOnlineInstaller(metadata, installPlan.filePath, state.current);
+      let previous: RollbackPackage | undefined;
+      let recoveryScriptPath: string | undefined;
+      if (state.current?.version === this.input.appVersion) {
+        previous = {
+          ...state.current,
+          preUpdateBackupFileName: backup.fileName,
+          preUpdateBackupPath: backup.path,
+          preparedAt: new Date().toISOString()
+        };
+        recoveryScriptPath = this.writeRecoveryScript(previous);
+      }
+      this.writeState({ ...state, pending, ...(previous ? { previous, recoveryScriptPath } : {}) });
       this.setOnlineState({ status: "installing", lastBackupFileName: backup.fileName, message: null });
-      onlineUpdater.quitAndInstall();
+      await this.launchAndExit({ filePath: pending.installerPath, args: installPlan.args });
       this.onlineUpdateRunning = true;
-      return { installing: true, backup, version };
+      return { installing: true, backup, version, ...(recoveryScriptPath ? { recoveryScriptPath } : {}) };
     } catch (error) {
       const message = error instanceof Error ? error.message : "Online update failed";
       this.setOnlineState({ status: "error", message });
@@ -345,6 +364,64 @@ export class AppUpdateService {
     };
   }
 
+  private cacheOnlineInstaller(metadata: OnlineUpdateMetadata, sourceInstallerPath: string, current?: CachedUpdatePackage): CachedUpdatePackage {
+    const installerBytes = readBaselineFile(sourceInstallerPath, "Online update installer");
+    const installerFileName = basename(sourceInstallerPath);
+    if (installerFileName !== basename(installerFileName) || !installerFileName.toLowerCase().endsWith(".exe")) {
+      throw new DomainError("Online update installer path is invalid", 400);
+    }
+    const manifest: UpdatePackageManifest = {
+      schemaVersion: 1,
+      appId: UPDATE_APP_ID,
+      productName: metadata.productName,
+      version: metadata.version,
+      platform: metadata.platform,
+      arch: metadata.arch,
+      electronVersion: current?.manifest.electronVersion ?? readAppMetadata().electronVersion,
+      dbSchemaVersion: metadata.dbSchemaVersion,
+      minSourceDbSchemaVersion: metadata.minSourceDbSchemaVersion,
+      createdAt: metadata.createdAt,
+      installer: {
+        fileName: installerFileName,
+        sha256: sha256(installerBytes),
+        sizeBytes: installerBytes.length
+      },
+      sqliteNative: current?.manifest.sqliteNative ?? this.installedSqliteNativeManifest()
+    };
+    const cacheRoot = this.safeCacheRoot(metadata.version);
+    mkdirSync(cacheRoot, { recursive: true });
+    const installerPath = join(cacheRoot, installerFileName);
+    copyFileSync(sourceInstallerPath, installerPath);
+    return {
+      version: metadata.version,
+      packagePath: installerPath,
+      installerPath,
+      manifest,
+      cachedAt: new Date().toISOString()
+    };
+  }
+
+  private installedSqliteNativeManifest(): UpdatePackageManifest["sqliteNative"] {
+    let sqliteNativePath: string;
+    try {
+      sqliteNativePath = this.input.sqliteNativePath ?? resolveInstalledSqliteNativePath();
+    } catch {
+      throw new DomainError("Installed SQLite native binary is missing", 400);
+    }
+    const sqliteNativeBytes = readBaselineFile(sqliteNativePath, "Installed SQLite native binary");
+    try {
+      validateWindowsX64NativeModule(sqliteNativeBytes);
+    } catch (error) {
+      throw new DomainError(error instanceof Error ? error.message : "Installed SQLite native validation failed", 400);
+    }
+    return {
+      fileName: PACKAGED_SQLITE_NATIVE_PATH,
+      sha256: sha256(sqliteNativeBytes),
+      sizeBytes: sqliteNativeBytes.length,
+      format: "pe32plus-x64"
+    };
+  }
+
   private validatePackageForCurrentDb(packagePath: string): ReturnType<typeof validateUpdatePackage> {
     try {
       return validateUpdatePackage(packagePath, this.input.dbSchemaVersion);
@@ -375,13 +452,20 @@ export class AppUpdateService {
     return row.count;
   }
 
-  private async launchAndExit(installerPath: string): Promise<void> {
-    if (this.input.launchInstaller) await this.input.launchInstaller(installerPath);
+  private async launchAndExit(plan: UpdateLaunchPlan): Promise<void> {
+    const launchPlan = this.installerLaunchPlan(plan);
+    if (this.input.launchInstaller) await this.input.launchInstaller(launchPlan);
     else {
-      const child = spawn(installerPath, [], { detached: true, stdio: "ignore", shell: extname(installerPath).toLowerCase() === ".cmd" });
+      const child = spawn(launchPlan.filePath, launchPlan.args, { detached: true, stdio: "ignore", shell: extname(launchPlan.filePath).toLowerCase() === ".cmd" });
       child.unref();
     }
     if (this.input.exitApp) this.input.exitApp();
+  }
+
+  private installerLaunchPlan(plan: UpdateLaunchPlan): UpdateLaunchPlan {
+    const targetPlatform = this.input.platform ?? platform();
+    if (targetPlatform !== "win32" || extname(plan.filePath).toLowerCase() !== ".exe") return plan;
+    return { filePath: this.writeInstallerHandoffScript(plan), args: [] };
   }
 
   private safeCacheRoot(version: string): string {
@@ -419,45 +503,30 @@ export class AppUpdateService {
     const scriptPath = join(this.input.updateDir, "Rollback Gaurav POS Update.cmd");
     const databasePath = this.input.databasePath;
     const backupPath = previous.preUpdateBackupPath;
-    const installerPath = previous.installerPath;
-    const script = [
-      "@echo off",
-      "setlocal",
-      `set "GPOS_PARENT_PID=${process.pid}"`,
-      "echo Waiting for Gaurav POS Hub to close before restoring the database...",
-      powershellCommand("Wait-Process -Id $env:GPOS_PARENT_PID -ErrorAction SilentlyContinue; Start-Sleep -Milliseconds 300"),
-      "echo Restoring Gaurav POS pre-update database backup...",
-      powershellCommand(`Remove-Item -Force -ErrorAction SilentlyContinue ${psQuote(`${databasePath}-wal`)},${psQuote(`${databasePath}-shm`)},${psQuote(`${databasePath}-journal`)}`),
-      powershellCommand(`Copy-Item -Force ${psQuote(backupPath)} ${psQuote(databasePath)}`),
-      "echo Launching previous Gaurav POS installer...",
-      powershellCommand(`Start-Process -FilePath ${psQuote(installerPath)}`),
-      "echo Rollback started. You can close this window after installer opens.",
-      "pause"
-    ].join("\r\n");
-    writeFileSync(scriptPath, script);
-    this.writeWindowsShortcutCopy(scriptPath);
-    return scriptPath;
+    return writeWindowsHandoffScript({
+      scriptPath,
+      waitMessage: "Waiting for Gaurav POS Hub to close before restoring the database...",
+      afterWaitMilliseconds: 300,
+      afterWaitLines: [
+        "echo Restoring Gaurav POS pre-update database backup...",
+        powershellCommand(`Remove-Item -Force -ErrorAction SilentlyContinue ${psQuote(`${databasePath}-wal`)},${psQuote(`${databasePath}-shm`)},${psQuote(`${databasePath}-journal`)}`),
+        powershellCommand(`Copy-Item -Force ${psQuote(backupPath)} ${psQuote(databasePath)}`),
+        "echo Launching previous Gaurav POS installer...",
+        powershellCommand(startProcessCommand({ filePath: previous.installerPath, args: [] }))
+      ],
+      pauseMessage: "Rollback started. You can close this window after installer opens.",
+      copyShortcut: true
+    });
   }
 
-  private writeWindowsShortcutCopy(scriptPath: string): void {
-    if (platform() !== "win32") return;
-    const targets = [
-      join(homedir(), "Desktop", basename(scriptPath)),
-      join(process.env.APPDATA ?? join(homedir(), "AppData", "Roaming"), "Microsoft", "Windows", "Start Menu", "Programs", basename(scriptPath))
-    ];
-    for (const target of targets) {
-      mkdirSync(dirname(target), { recursive: true });
-      copyFileSync(scriptPath, target);
-    }
+  private writeInstallerHandoffScript(plan: UpdateLaunchPlan): string {
+    return writeWindowsHandoffScript({
+      scriptPath: join(this.input.updateDir, "Install Gaurav POS Update.cmd"),
+      waitMessage: "Waiting for Gaurav POS Hub to close before installing the update...",
+      afterWaitMilliseconds: 500,
+      afterWaitLines: [powershellCommand(startProcessCommand(plan))]
+    });
   }
-}
-
-function powershellCommand(command: string): string {
-  return `powershell -NoProfile -ExecutionPolicy Bypass -Command "${command.replace(/"/g, '\\"')}"`;
-}
-
-function psQuote(value: string): string {
-  return `'${value.replace(/'/g, "''")}'`;
 }
 
 function separator(): string {

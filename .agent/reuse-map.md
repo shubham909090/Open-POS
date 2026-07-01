@@ -162,6 +162,7 @@
 - `apps/hub-electron/src/printing/print-job-service.ts`: print retry state machine and adapter boundary.
 - `apps/hub-electron/src/sync/convex-sync.ts`: SQLite outbox to Convex HTTP sync bridge.
 - `apps/hub-electron/src/update/app-update-service.ts`: local app update baseline, install, rollback, state, and recovery-script orchestration.
+- `apps/hub-electron/src/update/windows-update-handoff.ts`: typed update launch plans and Windows `.cmd` handoff script writer for installer/rollback flows.
 - `apps/hub-electron/src/update/github-update-source.ts`: GitHub release discovery, version comparison, update package asset download, release parsing, and validation adapter.
 - `apps/mobile/src/lib/hub-client.ts`: Android LAN API client implementation; re-exports mobile hub contracts/helpers for backwards-compatible imports.
 - `apps/mobile/src/lib/hub-client-types.ts`: mobile hub REST/WebSocket response and request option contracts.

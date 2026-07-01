@@ -1,9 +1,9 @@
-import { reportRangeQuerySchema } from "@gaurav-pos/shared";
+import { modifiedBillsQuerySchema, reportRangeQuerySchema } from "@gaurav-pos/shared";
 import { DomainError } from "../domain/errors.js";
 import type { HubRouteContext } from "./route-context.js";
 
 export function registerReportRoutes({ app, input, auth }: HubRouteContext): void {
-  const { captainOrAdmin } = auth;
+  const { captainOrAdmin, getSession } = auth;
 
   app.get("/business-day/current-summary", { preHandler: captainOrAdmin }, async () => input.orderService.getCurrentBusinessDaySummary());
   app.get("/reports/daily", { preHandler: captainOrAdmin }, async () => {
@@ -37,6 +37,13 @@ export function registerReportRoutes({ app, input, auth }: HubRouteContext): voi
       .type(file.contentType)
       .header("content-disposition", `attachment; filename="${file.fileName}"`)
       .send(file.body);
+  });
+  app.post("/reports/modified-bills/search", { preHandler: captainOrAdmin }, async (request) => {
+    const session = getSession(request);
+    const parsed = modifiedBillsQuerySchema.safeParse(request.body);
+    if (!parsed.success) throw new DomainError(parsed.error.issues[0]?.message ?? "Invalid modified bill search", 400);
+    input.orderService.verifyMasterApprovalForAction(parsed.data.masterApproval, "modified_bills.view", "report", "modified_bills", session.name);
+    return input.orderService.listModifiedBillAudits(parsed.data);
   });
   app.get("/reports/alcohol-stock-movements", { preHandler: captainOrAdmin }, async (request) => {
     const query = request.query as { limit?: string };

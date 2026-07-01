@@ -39,7 +39,7 @@ export function createSyncTick(syncBridge: SyncBridgeLike, log: SyncLogger) {
   };
 }
 
-export async function startHub(options: { requestRestart?: () => void; onlineUpdater?: OnlineAppUpdater } = {}) {
+export async function startHub(options: { requestRestart?: () => void; requestExit?: () => void; onlineUpdater?: OnlineAppUpdater } = {}) {
   const config = loadHubConfig();
   BackupService.applyPendingReset(config.databasePath, config.backupDir);
   BackupService.applyPendingRestore(config.databasePath, config.backupDir);
@@ -61,6 +61,10 @@ export async function startHub(options: { requestRestart?: () => void; onlineUpd
     databasePath: config.databasePath,
     onlineUpdater: options.onlineUpdater,
     exitApp: () => {
+      if (options.requestExit) {
+        options.requestExit();
+        return;
+      }
       setTimeout(() => process.exit(0), 500).unref();
     }
   });
@@ -112,9 +116,23 @@ export async function startHub(options: { requestRestart?: () => void; onlineUpd
   }, 60 * 60_000);
   maintenanceInterval.unref();
 
+  let stopped = false;
+  const stop = async () => {
+    if (stopped) return;
+    stopped = true;
+    clearInterval(syncInterval);
+    clearInterval(maintenanceInterval);
+    try {
+      await app.close();
+    } finally {
+      database.close();
+    }
+  };
+
   return {
     app,
     database,
-    url: `http://${config.host === "0.0.0.0" ? "127.0.0.1" : config.host}:${config.port}`
+    url: `http://${config.host === "0.0.0.0" ? "127.0.0.1" : config.host}:${config.port}`,
+    stop
   };
 }

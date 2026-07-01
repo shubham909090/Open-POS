@@ -85,6 +85,22 @@ describe("ConvexSyncBridge", () => {
     database.close();
   });
 
+  it("pushes bill modification audit rows with order-history backup data", async () => {
+    const { database, orderService } = createTestHub();
+    createPaidHistoryAudit(orderService);
+    markLicenseFresh(database);
+    writeSetting(database, "cloud_backup_enabled", "1");
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ upserted: 1, skipped: 0 }), { status: 200 }));
+    const sync = new ConvexSyncBridge(database.orm, "https://example.convex.site", "secret", "install-main");
+
+    await expect(sync.pushPending()).resolves.toMatchObject({ skipped: false });
+
+    const body = JSON.parse((fetchSpy.mock.calls[0]?.[1] as RequestInit).body as string) as { rows: Array<Record<string, unknown>> };
+    expect(body.rows.some((row) => row.domain === "bill_modification_audits" && String(row.payloadJson).includes("Owner history edit"))).toBe(true);
+
+    database.close();
+  });
+
   it("pushes pending tombstones before table sweep rows", async () => {
     const { database } = createTestHub();
     markLicenseFresh(database);
@@ -213,6 +229,30 @@ describe("ConvexSyncBridge", () => {
     database.close();
   });
 
+  it("wipes existing bill modification audits during order-history restore", async () => {
+    const { database, orderService } = createTestHub();
+    createPaidHistoryAudit(orderService);
+    writeSetting(database, "cloud_backup_enabled", "1");
+    expect(database.db.prepare("SELECT COUNT(*) AS count FROM bill_modification_audits").get()).toEqual({ count: 1 });
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(() => Promise.resolve(new Response(JSON.stringify({ rows: [] }), { status: 200 })));
+    const sync = new ConvexSyncBridge(database.orm, "https://example.convex.site", "secret", "install-main");
+
+    await expect(sync.restoreFromCloud({ kind: "order_history", throughBusinessDate: "2026-05-24" })).resolves.toMatchObject({
+      restored: true,
+      kind: "order_history"
+    });
+
+    const requests = fetchSpy.mock.calls.map((call) => JSON.parse((call[1] as RequestInit).body as string) as { domain: string; throughBusinessDate?: string });
+    expect(requests).toEqual(expect.arrayContaining([
+      expect.objectContaining({ domain: "bill_modification_audits", throughBusinessDate: "2026-05-24" })
+    ]));
+    expect(database.db.prepare("SELECT COUNT(*) AS count FROM bill_modification_audits").get()).toEqual({ count: 0 });
+
+    database.close();
+  });
+
   it("imports restore pages as they arrive instead of waiting for the whole domain", async () => {
     const { database } = createTestHub();
     writeSetting(database, "cloud_backup_enabled", "1");
@@ -329,3 +369,23 @@ describe("ConvexSyncBridge", () => {
     }
   });
 });
+
+function createPaidHistoryAudit(orderService: ReturnType<typeof createTestHub>["orderService"]) {
+  orderService.setMasterPin({ newPin: "9876", confirmPin: "9876", updatedBy: "owner" });
+  const order = orderService.submitOrder({
+    tableId: "table-t1",
+    captainId: "waiter-1",
+    pax: 1,
+    orderType: "dine_in",
+    printMode: "kot",
+    items: [{ menuItemId: "item-dal-fry", quantity: 1 }]
+  });
+  const bill = orderService.generateBill(order.orderId);
+  orderService.settleBill(bill.billId, { method: "cash", amountPaise: bill.totalPaise, receivedBy: "captain-1" });
+  orderService.editHistoryBill(bill.billId, {
+    items: [{ menuItemId: "item-dal-fry", quantity: 2 }],
+    payments: [{ method: "cash", amountPaise: 36_000 }],
+    masterApproval: { pin: "9876", reason: "Owner history edit", approvedBy: "owner" }
+  });
+  return { order, bill };
+}

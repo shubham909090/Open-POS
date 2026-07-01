@@ -1,15 +1,22 @@
-import { spawn } from "node:child_process";
+import { stopThenSpawnReplacement } from "./process-restart.js";
 import { startHub } from "./runtime.js";
 
-await startHub({
+let hub: Awaited<ReturnType<typeof startHub>>;
+let restartRequested = false;
+hub = await startHub({
+  requestExit: () => {
+    void hub.stop().finally(() => process.exit(0));
+  },
   requestRestart: () => {
-    const child = spawn(process.execPath, process.argv.slice(1), {
+    if (restartRequested) return;
+    restartRequested = true;
+    void stopThenSpawnReplacement({
+      stop: () => hub.stop(),
+      execPath: process.execPath,
+      args: process.argv.slice(1),
       cwd: process.cwd(),
-      detached: true,
       env: process.env,
-      stdio: "inherit"
+      exitProcess: process.exit
     });
-    child.unref();
-    process.exit(0);
   }
 });

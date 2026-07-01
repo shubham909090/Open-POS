@@ -75,7 +75,7 @@ export interface OnlineUpdateState {
 
 export type OnlineUpdateInstallResult =
   | { status: "up_to_date"; currentVersion: string }
-  | { installing: true; backup: BackupSummary; version: string };
+  | { installing: true; backup: BackupSummary; version: string; recoveryScriptPath?: string };
 
 export interface ValidatedUpdatePackage {
   ok: true;

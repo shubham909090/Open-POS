@@ -2,6 +2,13 @@
 
 ## 2026-06-30
 
+- Task: Added a Windows local-data finder diagnostic for missing April reports after cloud backup deletion.
+- Diagnostics: `diagnostics/gaurav-pos-find-local-data.ps1` searches likely Gaurav POS app-data, backup, install, desktop/document/download, explicit `-AppExePath`, and optional deep Windows locations for SQLite files; ranks candidates by app path/schema/date strings; runs real report/order/bill SQL summaries when `sqlite3.exe` is available; and can copy candidate DB sidecars with `-CopyCandidates`.
+- Operator helper: `diagnostics/gaurav-pos-find-local-data.cmd` launches the PowerShell finder from Command Prompt/double-click with execution policy bypass and leaves the report zip on the Desktop.
+- Updater diagnosis/fix: matched brother's Windows error to NSIS installer startup racing the still-running Hub process; `electron-updater` was launching the installer before app quit, unlike the t3code lifecycle pattern.
+- Hub updater hardening: online updates now use Electron updater for check/download only, keep the NSIS launch args in a typed update launch plan, then start `Install Gaurav POS Update.cmd`, which waits for the Hub process to close before starting NSIS. Custom `.gpos-update.zip` installs use the same Windows handoff.
+- Shutdown lifecycle: packaged Electron exits now go through `app.quit()` and `startHub().stop()` so Fastify intervals/server and SQLite close before update/restart. Dev CLI exits also stop the hub before `process.exit`.
+- Updater docs/tests: added regression coverage for online installer handoff with `--updated /S --force-run`, Windows script generation, API route behavior, and idempotent hub shutdown; updated update/release docs to describe the handoff flow and required GitHub release assets.
 - Release: Published fresh restaurant builds as GitHub release `hub-v0.1.13`; Hub `0.1.13` includes the Windows installer, blockmap, `latest.yml`, `hub-update-metadata.json`, and fallback `.gpos-update.zip`; Mobile `0.1.7` / Android versionCode `7` includes a locally signed APK attached to the same release.
 - Release hardening: moved pnpm native-build policy from the ignored root `package.json` field into `pnpm-workspace.yaml` with both pnpm 10 `onlyBuiltDependencies` and pnpm 11 `allowBuilds`, so EAS local temp installs can run required native postinstall scripts.
 - Mobile release prep: updated Expo SDK 55 patch dependencies until `expo install --check` passed, then rebuilt and verified the APK signature.
@@ -897,3 +904,9 @@
 - Backend: `apps/hub-electron/src/domain/order-service/report-exports.ts` builds full CSV packs (`daily-totals`, `category-totals`, `item-totals`, `bill-history`, `bill-items`, `export-summary`) and balanced daily Tally vouchers, blocking both exports until every selected business date has a finalized report.
 - Settings/UI: Tally ledger defaults are stored in hub settings and editable from the range report surface; export buttons remain tied to the applied range and disabled for missing/unfinalized ranges.
 - Verification: targeted export/API/UI tests, full Hub Electron test suite, typecheck, renderer build, and Playwright visual checks at 1440px and 390px widths passed.
+
+## 2026-07-01 hub modified bill audit view
+- Task: Added Master PIN-protected Modified Bills report view without changing old bill history/edit flow.
+- Backend: `apps/hub-electron/src/domain/order-service/bill-modification-audit.ts` records exact before/after bill snapshots, item/payment diffs, actor device/session, approval type, reason, and indexed exact search keys for history edits and pending revisions.
+- UI: `apps/hub-electron/src/renderer/components/reports/modified-bills-panel.tsx` adds date filters, exact bill/order search, summary metrics, expandable before/after rows, and in-memory Master PIN unlock.
+- Verification: targeted billing/report UI tests, full Hub Electron test suite, typecheck, lint, renderer build, and `git diff --check` passed. Browser visual attempt reached local server but was cut short after dev server stopped; jsdom UI coverage covers tab/render/unlock/search/expand states.

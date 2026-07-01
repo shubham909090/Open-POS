@@ -5,9 +5,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 const historyEditBillMock = vi.fn();
 const billPrintersMock = vi.fn();
+const currentBusinessDaySummaryMock = vi.fn();
 const rangeReportMock = vi.fn();
 const rangeReportCsvMock = vi.fn();
 const rangeReportTallyMock = vi.fn();
+const modifiedBillsMock = vi.fn();
 const tallyExportSettingsMock = vi.fn();
 const updateTallyExportSettingsMock = vi.fn();
 const backupsMock = vi.fn();
@@ -25,9 +27,11 @@ describe("reports history payment edit", () => {
     vi.resetModules();
     historyEditBillMock.mockReset();
     billPrintersMock.mockReset();
+    currentBusinessDaySummaryMock.mockReset();
     rangeReportMock.mockReset();
     rangeReportCsvMock.mockReset();
     rangeReportTallyMock.mockReset();
+    modifiedBillsMock.mockReset();
     tallyExportSettingsMock.mockReset();
     updateTallyExportSettingsMock.mockReset();
     backupsMock.mockReset();
@@ -175,6 +179,126 @@ describe("reports history payment edit", () => {
     await waitFor(() => expect((tallyButton as HTMLButtonElement).disabled).toBe(false));
   });
 
+  it("opens modified bill audit with Master PIN and searches exact bill identifiers", async () => {
+    const approval = { pin: "9876", reason: "View modified bills", approvedBy: "owner" };
+    const requestManagerApproval = vi.fn().mockResolvedValue(approval);
+    modifiedBillsMock.mockResolvedValue(modifiedBillsReport());
+
+    const { ReportsView } = await importReportsView();
+    renderReportsView(ReportsView, { requestManagerApproval });
+
+    fireEvent.click(await screen.findByRole("tab", { name: "Modified Bills" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Open audit" }));
+
+    await waitFor(() => expect(modifiedBillsMock).toHaveBeenCalledWith({
+      from: "2026-05-20",
+      to: "2026-05-20",
+      masterApproval: approval
+    }));
+    expect(screen.getByText("#7")).toBeTruthy();
+    expect(screen.getByText("bill-1")).toBeTruthy();
+    expect(screen.getByText("order-1")).toBeTruthy();
+    expect(screen.getByText("Local Admin")).toBeTruthy();
+    expect(screen.getAllByText("+₹180.00").length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByRole("button", { name: "Open" }));
+    expect(screen.getByText("Dal Fry")).toBeTruthy();
+    expect(screen.getByText("1 -> 2")).toBeTruthy();
+    expect(screen.getByText("Bill bill-1 · Order order-1")).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText("Exact search"), { target: { value: "order-1" } });
+    fireEvent.click(screen.getByRole("button", { name: "Search" }));
+
+    await waitFor(() => expect(modifiedBillsMock).toHaveBeenLastCalledWith({
+      from: "2026-05-20",
+      to: "2026-05-20",
+      exactSearch: "order-1",
+      masterApproval: approval
+    }));
+  });
+
+  it("does not show cached modified bill rows after locking the owner audit", async () => {
+    let resolveSecondSearch!: (value: ReturnType<typeof modifiedBillsReport>) => void;
+    const approval = { pin: "9876", reason: "View modified bills", approvedBy: "owner" };
+    const requestManagerApproval = vi.fn().mockResolvedValue(approval);
+    modifiedBillsMock
+      .mockResolvedValueOnce(modifiedBillsReport())
+      .mockReturnValueOnce(new Promise((resolve) => {
+        resolveSecondSearch = resolve;
+      }));
+
+    const { ReportsView } = await importReportsView();
+    renderReportsView(ReportsView, { requestManagerApproval });
+
+    fireEvent.click(await screen.findByRole("tab", { name: "Modified Bills" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Open audit" }));
+    expect(await screen.findByText("#7")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Lock" }));
+    expect(screen.queryByText("#7")).toBeNull();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Open audit" }));
+    await waitFor(() => expect(modifiedBillsMock).toHaveBeenCalledTimes(2));
+    expect(screen.queryByText("#7")).toBeNull();
+
+    resolveSecondSearch({ ...modifiedBillsReport(), rows: [] });
+  });
+
+  it("waits for the active business date before opening modified bill audit", async () => {
+    let resolveSummary!: (value: ReturnType<typeof summary>) => void;
+    const approval = { pin: "9876", reason: "View modified bills", approvedBy: "owner" };
+    const requestManagerApproval = vi.fn().mockResolvedValue(approval);
+    currentBusinessDaySummaryMock.mockReturnValueOnce(new Promise((resolve) => {
+      resolveSummary = resolve;
+    }));
+    modifiedBillsMock.mockResolvedValue({ from: "2026-05-20", to: "2026-05-20", rows: [] });
+
+    const { ReportsView } = await importReportsView();
+    renderReportsView(ReportsView, { requestManagerApproval });
+
+    fireEvent.click(await screen.findByRole("tab", { name: "Modified Bills" }));
+    expect(await screen.findByText("Loading business day")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Open audit" })).toBeNull();
+    expect(modifiedBillsMock).not.toHaveBeenCalled();
+
+    resolveSummary(summary());
+
+    fireEvent.click(await screen.findByRole("button", { name: "Open audit" }));
+    await waitFor(() => expect(modifiedBillsMock).toHaveBeenLastCalledWith({
+      from: "2026-05-20",
+      to: "2026-05-20",
+      masterApproval: approval
+    }));
+  });
+
+  it("clears modified bill audit cache when leaving the tab", async () => {
+    let resolveSecondSearch!: (value: ReturnType<typeof modifiedBillsReport>) => void;
+    const approval = { pin: "9876", reason: "View modified bills", approvedBy: "owner" };
+    const requestManagerApproval = vi.fn().mockResolvedValue(approval);
+    modifiedBillsMock
+      .mockResolvedValueOnce(modifiedBillsReport())
+      .mockReturnValueOnce(new Promise((resolve) => {
+        resolveSecondSearch = resolve;
+      }));
+
+    const { ReportsView } = await importReportsView();
+    renderReportsView(ReportsView, { requestManagerApproval });
+
+    fireEvent.click(await screen.findByRole("tab", { name: "Modified Bills" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Open audit" }));
+    expect(await screen.findByText("Local Admin")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Daily" }));
+    expect(screen.queryByText("Local Admin")).toBeNull();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Modified Bills" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Open audit" }));
+    await waitFor(() => expect(modifiedBillsMock).toHaveBeenCalledTimes(2));
+    expect(screen.queryByText("Local Admin")).toBeNull();
+
+    resolveSecondSearch({ ...modifiedBillsReport(), rows: [] });
+  });
+
   it("creates manual backups and guards restore and delete with filename confirmation", async () => {
     const backup = manualBackup();
     const approval = { pin: "9876", reason: "Backup action", approvedBy: "owner" };
@@ -263,18 +387,20 @@ async function importReportsView() {
   });
   if (!backupsMock.getMockImplementation()) backupsMock.mockResolvedValue([]);
   if (!pendingRestoreMock.getMockImplementation()) pendingRestoreMock.mockResolvedValue(null);
+  if (!currentBusinessDaySummaryMock.getMockImplementation()) currentBusinessDaySummaryMock.mockResolvedValue(summary());
   if (!rangeReportCsvMock.getMockImplementation()) rangeReportCsvMock.mockResolvedValue(downloadedFile("range-report.zip"));
   if (!rangeReportTallyMock.getMockImplementation()) rangeReportTallyMock.mockResolvedValue(downloadedFile("range-report.xml"));
   if (!tallyExportSettingsMock.getMockImplementation()) tallyExportSettingsMock.mockResolvedValue(tallySettings());
   if (!updateTallyExportSettingsMock.getMockImplementation()) updateTallyExportSettingsMock.mockImplementation(async (payload: unknown) => payload);
   vi.doMock("../renderer/hub-api.js", () => ({
     hubApi: {
-      currentBusinessDaySummary: vi.fn().mockResolvedValue(summary()),
+      currentBusinessDaySummary: currentBusinessDaySummaryMock,
       dailyReports: vi.fn().mockResolvedValue([]),
       dailyReport: vi.fn(),
       rangeReport: rangeReportMock,
       rangeReportCsv: rangeReportCsvMock,
       rangeReportTally: rangeReportTallyMock,
+      modifiedBills: modifiedBillsMock,
       tallyExportSettings: tallyExportSettingsMock,
       updateTallyExportSettings: updateTallyExportSettingsMock,
       alcoholStockMovements: vi.fn().mockResolvedValue([]),
@@ -369,6 +495,59 @@ function tallySettings() {
 
 function downloadedFile(fileName: string) {
   return { blob: new Blob(["ok"]), fileName };
+}
+
+function modifiedBillsReport() {
+  return {
+    from: "2026-05-20",
+    to: "2026-05-20",
+    rows: [
+      {
+        id: "audit-1",
+        billId: "bill-1",
+        billNumber: 7,
+        orderId: "order-1",
+        businessDate: "2026-05-20",
+        tableName: "T1",
+        changeType: "history_edit",
+        fromRevisionNumber: 1,
+        toRevisionNumber: 2,
+        reason: "Owner history edit",
+        approvalType: "master",
+        approvedBy: "owner",
+        actor: { deviceId: "device-local-admin", name: "Local Admin", role: "admin" },
+        before: {
+          status: "paid",
+          revisionNumber: 1,
+          subtotalPaise: 18_000,
+          taxPaise: 0,
+          totalPaise: 18_000,
+          discountPaise: 0,
+          tipPaise: 0,
+          finalTotalPaise: 18_000,
+          items: [{ orderItemId: "item-1", menuItemId: "item-dal-fry", menuItemVariantId: null, name: "Dal Fry", quantity: 1, unitPricePaise: 18_000, lineTotalPaise: 18_000 }],
+          payments: [{ method: "cash", amountPaise: 18_000, reference: null }]
+        },
+        after: {
+          status: "paid",
+          revisionNumber: 2,
+          subtotalPaise: 36_000,
+          taxPaise: 0,
+          totalPaise: 36_000,
+          discountPaise: 0,
+          tipPaise: 0,
+          finalTotalPaise: 36_000,
+          items: [{ orderItemId: "item-1", menuItemId: "item-dal-fry", menuItemVariantId: null, name: "Dal Fry", quantity: 2, unitPricePaise: 18_000, lineTotalPaise: 36_000 }],
+          payments: [{ method: "upi", amountPaise: 36_000, reference: "UPI-edited" }]
+        },
+        changes: [
+          { kind: "item_quantity", label: "Dal Fry", before: "1", after: "2" },
+          { kind: "final_total", label: "Final total", before: "18000", after: "36000" }
+        ],
+        createdAt: "2026-05-20T10:00:00.000Z"
+      }
+    ]
+  };
 }
 
 function renderReportsView(
