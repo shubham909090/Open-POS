@@ -36,6 +36,7 @@ import {
   type UpdateCloudBackupInput,
   type UpdateAlcoholItemInput,
   type UpdateFloorInput,
+  type UpdateKdsSettingsInput,
   type UpdateKotStatusInput,
   type UpdateMenuItemInput,
   type UpdateOrderStateInput,
@@ -199,7 +200,7 @@ import {
   resolveProductionUnitRef as resolveProductionUnitRefModel,
   requireProductionUnit as requireProductionUnitQuery
 } from "./order-service/production-unit-queries.js";
-import { updateKotStatus as updateKotStatusModel } from "./order-service/kot-status.js";
+import { markKdsServed as markKdsServedModel, updateKotStatus as updateKotStatusModel } from "./order-service/kot-status.js";
 import {
   createReadyNotification as createReadyNotificationModel,
   listReadyNotifications as listReadyNotificationModels
@@ -241,12 +242,14 @@ import {
   getTallyExportSettings as getTallyExportSettingsModel,
   getTicketTemplate as getTicketTemplateModel,
   isCloudBackupEnabled as isCloudBackupEnabledModel,
+  isKdsEnabled as isKdsEnabledModel,
   isManagerPinConfigured as isManagerPinConfiguredModel,
   isMasterPinConfigured as isMasterPinConfiguredModel,
   setManagerPin as setManagerPinModel,
   setMasterPin as setMasterPinModel,
   updateCloudBackupEnabled as updateCloudBackupEnabledModel,
   updateHubConnectionSettings as updateHubConnectionSettingsModel,
+  updateKdsEnabled as updateKdsEnabledModel,
   updatePrintLayout as updatePrintLayoutModel,
   updateTallyExportSettings as updateTallyExportSettingsModel,
   updateTicketTemplate as updateTicketTemplateModel,
@@ -424,6 +427,19 @@ export class OrderService {
     return updateCloudBackupEnabledModel(this.settingsActionContext(), input);
   }
 
+  isKdsEnabled(): boolean {
+    return isKdsEnabledModel(this.settingsActionContext());
+  }
+
+  updateKdsEnabled(input: UpdateKdsSettingsInput): { enabled: boolean; markedServed: number } {
+    const run = this.db.transaction(() => {
+      const result = updateKdsEnabledModel(this.settingsActionContext(), input);
+      const cleanup = result.enabled ? { markedServed: 0 } : this.markAllKdsServed();
+      return { ...result, markedServed: cleanup.markedServed };
+    });
+    return run();
+  }
+
   getTallyExportSettings(): TallyExportSettingsInput {
     return getTallyExportSettingsModel(this.settingsActionContext());
   }
@@ -479,7 +495,17 @@ export class OrderService {
   }
 
   listKds(productionUnitId: string): unknown[] {
+    if (!this.isKdsEnabled()) return [];
     return listKdsTickets(this.db, productionUnitId);
+  }
+
+  markAllKdsServed(productionUnitId?: string): { markedServed: number } {
+    return markKdsServedModel({
+      orm: this.orm,
+      db: this.db,
+      createReadyNotification: (id) => this.createReadyNotification(id),
+      appendEvent: (type, aggregateType, aggregateId, payload) => this.appendEvent(type, aggregateType, aggregateId, payload)
+    }, productionUnitId);
   }
 
   bootstrap(): unknown {
@@ -496,6 +522,7 @@ export class OrderService {
       ticketTemplate: this.getTicketTemplate(),
       printJobs: this.listPrintJobs(20),
       printerOutputMode: this.getPrinterOutputMode(),
+      kdsEnabled: this.isKdsEnabled(),
       syncStatus: this.getSyncStatus()
     };
   }
@@ -793,6 +820,7 @@ export class OrderService {
     return {
       orm: this.orm,
       db: this.db,
+      markKdsServed: (productionUnitId) => this.markAllKdsServed(productionUnitId),
       appendEvent: (type, aggregateType, aggregateId, payload) => this.appendEvent(type, aggregateType, aggregateId, payload)
     };
   }
@@ -1224,6 +1252,7 @@ export class OrderService {
       now,
       isNewOrder,
       forceCancelled,
+      kdsEnabled: this.isKdsEnabled(),
       reason,
       typeOverride,
       sequenceOrderId,

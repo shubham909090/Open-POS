@@ -14,6 +14,7 @@ export function getMobileServiceViewModel(input: {
   const tables = input.bootstrap?.tables ?? [];
   const menuItems = input.bootstrap?.menuItems ?? [];
   const productionUnits = input.bootstrap?.productionUnits ?? [];
+  const kdsEnabled = input.bootstrap?.setup?.kdsEnabled ?? true;
 
   const selectedTable = tables.find((table) => table.id === input.selectedTableId) ?? null;
   const activeTables = tables.filter((table) => getTableDisplayState(table) !== "disabled");
@@ -40,7 +41,7 @@ export function getMobileServiceViewModel(input: {
     saleGroupFilters: getSaleGroupFilters(menuItems),
     activeMenuGroup,
     visibleMenu: searchMenuItems(menuItems, input.menuSearch, { saleGroupKind: activeMenuGroup ?? undefined }).slice(0, 120),
-    activeKdsUnits: productionUnits.filter((unit) => unit.active !== false && unit.active !== 0 && unit.kds_enabled !== false && unit.kds_enabled !== 0),
+    activeKdsUnits: kdsEnabled ? productionUnits.filter((unit) => unit.active !== false && unit.active !== 0 && unit.kds_enabled !== false && unit.kds_enabled !== 0) : [],
   };
 }
 

@@ -24,6 +24,7 @@ type RemoveResult = { id: string; deleted: boolean; active: boolean };
 export type SetupCatalogActionContext = {
   orm: HubOrm;
   db: SqliteDatabase;
+  markKdsServed: (productionUnitId: string) => { markedServed: number };
   appendEvent: (type: string, aggregateType: string, aggregateId: string, payload: unknown) => DomainEvent;
 };
 
@@ -203,6 +204,7 @@ export function updateProductionUnit(ctx: SetupCatalogActionContext, id: string,
     .where(eq(productionUnits.id, id))
     .run();
   if (result.changes === 0) throw new DomainError("Kitchen / counter not found", 404);
+  if (input.kdsEnabled === false) ctx.markKdsServed(id);
   ctx.appendEvent("production_unit.updated", "production_unit", id, { id, ...input });
   return { id };
 }

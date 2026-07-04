@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { HubBootstrap, HubOrder } from "../lib/hub-client";
+import { getKitchenRefreshTarget } from "../lib/kitchen-refresh-target";
 import { getMobileServiceViewModel } from "../lib/mobile-app-view-model";
 
 const bootstrap: HubBootstrap = {
@@ -74,6 +75,14 @@ describe("mobile service view model", () => {
     ]);
     expect(viewModel.visibleMenu.map((item) => item.id)).toEqual(["item-2"]);
     expect(viewModel.activeKdsUnits.map((unit) => unit.id)).toEqual(["kitchen"]);
+  });
+
+  it("does not select a kitchen refresh target while global KDS is off", () => {
+    const target = getKitchenRefreshTarget({ ...bootstrap, setup: { kdsEnabled: false } }, "kitchen");
+
+    expect(target.kdsEnabled).toBe(false);
+    expect(target.kitchenUnits).toEqual([]);
+    expect(target.nextUnitId).toBe("");
   });
 
   it("summarizes mixed draft quantities per visible menu item", () => {

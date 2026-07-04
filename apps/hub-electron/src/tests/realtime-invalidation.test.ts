@@ -50,10 +50,19 @@ describe("hub realtime invalidation", () => {
       ["tableOrder"],
       ["kds"]
     ]);
+    expect(getRealtimeInvalidationKeys({ type: "production_unit.updated" })).toEqual([
+      ["bootstrap"],
+      ["alcohol"],
+      ["kds"]
+    ]);
   });
 
   it("refreshes kitchen tickets when KOT status changes", () => {
     expect(getRealtimeInvalidationKeys({ type: "kot.status_changed" })).toEqual([
+      ["kds"],
+      ["bootstrap"]
+    ]);
+    expect(getRealtimeInvalidationKeys({ type: "kds.settings_updated" })).toEqual([
       ["kds"],
       ["bootstrap"]
     ]);

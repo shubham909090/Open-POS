@@ -8,7 +8,8 @@ import type {
   SetMasterPinInput,
   TallyExportSettingsInput,
   TicketTemplateInput,
-  UpdateCloudBackupInput
+  UpdateCloudBackupInput,
+  UpdateKdsSettingsInput
 } from "@gaurav-pos/shared";
 import { tallyExportSettingsSchema } from "@gaurav-pos/shared";
 
@@ -127,6 +128,16 @@ export function updateCloudBackupEnabled(ctx: SettingsActionContext, input: Upda
   );
   ctx.writeSetting("cloud_backup_enabled", input.enabled ? "1" : "0");
   ctx.appendEvent("cloud_backup.updated", "hub_setting", "cloud_backup", { enabled: input.enabled });
+  return { enabled: input.enabled };
+}
+
+export function isKdsEnabled(ctx: SettingsActionContext): boolean {
+  return ctx.readSetting("kds_enabled") !== "0";
+}
+
+export function updateKdsEnabled(ctx: SettingsActionContext, input: UpdateKdsSettingsInput): { enabled: boolean } {
+  ctx.writeSetting("kds_enabled", input.enabled ? "1" : "0");
+  ctx.appendEvent("kds.settings_updated", "hub_setting", "kds", { enabled: input.enabled });
   return { enabled: input.enabled };
 }
 

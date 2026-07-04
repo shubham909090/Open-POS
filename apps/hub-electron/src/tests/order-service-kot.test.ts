@@ -119,7 +119,7 @@ describe("OrderService KOT lifecycle", () => {
   it("hides KDS tickets when the kitchen screen is disabled for a counter", () => {
     const { database, orderService } = createTestHub();
     orderService.updateProductionUnit("unit-kitchen", { kdsEnabled: false });
-    orderService.submitOrder({
+    const result = orderService.submitOrder({
       tableId: "table-t1",
       captainId: "waiter-1",
       pax: 1,
@@ -127,7 +127,150 @@ describe("OrderService KOT lifecycle", () => {
       items: [{ menuItemId: "item-dal-fry", quantity: 1 }]
     });
 
+    expect(result.printJobIds).toHaveLength(1);
     expect(orderService.listKds("unit-kitchen")).toEqual([]);
+    expect(database.db.prepare("SELECT status FROM kots WHERE id = ?").get(result.kotIds[0])).toEqual({ status: "served" });
+
+    database.close();
+  });
+
+  it("uses the final overridden production unit KDS flag for menu items", () => {
+    const { database, orderService } = createTestHub();
+    orderService.updateProductionUnit("unit-bar", { kdsEnabled: false });
+    const result = orderService.submitOrder({
+      tableId: "table-t1",
+      captainId: "waiter-1",
+      pax: 1,
+      orderType: "dine_in",
+      items: [{ menuItemId: "item-dal-fry", productionUnitId: "unit-bar", quantity: 1 }]
+    });
+
+    expect(result.printJobIds).toHaveLength(1);
+    expect(orderService.listKds("unit-bar")).toEqual([]);
+    expect(database.db.prepare("SELECT production_unit_id, status FROM kots WHERE id = ?").get(result.kotIds[0])).toEqual({
+      production_unit_id: "unit-bar",
+      status: "served"
+    });
+
+    database.close();
+  });
+
+  it("serves only that counter's open KDS tickets when a kitchen screen is disabled", () => {
+    const { database, orderService } = createTestHub();
+    const result = orderService.submitOrder({
+      tableId: "table-t1",
+      captainId: "waiter-1",
+      pax: 1,
+      orderType: "dine_in",
+      items: [
+        { menuItemId: "item-dal-fry", quantity: 1 },
+        { menuItemId: "item-lassi", quantity: 1 }
+      ]
+    });
+    database.db.prepare("UPDATE kots SET status = 'preparing' WHERE production_unit_id = 'unit-kitchen'").run();
+    database.db.prepare("UPDATE kots SET status = 'ready' WHERE production_unit_id = 'unit-bar'").run();
+
+    orderService.updateProductionUnit("unit-kitchen", { kdsEnabled: false });
+
+    expect(orderService.listKds("unit-kitchen")).toEqual([]);
+    expect(orderService.listKds("unit-bar")).toHaveLength(1);
+    expect(database.db.prepare("SELECT production_unit_id, status FROM kots WHERE order_id = ? ORDER BY production_unit_id").all(result.orderId)).toEqual([
+      { production_unit_id: "unit-bar", status: "ready" },
+      { production_unit_id: "unit-kitchen", status: "served" }
+    ]);
+
+    database.close();
+  });
+
+  it("uses the open-unit-created index for KDS visible ticket reads", () => {
+    const { database } = createTestHub();
+
+    const plan = database.db
+      .prepare(
+        `EXPLAIN QUERY PLAN
+         SELECT k.id
+         FROM kots k
+         JOIN orders o ON o.id = k.order_id
+         JOIN restaurant_tables t ON t.id = o.table_id
+         JOIN production_units pu ON pu.id = k.production_unit_id
+         WHERE k.production_unit_id = ? AND pu.kds_enabled = 1 AND k.status IN ('queued', 'preparing', 'ready')
+         ORDER BY k.created_at ASC, k.rowid ASC
+         LIMIT 250`
+      )
+      .all("unit-kitchen") as Array<{ detail: string }>;
+
+    expect(plan.map((row) => row.detail).join("\n")).toContain("idx_kots_open_unit_created");
+
+    database.close();
+  });
+
+  it("marks all pending KDS tickets served in one cleanup action", () => {
+    const { database, orderService } = createTestHub();
+    const result = orderService.submitOrder({
+      tableId: "table-t1",
+      captainId: "waiter-1",
+      pax: 1,
+      orderType: "dine_in",
+      items: [
+        { menuItemId: "item-dal-fry", quantity: 1 },
+        { menuItemId: "item-lassi", quantity: 1 }
+      ]
+    });
+
+    expect(result.kotIds).toHaveLength(2);
+    database.db.prepare("UPDATE kots SET status = 'preparing' WHERE production_unit_id = 'unit-kitchen'").run();
+    database.db.prepare("UPDATE kots SET status = 'ready' WHERE production_unit_id = 'unit-bar'").run();
+    database.db
+      .prepare(
+        `INSERT INTO kots (id, order_id, production_unit_id, type, status, sequence, ticket_label, created_at)
+         VALUES
+          ('kot-existing-served', ?, 'unit-kitchen', 'new', 'served', 9001, 'KOT', '2026-01-01T00:00:00.000Z'),
+          ('kot-existing-cancelled', ?, 'unit-bar', 'cancelled', 'cancelled', 9002, 'BOT', '2026-01-01T00:00:01.000Z')`
+      )
+      .run(result.orderId, result.orderId);
+
+    expect(orderService.listKds("unit-kitchen")).toHaveLength(1);
+    expect(orderService.listKds("unit-bar")).toHaveLength(1);
+    expect(database.db.prepare("SELECT status, COUNT(*) AS count FROM kots GROUP BY status ORDER BY status").all()).toEqual([
+      { status: "cancelled", count: 1 },
+      { status: "preparing", count: 1 },
+      { status: "ready", count: 1 },
+      { status: "served", count: 1 }
+    ]);
+
+    expect(orderService.markAllKdsServed()).toEqual({ markedServed: 2 });
+    expect(orderService.listKds("unit-kitchen")).toEqual([]);
+    expect(orderService.listKds("unit-bar")).toEqual([]);
+    expect(database.db.prepare("SELECT status, COUNT(*) AS count FROM kots GROUP BY status ORDER BY status").all()).toEqual([
+      { status: "cancelled", count: 1 },
+      { status: "served", count: 3 }
+    ]);
+
+    expect(orderService.markAllKdsServed()).toEqual({ markedServed: 0 });
+
+    database.close();
+  });
+
+  it("keeps KOT print jobs but stores new KDS tickets as served while KDS is off", () => {
+    const { database, orderService } = createTestHub();
+
+    expect(orderService.isKdsEnabled()).toBe(true);
+    expect(orderService.updateKdsEnabled({ enabled: false })).toEqual({ enabled: false, markedServed: 0 });
+
+    const result = orderService.submitOrder({
+      tableId: "table-t1",
+      captainId: "waiter-1",
+      pax: 1,
+      orderType: "dine_in",
+      items: [{ menuItemId: "item-dal-fry", quantity: 1 }]
+    });
+
+    expect(result.kotIds).toHaveLength(1);
+    expect(result.printJobIds).toHaveLength(1);
+    expect(orderService.listKds("unit-kitchen")).toEqual([]);
+    expect(database.db.prepare("SELECT status FROM kots WHERE id = ?").get(result.kotIds[0])).toEqual({
+      status: "served"
+    });
 
     database.close();
   });
@@ -181,6 +324,32 @@ describe("OrderService KOT lifecycle", () => {
     expect(database.db.prepare("SELECT status, current_order_id FROM restaurant_tables WHERE id = 'table-t1'").get()).toEqual({
       status: "free",
       current_order_id: null
+    });
+
+    database.close();
+  });
+
+  it("stores cancellation KOTs as served when the counter KDS is disabled", () => {
+    const { database, orderService } = createTestHub();
+    const order = orderService.submitOrder({
+      tableId: "table-t1",
+      captainId: "waiter-1",
+      pax: 1,
+      orderType: "dine_in",
+      items: [{ menuItemId: "item-paneer-tikka", quantity: 1 }]
+    });
+    orderService.updateProductionUnit("unit-kitchen", { kdsEnabled: false });
+    orderService.setManagerPin({ newPin: "1234", updatedBy: "admin" });
+
+    const cancelled = orderService.cancelOrder(order.orderId, {
+      reason: "Guest left",
+      requestedBy: "captain-1",
+      managerApproval: { pin: "1234", reason: "Guest left", approvedBy: "manager" }
+    });
+
+    expect(database.db.prepare("SELECT type, status FROM kots WHERE id = ?").get(cancelled.kotIds[0])).toEqual({
+      type: "cancelled",
+      status: "served"
     });
 
     database.close();

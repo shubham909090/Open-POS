@@ -22,3 +22,21 @@ export function updateKotStatus(ctx: KotStatusContext, kotId: string, input: Upd
   });
   return run();
 }
+
+export function markKdsServed(ctx: KotStatusContext, productionUnitId?: string): { markedServed: number } {
+  const run = ctx.db.transaction(() => {
+    const result = productionUnitId
+      ? ctx.db
+          .prepare("UPDATE kots SET status = 'served' WHERE production_unit_id = ? AND status IN ('queued', 'preparing', 'ready')")
+          .run(productionUnitId)
+      : ctx.db
+          .prepare("UPDATE kots SET status = 'served' WHERE status IN ('queued', 'preparing', 'ready')")
+          .run();
+    const markedServed = result.changes;
+    if (markedServed > 0) {
+      ctx.appendEvent("kot.bulk_served", "kot", productionUnitId ?? "all", { productionUnitId: productionUnitId ?? null, markedServed });
+    }
+    return { markedServed };
+  });
+  return run();
+}

@@ -23,7 +23,8 @@ export function getProductionUnitsByIds(orm: HubOrm, ids: string[]): Map<string,
       name: productionUnits.name,
       printer_host: productionUnits.printerHost,
       printer_port: productionUnits.printerPort,
-      printer_name: productionUnits.printerName
+      printer_name: productionUnits.printerName,
+      kds_enabled: productionUnits.kdsEnabled
     })
     .from(productionUnits)
     .where(inArray(productionUnits.id, ids))
@@ -38,7 +39,8 @@ export function getProductionUnit(orm: HubOrm, productionUnitId: string): UnitRo
       name: productionUnits.name,
       printer_host: productionUnits.printerHost,
       printer_port: productionUnits.printerPort,
-      printer_name: productionUnits.printerName
+      printer_name: productionUnits.printerName,
+      kds_enabled: productionUnits.kdsEnabled
     })
     .from(productionUnits)
     .where(eq(productionUnits.id, productionUnitId))
@@ -48,7 +50,7 @@ export function getProductionUnit(orm: HubOrm, productionUnitId: string): UnitRo
 export function getFirstActiveProductionUnit(db: SqliteDatabase): UnitRow | undefined {
   return db
     .prepare(
-      `SELECT id, name, printer_host, printer_port, printer_name
+      `SELECT id, name, printer_host, printer_port, printer_name, kds_enabled
        FROM production_units
        WHERE active = 1
        ORDER BY name

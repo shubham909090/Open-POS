@@ -168,6 +168,7 @@ export const hubApi = {
     }),
   alcoholStockMovements: () => apiFetch<AlcoholStockMovement[]>("/reports/alcohol-stock-movements?limit=100"),
   kds: (unitId: string) => apiFetch<KdsTicket[]>(`/kds/${unitId}`),
+  markAllKdsServed: () => apiFetch<{ markedServed: number }>("/kds/mark-served", { method: "POST", body: JSON.stringify({}) }),
   devices: () => apiFetch<LocalDevice[]>("/devices"),
   createPairingCode: (payload: { deviceName: string; role: Role; expiresInMinutes: number; managerApproval?: { pin: string; reason: string; approvedBy: string } }) =>
     apiFetch<PairingCodeResult>("/devices/pairing-codes", { method: "POST", body: JSON.stringify(payload) }),
@@ -233,6 +234,12 @@ export const hubApi = {
     apiFetch<{ enabled: boolean }>("/settings/cloud-backup", {
       method: "PUT",
       body: JSON.stringify(payload)
+    }),
+  kdsSettings: () => apiFetch<{ enabled: boolean }>("/settings/kds"),
+  updateKdsSettings: (enabled: boolean) =>
+    apiFetch<{ enabled: boolean; markedServed: number }>("/settings/kds", {
+      method: "PUT",
+      body: JSON.stringify({ enabled })
     }),
   testHubConnection: (managerPin: string) =>
     apiFetch<{ status: "missing" | "connected" | "unauthorized" | "server_error"; message: string }>("/settings/hub-connection/test", {

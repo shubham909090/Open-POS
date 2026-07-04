@@ -1,5 +1,15 @@
 # Devlog
 
+## 2026-07-03
+
+- Task: Added KDS backlog cleanup and a global Kitchen Display on/off switch for Hub Setup so old queued/preparing/ready KDS tickets can be cleared without opening the laggy Kitchen list.
+- Hub behavior/API: admins can `POST /kds/mark-served` to bulk mark open KDS tickets as served; `GET/PUT /settings/kds` stores global `hub_settings.kds_enabled`; disabling KDS also clears current open KDS tickets while keeping order, bill, payment, and print data intact.
+- Future prevention: new KOT rows are stored as `served` while global KDS is off or the production unit KDS flag is disabled, but KOT/BOT print jobs still enqueue as before.
+- Performance: KDS reads now cap the visible list, and new indexes cover KOT status/created ordering plus `kot_items.kot_id` lookups for large historical datasets.
+- UI: Setup dashboard now includes a Kitchen Display operations panel with on/off status, visible counter count, confirm-protected `Turn KDS off`, and `Mark all served`; Kitchen view shows an empty/off state instead of querying tickets while KDS is disabled.
+- Review hardening: KDS cleanup now has status-leading and partial open-ticket read indexes, per-unit disable cleanup is scoped and tested, cancellation KOTs honor disabled KDS counters, destructive KDS routes are admin-only tested, and stale Kitchen/mobile KDS targets are cleared when KDS is off.
+- Verification: targeted KOT lifecycle tests, API auth/settings tests, shared/mobile/hub typechecks, shared tests, hub/mobile lint, root lint/typecheck, and Chrome visual check of the Setup panel and confirmation modal passed. `agent-device` web verification was blocked by local Node 22 requiring Node 24+, so Computer Use/Chrome was used as the UI fallback.
+
 ## 2026-06-30
 
 - Task: Added a Windows local-data finder diagnostic for missing April reports after cloud backup deletion.

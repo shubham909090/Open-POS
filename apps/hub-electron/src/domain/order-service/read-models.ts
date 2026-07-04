@@ -15,7 +15,8 @@ export function listKdsTickets(db: SqliteDatabase, productionUnitId: string): un
        JOIN restaurant_tables t ON t.id = o.table_id
        JOIN production_units pu ON pu.id = k.production_unit_id
        WHERE k.production_unit_id = ? AND pu.kds_enabled = 1 AND k.status IN ('queued', 'preparing', 'ready')
-       ORDER BY k.created_at ASC, k.rowid ASC`
+       ORDER BY k.created_at ASC, k.rowid ASC
+       LIMIT 250`
     )
     .all(productionUnitId);
 

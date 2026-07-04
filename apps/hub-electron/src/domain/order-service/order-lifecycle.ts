@@ -137,6 +137,7 @@ export function cancelOrder(ctx: OrderLifecycleContext, orderId: string, input: 
         printerHost: unit.printer_host,
         printerPort: unit.printer_port,
         printerName: unit.printer_name,
+        kdsEnabled: unit.kds_enabled !== false && unit.kds_enabled !== 0,
         ticketLabel: item.ticket_label_snapshot as "KOT" | "BOT"
       }];
     });

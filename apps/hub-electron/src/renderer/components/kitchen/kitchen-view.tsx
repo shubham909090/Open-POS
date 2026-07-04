@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { MutableRefObject } from "react";
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { hubApi, type Bootstrap } from "../../hub-api.js";
 import { type NoticeSetter, messageOf } from "../../lib/format.js";
 import { useHubStore } from "../../store.js";
@@ -18,17 +18,26 @@ export function KitchenView({
   const setSelectedKdsUnitId = useHubStore((state) => state.setSelectedKdsUnitId);
   const knownTicketIdsRef = useRef<{ unitId: string; ids: Set<string>; initialized: boolean }>({ unitId: "", ids: new Set(), initialized: false });
   const audioContextRef = useRef<AudioContext | null>(null);
-  const activeUnits = bootstrap.productionUnits.filter((unit) => unit.active && Boolean(unit.kds_enabled));
-  const unitId = selectedKdsUnitId ?? activeUnits[0]?.id ?? "";
+  const kdsEnabled = bootstrap.setup?.kdsEnabled ?? true;
+  const activeUnits = useMemo(
+    () => kdsEnabled ? bootstrap.productionUnits.filter((unit) => unit.active && unit.kds_enabled !== false && unit.kds_enabled !== 0) : [],
+    [bootstrap.productionUnits, kdsEnabled]
+  );
+  const selectedUnitIsActive = activeUnits.some((unit) => unit.id === selectedKdsUnitId);
+  const unitId = selectedUnitIsActive ? selectedKdsUnitId ?? "" : activeUnits[0]?.id ?? "";
 
   useEffect(() => {
-    if (!selectedKdsUnitId && activeUnits[0]) setSelectedKdsUnitId(activeUnits[0].id);
-  }, [selectedKdsUnitId, activeUnits, setSelectedKdsUnitId]);
+    if (!kdsEnabled) {
+      if (selectedKdsUnitId) setSelectedKdsUnitId("");
+      return;
+    }
+    if (selectedKdsUnitId !== unitId) setSelectedKdsUnitId(unitId);
+  }, [kdsEnabled, selectedKdsUnitId, setSelectedKdsUnitId, unitId]);
 
   const tickets = useQuery({
     queryKey: ["kds", unitId],
     queryFn: () => hubApi.kds(unitId),
-    enabled: Boolean(unitId),
+    enabled: Boolean(unitId) && kdsEnabled,
   });
 
   useEffect(() => {
@@ -50,6 +59,10 @@ export function KitchenView({
   }, []);
 
   useEffect(() => {
+    if (!kdsEnabled || !unitId) {
+      knownTicketIdsRef.current = { unitId: "", ids: new Set(), initialized: false };
+      return;
+    }
     if (tickets.data === undefined) return;
     const nextTickets = tickets.data ?? [];
     const previous = knownTicketIdsRef.current.unitId === unitId ? knownTicketIdsRef.current.ids : new Set<string>();
@@ -57,7 +70,9 @@ export function KitchenView({
     const nextIds = new Set(nextTickets.map((ticket) => ticket.id));
     if (initialized && nextTickets.some((ticket) => !previous.has(ticket.id))) playKitchenChime(audioContextRef);
     knownTicketIdsRef.current = { unitId, ids: nextIds, initialized: Boolean(unitId) };
-  }, [tickets.data, unitId]);
+  }, [kdsEnabled, tickets.data, unitId]);
+
+  const visibleTickets = kdsEnabled && unitId ? tickets.data ?? [] : [];
 
   const statusMutation = useMutation({
     mutationFn: ({ id, status }: { id: string; status: string }) =>
@@ -76,7 +91,9 @@ export function KitchenView({
           <select
             value={unitId}
             onChange={(event) => setSelectedKdsUnitId(event.target.value)}
+            disabled={!kdsEnabled || activeUnits.length === 0}
           >
+            {activeUnits.length === 0 ? <option value="">{kdsEnabled ? "No kitchen" : "KDS off"}</option> : null}
             {activeUnits.map((unit) => (
               <option key={unit.id} value={unit.id}>
                 {unit.name}
@@ -84,14 +101,20 @@ export function KitchenView({
             ))}
           </select>
         </div>
-        {!unitId ? (
+        {!kdsEnabled ? (
+          <EmptyState
+            title="KDS is off"
+            description="Turn on Kitchen Display in Setup."
+          />
+        ) : null}
+        {kdsEnabled && !unitId ? (
           <EmptyState
             title="No kitchen added"
             description="Add a kitchen or counter in Setup."
           />
         ) : null}
         <div className="kot-grid">
-          {(tickets.data ?? []).map((ticket) => (
+          {visibleTickets.map((ticket) => (
             <article key={ticket.id} className="kot-card">
               <header>
                 <strong>

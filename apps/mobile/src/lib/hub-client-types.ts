@@ -36,6 +36,7 @@ export interface HubBootstrap {
   menuPopularity?: Array<{ menuItemId: string; quantity: number }>;
   syncStatus?: { counts: Record<string, number> };
   setup?: {
+    kdsEnabled?: boolean;
     license?: {
       status: "missing" | "active" | "warning" | "locked";
       reason?: string;

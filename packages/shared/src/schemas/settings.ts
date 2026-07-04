@@ -67,6 +67,10 @@ export const updateCloudBackupSchema = z.object({
   masterApproval: masterApprovalSchema.optional()
 });
 
+export const updateKdsSettingsSchema = z.object({
+  enabled: z.boolean()
+});
+
 const tallyLedgerNameSchema = z.string().trim().min(1).max(120);
 
 export const tallyExportSettingsSchema = z.object({
@@ -194,6 +198,7 @@ export type PrintActionInput = z.infer<typeof printActionSchema>;
 export type TicketTemplateInput = z.infer<typeof ticketTemplateSchema>;
 export type HubConnectionSettingsInput = z.infer<typeof hubConnectionSettingsSchema>;
 export type UpdateCloudBackupInput = z.infer<typeof updateCloudBackupSchema>;
+export type UpdateKdsSettingsInput = z.infer<typeof updateKdsSettingsSchema>;
 export type TallyExportSettingsInput = z.infer<typeof tallyExportSettingsSchema>;
 export type PrintLayoutScope = z.infer<typeof printLayoutScopeSchema>;
 export type PrintLayoutSettingsInput = z.infer<typeof printLayoutSettingsSchema>;

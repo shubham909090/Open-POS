@@ -677,6 +677,62 @@ describe("Hub API auth, settings, and pairing routes", () => {
     database.close();
   });
 
+  it("lets admins turn KDS off and bulk mark open KDS tickets served", async () => {
+    const { app, authService, database, orderService } = createTestServer();
+    const headers = { "x-device-token": "test-admin-token" };
+    const captainPairing = authService.createPairingCode({ deviceName: "Captain tablet", role: "captain", expiresInMinutes: 5 });
+    const captain = await app.inject({
+      method: "POST",
+      url: "/devices/pair/exchange",
+      payload: { code: captainPairing.code, deviceName: "Captain tablet" }
+    });
+    const captainHeaders = { "x-device-token": captain.json<{ token: string }>().token };
+    orderService.submitOrder({
+      tableId: "table-t1",
+      captainId: "waiter-1",
+      pax: 1,
+      orderType: "dine_in",
+      items: [
+        { menuItemId: "item-dal-fry", quantity: 1 },
+        { menuItemId: "item-lassi", quantity: 1 }
+      ]
+    });
+
+    const initial = await app.inject({ method: "GET", url: "/settings/kds", headers });
+    const initialBootstrap = await app.inject({ method: "GET", url: "/sync/bootstrap", headers });
+    const captainDisable = await app.inject({ method: "PUT", url: "/settings/kds", headers: captainHeaders, payload: { enabled: false } });
+    const captainCleanup = await app.inject({ method: "POST", url: "/kds/mark-served", headers: captainHeaders, payload: {} });
+
+    expect(initial.json()).toEqual({ enabled: true });
+    expect(initialBootstrap.json<{ setup: { kdsEnabled: boolean } }>().setup.kdsEnabled).toBe(true);
+    expect(captainDisable.statusCode).toBe(403);
+    expect(captainCleanup.statusCode).toBe(403);
+    expect(orderService.isKdsEnabled()).toBe(true);
+    expect(database.db.prepare("SELECT COUNT(*) AS count FROM kots WHERE status IN ('queued', 'preparing', 'ready')").get()).toEqual({ count: 2 });
+
+    const disable = await app.inject({ method: "PUT", url: "/settings/kds", headers, payload: { enabled: false } });
+    const disabledBootstrap = await app.inject({ method: "GET", url: "/sync/bootstrap", headers });
+    const kitchen = await app.inject({ method: "GET", url: "/kds/unit-kitchen", headers });
+    const nextOrder = orderService.submitOrder({
+      tableId: "table-t2",
+      captainId: "waiter-1",
+      pax: 1,
+      orderType: "dine_in",
+      items: [{ menuItemId: "item-dal-fry", quantity: 1 }]
+    });
+    const cleanup = await app.inject({ method: "POST", url: "/kds/mark-served", headers, payload: {} });
+
+    expect(disable.statusCode).toBe(200);
+    expect(disable.json()).toEqual({ enabled: false, markedServed: 2 });
+    expect(disabledBootstrap.json<{ setup: { kdsEnabled: boolean } }>().setup.kdsEnabled).toBe(false);
+    expect(kitchen.json()).toEqual([]);
+    expect(database.db.prepare("SELECT status FROM kots WHERE id = ?").get(nextOrder.kotIds[0])).toEqual({ status: "served" });
+    expect(cleanup.json()).toEqual({ markedServed: 0 });
+
+    await app.close();
+    database.close();
+  });
+
   it("blocks manual cloud backup routes while off but still allows license checks", async () => {
     const hub = createTestHub();
     const pushPending = vi.fn().mockResolvedValue({ pushed: 1, skipped: false });

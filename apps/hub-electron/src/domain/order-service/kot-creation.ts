@@ -23,6 +23,7 @@ export function createKotsForChanges(input: {
   now: string;
   isNewOrder: boolean;
   forceCancelled: boolean;
+  kdsEnabled: boolean;
   reason?: string;
   typeOverride?: KotType;
   sequenceOrderId?: string;
@@ -41,6 +42,7 @@ export function createKotsForChanges(input: {
     now,
     isNewOrder,
     forceCancelled,
+    kdsEnabled,
     reason,
     typeOverride,
     sequenceOrderId,
@@ -76,6 +78,7 @@ export function createKotsForChanges(input: {
 
     const kotId = makeId("kot");
     const sequence = sequenceForKotGroup(sequenceOrderId ?? order.id, productionUnitId, ticketLabel);
+    const status = kdsEnabled && firstItem.kdsEnabled !== false ? "queued" : "served";
     orm
       .insert(kots)
       .values({
@@ -83,7 +86,7 @@ export function createKotsForChanges(input: {
         orderId: order.id,
         productionUnitId,
         type,
-        status: "queued",
+        status,
         sequence,
         ticketLabel,
         reason: reason ?? null,
@@ -153,7 +156,8 @@ export function createKotsForChanges(input: {
       productionUnitId,
       type,
       sequence,
-      ticketLabel
+      ticketLabel,
+      status
     });
     kotIds.push(kotId);
   }

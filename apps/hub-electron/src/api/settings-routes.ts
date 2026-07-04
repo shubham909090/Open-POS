@@ -7,6 +7,7 @@ import {
   tallyExportSettingsSchema,
   ticketTemplateSchema,
   updateCloudBackupSchema,
+  updateKdsSettingsSchema,
   updateBillPrintersSchema,
   updatePrinterOutputModeSchema,
   updateReceiptPrinterSchema
@@ -89,6 +90,12 @@ export function registerSettingsRoutes({ app, input, auth }: HubRouteContext): v
   app.put("/settings/cloud-backup", { preHandler: adminOnly }, async (request) => {
     const result = input.orderService.updateCloudBackupEnabled(updateCloudBackupSchema.parse(request.body));
     input.eventBus.publish({ type: "cloud_backup.updated", result });
+    return result;
+  });
+  app.get("/settings/kds", { preHandler: adminOnly }, async () => ({ enabled: input.orderService.isKdsEnabled() }));
+  app.put("/settings/kds", { preHandler: adminOnly }, async (request) => {
+    const result = input.orderService.updateKdsEnabled(updateKdsSettingsSchema.parse(request.body));
+    input.eventBus.publish({ type: "kds.settings_updated", result });
     return result;
   });
   app.get("/settings/tally-export", { preHandler: captainOrAdmin }, async () => input.orderService.getTallyExportSettings());

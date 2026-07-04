@@ -85,7 +85,8 @@ export function getMenuItemsByIds(db: SqliteDatabase, ids: string[]): Map<string
         pu.name AS unit_name,
         pu.printer_host,
         pu.printer_port,
-        pu.printer_name
+        pu.printer_name,
+        pu.kds_enabled
        FROM menu_items mi
        JOIN sale_groups sg ON sg.id = mi.sale_group_id
        LEFT JOIN production_units pu ON pu.id = COALESCE(mi.production_unit_id, sg.default_production_unit_id)

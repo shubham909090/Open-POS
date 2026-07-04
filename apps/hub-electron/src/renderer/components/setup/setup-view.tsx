@@ -8,6 +8,7 @@ import { DevicePairingCard } from "./device-pairing-card.js";
 import { BusinessDayCard } from "./setup-business-day-card.js";
 import { DishesCard, FloorsTablesCard, KitchensCountersCard } from "./setup-catalog-cards.js";
 import { HubConnectionCard } from "./hub-connection-card.js";
+import { KdsOperationsCard } from "./kds-operations-card.js";
 import { PrinterSetupCard } from "./printer-setup-card.js";
 
 export function SetupView({
@@ -108,6 +109,8 @@ export function SetupView({
   return (
     <div className="grid gap-4">
       <BusinessDayCard bootstrap={bootstrap} />
+
+      <KdsOperationsCard bootstrap={bootstrap} setNotice={setNotice} />
 
       <HubConnectionCard
         bootstrap={bootstrap}

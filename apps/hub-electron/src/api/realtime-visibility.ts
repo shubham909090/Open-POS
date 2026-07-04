@@ -3,7 +3,7 @@ import type { UserRole } from "@gaurav-pos/shared";
 export function isRealtimeEventVisibleForRole(event: unknown, role: UserRole): boolean {
   if (role === "admin" || role === "captain") return true;
   const type = typeof event === "object" && event !== null && "type" in event ? String((event as { type?: unknown }).type ?? "") : "";
-  const kdsChangingEvents = ["order.submitted", "order.cancelled", "order_items.cancelled", "table.shifted", "order_items.shifted"];
+  const kdsChangingEvents = ["order.submitted", "order.cancelled", "order_items.cancelled", "table.shifted", "order_items.shifted", "production_unit.updated", "kds.settings_updated"];
   if (role === "kitchen") {
     if (type === "order_state.updated") return Boolean((event as { result?: { kdsChanged?: unknown } }).result?.kdsChanged);
     return type.startsWith("kot.") || kdsChangingEvents.includes(type);

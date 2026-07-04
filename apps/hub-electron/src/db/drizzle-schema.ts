@@ -233,18 +233,28 @@ export const kots = sqliteTable(
     note: text("note"),
     createdAt: text("created_at").notNull()
   },
-  (table) => [index("idx_kots_unit_status").on(table.productionUnitId, table.status)]
+  (table) => [
+    index("idx_kots_status").on(table.status),
+    index("idx_kots_unit_status").on(table.productionUnitId, table.status),
+    index("idx_kots_open_unit_created")
+      .on(table.productionUnitId, table.createdAt)
+      .where(sql`${table.status} IN ('queued', 'preparing', 'ready')`)
+  ]
 );
 
-export const kotItems = sqliteTable("kot_items", {
-  id: text("id").primaryKey(),
-  kotId: text("kot_id").notNull().references(() => kots.id),
-  orderItemId: text("order_item_id"),
-  menuItemId: text("menu_item_id"),
-  nameSnapshot: text("name_snapshot").notNull(),
-  quantityDelta: integer("quantity_delta").notNull(),
-  noteSnapshot: text("note_snapshot")
-});
+export const kotItems = sqliteTable(
+  "kot_items",
+  {
+    id: text("id").primaryKey(),
+    kotId: text("kot_id").notNull().references(() => kots.id),
+    orderItemId: text("order_item_id"),
+    menuItemId: text("menu_item_id"),
+    nameSnapshot: text("name_snapshot").notNull(),
+    quantityDelta: integer("quantity_delta").notNull(),
+    noteSnapshot: text("note_snapshot")
+  },
+  (table) => [index("idx_kot_items_kot").on(table.kotId)]
+);
 
 export const bills = sqliteTable(
   "bills",

@@ -12,6 +12,7 @@ interface ProductionUnitForKot {
   printer_host: string | null;
   printer_port: number | null;
   printer_name: string | null;
+  kds_enabled?: boolean | number | null;
 }
 
 export function buildOrderItemKey(menuItemId: string | null, orderItemId?: string, variantId?: string | null): string {
@@ -93,6 +94,8 @@ export function applyOrderItemDiff(input: {
     const ticketLabel = (requested?.ticketLabel ?? previous?.ticket_label_snapshot ?? menuItem?.ticket_label ?? "KOT") as "KOT" | "BOT";
     const taxComponentsJson = requested?.taxComponentsJson ?? previous?.tax_components_json ?? menuItem?.tax_components_json ?? "[]";
     const isOpenItem = requested?.isOpenItem ?? Boolean(previous?.is_open_item);
+    const finalUnit = productionUnitId ? getUnit(productionUnitId) : undefined;
+    const fallbackMenuUnit = menuItem?.production_unit_id === productionUnitId ? menuItem : undefined;
 
     if (newQuantity > 0 && previous) {
       orm
@@ -153,7 +156,6 @@ export function applyOrderItemDiff(input: {
     }
 
     if ((delta !== 0 || noteChanged) && productionUnitId) {
-      const unit = menuItem ? null : getUnit(productionUnitId);
       changes.push({
         menuItemId: menuItem?.id ?? null,
         orderItemId: changedOrderItemId,
@@ -162,10 +164,11 @@ export function applyOrderItemDiff(input: {
         note: nextNote,
         noteChanged,
         productionUnitId,
-        productionUnitName: menuItem?.unit_name ?? unit?.name ?? "Kitchen",
-        printerHost: menuItem?.printer_host ?? unit?.printer_host ?? null,
-        printerPort: menuItem?.printer_port ?? unit?.printer_port ?? null,
-        printerName: menuItem?.printer_name ?? unit?.printer_name ?? null,
+        productionUnitName: finalUnit?.name ?? fallbackMenuUnit?.unit_name ?? "Kitchen",
+        printerHost: finalUnit ? finalUnit.printer_host : fallbackMenuUnit?.printer_host ?? null,
+        printerPort: finalUnit ? finalUnit.printer_port : fallbackMenuUnit?.printer_port ?? null,
+        printerName: finalUnit ? finalUnit.printer_name : fallbackMenuUnit?.printer_name ?? null,
+        kdsEnabled: kdsFlagEnabled(finalUnit ? finalUnit.kds_enabled : fallbackMenuUnit?.kds_enabled),
         ticketLabel
       });
     }
@@ -188,8 +191,13 @@ export function kotChangeFromOrderItem(item: OrderItemRow, quantityDelta: number
     printerHost: unit?.printer_host ?? null,
     printerPort: unit?.printer_port ?? null,
     printerName: unit?.printer_name ?? null,
+    kdsEnabled: kdsFlagEnabled(unit?.kds_enabled),
     ticketLabel: item.ticket_label_snapshot
   };
+}
+
+function kdsFlagEnabled(value?: boolean | number | null): boolean {
+  return value !== false && value !== 0;
 }
 
 function orderItemDiffKey(item: RequestedOrderItem, previous?: OrderItemRow): string {

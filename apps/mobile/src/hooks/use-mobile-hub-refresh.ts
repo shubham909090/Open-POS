@@ -8,6 +8,7 @@ import {
   MOBILE_REFRESH_INTERVAL_MS,
   nextConnectionAfterRefresh
 } from "../lib/connection-health";
+import { getKitchenRefreshTarget } from "../lib/kitchen-refresh-target";
 import type { ConnectionState } from "../lib/mobile-types";
 
 type UseMobileHubRefreshInput = {
@@ -160,8 +161,7 @@ export function useMobileHubRefresh({
       setDeviceNameState(session.name);
       setDeviceRoleState(session.role);
       if (session.role === "kitchen") {
-        const kitchenUnits = nextBootstrap.productionUnits.filter((unit) => unit.active !== false && unit.active !== 0 && unit.kds_enabled !== false && unit.kds_enabled !== 0);
-        const nextUnitId = kitchenUnits.some((unit) => unit.id === kitchenUnitId) ? kitchenUnitId : kitchenUnits[0]?.id ?? "";
+        const { kdsEnabled, kitchenUnits, nextUnitId } = getKitchenRefreshTarget(nextBootstrap, kitchenUnitId);
         const nextTickets = nextUnitId ? await client.kds(nextUnitId) : [];
         chimeForNewKdsTickets(nextUnitId, nextTickets);
         setKitchenUnitId(nextUnitId);
@@ -170,7 +170,13 @@ export function useMobileHubRefresh({
         setSelectedHistoryDetail(null);
         setCurrentOrder(null);
         setKdsTickets(nextTickets);
-        setMessage(nextUnitId ? `Kitchen screen connected for ${kitchenUnits.find((unit) => unit.id === nextUnitId)?.name ?? "selected counter"}.` : "No enabled kitchen screen is available. Enable KDS on the hub setup screen.");
+        setMessage(
+          nextUnitId
+            ? `Kitchen screen connected for ${kitchenUnits.find((unit) => unit.id === nextUnitId)?.name ?? "selected counter"}.`
+            : kdsEnabled
+              ? "No enabled kitchen screen is available. Enable KDS on the hub setup screen."
+              : "KDS is off. Turn on Kitchen Display on the hub setup screen."
+        );
         return;
       }
       if (session.role === "admin" || session.role === "captain") {

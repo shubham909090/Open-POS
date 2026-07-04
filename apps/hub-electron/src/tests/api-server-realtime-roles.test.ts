@@ -47,6 +47,7 @@ describe("Hub API realtime and role routes", () => {
       result: { kdsChanged: true }
     });
     expect(isRealtimeEventVisibleForRole({ type: "order_items.cancelled" }, "kitchen")).toBe(true);
+    expect(isRealtimeEventVisibleForRole({ type: "production_unit.updated" }, "kitchen")).toBe(true);
     expect(isRealtimeEventVisibleForRole({ type: "table.shifted" }, "waiter")).toBe(true);
     expect(isRealtimeEventVisibleForRole({ type: "order.cancelled" }, "waiter")).toBe(true);
     expect(isRealtimeEventVisibleForRole({ type: "order_items.cancelled" }, "waiter")).toBe(true);

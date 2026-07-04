@@ -185,6 +185,7 @@ export function createHubServer(input: HubServerInput) {
         managerPinConfigured: input.orderService.isManagerPinConfigured(),
         masterPinConfigured: input.orderService.isMasterPinConfigured(),
         cloudBackupEnabled: input.orderService.isCloudBackupEnabled(),
+        kdsEnabled: input.orderService.isKdsEnabled(),
         hubConnection: input.orderService.getHubConnectionSettings(false),
         license: currentLicenseState()
       }
@@ -278,6 +279,11 @@ export function createHubServer(input: HubServerInput) {
   app.get("/kds/:productionUnitId", { preHandler: licensedAuth.kitchenRole }, async (request) => {
     const params = request.params as { productionUnitId: string };
     return input.orderService.listKds(params.productionUnitId);
+  });
+  app.post("/kds/mark-served", { preHandler: licensedAuth.adminOnly }, async () => {
+    const result = input.orderService.markAllKdsServed();
+    input.eventBus.publish({ type: "kot.bulk_served", result });
+    return result;
   });
   app.patch("/kot/:id/status", { preHandler: licensedAuth.kitchenRole }, async (request) => {
     const params = request.params as { id: string };

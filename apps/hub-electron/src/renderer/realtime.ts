@@ -16,8 +16,9 @@ export function getRealtimeInvalidationKeys(event: RealtimeEvent): QueryKey[] {
     return [["bootstrap"], ["tableOrder"], ["currentBusinessDaySummary"], ["dailyReports"]];
   }
   if (type === "table.shifted" || type === "order_items.shifted") return [["bootstrap"], ["tableOrder"], ["kds"]];
-  if (type === "kot.status_changed" || type === "kot.reprinted") return [["kds"], ["bootstrap"]];
+  if (type.startsWith("kot.") || type.startsWith("kds.")) return [["kds"], ["bootstrap"]];
   if (type.startsWith("alcohol_") || type === "alcohol_stock.adjusted") return [["alcohol"], ["alcoholStockMovements"], ["bootstrap"]];
+  if (type.includes("production_unit")) return [["bootstrap"], ["alcohol"], ["kds"]];
   if (type.includes("menu_item") || type.includes("sale_group") || type.includes("production_unit") || type.startsWith("table.") || type.startsWith("floor.")) {
     return [["bootstrap"], ["alcohol"]];
   }

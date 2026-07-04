@@ -31,6 +31,7 @@ export interface Bootstrap {
     managerPinConfigured?: boolean;
     masterPinConfigured?: boolean;
     cloudBackupEnabled?: boolean;
+    kdsEnabled?: boolean;
     hubConnection?: HubConnectionSettings;
     license?: {
       status: "missing" | "active" | "warning" | "locked";

@@ -55,6 +55,7 @@ export interface MenuItemRow {
   printer_host: string | null;
   printer_port: number | null;
   printer_name: string | null;
+  kds_enabled?: boolean | number | null;
 }
 
 export interface MenuItemVariantRow {
@@ -112,7 +113,7 @@ export interface UnitRow {
   printer_host: string;
   printer_port: number;
   printer_name: string | null;
-  kds_enabled?: number;
+  kds_enabled?: boolean | number;
 }
 
 export interface BillRow {
@@ -271,6 +272,7 @@ export interface KotItemChange {
   printerHost: string | null;
   printerPort: number | null;
   printerName: string | null;
+  kdsEnabled?: boolean;
   ticketLabel: string;
 }
 
