@@ -36,7 +36,7 @@ describe("OrderService bill history edits", () => {
       masterApproval: { pin: "9876", reason: "Owner history edit", approvedBy: "owner" }
     });
 
-    expect(edited).toMatchObject({ billId: bill.billId, revisionNumber: 2, totalPaise: 36_000, printJobId: expect.any(String), modified: true });
+    expect(edited).toMatchObject({ billId: bill.billId, revisionNumber: 2, totalPaise: 36_000, printJobIds: [expect.any(String)], modified: true });
     expect(database.db.prepare("SELECT status, total_paise, discount_paise, final_total_paise, revision_number FROM bills WHERE id = ?").get(bill.billId)).toEqual({
       status: "paid",
       total_paise: 36_000,
@@ -67,7 +67,7 @@ describe("OrderService bill history edits", () => {
         { method: "card", amountPaise: 11_000, reference: "UPI-edited" }
       ]
     });
-    const printJob = database.db.prepare("SELECT payload FROM print_jobs WHERE id = ?").get(edited.printJobId) as { payload: string };
+    const printJob = database.db.prepare("SELECT payload FROM print_jobs WHERE id = ?").get(edited.printJobIds[0]) as { payload: string };
     expect(printJob.payload).toContain("Dal Fry");
     expect(printJob.payload).toContain("360.00");
     expect(stripPrintStyleMarkers(printJob.payload)).toContain("Discount              -50.00");
@@ -102,7 +102,7 @@ describe("OrderService bill history edits", () => {
         masterApproval: { pin: "9876", reason: "Owner history edit", approvedBy: "owner" }
       });
 
-      const printJob = database.db.prepare("SELECT payload FROM print_jobs WHERE id = ?").get(edited.printJobId) as { payload: string };
+      const printJob = database.db.prepare("SELECT payload FROM print_jobs WHERE id = ?").get(edited.printJobIds[0]) as { payload: string };
       const payload = stripPrintStyleMarkers(printJob.payload);
       expect(payload).toContain("Date: 8 May 2026");
       expect(payload).not.toContain("Date: 29 May 2026");
@@ -110,6 +110,43 @@ describe("OrderService bill history edits", () => {
       database.close();
       vi.useRealTimers();
     }
+  });
+
+  it("saves paid history bill edits without printing when requested", () => {
+    const { database, orderService } = createTestHub();
+    orderService.setMasterPin({ newPin: "9876", confirmPin: "9876", updatedBy: "owner" });
+    const order = orderService.submitOrder({
+      tableId: "table-t1",
+      captainId: "waiter-1",
+      pax: 1,
+      orderType: "dine_in",
+      printMode: "kot",
+      items: [{ menuItemId: "item-dal-fry", quantity: 1 }]
+    });
+    const bill = orderService.generateBill(order.orderId);
+    orderService.settleBill(bill.billId, { method: "cash", amountPaise: bill.totalPaise, receivedBy: "captain-1" });
+    const before = database.db.prepare("SELECT print_count FROM bills WHERE id = ?").get(bill.billId);
+    const beforePrintJobs = database.db.prepare("SELECT COUNT(*) AS count FROM print_jobs WHERE target_id = ? AND target_type = 'BILL'").get(bill.billId);
+
+    const edited = orderService.editHistoryBill(bill.billId, {
+      saveMode: "save",
+      items: [{ menuItemId: "item-dal-fry", quantity: 2 }],
+      payments: [{ method: "cash", amountPaise: 36_000 }],
+      masterApproval: { pin: "9876", reason: "Owner history edit", approvedBy: "owner" }
+    });
+
+    expect(edited).toMatchObject({ billId: bill.billId, revisionNumber: 2, totalPaise: 36_000, modified: true });
+    expect(edited.printJobIds).toEqual([]);
+    expect(edited).not.toHaveProperty("printJobId");
+    expect(database.db.prepare("SELECT total_paise, final_total_paise, revision_number, print_count FROM bills WHERE id = ?").get(bill.billId)).toEqual({
+      total_paise: 36_000,
+      final_total_paise: 36_000,
+      revision_number: 2,
+      print_count: (before as { print_count: number }).print_count
+    });
+    expect(database.db.prepare("SELECT COUNT(*) AS count FROM print_jobs WHERE target_id = ? AND target_type = 'BILL'").get(bill.billId)).toEqual(beforePrintJobs);
+
+    database.close();
   });
 
   it("rejects pending history edits so active billed orders stay on the table editor flow", () => {

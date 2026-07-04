@@ -771,7 +771,7 @@ export class OrderService {
     return reviseBillModel(this.billActionContext(), billId, input, billModificationActor(actor));
   }
 
-  editHistoryBill(billId: string, input: HistoryEditBillInput, actor?: DeviceActor): { billId: string; revisionNumber: number; totalPaise: number; printJobId: string; modified: boolean } {
+  editHistoryBill(billId: string, input: HistoryEditBillInput, actor?: DeviceActor): { billId: string; revisionNumber: number; totalPaise: number; printJobIds: string[]; modified: boolean } {
     return editHistoryBillModel(this.billActionContext(), billId, input, billModificationActor(actor));
   }
 

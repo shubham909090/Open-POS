@@ -75,9 +75,11 @@ export function registerBillingRoutes({ app, input, auth, withIdempotency, proce
     const { result, replayed } = await withIdempotency(request, `bills.history-edit.${params.billId}`, () =>
       input.orderService.editHistoryBill(params.billId, historyEditBillSchema.parse(request.body), session)
     );
-    const processed = replayed ? undefined : await processCreatedPrintJobs([result.printJobId]);
-    if (!replayed) input.eventBus.publish({ type: "bill.history_edited", result: { ...result, processed } });
-    return { ...result, ...(processed ? { processed } : {}) };
+    const processed = replayed ? undefined : await processCreatedPrintJobs(result.printJobIds);
+    const printJobId = result.printJobIds[0];
+    const response = { ...result, ...(printJobId ? { printJobId } : {}), ...(processed && result.printJobIds.length > 0 ? { processed } : {}) };
+    if (!replayed) input.eventBus.publish({ type: "bill.history_edited", result: response });
+    return response;
   });
 
   app.post("/bills/:billId/nc", { preHandler: captainOrAdmin }, async (request) => {

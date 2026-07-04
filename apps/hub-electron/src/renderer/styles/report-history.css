@@ -252,7 +252,7 @@
 }
 
 .history-edit-footer {
-  @apply justify-end border-t border-line pt-3;
+  @apply flex-wrap justify-end border-t border-line pt-3;
 }
 
 @media (max-width: 980px) {

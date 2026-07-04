@@ -1,5 +1,6 @@
 import { type ReactNode, useCallback, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { HistoryEditSaveMode } from "@gaurav-pos/shared";
 import { hubApi, type BillPrinterSlot, type MenuItem } from "../../hub-api.js";
 import { useKeyboardListNavigation } from "../../hooks/use-keyboard-list-navigation.js";
 import { BillPrinterChooser } from "../orders/bill-printer-chooser.js";
@@ -37,10 +38,11 @@ function ReportHistoryPanel({
       hubApi.historyReprintBill(input.billId, `history-reprint-${input.billId}-${Date.now()}`, input.printerSlot)
   });
   const historyEdit = useMutation({
-    mutationFn: (input: { bill: HistoryBill; printerSlot: BillPrinterSlot }) =>
+    mutationFn: (input: { bill: HistoryBill; saveMode: HistoryEditSaveMode; printerSlot?: BillPrinterSlot }) =>
       hubApi.historyEditBill(
         input.bill.billId,
         {
+          saveMode: input.saveMode,
           masterApproval: { pin: masterPin, reason: "Owner history edit", approvedBy: "owner" },
           discountType: editDiscountType,
           discountValue: editDiscountType === "percent" ? Number(editDiscount || 0) : Math.round(Number(editDiscount || 0) * 100),
@@ -249,6 +251,7 @@ function ReportHistoryPanel({
           setSearch={setSearch}
           setMasterPin={setMasterPin}
           onClose={() => setEditingBill(null)}
+          onSave={() => editingBill && historyEdit.mutate({ bill: editingBill, saveMode: "save" })}
           onSavePrint={() => setHistoryEditPrintBill(editingBill)}
           updateEditQty={updateEditQty}
           addMenuItem={addMenuItem}
@@ -279,7 +282,7 @@ function ReportHistoryPanel({
           if (!historyEditPrintBill) return;
           const bill = historyEditPrintBill;
           setHistoryEditPrintBill(null);
-          historyEdit.mutate({ bill, printerSlot });
+          historyEdit.mutate({ bill, saveMode: "save_print", printerSlot });
         }}
       />
     </>

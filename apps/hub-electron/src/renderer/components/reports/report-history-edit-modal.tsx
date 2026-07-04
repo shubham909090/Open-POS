@@ -62,6 +62,7 @@ function ReportHistoryEditModal({
   setSearch,
   setMasterPin,
   onClose,
+  onSave,
   onSavePrint,
   updateEditQty,
   addMenuItem,
@@ -99,6 +100,7 @@ function ReportHistoryEditModal({
   setSearch: Dispatch<SetStateAction<string>>;
   setMasterPin: Dispatch<SetStateAction<string>>;
   onClose: () => void;
+  onSave: () => void;
   onSavePrint: () => void;
   updateEditQty: (key: string, delta: number) => void;
   addMenuItem: (item: MenuItem, variant?: NonNullable<MenuItem["variants"]>[number]) => void;
@@ -259,8 +261,11 @@ function ReportHistoryEditModal({
         {editError ? <p className="warning-text">{editError}</p> : null}
         <div className="history-edit-footer">
           <button type="button" className="secondary-button" onClick={onClose}>Cancel</button>
-          <button type="button" className="primary-button" disabled={!canSaveEdit} onClick={onSavePrint}>
+          <button type="button" className="secondary-button" disabled={!canSaveEdit} onClick={onSavePrint}>
             {historyEditPending ? "Saving..." : "Save + Print"}
+          </button>
+          <button type="button" className="primary-button" disabled={!canSaveEdit} onClick={onSave}>
+            {historyEditPending ? "Saving..." : "Save"}
           </button>
         </div>
       </div>

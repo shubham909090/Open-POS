@@ -1,5 +1,14 @@
 # Devlog
 
+## 2026-07-04
+
+- Task: Added a save-only path for paid/history bill modifications so corrected bills no longer force paper printing.
+- Hub behavior/API: `historyEditBill` now accepts `saveMode`, defaults existing callers to `save_print`, and skips print-job processing when the result has no bill print job.
+- Domain safety: history edits still update bill totals, payments, audit snapshots, revisions, reports, and events; `print_count` only increments when `Save + Print` is explicitly used.
+- UI: Hub Reports and mobile Billing History edit modals now offer `Save` as the primary action and `Save + Print` as the secondary action, with wrapped footer spacing for narrow screens.
+- Review hardening: history-edit printing is modeled internally as `printJobIds`, save-only requests no longer serialize a printer destination, the save-mode contract is exported from shared, and mobile has focused coverage proving save-only skips printer selection.
+- Verification: targeted Hub service/API/Reports tests passed, shared tests passed, mobile tests passed, Hub and mobile typechecks/lint passed, and `git diff --check` passed.
+
 ## 2026-07-03
 
 - Task: Added KDS backlog cleanup and a global Kitchen Display on/off switch for Hub Setup so old queued/preparing/ready KDS tickets can be cleared without opening the laggy Kitchen list.

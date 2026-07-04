@@ -343,7 +343,7 @@ export default function App() {
           menuItems={bootstrap?.menuItems ?? []}
           sending={sending}
           onHistoryPrint={(billId) => void printHistoryBill(billId)}
-          onHistoryEdit={(billId, historyItems, masterPin) => editHistoryBill(billId, historyItems, masterPin)}
+          onHistoryEdit={(billId, historyItems, masterPin, saveMode) => editHistoryBill(billId, historyItems, masterPin, saveMode)}
           onSelectHistoryDay={(posDayId) => void selectHistoryDay(posDayId)}
         />
       ) : null}

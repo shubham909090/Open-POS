@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Modal, Pressable, ScrollView, Text, TextInput, View } from "react-native";
-import { formatPosDateTime } from "@gaurav-pos/shared";
+import { formatPosDateTime, type HistoryEditSaveMode } from "@gaurav-pos/shared";
 
 import { getBillingHistoryViewModel } from "../lib/billing-history";
 import type { CurrentDaySummary, DailyReportDetail, DailyReportRow, HubBootstrap } from "../lib/hub-client";
@@ -26,7 +26,7 @@ function BillingHistoryPanel({
   menuItems: HubBootstrap["menuItems"];
   sending: boolean;
   onHistoryPrint: (billId: string) => void;
-  onHistoryEdit: (billId: string, items: HistoryEditPayloadItem[], masterPin: string) => Promise<boolean> | boolean;
+  onHistoryEdit: (billId: string, items: HistoryEditPayloadItem[], masterPin: string, saveMode: HistoryEditSaveMode) => Promise<boolean> | boolean;
   onSelectHistoryDay: (posDayId: string | null) => void;
 }) {
   const history = getBillingHistoryViewModel(currentSummary, selectedHistoryDayId, selectedHistoryDetail);
@@ -91,7 +91,7 @@ function BillingHistoryPanel({
     });
   };
 
-  const saveHistoryEdit = async () => {
+  const saveHistoryEdit = async (saveMode: HistoryEditSaveMode) => {
     if (!editingBill || !canSaveEdit) return;
     const saved = await onHistoryEdit(
       editingBill.billId,
@@ -102,7 +102,8 @@ function BillingHistoryPanel({
             ? { orderItemId: item.orderItemId, menuItemId: item.menuItemId, menuItemVariantId: item.menuItemVariantId ?? undefined, quantity: item.quantity }
             : { orderItemId: item.orderItemId, openName: item.name, openPricePaise: item.unitPricePaise, saleGroupId: item.saleGroupId ?? "sg-food", productionUnitId: item.productionUnitId ?? null, quantity: item.quantity }
         ),
-      masterPin.trim()
+      masterPin.trim(),
+      saveMode
     );
     if (saved !== false) setEditingBill(null);
   };
@@ -195,7 +196,7 @@ function BillingHistoryPanel({
             <View style={styles.sectionHeaderRow}>
               <View style={styles.flexText}>
                 <Text style={styles.sectionTitle}>Edit bill #{editingBill?.billNumber ?? editingBill?.billId}</Text>
-                <Text style={styles.muted}>Rs {formatRupees(editTotal)} edited total · full bill prints</Text>
+                <Text style={styles.muted}>Rs {formatRupees(editTotal)} edited total</Text>
               </View>
               <Pressable style={styles.secondaryButton} onPress={() => setEditingBill(null)}>
                 <Text style={styles.secondaryButtonText}>Close</Text>
@@ -238,9 +239,14 @@ function BillingHistoryPanel({
                 );
               })}
               <TextInput style={styles.input} value={masterPin} onChangeText={setMasterPin} secureTextEntry placeholder="Master PIN" placeholderTextColor={palette.muted} />
-              <Pressable style={[styles.primaryButton, !canSaveEdit && styles.buttonDisabled]} disabled={!canSaveEdit} onPress={saveHistoryEdit}>
-                <Text style={styles.primaryButtonText}>{sending ? "Saving..." : "Save + Print"}</Text>
-              </Pressable>
+              <View style={styles.historyEditActionRow}>
+                <Pressable style={[styles.secondaryButton, styles.historyEditActionButton, !canSaveEdit && styles.buttonDisabled]} disabled={!canSaveEdit} onPress={() => void saveHistoryEdit("save_print")}>
+                  <Text style={styles.secondaryButtonText}>{sending ? "Saving..." : "Save + Print"}</Text>
+                </Pressable>
+                <Pressable style={[styles.primaryButton, styles.historyEditActionButton, !canSaveEdit && styles.buttonDisabled]} disabled={!canSaveEdit} onPress={() => void saveHistoryEdit("save")}>
+                  <Text style={styles.primaryButtonText}>{sending ? "Saving..." : "Save"}</Text>
+                </Pressable>
+              </View>
             </ScrollView>
           </View>
         </View>

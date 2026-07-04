@@ -1,3 +1,5 @@
+import type { HistoryEditBillInput } from "@gaurav-pos/shared";
+
 import type {
   AlcoholCatalog,
   AlcoholStockMovement,
@@ -374,21 +376,15 @@ export const hubApi = {
     apiFetch<{ printJobId: string; processed?: PrintProcessSummary }>(`/bills/${billId}/history-reprint`, { method: "POST", idempotent: "bill-history-reprint", idempotencyKey, body: JSON.stringify({ printerSlot }) }),
   historyEditBill: (
     billId: string,
-    payload: MasterApprovalPayload & BillAdjustmentPayload & {
-      items: Array<
-        | { orderItemId?: string; menuItemId: string; menuItemVariantId?: string; quantity: number }
-        | { orderItemId?: string; openName: string; openPricePaise: number; saleGroupId: string; productionUnitId?: string | null; quantity: number }
-      >;
-      payments?: Array<{ method: "cash" | "upi" | "card" | "online"; amountPaise: number; reference?: string }>;
-    },
+    payload: HistoryEditBillInput,
     idempotencyKey?: string,
-    printerSlot: BillPrinterSlot = "default"
+    printerSlot?: BillPrinterSlot
   ) =>
-    apiFetch<{ billId: string; revisionNumber: number; totalPaise: number; printJobId: string; processed?: PrintProcessSummary; modified: boolean }>(`/bills/${billId}/history-edit`, {
+    apiFetch<{ billId: string; revisionNumber: number; totalPaise: number; printJobIds?: string[]; printJobId?: string; processed?: PrintProcessSummary; modified: boolean }>(`/bills/${billId}/history-edit`, {
       method: "POST",
       idempotent: "bill-history-edit",
       idempotencyKey,
-      body: JSON.stringify({ ...payload, printerSlot })
+      body: JSON.stringify({ ...payload, ...(printerSlot ? { printerSlot } : {}) })
     }),
   markBillNc: (billId: string, payload: ManagerApprovalPayload & BillAdjustmentPayload, idempotencyKey?: string, printerSlot: BillPrinterSlot = "default") =>
     apiFetch<{ printJobId: string; processed?: PrintProcessSummary }>(`/bills/${billId}/nc`, { method: "POST", idempotent: "bill-nc", idempotencyKey, body: JSON.stringify({ ...payload, printerSlot }) }),

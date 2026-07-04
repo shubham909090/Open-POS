@@ -43,7 +43,10 @@ export const reviseBillSchema = z.object({
   managerApproval: managerApprovalSchema
 });
 
+export const historyEditSaveModeSchema = z.enum(["save", "save_print"]);
+
 export const historyEditBillSchema = z.object({
+  saveMode: historyEditSaveModeSchema.default("save_print"),
   items: z.array(orderItemInputSchema).min(1),
   masterApproval: masterApprovalSchema,
   printerSlot: billPrinterSlotSchema.default("default"),
@@ -66,6 +69,7 @@ export type BillAdjustmentInput = z.input<typeof billAdjustmentSchema>;
 export type GenerateBillInput = z.input<typeof generateBillSchema>;
 export type ReprintBillInput = z.input<typeof reprintBillSchema>;
 export type HistoryEditBillInput = z.input<typeof historyEditBillSchema>;
+export type HistoryEditSaveMode = z.infer<typeof historyEditSaveModeSchema>;
 export type BillPrintDestinationInput = z.infer<typeof billPrintDestinationSchema>;
 export type ReviseBillInput = z.infer<typeof reviseBillSchema>;
 export type MarkNcBillInput = z.input<typeof markNcBillSchema>;

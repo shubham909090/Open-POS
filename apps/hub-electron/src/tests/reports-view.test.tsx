@@ -45,7 +45,7 @@ describe("reports history payment edit", () => {
 
   it("requires exact edited payment split and sends shared reference with history edit", async () => {
     const { ReportsView } = await importReportsView();
-    historyEditBillMock.mockResolvedValue({ billId: "bill-1", revisionNumber: 2, totalPaise: 50_000, printJobId: "print-1", modified: true });
+    historyEditBillMock.mockResolvedValue({ billId: "bill-1", revisionNumber: 2, totalPaise: 50_000, printJobIds: ["print-1"], printJobId: "print-1", modified: true });
     renderReportsView(ReportsView);
 
     fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
@@ -72,6 +72,7 @@ describe("reports history payment edit", () => {
       "bill-1",
       expect.objectContaining({
         masterApproval: { pin: "9876", reason: "Owner history edit", approvedBy: "owner" },
+        saveMode: "save_print",
         payments: [
           { method: "cash", amountPaise: 20_000, reference: "UPI-7788" },
           { method: "upi", amountPaise: 30_000, reference: "UPI-7788" }
@@ -79,6 +80,28 @@ describe("reports history payment edit", () => {
       }),
       expect.any(String),
       "default"
+    );
+  });
+
+  it("saves history bill edits without opening the printer chooser", async () => {
+    const { ReportsView } = await importReportsView();
+    historyEditBillMock.mockResolvedValue({ billId: "bill-1", revisionNumber: 2, totalPaise: 50_000, printJobIds: [], modified: true });
+    renderReportsView(ReportsView);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByLabelText("Master PIN"), { target: { value: "9876" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(historyEditBillMock).toHaveBeenCalled());
+    expect(screen.queryByText("Print edited bill where?")).toBeNull();
+    expect(historyEditBillMock).toHaveBeenCalledWith(
+      "bill-1",
+      expect.objectContaining({
+        masterApproval: { pin: "9876", reason: "Owner history edit", approvedBy: "owner" },
+        saveMode: "save"
+      }),
+      expect.any(String),
+      undefined
     );
   });
 

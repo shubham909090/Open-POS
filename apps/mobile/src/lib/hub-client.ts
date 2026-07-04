@@ -1,4 +1,4 @@
-import type { SubmitOrderInput } from "@gaurav-pos/shared";
+import type { HistoryEditBillInput, SubmitOrderInput } from "@gaurav-pos/shared";
 import { buildRealtimeUrl, createIdempotencyKey, HubHttpError } from "./hub-client-helpers";
 import type {
   BillPrinters,
@@ -213,18 +213,13 @@ export class HubClient {
 
   async historyEditBill(
     billId: string,
-    input: MasterApprovalPayload & {
-      items: Array<
-        | { orderItemId?: string; menuItemId: string; menuItemVariantId?: string; quantity: number }
-        | { orderItemId?: string; openName: string; openPricePaise: number; saleGroupId: string; productionUnitId?: string | null; quantity: number }
-      >;
-    },
+    input: HistoryEditBillInput,
     options: RequestOptions = {}
-  ): Promise<{ billId: string; revisionNumber: number; totalPaise: number; printJobId: string; modified: boolean }> {
+  ): Promise<{ billId: string; revisionNumber: number; totalPaise: number; printJobIds?: string[]; printJobId?: string; modified: boolean }> {
     return this.request(`/bills/${billId}/history-edit`, {
       method: "POST",
       headers: { "Idempotency-Key": options.idempotencyKey ?? createIdempotencyKey("mobile-bill-history-edit") },
-      body: JSON.stringify({ ...input, printerSlot: options.printerSlot ?? "default" })
+      body: JSON.stringify({ ...input, ...(options.printerSlot ? { printerSlot: options.printerSlot } : {}) })
     });
   }
 

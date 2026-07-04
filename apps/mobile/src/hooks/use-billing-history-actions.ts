@@ -1,4 +1,5 @@
 import type { Dispatch, SetStateAction } from "react";
+import type { HistoryEditSaveMode } from "@gaurav-pos/shared";
 
 import type { DailyReportDetail, HubClient } from "../lib/hub-client";
 import type { BillPrinterSlot } from "../lib/mobile-types";
@@ -50,21 +51,22 @@ export function useBillingHistoryActions({
     }
   }
 
-  async function editHistoryBill(billId: string, items: HistoryEditPayloadItem[], masterPin: string): Promise<boolean> {
+  async function editHistoryBill(billId: string, items: HistoryEditPayloadItem[], masterPin: string, saveMode: HistoryEditSaveMode = "save_print"): Promise<boolean> {
     try {
       setSending(true);
-      const printerSlot = await chooseBillPrinter("Print edited bill where?");
-      if (!printerSlot) return false;
+      const printerSlot = saveMode === "save_print" ? await chooseBillPrinter("Print edited bill where?") : null;
+      if (saveMode === "save_print" && !printerSlot) return false;
       const payload = {
+        saveMode,
         masterApproval: { pin: masterPin, reason: "Owner history edit", approvedBy: deviceName || "owner" },
         items
       };
-      const scope = { billId, payload, printerSlot };
-      await client.historyEditBill(billId, payload, { idempotencyKey: operationKey("mobile-history-edit", scope), printerSlot });
+      const scope = { billId, payload, printerSlot: printerSlot ?? "default" };
+      await client.historyEditBill(billId, payload, { idempotencyKey: operationKey("mobile-history-edit", scope), ...(printerSlot ? { printerSlot } : {}) });
       clearOperationKey("mobile-history-edit", scope);
       await refresh(false);
       if (selectedHistoryDayId) setSelectedHistoryDetail(await client.dailyReport(selectedHistoryDayId));
-      setMessage("History bill edited and updated bill print queued.");
+      setMessage(saveMode === "save_print" ? "History bill edited and updated bill print queued." : "History bill edited.");
       return true;
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not edit history bill.");

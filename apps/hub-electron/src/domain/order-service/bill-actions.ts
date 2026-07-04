@@ -53,7 +53,7 @@ type HistoryEditBillResult = {
   billId: string;
   revisionNumber: number;
   totalPaise: number;
-  printJobId: string;
+  printJobIds: string[];
   modified: boolean;
 };
 
@@ -342,17 +342,25 @@ export function editHistoryBill(ctx: BillActionContext, billId: string, input: H
       after: ctx.buildBillModificationSnapshot(updatedBill, activeItems),
       createdAt: now
     });
-    const printJobId = ctx.enqueuePrintJob({
-      targetType: "BILL",
-      targetId: billId,
-      productionUnitId: null,
-      ...ctx.resolveBillPrinter(input.printerSlot ?? "default"),
-      payload: renderBillTicketForPrint(ctx.buildBillTicket({ bill: updatedBill, tableName: table.name, createdAt: updatedBill.created_at }))
-    });
-    ctx.orm.update(bills).set({ printCount: sql`${bills.printCount} + 1` }).where(eq(bills.id, billId)).run();
+    const saveMode = input.saveMode ?? "save_print";
+    const printJobIds =
+      saveMode === "save_print"
+        ? [
+            ctx.enqueuePrintJob({
+              targetType: "BILL",
+              targetId: billId,
+              productionUnitId: null,
+              ...ctx.resolveBillPrinter(input.printerSlot ?? "default"),
+              payload: renderBillTicketForPrint(ctx.buildBillTicket({ bill: updatedBill, tableName: table.name, createdAt: updatedBill.created_at }))
+            })
+          ]
+        : [];
+    if (printJobIds.length > 0) {
+      ctx.orm.update(bills).set({ printCount: sql`${bills.printCount} + 1` }).where(eq(bills.id, billId)).run();
+    }
     ctx.refreshDailyReportSnapshot(order.pos_day_id, now);
-    ctx.appendEvent("bill.history_edited", "bill", billId, { billId, revisionNumber, totalPaise: totals.totalPaise, printJobId, modified: true });
-    return { billId, revisionNumber, totalPaise: totals.totalPaise, printJobId, modified: true };
+    ctx.appendEvent("bill.history_edited", "bill", billId, { billId, revisionNumber, totalPaise: totals.totalPaise, saveMode, printJobIds, modified: true });
+    return { billId, revisionNumber, totalPaise: totals.totalPaise, printJobIds, modified: true };
   });
 
   return run();

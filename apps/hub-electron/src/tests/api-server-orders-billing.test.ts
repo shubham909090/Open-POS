@@ -341,6 +341,7 @@ describe("Hub API order and billing routes", () => {
       billId: bill.billId,
       revisionNumber: 2,
       totalPaise: 36_000,
+      printJobIds: [expect.any(String)],
       printJobId: expect.any(String),
       modified: true,
       processed: { printed: 1, failed: 0, skipped: 0 }
@@ -350,6 +351,50 @@ describe("Hub API order and billing routes", () => {
       { method: "upi", amount_paise: 20_000, reference: "UPI-edited" }
     ]);
     expect(database.db.prepare("SELECT COUNT(*) AS count FROM event_log WHERE type = 'bill.history_edited'").get()).toEqual({ count: 1 });
+
+    await app.close();
+    database.close();
+  });
+
+  it("saves paid history bill edits without queueing a bill print job", async () => {
+    const { app, database } = createTestServer();
+    const headers = { "x-device-token": "test-admin-token" };
+    const orderResponse = await app.inject({
+      method: "POST",
+      url: "/orders/submit",
+      headers,
+      payload: { tableId: "table-t1", pax: 1, orderType: "dine_in", printMode: "kot", items: [{ menuItemId: "item-dal-fry", quantity: 1 }] }
+    });
+    const order = orderResponse.json<{ orderId: string }>();
+    const billResponse = await app.inject({ method: "POST", url: `/bills/${order.orderId}/generate`, headers });
+    const bill = billResponse.json<{ billId: string; totalPaise: number }>();
+    await app.inject({ method: "POST", url: `/bills/${bill.billId}/settle`, headers, payload: { method: "cash", amountPaise: bill.totalPaise, receivedBy: "captain" } });
+    await app.inject({
+      method: "PUT",
+      url: "/settings/master-pin",
+      headers,
+      payload: { newPin: "9876", confirmPin: "9876", updatedBy: "owner" }
+    });
+    const beforePrintJobs = database.db.prepare("SELECT COUNT(*) AS count FROM print_jobs WHERE target_id = ? AND target_type = 'BILL'").get(bill.billId);
+
+    const edited = await app.inject({
+      method: "POST",
+      url: `/bills/${bill.billId}/history-edit`,
+      headers,
+      payload: {
+        saveMode: "save",
+        items: [{ menuItemId: "item-dal-fry", quantity: 2 }],
+        payments: [{ method: "cash", amountPaise: 36_000 }],
+        masterApproval: { pin: "9876", reason: "Owner history edit", approvedBy: "owner" }
+      }
+    });
+
+    expect(edited.statusCode).toBe(200);
+    expect(edited.json()).toMatchObject({ billId: bill.billId, revisionNumber: 2, totalPaise: 36_000, modified: true });
+    expect(edited.json()).toHaveProperty("printJobIds", []);
+    expect(edited.json()).not.toHaveProperty("printJobId");
+    expect(edited.json()).not.toHaveProperty("processed");
+    expect(database.db.prepare("SELECT COUNT(*) AS count FROM print_jobs WHERE target_id = ? AND target_type = 'BILL'").get(bill.billId)).toEqual(beforePrintJobs);
 
     await app.close();
     database.close();

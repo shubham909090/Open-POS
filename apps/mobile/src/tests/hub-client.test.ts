@@ -398,8 +398,7 @@ describe("HubClient", () => {
         headers: expect.objectContaining({ "Idempotency-Key": "history-edit-once" }),
         body: JSON.stringify({
           masterApproval: { pin: "9876", reason: "Owner history edit", approvedBy: "owner" },
-          items: [{ orderItemId: "order-item-1", menuItemId: "item-1", quantity: 2 }],
-          printerSlot: "default"
+          items: [{ orderItemId: "order-item-1", menuItemId: "item-1", quantity: 2 }]
         })
       })
     );

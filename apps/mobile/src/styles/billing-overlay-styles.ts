@@ -98,6 +98,8 @@ export const billingOverlayStyles = {
     fontWeight: "900"
   },
   historyEditStack: { gap: 10, paddingBottom: 6 },
+  historyEditActionRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  historyEditActionButton: { flexGrow: 1, minWidth: 132 },
   historyEditLine: {
     minHeight: 52,
     borderRadius: 8,
