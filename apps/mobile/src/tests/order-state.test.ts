@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mobileDraftOrderStateSignature, mobileSavedOrderStateSignature } from "../lib/order-state";
+import { calculateMobileOrderStateTotal, mobileDraftOrderStateSignature, mobileSavedOrderStateSignature } from "../lib/order-state";
 import type { HubBootstrap, HubOrder } from "../lib/hub-client";
 
 const menuItems: HubBootstrap["menuItems"] = [
@@ -68,5 +68,17 @@ describe("mobile order state dirty signatures", () => {
         menuItems
       )
     ).toBe(saved);
+  });
+
+  it("includes open items in the running-order state total", () => {
+    expect(
+      calculateMobileOrderStateTotal(
+        [
+          { orderItemId: "oi-1", menuItemId: "item-whisky", menuItemVariantId: "v30", unitPricePaise: 4_000, quantity: 2 },
+          { orderItemId: "open-1", openName: "Chef Special", openPricePaise: 15_000, saleGroupId: "sg-food", quantity: 2 }
+        ],
+        menuItems
+      )
+    ).toBe(38_000);
   });
 });

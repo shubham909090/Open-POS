@@ -31,6 +31,9 @@ export function createElectronOnlineUpdater(): OnlineAppUpdater {
         args: ["--updated", "/S", "--force-run"]
       };
     },
+    installUpdate(): void {
+      autoUpdater.quitAndInstall(true, true);
+    },
     async readUpdateMetadata(version: string): Promise<OnlineUpdateMetadata> {
       const releaseResponse = await fetch(`https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases/tags/hub-v${encodeURIComponent(version)}`, {
         headers: {

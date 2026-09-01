@@ -87,16 +87,39 @@ export function updateOrderState(ctx: OrderStateUpdateContext, orderId: string, 
   const run = ctx.db.transaction(() => {
     const order = ctx.requireOrderById(orderId);
     if (!["open", "billed"].includes(order.status)) throw new DomainError("Order cannot be edited");
-    if (order.status === "billed") {
-      ctx.verifyManagerApproval(input.managerApproval, "order_state.update_billed", "order", orderId, input.managerApproval?.approvedBy ?? "captain");
-    }
-
     const table = ctx.requireTable(order.table_id);
     const now = new Date().toISOString();
     const previousItems = ctx.getOrderItems(orderId);
     const previousVariantIds = new Set(previousItems.map((item) => item.menu_item_variant_id).filter((id): id is string => Boolean(id)));
     const previousItemsById = new Map(previousItems.map((item) => [item.id, item]));
     const normalizedItems = ctx.prepareSubmittedItems(input.items, previousVariantIds, previousItemsById);
+    if (order.status !== "billed" && !normalizedItems.some((item) => item.quantity > 0)) {
+      throw new DomainError("Running table must keep at least one item. Use Cancel order instead.");
+    }
+    const previousQuantitiesByKey = new Map<string, number>();
+    for (const previous of previousItems) {
+      if (previous.quantity <= 0 || previous.status === "cancelled") continue;
+      const previousKey = previous.menu_item_id
+        ? `menu:${previous.menu_item_id}:${previous.menu_item_variant_id ?? "default"}`
+        : `open:${previous.id}`;
+      previousQuantitiesByKey.set(previousKey, (previousQuantitiesByKey.get(previousKey) ?? 0) + previous.quantity);
+    }
+    const requestedQuantitiesByKey = new Map<string, number>();
+    for (const item of normalizedItems) {
+      requestedQuantitiesByKey.set(item.itemKey, (requestedQuantitiesByKey.get(item.itemKey) ?? 0) + item.quantity);
+    }
+    const hasReduction = [...previousQuantitiesByKey].some(
+      ([key, previousQuantity]) => (requestedQuantitiesByKey.get(key) ?? 0) < previousQuantity
+    );
+    if (order.status === "billed" || hasReduction) {
+      ctx.verifyManagerApproval(
+        input.managerApproval,
+        order.status === "billed" ? "order_state.update_billed" : "order_item.reduce",
+        "order",
+        orderId,
+        input.managerApproval?.approvedBy ?? "captain"
+      );
+    }
     const menuById = ctx.getMenuItems([
       ...normalizedItems.map((item) => item.menuItemId).filter((id): id is string => Boolean(id)),
       ...previousItems.map((item) => item.menu_item_id).filter((id): id is string => Boolean(id))

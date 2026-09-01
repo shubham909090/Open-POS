@@ -37,8 +37,8 @@ describe("app update API", () => {
     expect(response.statusCode).toBe(200);
     expect(response.json<{ installing: true; version: string }>().installing).toBe(true);
     expect(response.json<{ installing: true; version: string }>().version).toBe("0.2.0");
-    expect(fixture.launchInstaller).toHaveBeenCalledTimes(1);
-    expect(fixture.launchInstaller.mock.calls[0]?.[0].filePath).toContain("Install Gaurav POS Update.cmd");
+    expect(onlineUpdater.installUpdate).toHaveBeenCalledTimes(1);
+    expect(fixture.launchInstaller).not.toHaveBeenCalled();
 
     rmSync(fixtureRoot, { recursive: true, force: true });
     await fixture.close();
@@ -65,7 +65,8 @@ describe("app update API", () => {
     expect(fixture.orderService.isCloudBackupEnabled()).toBe(false);
     expect(install.statusCode).toBe(200);
     expect(install.json<{ installing: true; version: string }>().installing).toBe(true);
-    expect(fixture.launchInstaller).toHaveBeenCalledTimes(1);
+    expect(onlineUpdater.installUpdate).toHaveBeenCalledTimes(1);
+    expect(fixture.launchInstaller).not.toHaveBeenCalled();
 
     rmSync(fixtureRoot, { recursive: true, force: true });
     await fixture.close();
@@ -289,7 +290,8 @@ function createOnlineUpdater(input: { updateAvailable?: boolean; availableVersio
     downloadUpdate: vi.fn(async () => ({
       filePath: input.downloadedInstallerPath ?? join(tmpdir(), `Gaurav POS Hub Setup ${version}.exe`),
       args: ["--updated", "/S", "--force-run"]
-    }))
+    })),
+    installUpdate: vi.fn()
   };
 }
 

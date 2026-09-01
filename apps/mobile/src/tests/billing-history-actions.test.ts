@@ -27,7 +27,7 @@ describe("billing history actions", () => {
       setMessage,
     });
 
-    const saved = await actions.editHistoryBill("bill-1", [{ menuItemId: "item-dal-fry", quantity: 2 }], "9876", "save");
+    const saved = await actions.editHistoryBill("bill-1", [{ menuItemId: "item-dal-fry", quantity: 2 }], "  Sharma Family  ", "9876", "save");
 
     expect(saved).toBe(true);
     expect(chooseBillPrinter).not.toHaveBeenCalled();
@@ -35,6 +35,7 @@ describe("billing history actions", () => {
       "bill-1",
       {
         saveMode: "save",
+        customerName: "Sharma Family",
         masterApproval: { pin: "9876", reason: "Owner history edit", approvedBy: "Owner Phone" },
         items: [{ menuItemId: "item-dal-fry", quantity: 2 }]
       },

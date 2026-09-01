@@ -112,6 +112,40 @@ describe("OrderService bill history edits", () => {
     }
   });
 
+  it("adds an optional bill name to an old bill, its receipt, and its modification audit", () => {
+    const { database, orderService } = createTestHub();
+    orderService.setMasterPin({ newPin: "9876", confirmPin: "9876", updatedBy: "owner" });
+    const order = orderService.submitOrder({
+      tableId: "table-t1",
+      captainId: "waiter-1",
+      pax: 1,
+      orderType: "dine_in",
+      printMode: "kot",
+      items: [{ menuItemId: "item-dal-fry", quantity: 1 }]
+    });
+    const bill = orderService.generateBill(order.orderId);
+    orderService.settleBill(bill.billId, { method: "cash", amountPaise: bill.totalPaise, receivedBy: "captain-1" });
+
+    const edited = orderService.editHistoryBill(bill.billId, {
+      customerName: "Sharma Family",
+      items: [{ menuItemId: "item-dal-fry", quantity: 1 }],
+      payments: [{ method: "cash", amountPaise: bill.totalPaise }],
+      masterApproval: { pin: "9876", reason: "Owner history edit", approvedBy: "owner" }
+    });
+
+    expect(database.db.prepare("SELECT customer_name FROM bills WHERE id = ?").get(bill.billId)).toEqual({ customer_name: "Sharma Family" });
+    const printJob = database.db.prepare("SELECT payload FROM print_jobs WHERE id = ?").get(edited.printJobIds[0]) as { payload: string };
+    expect(stripPrintStyleMarkers(printJob.payload)).toContain("Name: Sharma Family");
+    const audit = database.db
+      .prepare("SELECT before_json, after_json, diff_json FROM bill_modification_audits WHERE bill_id = ? ORDER BY created_at DESC LIMIT 1")
+      .get(bill.billId) as { before_json: string; after_json: string; diff_json: string };
+    expect(JSON.parse(audit.before_json)).toMatchObject({ customerName: null });
+    expect(JSON.parse(audit.after_json)).toMatchObject({ customerName: "Sharma Family" });
+    expect(JSON.parse(audit.diff_json)).toContainEqual({ kind: "customer_name", label: "Bill name", before: "", after: "Sharma Family" });
+
+    database.close();
+  });
+
   it("saves paid history bill edits without printing when requested", () => {
     const { database, orderService } = createTestHub();
     orderService.setMasterPin({ newPin: "9876", confirmPin: "9876", updatedBy: "owner" });

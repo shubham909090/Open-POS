@@ -93,6 +93,7 @@ function TicketScreen({
     setApprovalReason,
     hasStateChanges,
     isBilledState,
+    hasStateReduction,
     stateTotal,
     stateMatches,
     changeStateQty,
@@ -100,7 +101,7 @@ function TicketScreen({
     showStateNote,
     addStateItem,
     requestStateSave,
-    confirmBilledStateSave
+    confirmStateSave
   } = useTicketStateEditor({ currentOrder, sentItems, menuItems, onSaveOrderState });
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(["new"]));
   const toggleSection = (id: string) => {
@@ -183,10 +184,10 @@ function TicketScreen({
             {items.map((item, index) => {
               const menuItem = menuItems.find((entry) => entry.id === item.menuItemId);
               const variant = findMenuVariant(menuItem, item.menuItemVariantId);
-              const lineName = `${menuItem?.name ?? item.menuItemId}${variant && variant.kind !== "default" ? ` ${variant.label}` : ""}`;
-              const unitPrice = variant?.price_paise ?? menuItem?.price_paise ?? 0;
+              const lineName = item.openName ?? `${menuItem?.name ?? item.menuItemId}${variant && variant.kind !== "default" ? ` ${variant.label}` : ""}`;
+              const unitPrice = item.openPricePaise ?? variant?.price_paise ?? menuItem?.price_paise ?? 0;
               return (
-                <View key={`${item.menuItemId}-${item.menuItemVariantId ?? "default"}-${index}`} style={styles.ticketLine}>
+                <View key={`${item.menuItemId ?? item.openName ?? "open"}-${item.menuItemVariantId ?? "default"}-${index}`} style={styles.ticketLine}>
                   <View style={styles.ticketText}>
                     <Text style={styles.ticketName} numberOfLines={2}>{lineName}</Text>
                     <Text style={styles.muted}>Rs {formatRupees(unitPrice * item.quantity)}</Text>
@@ -310,13 +311,16 @@ function TicketScreen({
             </View>
 
             {hasStateChanges ? (
-              <View style={styles.sendButtonRow}>
+              <View>
+                {hasStateReduction ? <Text style={styles.dangerText}>Manager PIN required to reduce or remove sent items.</Text> : null}
+                <View style={styles.sendButtonRow}>
                 <Pressable style={[styles.secondaryButton, styles.sendButton, sending && styles.buttonDisabled]} disabled={sending} onPress={() => requestStateSave("save")}>
                   <Text style={styles.secondaryButtonText}>Save</Text>
                 </Pressable>
                 <Pressable style={[styles.primaryButton, styles.sendButton, sending && styles.buttonDisabled]} disabled={sending} onPress={() => requestStateSave("save_print")}>
                   <Text style={styles.primaryButtonText}>Save and print</Text>
                 </Pressable>
+                </View>
               </View>
             ) : (
               <View style={styles.savedStatePill}>
@@ -364,7 +368,7 @@ function TicketScreen({
           <View style={styles.popupCard}>
             <View>
               <Text style={styles.actionTitle}>Manager approval</Text>
-              <Text style={styles.actionMeta}>Billed table changes need manager PIN before saving.</Text>
+              <Text style={styles.actionMeta}>{isBilledState ? "Billed table changes need manager PIN before saving." : "Reducing or removing sent items needs manager PIN."}</Text>
             </View>
             <TextInput
               style={styles.input}
@@ -386,7 +390,7 @@ function TicketScreen({
               <Pressable style={[styles.secondaryButton, styles.sendButton]} onPress={() => setStateApprovalMode(null)}>
                 <Text style={styles.secondaryButtonText}>Cancel</Text>
               </Pressable>
-              <Pressable style={[styles.primaryButton, styles.sendButton, sending && styles.buttonDisabled]} disabled={sending} onPress={confirmBilledStateSave}>
+              <Pressable style={[styles.primaryButton, styles.sendButton, sending && styles.buttonDisabled]} disabled={sending} onPress={confirmStateSave}>
                 <Text style={styles.primaryButtonText}>{sending ? "Saving..." : stateApprovalMode === "save_print" ? "Save and print" : "Save"}</Text>
               </Pressable>
             </View>

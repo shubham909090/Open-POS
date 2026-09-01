@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Alert, LayoutAnimation, Pressable, ScrollView, SectionList, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Alert, LayoutAnimation, Modal, Pressable, ScrollView, SectionList, Text, TextInput, View } from "react-native";
 import { formatPosDateTime, getTableDisplayState, searchMenuItems, tableDisplayLabel, type OrderItemInput, type SaleGroupKind } from "@gaurav-pos/shared";
 
 import type { CurrentDaySummary, DailyReportDetail, DailyReportRow, HubBootstrap, HubOrder, KdsTicket } from "../lib/hub-client";
@@ -21,9 +21,12 @@ function MenuScreen({
   draftSelectionLabelsByMenuItemId,
   searchValue,
   virtualized,
+  saleGroups,
+  productionUnits,
   onSearchChange,
   onSaleGroupChange,
-  onAddItem
+  onAddItem,
+  onAddOpenItem
 }: {
   selectedTableName: string | null;
   visibleMenu: HubBootstrap["menuItems"];
@@ -35,10 +38,22 @@ function MenuScreen({
   draftSelectionLabelsByMenuItemId: Record<string, string>;
   searchValue: string;
   virtualized: boolean;
+  saleGroups: NonNullable<HubBootstrap["saleGroups"]>;
+  productionUnits: HubBootstrap["productionUnits"];
   onSearchChange: (value: string) => void;
   onSaleGroupChange: (value: SaleGroupKind | null) => void;
   onAddItem: (menuItemId: string, variantId?: string) => void;
+  onAddOpenItem: (input: { openName: string; openPricePaise: number; saleGroupId: string; productionUnitId?: string | null }) => boolean;
 }) {
+  const activeSaleGroups = saleGroups.filter((group) => group.active !== false && group.active !== 0);
+  const activeProductionUnits = productionUnits.filter((unit) => unit.active !== false && unit.active !== 0);
+  const defaultSaleGroupId = activeSaleGroups.find((group) => group.id === "sg-food")?.id ?? activeSaleGroups[0]?.id ?? "sg-food";
+  const [openItemVisible, setOpenItemVisible] = useState(false);
+  const [openItemName, setOpenItemName] = useState("");
+  const [openItemPrice, setOpenItemPrice] = useState("");
+  const [openItemGroupId, setOpenItemGroupId] = useState(defaultSaleGroupId);
+  const [openItemUnit, setOpenItemUnit] = useState("default");
+  const [openItemError, setOpenItemError] = useState<string | null>(null);
   const activeLabel = selectedSaleGroup ? saleGroupFilters.find(([kind]) => kind === selectedSaleGroup)?.[1] ?? "Best matches" : "All";
   const sections = [
     { title: hasSearch ? "Best matches" : activeLabel, data: visibleMenu }
@@ -74,13 +89,126 @@ function MenuScreen({
           </Pressable>
         ))}
       </ScrollView>
+      <View style={styles.openItemLaunchRow}>
+        <Pressable
+          accessibilityLabel="Add open item"
+          style={[styles.secondaryButton, styles.openItemLaunchButton, !selectedTableName && styles.buttonDisabled]}
+          disabled={!selectedTableName}
+          onPress={() => {
+            setOpenItemGroupId(defaultSaleGroupId);
+            setOpenItemUnit("default");
+            setOpenItemError(null);
+            setOpenItemVisible(true);
+          }}
+        >
+          <Text style={styles.secondaryButtonText}>+ Open item</Text>
+        </Pressable>
+        <Text style={styles.smallMuted}>Add an item that is not in the menu.</Text>
+      </View>
     </>
+  );
+  const closeOpenItem = () => {
+    setOpenItemVisible(false);
+    setOpenItemError(null);
+  };
+  const submitOpenItem = () => {
+    const openPricePaise = amountInputToPaise(openItemPrice);
+    if (!openItemName.trim() || openPricePaise <= 0) {
+      setOpenItemError("Enter an item name and a price above zero.");
+      return;
+    }
+    const added = onAddOpenItem({
+      openName: openItemName.trim(),
+      openPricePaise,
+      saleGroupId: openItemGroupId,
+      ...(openItemUnit === "default" ? {} : { productionUnitId: openItemUnit === "none" ? null : openItemUnit })
+    });
+    if (!added) return;
+    setOpenItemName("");
+    setOpenItemPrice("");
+    closeOpenItem();
+  };
+  const openItemModal = (
+    <Modal visible={openItemVisible} transparent animationType="fade" onRequestClose={closeOpenItem}>
+      <View style={styles.popupBackdrop}>
+        <View style={styles.popupCard}>
+          <View style={styles.sectionHeaderRow}>
+            <View style={styles.flexText}>
+              <Text style={styles.sectionTitle}>Open item</Text>
+              <Text style={styles.muted}>Add an ad-hoc item to Table {selectedTableName}</Text>
+            </View>
+            <Pressable style={styles.secondaryButton} onPress={closeOpenItem}>
+              <Text style={styles.secondaryButtonText}>Close</Text>
+            </Pressable>
+          </View>
+          <View style={styles.formStack}>
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Item name</Text>
+              <TextInput
+                accessibilityLabel="Open item name"
+                style={styles.input}
+                value={openItemName}
+                onChangeText={(value) => setOpenItemName(value.slice(0, 160))}
+                placeholder="Open food or bar item"
+                placeholderTextColor={palette.muted}
+                autoCapitalize="words"
+                maxLength={160}
+              />
+            </View>
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Price</Text>
+              <TextInput
+                accessibilityLabel="Open item price"
+                style={styles.input}
+                value={openItemPrice}
+                onChangeText={setOpenItemPrice}
+                placeholder="0.00"
+                placeholderTextColor={palette.muted}
+                keyboardType="decimal-pad"
+                returnKeyType="done"
+              />
+            </View>
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Group</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterChips}>
+                {activeSaleGroups.map((group) => (
+                  <Pressable key={group.id} style={[styles.filterChip, openItemGroupId === group.id && styles.filterChipActive]} onPress={() => setOpenItemGroupId(group.id)}>
+                    <Text style={[styles.filterChipText, openItemGroupId === group.id && styles.filterChipTextActive]}>{group.name}</Text>
+                  </Pressable>
+                ))}
+              </ScrollView>
+            </View>
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Send to</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterChips}>
+                <Pressable style={[styles.filterChip, openItemUnit === "default" && styles.filterChipActive]} onPress={() => setOpenItemUnit("default")}>
+                  <Text style={[styles.filterChipText, openItemUnit === "default" && styles.filterChipTextActive]}>Group default</Text>
+                </Pressable>
+                <Pressable style={[styles.filterChip, openItemUnit === "none" && styles.filterChipActive]} onPress={() => setOpenItemUnit("none")}>
+                  <Text style={[styles.filterChipText, openItemUnit === "none" && styles.filterChipTextActive]}>No KOT</Text>
+                </Pressable>
+                {activeProductionUnits.map((unit) => (
+                  <Pressable key={unit.id} style={[styles.filterChip, openItemUnit === unit.id && styles.filterChipActive]} onPress={() => setOpenItemUnit(unit.id)}>
+                    <Text style={[styles.filterChipText, openItemUnit === unit.id && styles.filterChipTextActive]}>{unit.name}</Text>
+                  </Pressable>
+                ))}
+              </ScrollView>
+            </View>
+            {openItemError ? <Text style={styles.dangerText}>{openItemError}</Text> : null}
+            <Pressable accessibilityLabel="Confirm open item" style={styles.primaryButton} onPress={submitOpenItem}>
+              <Text style={styles.primaryButtonText}>Add open item</Text>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
   );
 
   if (virtualized) {
     return (
-      <View style={[styles.panel, styles.menuPanel, styles.virtualMenuPanel]}>
-        <SectionList
+      <>
+        <View style={[styles.panel, styles.menuPanel, styles.virtualMenuPanel]}>
+          <SectionList
           sections={selectedTableName ? sections : []}
           keyExtractor={(item) => item.id}
           renderItem={({ item }) => (
@@ -103,14 +231,17 @@ function MenuScreen({
           stickySectionHeadersEnabled={false}
           keyboardShouldPersistTaps="always"
           contentContainerStyle={styles.virtualMenuList}
-        />
-      </View>
+          />
+        </View>
+        {openItemModal}
+      </>
     );
   }
 
   return (
-    <View style={[styles.panel, styles.menuPanel]}>
-      {header}
+    <>
+      <View style={[styles.panel, styles.menuPanel]}>
+        {header}
       {!selectedTableName ? (
         <EmptyState title="No table selected" text="Tap a table, then add dishes here." />
       ) : sections.length === 0 ? (
@@ -127,7 +258,9 @@ function MenuScreen({
           />
         ))
       )}
-    </View>
+      </View>
+      {openItemModal}
+    </>
   );
 }
 

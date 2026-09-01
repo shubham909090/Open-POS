@@ -1,10 +1,9 @@
 import { useEffect, useState } from "react";
 import { Alert } from "react-native";
-import { searchMenuItems } from "@gaurav-pos/shared";
+import { hasOrderStateReduction, searchMenuItems } from "@gaurav-pos/shared";
 
 import type { HubBootstrap, HubOrder } from "../lib/hub-client";
-import { findMenuVariant } from "../lib/mobile-format";
-import { mobileDraftOrderStateSignature, mobileSavedOrderStateSignature } from "../lib/order-state";
+import { calculateMobileOrderStateTotal, mobileDraftOrderStateSignature, mobileSavedOrderStateSignature } from "../lib/order-state";
 import type { MobileOrderStateItem, OrderStateSaveMode } from "../lib/mobile-types";
 
 export function useTicketStateEditor({
@@ -45,11 +44,11 @@ export function useTicketStateEditor({
   const draftStateSignature = mobileDraftOrderStateSignature(stateItems, menuItems);
   const hasStateChanges = Boolean(currentOrder?.order) && savedStateSignature !== draftStateSignature;
   const isBilledState = currentOrder?.order?.status === "billed" || Boolean(currentOrder?.bill);
-  const stateTotal = stateItems.reduce((total, item) => {
-    const menuItem = menuItems.find((entry) => entry.id === item.menuItemId);
-    const variant = findMenuVariant(menuItem, item.menuItemVariantId);
-    return total + (item.unitPricePaise ?? variant?.price_paise ?? menuItem?.price_paise ?? 0) * item.quantity;
-  }, 0);
+  const hasStateReduction = hasOrderStateReduction(
+    sentItems.map((item) => ({ orderItemId: item.id, quantity: item.quantity })),
+    stateItems.map((item) => ({ orderItemId: item.orderItemId, quantity: item.quantity }))
+  );
+  const stateTotal = calculateMobileOrderStateTotal(stateItems, menuItems);
   const stateMatches = searchMenuItems(menuItems, stateSearch, {}).slice(0, 8);
 
   useEffect(() => {
@@ -108,10 +107,10 @@ export function useTicketStateEditor({
 
   const requestStateSave = (saveMode: OrderStateSaveMode) => {
     if (!hasStateChanges) return;
-    if (isBilledState) {
+    if (isBilledState || hasStateReduction) {
       setStateApprovalMode(saveMode);
       setApprovalPin("");
-      setApprovalReason("Billed table state edited");
+      setApprovalReason(isBilledState ? "Billed table state edited" : "Running table item reduced");
       return;
     }
     if (saveMode === "save") {
@@ -124,15 +123,15 @@ export function useTicketStateEditor({
     onSaveOrderState(saveMode, stateItems);
   };
 
-  const confirmBilledStateSave = () => {
+  const confirmStateSave = () => {
     if (!stateApprovalMode) return;
     if (!approvalPin.trim()) {
-      Alert.alert("Manager PIN needed", "Enter manager PIN to save billed table changes.");
+      Alert.alert("Manager PIN needed", "Enter manager PIN to save this protected change.");
       return;
     }
     onSaveOrderState(stateApprovalMode, stateItems, {
       pin: approvalPin.trim(),
-      reason: approvalReason.trim() || "Billed table state edited"
+      reason: approvalReason.trim() || (isBilledState ? "Billed table state edited" : "Running table item reduced")
     });
     setStateApprovalMode(null);
     setApprovalPin("");
@@ -151,6 +150,7 @@ export function useTicketStateEditor({
     setApprovalReason,
     hasStateChanges,
     isBilledState,
+    hasStateReduction,
     stateTotal,
     stateMatches,
     changeStateQty,
@@ -158,6 +158,6 @@ export function useTicketStateEditor({
     showStateNote,
     addStateItem,
     requestStateSave,
-    confirmBilledStateSave
+    confirmStateSave
   };
 }

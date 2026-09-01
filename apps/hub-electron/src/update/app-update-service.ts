@@ -89,6 +89,7 @@ export interface OnlineAppUpdater {
   checkForUpdates(): Promise<OnlineUpdateCheckResult>;
   readUpdateMetadata(version: string): Promise<OnlineUpdateMetadata>;
   downloadUpdate(): Promise<UpdateLaunchPlan>;
+  installUpdate(): void;
   onDownloadProgress?(handler: (percent: number) => void): void;
 }
 
@@ -321,7 +322,7 @@ export class AppUpdateService {
       }
       this.writeState({ ...state, pending, ...(previous ? { previous, recoveryScriptPath } : {}) });
       this.setOnlineState({ status: "installing", lastBackupFileName: backup.fileName, message: null });
-      await this.launchAndExit({ filePath: pending.installerPath, args: installPlan.args });
+      onlineUpdater.installUpdate();
       this.onlineUpdateRunning = true;
       return { installing: true, backup, version, ...(recoveryScriptPath ? { recoveryScriptPath } : {}) };
     } catch (error) {

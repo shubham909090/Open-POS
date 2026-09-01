@@ -23,7 +23,7 @@ export function getMobileServiceViewModel(input: {
   const draftTotal = input.draftItems.reduce((total, item) => {
     const menuItem = menuItems.find((entry) => entry.id === item.menuItemId);
     const variant = findMenuVariant(menuItem, item.menuItemVariantId);
-    return total + (variant?.price_paise ?? menuItem?.price_paise ?? 0) * item.quantity;
+    return total + (item.openPricePaise ?? variant?.price_paise ?? menuItem?.price_paise ?? 0) * item.quantity;
   }, 0);
   const draftMenuSummary = getDraftMenuSummary(input.draftItems, menuItems);
   const activeMenuGroup = input.menuGroupFilter;

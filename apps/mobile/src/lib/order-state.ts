@@ -53,6 +53,18 @@ export function mobileDraftOrderStateSignature(
   );
 }
 
+export function calculateMobileOrderStateTotal(
+  stateItems: MobileOrderStateDraftItem[],
+  menuItems: HubBootstrap["menuItems"]
+): number {
+  return stateItems.reduce((total, item) => {
+    const menuItem = menuItems.find((entry) => entry.id === item.menuItemId);
+    const variant = findActiveVariant(menuItem, item.menuItemVariantId);
+    const pricePaise = item.unitPricePaise ?? item.openPricePaise ?? variant?.price_paise ?? menuItem?.price_paise ?? 0;
+    return total + pricePaise * item.quantity;
+  }, 0);
+}
+
 function findActiveVariant(menuItem: HubBootstrap["menuItems"][number] | undefined, variantId: string | undefined) {
   const variants = menuItem?.variants?.filter((variant) => Boolean(variant.active)) ?? [];
   return variants.find((variant) => variant.id === variantId) ?? variants[0];

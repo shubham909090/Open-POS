@@ -65,6 +65,35 @@ export function useOrderDraft({
     void persistDraft(next);
   }
 
+  function addOpenItem(input: {
+    openName: string;
+    openPricePaise: number;
+    saleGroupId: string;
+    productionUnitId?: string | null;
+  }): boolean {
+    if (!selectedTableId) {
+      setMessage("Choose a table before adding an open item.");
+      setMode("tables");
+      return false;
+    }
+    const openName = input.openName.trim();
+    if (!openName || input.openPricePaise <= 0 || !input.saleGroupId) {
+      setMessage("Enter an open item name, price, and group.");
+      return false;
+    }
+    const next = [...items, {
+      openName,
+      openPricePaise: input.openPricePaise,
+      saleGroupId: input.saleGroupId,
+      ...(input.productionUnitId !== undefined ? { productionUnitId: input.productionUnitId } : {}),
+      quantity: 1
+    }];
+    setItems(next);
+    void persistDraft(next);
+    setMessage(`${openName} added to the table draft.`);
+    return true;
+  }
+
   function changeQty(index: number, delta: number) {
     const next = items
       .map((item, itemIndex) => (itemIndex === index ? { ...item, quantity: Math.max(0, item.quantity + delta) } : item))
@@ -95,6 +124,7 @@ export function useOrderDraft({
     selectTable,
     persistDraft,
     addItem,
+    addOpenItem,
     changeQty,
     changeItemNote,
     clearSelectedTableDraft,

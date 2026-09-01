@@ -16,6 +16,8 @@ export const menuTicketStyles = {
   filterChipActive: { backgroundColor: palette.ink, borderColor: palette.ink },
   filterChipText: { color: palette.ink, fontWeight: "900", fontSize: 13 },
   filterChipTextActive: { color: palette.inverseText },
+  openItemLaunchRow: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 10 },
+  openItemLaunchButton: { minHeight: 44, paddingHorizontal: 16 },
   virtualMenuList: { padding: 14, gap: 14, paddingBottom: 118 },
   menuSection: { gap: 10 },
   menuSectionHeader: { paddingTop: 12, paddingBottom: 8, borderBottomWidth: 2, borderBottomColor: palette.line, backgroundColor: palette.paper },

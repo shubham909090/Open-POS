@@ -12,7 +12,7 @@ export function buildDraftOrderSummary(items: OrderItemInput[], menuItems: HubBo
     .map((item) => {
       const menuItem = menuItems.find((entry) => entry.id === item.menuItemId);
       const variant = findMenuVariant(menuItem, item.menuItemVariantId);
-      return `${item.quantity} x ${menuItem?.name ?? item.menuItemId}${variant && variant.kind !== "default" ? ` ${variant.label}` : ""}`;
+      return `${item.quantity} x ${item.openName ?? menuItem?.name ?? item.menuItemId}${variant && variant.kind !== "default" ? ` ${variant.label}` : ""}`;
     })
     .join("\n");
 }
@@ -35,12 +35,20 @@ export function buildBillRevisionItems(sentItems: HubOrder["items"], draftItems:
           quantity: item.quantity
         }
   );
-  const newItems: MobileBillRevisionItem[] = draftItems
-    .filter((item): item is OrderItemInput & { menuItemId: string } => Boolean(item.menuItemId))
-    .map((item) => ({
-      menuItemId: item.menuItemId,
-      menuItemVariantId: item.menuItemVariantId,
-      quantity: item.quantity
-    }));
+  const newItems = draftItems.flatMap<MobileBillRevisionItem>((item) => {
+    if (item.menuItemId) {
+      return [{ menuItemId: item.menuItemId, menuItemVariantId: item.menuItemVariantId, quantity: item.quantity }];
+    }
+    if (item.openName && item.openPricePaise && item.saleGroupId) {
+      return [{
+        openName: item.openName,
+        openPricePaise: item.openPricePaise,
+        saleGroupId: item.saleGroupId,
+        ...(item.productionUnitId !== undefined ? { productionUnitId: item.productionUnitId } : {}),
+        quantity: item.quantity
+      }];
+    }
+    return [];
+  });
   return [...existingItems, ...newItems];
 }

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { calculateLineTotal, calculateTax, formatCompactInr, formatInr } from "../money.js";
-import { getOrderStateSignature } from "../order-state-signature.js";
-import { billPrintDestinationSchema, billPrinterProfileSchema, createMenuItemSchema, createPairingCodeSchema, generateBillSchema, markNcBillSchema, printLayoutSettingsSchema, reportRangeQuerySchema, setMasterPinSchema, submitOrderSchema, updateReceiptPrinterSchema } from "../schemas.js";
+import { getOrderStateSignature, hasOrderStateReduction } from "../order-state-signature.js";
+import { billPrintDestinationSchema, billPrinterProfileSchema, createMenuItemSchema, createPairingCodeSchema, generateBillSchema, historyEditBillSchema, markNcBillSchema, printLayoutSettingsSchema, reportRangeQuerySchema, setMasterPinSchema, submitOrderSchema, updateReceiptPrinterSchema } from "../schemas.js";
 import { getTableDisplayState, isTransferTargetTable, tableDisplayClass, tableDisplayLabel } from "../table-state.js";
 
 describe("shared money helpers", () => {
@@ -39,6 +39,14 @@ describe("shared order state signature", () => {
     const base = getOrderStateSignature(saved);
     expect(getOrderStateSignature([...saved, { menuItemId: "item-3", pricePaise: 5_000, saleGroupId: "sg-food", quantity: 0 }])).toBe(base);
   });
+
+  it("detects only reductions and removals of existing order items", () => {
+    expect(hasOrderStateReduction(saved, [{ ...saved[0]!, quantity: 3 }, saved[1]!])).toBe(false);
+    expect(hasOrderStateReduction(saved, [{ ...saved[0]!, note: "No onion" }, saved[1]!])).toBe(false);
+    expect(hasOrderStateReduction(saved, [...saved, { menuItemId: "item-3", quantity: 1 }])).toBe(false);
+    expect(hasOrderStateReduction(saved, [{ ...saved[0]!, quantity: 1 }, saved[1]!])).toBe(true);
+    expect(hasOrderStateReduction(saved, [saved[0]!])).toBe(true);
+  });
 });
 
 describe("shared command schemas", () => {
@@ -61,6 +69,16 @@ describe("shared command schemas", () => {
     expect(generateBillSchema.parse({ customerName: "  Sharma Family  " }).customerName).toBe("Sharma Family");
     expect(generateBillSchema.parse({}).customerName).toBeUndefined();
     expect(() => generateBillSchema.parse({ customerName: "x".repeat(81) })).toThrow();
+  });
+
+  it("accepts an optional customer name when editing a history bill", () => {
+    const base = {
+      items: [{ menuItemId: "item-1", quantity: 1 }],
+      masterApproval: { pin: "9876", reason: "Owner history edit", approvedBy: "owner" }
+    };
+    expect(historyEditBillSchema.parse({ ...base, customerName: "  Sharma Family  " }).customerName).toBe("Sharma Family");
+    expect(historyEditBillSchema.parse(base).customerName).toBeUndefined();
+    expect(() => historyEditBillSchema.parse({ ...base, customerName: "x".repeat(81) })).toThrow();
   });
 
   it("validates printer mode and rejects invalid pairing inputs", () => {

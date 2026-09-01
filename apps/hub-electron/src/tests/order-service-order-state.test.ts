@@ -28,6 +28,7 @@ describe("OrderService running order state", () => {
 
   it("updates running table state without KOTs on save and with KOTs on save and print", () => {
     const { database, orderService } = createTestHub();
+    orderService.setManagerPin({ newPin: "1234", updatedBy: "admin" });
 
     const order = orderService.submitOrder({
       tableId: "table-t1",
@@ -51,6 +52,7 @@ describe("OrderService running order state", () => {
 
     const printed = orderService.updateOrderState(order.orderId, {
       saveMode: "save_print",
+      managerApproval: { pin: "1234", reason: "Running table item reduced", approvedBy: "manager" },
       items: [
         { menuItemId: "item-dal-fry", quantity: 2 },
         { menuItemId: "item-lassi", quantity: 2 }
@@ -62,6 +64,41 @@ describe("OrderService running order state", () => {
       { type: "modified", quantity_delta: 1 },
       { type: "partial_cancel", quantity_delta: -1 }
     ]);
+
+    database.close();
+  });
+
+  it("requires a valid Manager PIN before reducing a running table item", () => {
+    const { database, orderService } = createTestHub();
+    orderService.setManagerPin({ newPin: "1234", updatedBy: "admin" });
+    const order = orderService.submitOrder({
+      tableId: "table-t1",
+      captainId: "waiter-1",
+      pax: 1,
+      orderType: "dine_in",
+      printMode: "kot",
+      items: [{ menuItemId: "item-dal-fry", quantity: 2 }]
+    });
+
+    const reducedItems = [{ menuItemId: "item-dal-fry", quantity: 1 }];
+    expect(() => orderService.updateOrderState(order.orderId, { saveMode: "save", items: reducedItems })).toThrow(
+      "Manager approval is required for this action"
+    );
+    expect(() =>
+      orderService.updateOrderState(order.orderId, {
+        saveMode: "save",
+        managerApproval: { pin: "9999", reason: "Running table item reduced", approvedBy: "manager" },
+        items: reducedItems
+      })
+    ).toThrow("Manager PIN is incorrect");
+    expect(database.db.prepare("SELECT quantity FROM order_items WHERE order_id = ? AND status = 'active'").get(order.orderId)).toEqual({ quantity: 2 });
+
+    orderService.updateOrderState(order.orderId, {
+      saveMode: "save",
+      managerApproval: { pin: "1234", reason: "Running table item reduced", approvedBy: "manager" },
+      items: reducedItems
+    });
+    expect(database.db.prepare("SELECT quantity FROM order_items WHERE order_id = ? AND status = 'active'").get(order.orderId)).toEqual({ quantity: 1 });
 
     database.close();
   });
@@ -221,9 +258,10 @@ describe("OrderService running order state", () => {
 
   it("keeps separate order rows when a menu item price changes before adding it again", () => {
     const { database, orderService } = createTestHub();
+    orderService.setManagerPin({ newPin: "1234", updatedBy: "admin" });
     const dish = orderService.createMenuItem({ name: "Price Snapshot Dish", pricePaise: 10_000, active: true });
 
-    orderService.submitOrder({
+    const order = orderService.submitOrder({
       tableId: "table-t1",
       captainId: "waiter-1",
       pax: 1,
@@ -245,6 +283,15 @@ describe("OrderService running order state", () => {
       { quantity: 1, unit_price_paise: 10_000 },
       { quantity: 1, unit_price_paise: 15_000 }
     ]);
+    expect(() =>
+      orderService.updateOrderState(order.orderId, {
+        saveMode: "save",
+        items: [{ menuItemId: dish.id, quantity: 1 }]
+      })
+    ).toThrow("Manager approval is required for this action");
+    expect(database.db.prepare("SELECT SUM(quantity) AS quantity FROM order_items WHERE menu_item_id = ? AND status = 'active'").get(dish.id)).toEqual({
+      quantity: 2
+    });
 
     database.close();
   });

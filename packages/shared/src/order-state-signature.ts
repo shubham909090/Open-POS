@@ -46,6 +46,20 @@ export function getOrderStateSignature(rows: OrderStateSignatureRow[]): string {
     .join("||");
 }
 
+export function hasOrderStateReduction(previousRows: OrderStateSignatureRow[], nextRows: OrderStateSignatureRow[]): boolean {
+  const nextQuantities = new Map<string, number>();
+  for (const row of nextRows) {
+    const orderItemId = clean(row.orderItemId);
+    if (!orderItemId) continue;
+    nextQuantities.set(orderItemId, (nextQuantities.get(orderItemId) ?? 0) + normaliseQuantity(row.quantity));
+  }
+
+  return previousRows.some((row) => {
+    const orderItemId = clean(row.orderItemId);
+    return Boolean(orderItemId) && normaliseQuantity(row.quantity) > (nextQuantities.get(orderItemId) ?? 0);
+  });
+}
+
 function clean(value: string | null | undefined): string {
   return value?.trim() ?? "";
 }

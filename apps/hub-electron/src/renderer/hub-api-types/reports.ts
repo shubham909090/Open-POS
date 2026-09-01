@@ -134,6 +134,7 @@ export interface RangeReportDetail {
 
 export interface ModifiedBillAuditChange {
   kind:
+    | "customer_name"
     | "item_added"
     | "item_removed"
     | "item_quantity"
@@ -152,6 +153,7 @@ export interface ModifiedBillAuditChange {
 
 export interface ModifiedBillAuditSnapshot {
   status: string;
+  customerName: string | null;
   revisionNumber: number;
   subtotalPaise: number;
   taxPaise: number;

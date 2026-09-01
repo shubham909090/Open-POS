@@ -1,4 +1,4 @@
-import { formatInr, getOrderStateSignature, isTransferTargetTable, searchMenuItems } from "@gaurav-pos/shared";
+import { formatInr, getOrderStateSignature, hasOrderStateReduction, isTransferTargetTable, searchMenuItems } from "@gaurav-pos/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { hubApi, type BillAdjustmentPayload, type BillPrinterSlot, type Bootstrap, type MenuItem } from "../../hub-api.js";
@@ -81,6 +81,10 @@ export function TableWorkspace({
     quantity: item.quantity
   })));
   const hasOrderStateChanges = Boolean(data?.order) && savedOrderStateSignature !== draftOrderStateSignature;
+  const orderStateHasReduction = hasOrderStateReduction(
+    sentItems.map((item) => ({ orderItemId: item.id, quantity: item.quantity })),
+    orderStateItems.map((item) => ({ orderItemId: item.orderItemId, quantity: item.quantity }))
+  );
   const shiftTargets = bootstrap.tables.filter((table) => table.id !== tableId && isTransferTargetTable(table));
   const selectedShiftTarget = shiftTargets.find((table) => table.id === shiftTargetTableId);
   const draftTotal = draft.reduce((total, item) => total + item.pricePaise * item.quantity, 0);
@@ -269,11 +273,15 @@ export function TableWorkspace({
       setNotice({ tone: "bad", text: "Running table must keep at least one item. Use Cancel order instead." });
       return;
     }
-    if (order.status === "billed") {
+    if (order.status === "billed" || orderStateHasReduction) {
       const approval = await requestManagerApproval({
-        title: "Approve billed table edit",
-        defaultReason: saveMode === "save" ? "Billed table state saved" : "Billed table state saved and printed",
-        message: "Manager PIN is required to change a printed bill.",
+        title: order.status === "billed" ? "Approve billed table edit" : "Approve item reduction",
+        defaultReason: order.status === "billed"
+          ? saveMode === "save" ? "Billed table state saved" : "Billed table state saved and printed"
+          : "Running table item reduced",
+        message: order.status === "billed"
+          ? "Manager PIN is required to change a printed bill."
+          : "Manager PIN is required to reduce or remove an already-sent item.",
         confirmLabel: saveMode === "save" ? "Save" : "Save and print"
       }).catch(() => null);
       if (!approval) return;
@@ -338,6 +346,7 @@ export function TableWorkspace({
           hasOrderStateChanges={hasOrderStateChanges}
           canSaveOrderState={canSaveOrderState}
           orderStateGuardMessage={orderStateGuardMessage}
+          managerApprovalRequired={orderStateHasReduction}
           saveOrderStatePending={saveOrderState.isPending}
           requestOrderStateSave={(saveMode) => void requestOrderStateSave(saveMode)}
           addStateMenuItem={addStateMenuItem}

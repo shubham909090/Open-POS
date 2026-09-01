@@ -26,13 +26,14 @@ function BillingHistoryPanel({
   menuItems: HubBootstrap["menuItems"];
   sending: boolean;
   onHistoryPrint: (billId: string) => void;
-  onHistoryEdit: (billId: string, items: HistoryEditPayloadItem[], masterPin: string, saveMode: HistoryEditSaveMode) => Promise<boolean> | boolean;
+  onHistoryEdit: (billId: string, items: HistoryEditPayloadItem[], customerName: string, masterPin: string, saveMode: HistoryEditSaveMode) => Promise<boolean> | boolean;
   onSelectHistoryDay: (posDayId: string | null) => void;
 }) {
   const history = getBillingHistoryViewModel(currentSummary, selectedHistoryDayId, selectedHistoryDetail);
   const [editingBill, setEditingBill] = useState<NonNullable<CurrentDaySummary["billSummaries"]>[number] | null>(null);
   const [editItems, setEditItems] = useState<HistoryEditItem[]>([]);
   const [search, setSearch] = useState("");
+  const [customerName, setCustomerName] = useState("");
   const [masterPin, setMasterPin] = useState("");
   const searchedMenu = search.trim()
     ? menuItems.filter((item) => item.name.toLowerCase().includes(search.trim().toLowerCase())).slice(0, 8)
@@ -44,6 +45,7 @@ function BillingHistoryPanel({
     setEditingBill(bill);
     setMasterPin("");
     setSearch("");
+    setCustomerName(bill.customerName ?? "");
     setEditItems(
       (bill.items ?? []).map((item, index) => ({
         key: item.orderItemId ?? `${bill.billId}-${index}`,
@@ -102,6 +104,7 @@ function BillingHistoryPanel({
             ? { orderItemId: item.orderItemId, menuItemId: item.menuItemId, menuItemVariantId: item.menuItemVariantId ?? undefined, quantity: item.quantity }
             : { orderItemId: item.orderItemId, openName: item.name, openPricePaise: item.unitPricePaise, saleGroupId: item.saleGroupId ?? "sg-food", productionUnitId: item.productionUnitId ?? null, quantity: item.quantity }
         ),
+      customerName.trim(),
       masterPin.trim(),
       saveMode
     );
@@ -204,6 +207,19 @@ function BillingHistoryPanel({
               </Pressable>
             </View>
             <ScrollView style={styles.popupScroll} contentContainerStyle={styles.historyEditStack}>
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Bill name</Text>
+                <TextInput
+                  style={styles.input}
+                  value={customerName}
+                  onChangeText={(value) => setCustomerName(value.slice(0, 80))}
+                  placeholder="Customer name, optional"
+                  placeholderTextColor={palette.muted}
+                  autoCapitalize="words"
+                  returnKeyType="done"
+                  maxLength={80}
+                />
+              </View>
               {editItems.map((item) => (
                 <View key={item.key} style={styles.historyEditLine}>
                   <View style={styles.flexText}>

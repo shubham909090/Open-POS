@@ -283,6 +283,7 @@ function SnapshotPanel({ title, row, side }: { title: string; row: ModifiedBillA
         <span>{formatInr(snapshot.finalTotalPaise)}</span>
       </div>
       <div className="modified-snapshot-lines">
+        <span>Bill name <strong>{snapshot.customerName || "None"}</strong></span>
         {snapshot.items.map((item) => (
           <span key={item.orderItemId}>{item.quantity} x {item.name} · {formatInr(item.lineTotalPaise)}</span>
         ))}

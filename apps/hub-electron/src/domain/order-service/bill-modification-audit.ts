@@ -26,6 +26,7 @@ type AuditPayment = {
 
 export type BillModificationSnapshot = {
   status: string;
+  customerName: string | null;
   revisionNumber: number;
   subtotalPaise: number;
   taxPaise: number;
@@ -38,7 +39,7 @@ export type BillModificationSnapshot = {
 };
 
 export type BillModificationDiff = Array<{
-  kind: "item_added" | "item_removed" | "item_quantity" | "item_price" | "payment_added" | "payment_removed" | "payment_changed" | "discount" | "tip" | "final_total" | "revision";
+  kind: "customer_name" | "item_added" | "item_removed" | "item_quantity" | "item_price" | "payment_added" | "payment_removed" | "payment_changed" | "discount" | "tip" | "final_total" | "revision";
   label: string;
   before: string;
   after: string;
@@ -71,6 +72,7 @@ export function buildBillModificationSnapshot(db: SqliteDatabase, bill: BillRow,
 
   return {
     status: bill.status,
+    customerName: bill.customer_name,
     revisionNumber: bill.revision_number,
     subtotalPaise: bill.subtotal_paise,
     taxPaise: bill.tax_paise,
@@ -203,6 +205,9 @@ function exactSearchSql(search: string, params: Array<string | number>): string 
 
 function buildBillModificationDiff(before: BillModificationSnapshot, after: BillModificationSnapshot): BillModificationDiff {
   const changes: BillModificationDiff = [];
+  if (before.customerName !== after.customerName) {
+    changes.push({ kind: "customer_name", label: "Bill name", before: before.customerName ?? "", after: after.customerName ?? "" });
+  }
   const beforeItems = new Map(before.items.map((item) => [item.orderItemId, item]));
   const afterItems = new Map(after.items.map((item) => [item.orderItemId, item]));
   const itemIds = new Set([...beforeItems.keys(), ...afterItems.keys()]);

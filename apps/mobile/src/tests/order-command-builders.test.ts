@@ -20,6 +20,7 @@ const menuItems: HubBootstrap["menuItems"] = [
 describe("mobile order command builders", () => {
   it("builds KOT review summaries with variant labels", () => {
     expect(buildDraftOrderSummary([{ menuItemId: "item-1", menuItemVariantId: "v180", quantity: 2 }], menuItems)).toBe("2 x Whisky 180 ml");
+    expect(buildDraftOrderSummary([{ openName: "Chef Special", openPricePaise: 15_000, saleGroupId: "sg-food", quantity: 1 }], menuItems)).toBe("1 x Chef Special");
   });
 
   it("builds revision payload items from sent and draft lines", () => {
@@ -28,10 +29,14 @@ describe("mobile order command builders", () => {
       { id: "open-1", menu_item_id: null, name_snapshot: "Open Food", unit_price_paise: 12_000, quantity: 2, status: "sent", sale_group_id: "sg-food", production_unit_id: null }
     ];
 
-    expect(buildBillRevisionItems(sentItems, [{ menuItemId: "item-1", menuItemVariantId: "v180", quantity: 3 }])).toEqual([
+    expect(buildBillRevisionItems(sentItems, [
+      { menuItemId: "item-1", menuItemVariantId: "v180", quantity: 3 },
+      { openName: "Chef Special", openPricePaise: 15_000, saleGroupId: "sg-food", productionUnitId: "kitchen", quantity: 1 }
+    ])).toEqual([
       { orderItemId: "sent-1", menuItemId: "item-1", menuItemVariantId: "v180", quantity: 1 },
       { orderItemId: "open-1", openName: "Open Food", openPricePaise: 12_000, saleGroupId: "sg-food", productionUnitId: null, quantity: 2 },
-      { menuItemId: "item-1", menuItemVariantId: "v180", quantity: 3 }
+      { menuItemId: "item-1", menuItemVariantId: "v180", quantity: 3 },
+      { openName: "Chef Special", openPricePaise: 15_000, saleGroupId: "sg-food", productionUnitId: "kitchen", quantity: 1 }
     ]);
   });
 });

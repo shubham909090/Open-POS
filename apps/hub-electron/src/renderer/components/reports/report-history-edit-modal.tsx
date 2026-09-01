@@ -39,6 +39,7 @@ function ReportHistoryEditModal({
   editTip,
   editPayments,
   editPaymentReference,
+  editCustomerName,
   search,
   masterPin,
   editError,
@@ -59,6 +60,7 @@ function ReportHistoryEditModal({
   setEditTip,
   setEditPayments,
   setEditPaymentReference,
+  setEditCustomerName,
   setSearch,
   setMasterPin,
   onClose,
@@ -77,6 +79,7 @@ function ReportHistoryEditModal({
   editTip: string;
   editPayments: Record<HistoryPaymentMethod, string>;
   editPaymentReference: string;
+  editCustomerName: string;
   search: string;
   masterPin: string;
   editError: string | null;
@@ -97,6 +100,7 @@ function ReportHistoryEditModal({
   setEditTip: Dispatch<SetStateAction<string>>;
   setEditPayments: Dispatch<SetStateAction<Record<HistoryPaymentMethod, string>>>;
   setEditPaymentReference: Dispatch<SetStateAction<string>>;
+  setEditCustomerName: Dispatch<SetStateAction<string>>;
   setSearch: Dispatch<SetStateAction<string>>;
   setMasterPin: Dispatch<SetStateAction<string>>;
   onClose: () => void;
@@ -135,6 +139,15 @@ function ReportHistoryEditModal({
               <strong>Money</strong>
               <span>Payment total {formatInr(editPaymentTotalPaise)}</span>
             </div>
+            <label>
+              Bill name
+              <input
+                aria-label="History bill name"
+                value={editCustomerName}
+                onChange={(event) => setEditCustomerName(event.target.value.slice(0, 80))}
+                placeholder="Customer name, optional"
+              />
+            </label>
             <div className="adjust-grid">
               <label>
                 Discount

@@ -308,6 +308,7 @@ export function editHistoryBill(ctx: BillActionContext, billId: string, input: H
     ctx.orm
       .update(bills)
       .set({
+        customerName: input.customerName === undefined ? bill.customer_name : input.customerName.trim() || null,
         subtotalPaise: totals.subtotalPaise,
         taxPaise: totals.taxPaise,
         totalPaise: totals.totalPaise,
@@ -359,7 +360,15 @@ export function editHistoryBill(ctx: BillActionContext, billId: string, input: H
       ctx.orm.update(bills).set({ printCount: sql`${bills.printCount} + 1` }).where(eq(bills.id, billId)).run();
     }
     ctx.refreshDailyReportSnapshot(order.pos_day_id, now);
-    ctx.appendEvent("bill.history_edited", "bill", billId, { billId, revisionNumber, totalPaise: totals.totalPaise, saveMode, printJobIds, modified: true });
+    ctx.appendEvent("bill.history_edited", "bill", billId, {
+      billId,
+      customerName: updatedBill.customer_name,
+      revisionNumber,
+      totalPaise: totals.totalPaise,
+      saveMode,
+      printJobIds,
+      modified: true
+    });
     return { billId, revisionNumber, totalPaise: totals.totalPaise, printJobIds, modified: true };
   });
 

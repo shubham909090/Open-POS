@@ -47,15 +47,8 @@ describe("AppUpdateService", () => {
     expect(existsSync(result.backup.path)).toBe(true);
     expect(onlineUpdater.checkForUpdates).toHaveBeenCalledTimes(1);
     expect(onlineUpdater.downloadUpdate).toHaveBeenCalledTimes(1);
-    expect(launchInstaller).toHaveBeenCalledTimes(1);
-    const launchedPath = launchInstaller.mock.calls[0]?.[0].filePath as string;
-    expect(launchedPath).toContain("Install Gaurav POS Update.cmd");
-    const script = readFileSync(launchedPath, "utf8");
-    const commands = decodePowerShellCommands(script);
-    expect(commands.some((command) => command.includes("Wait-Process -Id $env:GPOS_PARENT_PID"))).toBe(true);
-    const startCommand = commands.find((command) => command.includes("Start-Process -FilePath"));
-    expect(startCommand).toContain("Gaurav POS Hub Setup 0.2.0.exe");
-    expect(startCommand).toContain("-ArgumentList @('--updated','/S','--force-run')");
+    expect(onlineUpdater.installUpdate).toHaveBeenCalledTimes(1);
+    expect(launchInstaller).not.toHaveBeenCalled();
     expect(service.status().online.status).toBe("installing");
 
     fixture.close();
@@ -126,7 +119,8 @@ describe("AppUpdateService", () => {
 
     await expect(service.installOnlineUpdate()).rejects.toThrow("already in progress");
     expect(onlineUpdater.checkForUpdates).toHaveBeenCalledTimes(1);
-    expect(launchInstaller).toHaveBeenCalledTimes(1);
+    expect(onlineUpdater.installUpdate).toHaveBeenCalledTimes(1);
+    expect(launchInstaller).not.toHaveBeenCalled();
 
     fixture.close();
   });
@@ -157,7 +151,8 @@ describe("AppUpdateService", () => {
     expect(result.recoveryScriptPath).toBeUndefined();
     expect(onlineUpdater.readUpdateMetadata).toHaveBeenCalledWith("0.2.0");
     expect(onlineUpdater.downloadUpdate).toHaveBeenCalledTimes(1);
-    expect(launchInstaller).toHaveBeenCalledTimes(1);
+    expect(onlineUpdater.installUpdate).toHaveBeenCalledTimes(1);
+    expect(launchInstaller).not.toHaveBeenCalled();
     expect(service.status()).toMatchObject({
       baselineRegistered: false,
       rollbackAvailable: false,
@@ -481,7 +476,8 @@ function createOnlineUpdater(input: { updateAvailable?: boolean; availableVersio
     downloadUpdate: vi.fn(async () => ({
       filePath: input.downloadedInstallerPath ?? join(tmpdir(), `Gaurav POS Hub Setup ${version}.exe`),
       args: ["--updated", "/S", "--force-run"]
-    }))
+    })),
+    installUpdate: vi.fn()
   };
 }
 

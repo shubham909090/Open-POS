@@ -16,6 +16,7 @@ export function SentOrderPanel({
   hasOrderStateChanges,
   canSaveOrderState,
   orderStateGuardMessage,
+  managerApprovalRequired,
   saveOrderStatePending,
   requestOrderStateSave,
   addStateMenuItem,
@@ -48,6 +49,7 @@ export function SentOrderPanel({
   hasOrderStateChanges: boolean;
   canSaveOrderState: boolean;
   orderStateGuardMessage?: string | null;
+  managerApprovalRequired: boolean;
   saveOrderStatePending: boolean;
   requestOrderStateSave: (saveMode: SaveMode) => void;
   addStateMenuItem: (menuItem: MenuItem, variantId?: string) => void;
@@ -119,6 +121,7 @@ export function SentOrderPanel({
             )}
           </div>
           {orderStateGuardMessage ? <p className="state-editor-warning">{orderStateGuardMessage}</p> : null}
+          {managerApprovalRequired ? <p className="state-editor-warning">Manager PIN will be required to reduce or remove sent items.</p> : null}
           <div className="state-search">
             <label className="state-search-field">
               <span>Add item</span>

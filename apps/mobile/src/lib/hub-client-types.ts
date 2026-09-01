@@ -13,6 +13,14 @@ export interface HubBootstrap {
   }>;
   floors: Array<{ id: string; name: string; active?: number | boolean }>;
   productionUnits: Array<{ id: string; name: string; active?: number | boolean; kds_enabled?: number | boolean }>;
+  saleGroups?: Array<{
+    id: string;
+    name: string;
+    kind: "food" | "alcohol" | "beverage" | "other";
+    ticket_label: "KOT" | "BOT";
+    default_production_unit_id: string | null;
+    active?: number | boolean;
+  }>;
   menuItems: Array<{
     id: string;
     name: string;

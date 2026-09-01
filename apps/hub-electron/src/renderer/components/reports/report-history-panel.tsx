@@ -27,6 +27,7 @@ function ReportHistoryPanel({
   const [editTip, setEditTip] = useState("0");
   const [editPayments, setEditPayments] = useState<Record<HistoryPaymentMethod, string>>({ cash: "0", upi: "0", card: "0", online: "0" });
   const [editPaymentReference, setEditPaymentReference] = useState("");
+  const [editCustomerName, setEditCustomerName] = useState("");
   const [search, setSearch] = useState("");
   const [masterPin, setMasterPin] = useState("");
   const [editError, setEditError] = useState<string | null>(null);
@@ -43,6 +44,7 @@ function ReportHistoryPanel({
         input.bill.billId,
         {
           saveMode: input.saveMode,
+          customerName: editCustomerName.trim(),
           masterApproval: { pin: masterPin, reason: "Owner history edit", approvedBy: "owner" },
           discountType: editDiscountType,
           discountValue: editDiscountType === "percent" ? Number(editDiscount || 0) : Math.round(Number(editDiscount || 0) * 100),
@@ -82,6 +84,7 @@ function ReportHistoryPanel({
       setMasterPin("");
       setEditPayments({ cash: "0", upi: "0", card: "0", online: "0" });
       setEditPaymentReference("");
+      setEditCustomerName("");
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["currentBusinessDaySummary"] }),
         queryClient.invalidateQueries({ queryKey: ["dailyReports"] }),
@@ -123,6 +126,7 @@ function ReportHistoryPanel({
     }
     setEditPayments(nextPayments);
     setEditPaymentReference(bill.payments?.find((payment) => payment.reference)?.reference ?? "");
+    setEditCustomerName(bill.customerName ?? "");
     setEditItems(
       (bill.items ?? []).map((item, index) => ({
         key: item.orderItemId ?? `${bill.billId}-${index}`,
@@ -228,6 +232,7 @@ function ReportHistoryPanel({
           editTip={editTip}
           editPayments={editPayments}
           editPaymentReference={editPaymentReference}
+          editCustomerName={editCustomerName}
           search={search}
           masterPin={masterPin}
           editError={editError}
@@ -248,6 +253,7 @@ function ReportHistoryPanel({
           setEditTip={setEditTip}
           setEditPayments={setEditPayments}
           setEditPaymentReference={setEditPaymentReference}
+          setEditCustomerName={setEditCustomerName}
           setSearch={setSearch}
           setMasterPin={setMasterPin}
           onClose={() => setEditingBill(null)}

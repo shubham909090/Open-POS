@@ -107,6 +107,7 @@ export default function App() {
     selectTable,
     persistDraft,
     addItem,
+    addOpenItem,
     changeQty,
     changeItemNote,
     clearSelectedTableDraft,
@@ -293,9 +294,12 @@ export default function App() {
           draftSelectionLabelsByMenuItemId={draftSelectionLabelsByMenuItemId}
           searchValue={menuSearch}
           virtualized={useVirtualMenu}
+          saleGroups={bootstrap?.saleGroups ?? []}
+          productionUnits={bootstrap?.productionUnits ?? []}
           onSearchChange={setMenuSearch}
           onSaleGroupChange={setMenuGroupFilter}
           onAddItem={addItem}
+          onAddOpenItem={addOpenItem}
         />
       )}
       {!historyMode && (mode === "ticket" || isWide) && (
@@ -343,7 +347,7 @@ export default function App() {
           menuItems={bootstrap?.menuItems ?? []}
           sending={sending}
           onHistoryPrint={(billId) => void printHistoryBill(billId)}
-          onHistoryEdit={(billId, historyItems, masterPin, saveMode) => editHistoryBill(billId, historyItems, masterPin, saveMode)}
+          onHistoryEdit={(billId, historyItems, customerName, masterPin, saveMode) => editHistoryBill(billId, historyItems, customerName, masterPin, saveMode)}
           onSelectHistoryDay={(posDayId) => void selectHistoryDay(posDayId)}
         />
       ) : null}

@@ -51,13 +51,20 @@ export function useBillingHistoryActions({
     }
   }
 
-  async function editHistoryBill(billId: string, items: HistoryEditPayloadItem[], masterPin: string, saveMode: HistoryEditSaveMode = "save_print"): Promise<boolean> {
+  async function editHistoryBill(
+    billId: string,
+    items: HistoryEditPayloadItem[],
+    customerName: string,
+    masterPin: string,
+    saveMode: HistoryEditSaveMode = "save_print"
+  ): Promise<boolean> {
     try {
       setSending(true);
       const printerSlot = saveMode === "save_print" ? await chooseBillPrinter("Print edited bill where?") : null;
       if (saveMode === "save_print" && !printerSlot) return false;
       const payload = {
         saveMode,
+        customerName: customerName.trim(),
         masterApproval: { pin: masterPin, reason: "Owner history edit", approvedBy: deviceName || "owner" },
         items
       };

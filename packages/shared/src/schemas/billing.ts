@@ -53,6 +53,7 @@ export const historyEditBillSchema = z.object({
   saveMode: historyEditSaveModeSchema.default("save_print"),
   items: z.array(orderItemInputSchema).min(1),
   masterApproval: masterApprovalSchema,
+  customerName: billCustomerNameSchema,
   printerSlot: billPrinterSlotSchema.default("default"),
   discountType: z.enum(["amount", "percent"]).optional(),
   discountValue: z.number().min(0).optional(),
