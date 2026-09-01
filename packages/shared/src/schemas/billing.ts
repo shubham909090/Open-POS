@@ -25,11 +25,15 @@ export const billAdjustmentSchema = z.object({
   tipPaise: z.number().int().min(0).optional()
 });
 
+export const billCustomerNameSchema = z.string().trim().max(80).optional();
+
 export const billPrintDestinationSchema = z.object({
   printerSlot: billPrinterSlotSchema.default("default")
 });
 
-export const generateBillSchema = billPrintDestinationSchema.merge(billAdjustmentSchema);
+export const generateBillSchema = billPrintDestinationSchema.merge(billAdjustmentSchema).extend({
+  customerName: billCustomerNameSchema
+});
 
 export const reprintBillSchema = reprintKotSchema.extend({
   printerSlot: billPrinterSlotSchema.default("default"),

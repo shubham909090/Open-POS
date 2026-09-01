@@ -325,7 +325,7 @@ export default function App() {
           onChangeItemNote={changeItemNote}
           onShiftTable={(tableId) => void shiftTable(tableId)}
           onShiftItem={(orderItemId, quantity, toTableId) => void shiftItem(orderItemId, quantity, toTableId)}
-          onGenerateBill={() => void generateBillForSelectedTable()}
+          onGenerateBill={(customerName) => void generateBillForSelectedTable(customerName)}
           onSaveOrderState={(saveMode, stateItems, approval) => void saveOrderStateForSelectedTable(saveMode, stateItems, approval)}
           onReprintBill={(pin, reason) => void reprintSelectedBill(pin, reason)}
           onMarkNc={(pin, reason) => void markSelectedBillNc(pin, reason)}

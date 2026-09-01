@@ -161,6 +161,7 @@ function BillingHistoryPanel({
                     <Text style={styles.historyAmount}>Rs {formatRupees(historyBill.finalTotalPaise)}</Text>
                   </View>
                   {historyBill.modified ? <Text style={styles.historyModifiedTag}>Modified</Text> : null}
+                  {historyBill.customerName ? <Text style={styles.historyMeta}>Name: {historyBill.customerName}</Text> : null}
                   <Text style={styles.historyMeta}>Table {historyBill.tableName} · paid Rs {formatRupees(historyBill.paidPaise)}</Text>
                   <View style={styles.historyItemLines}>
                     {previewItems.length ? (

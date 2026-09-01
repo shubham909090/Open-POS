@@ -1,4 +1,4 @@
-import type { BillAdjustmentInput, BillPrinterSlot, DomainEvent, SettleBillInput } from "@gaurav-pos/shared";
+import type { BillPrinterSlot, DomainEvent, GenerateBillInput, SettleBillInput } from "@gaurav-pos/shared";
 import { eq, sql } from "drizzle-orm";
 
 import type { HubOrm, SqliteDatabase } from "../../db/database.js";
@@ -68,7 +68,7 @@ export type BillLifecycleContext = {
   appendEvent: (type: string, aggregateType: string, aggregateId: string, payload: unknown) => DomainEvent;
 };
 
-export function generateBill(ctx: BillLifecycleContext, orderId: string, printerSlot: BillPrinterSlot = "default", input: BillAdjustmentInput = {}): GenerateBillResult {
+export function generateBill(ctx: BillLifecycleContext, orderId: string, printerSlot: BillPrinterSlot = "default", input: GenerateBillInput = {}): GenerateBillResult {
   const run = ctx.db.transaction(() => {
     const order = ctx.requireEditableOrder(orderId);
     const table = ctx.requireTable(order.table_id);
@@ -79,6 +79,7 @@ export function generateBill(ctx: BillLifecycleContext, orderId: string, printer
     const discountPaise = input.discountValue === undefined ? 0 : calculateDiscountPaise(totals.totalPaise, input);
     const tipPaise = input.tipPaise ?? 0;
     const finalTotalPaise = Math.max(0, totals.totalPaise - discountPaise + tipPaise);
+    const customerName = normalizeBillCustomerName(input.customerName);
     const billId = makeId("bill");
     const billNumber = ctx.nextBillNumber();
     const now = new Date().toISOString();
@@ -89,6 +90,7 @@ export function generateBill(ctx: BillLifecycleContext, orderId: string, printer
         id: billId,
         billNumber,
         orderId,
+        customerName,
         status: "pending",
         subtotalPaise: totals.subtotalPaise,
         taxPaise: totals.taxPaise,
@@ -120,11 +122,16 @@ export function generateBill(ctx: BillLifecycleContext, orderId: string, printer
     });
     ctx.orm.update(bills).set({ printCount: sql`${bills.printCount} + 1` }).where(eq(bills.id, billId)).run();
 
-    ctx.appendEvent("bill.generated", "bill", billId, { orderId, billNumber, totalPaise: totals.totalPaise, discountPaise, tipPaise, finalTotalPaise, taxBreakdown: totals.taxBreakdown, printJobId });
+    ctx.appendEvent("bill.generated", "bill", billId, { orderId, billNumber, customerName, totalPaise: totals.totalPaise, discountPaise, tipPaise, finalTotalPaise, taxBreakdown: totals.taxBreakdown, printJobId });
     return { billId, billNumber, totalPaise: totals.totalPaise, finalTotalPaise, printJobId };
   });
 
   return run();
+}
+
+function normalizeBillCustomerName(value: string | undefined): string | null {
+  const trimmed = value?.trim() ?? "";
+  return trimmed ? trimmed : null;
 }
 
 export function settleBill(ctx: BillLifecycleContext, billId: string, input: SettleBillInput): SettleBillResult {

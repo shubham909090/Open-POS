@@ -27,6 +27,7 @@ export interface ReportBillSummary {
   billId: string;
   billNumber?: number;
   orderId: string;
+  customerName?: string | null;
   tableName: string;
   status: string;
   subtotalPaise?: number;

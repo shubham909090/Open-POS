@@ -63,7 +63,7 @@ function TicketScreen({
   onChangeItemNote: (index: number, note: string) => void;
   onShiftTable: (tableId: string) => void;
   onShiftItem: (orderItemId: string, quantity: number, toTableId: string) => void;
-  onGenerateBill: () => void;
+  onGenerateBill: (customerName?: string) => void;
   onSaveOrderState: (saveMode: OrderStateSaveMode, items: MobileOrderStateItem[], approval?: { pin: string; reason: string }) => void;
   onReprintBill: (pin: string, reason: string) => void;
   onMarkNc: (pin: string, reason: string) => void;

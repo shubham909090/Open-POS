@@ -13,6 +13,7 @@ export function buildBillTicket(input: {
     | "id"
     | "bill_number"
     | "order_id"
+    | "customer_name"
     | "subtotal_paise"
     | "tax_paise"
     | "total_paise"
@@ -39,6 +40,7 @@ export function buildBillTicket(input: {
   return {
     tableName: input.tableName,
     billId: String(input.bill.bill_number || input.bill.id),
+    customerName: input.bill.customer_name,
     items: billableItems.map((item) => ({
       name: item.name_snapshot,
       variantName: item.variant_name_snapshot || null,

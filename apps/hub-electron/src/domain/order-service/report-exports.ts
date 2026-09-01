@@ -131,6 +131,7 @@ function buildBillHistoryCsv(rows: DailyReportSnapshotRow[]): string {
       row.business_date,
       bill.billNumber ?? "",
       bill.billId,
+      bill.customerName ?? "",
       bill.tableName,
       bill.status,
       money(bill.subtotalPaise ?? 0),
@@ -146,7 +147,7 @@ function buildBillHistoryCsv(rows: DailyReportSnapshotRow[]): string {
       bill.modified ? "yes" : "no"
     ])
   );
-  return csv([["business_date", "bill_number", "bill_id", "table", "status", "subtotal", "tax", "total", "discount", "tip", "final_total", "paid", "settled_at", "payments", "is_nc", "modified"], ...records]);
+  return csv([["business_date", "bill_number", "bill_id", "customer_name", "table", "status", "subtotal", "tax", "total", "discount", "tip", "final_total", "paid", "settled_at", "payments", "is_nc", "modified"], ...records]);
 }
 
 function buildBillItemsCsv(rows: DailyReportSnapshotRow[]): string {

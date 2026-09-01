@@ -33,6 +33,7 @@ export interface KotTicket {
 export interface BillTicket {
   tableName: string;
   billId: string;
+  customerName?: string | null;
   items?: BillTicketItem[];
   subtotalPaise: number;
   taxPaise: number;
@@ -374,6 +375,7 @@ export function renderKotTicketForPrint(ticket: KotTicket): string {
 
 function buildBillTicketLines(ticket: BillTicket): TicketLine[] {
   const width = ticketWidth(ticket.lineWidthChars);
+  const customerName = ticket.customerName?.trim();
   const restaurantAlign = sectionAlign(ticket.sectionStyles, "restaurantName", ticket.headerAlign ?? "center");
   const addressAlign = sectionAlign(ticket.sectionStyles, "address", ticket.headerAlign ?? "center");
   const headerAlign = sectionAlign(ticket.sectionStyles, "header", ticket.headerAlign ?? "center");
@@ -385,6 +387,7 @@ function buildBillTicketLines(ticket: BillTicket): TicketLine[] {
     ...(ticket.restaurantAddress ? sectionLines(alignTicketText(ticket.restaurantAddress, width, addressAlign), "address") : []),
     ...(ticket.header ? sectionLines(alignTicketText(ticket.header, width, headerAlign), "header") : []),
     ...(ticket.showBillId === false ? [] : sectionLines(alignTicketText(`BILL ${ticket.billId}`, width, titleAlign), "title")),
+    ...(customerName ? sectionLines(alignTicketText(wrapTicketText(`Name: ${customerName}`, width).join("\n"), width, metadataAlign), "metadata") : []),
     ...(ticket.showNcReprintRevision === false
       ? []
       : [

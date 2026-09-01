@@ -27,6 +27,7 @@ describe("OrderService report exports", () => {
           billId: "bill-export-1",
           billNumber: 12,
           orderId: "order-export-1",
+          customerName: "Sharma Family",
           tableName: "T1",
           status: "paid",
           subtotalPaise: 12_000,
@@ -63,6 +64,8 @@ describe("OrderService report exports", () => {
     expect(zip.readAsText("daily-totals.csv")).toContain("2026-05-01,1,120.00,30.00,10.00,100.00,60.00,40.00,0.00,0.00,100.00");
     expect(zip.readAsText("category-totals.csv")).toContain("2026-05-01,sg-food,Food,food,2,120.00,6.00,100.00");
     expect(zip.readAsText("item-totals.csv")).toContain("2026-05-01,item-dal-fry,Dal Fry,sg-food,Food,food,2,120.00");
+    expect(zip.readAsText("bill-history.csv")).toContain("business_date,bill_number,bill_id,customer_name,table");
+    expect(zip.readAsText("bill-history.csv")).toContain("2026-05-01,12,bill-export-1,Sharma Family,T1");
     expect(zip.readAsText("bill-history.csv")).toContain('cash:60.00 | upi:40.00:UPI-1');
     expect(zip.readAsText("bill-items.csv")).toContain("2026-05-01,12,bill-export-1,oi-1,item-dal-fry,,Dal Fry,sg-food,2,60.00,120.00");
 

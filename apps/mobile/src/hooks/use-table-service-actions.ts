@@ -167,7 +167,7 @@ export function useTableServiceActions({
     }
   }
 
-  async function generateBillForSelectedTable() {
+  async function generateBillForSelectedTable(customerName?: string) {
     if (!currentOrder?.order || !selectedTableId) {
       setMessage("Send items first, then generate the bill.");
       return;
@@ -176,8 +176,9 @@ export function useTableServiceActions({
       setSending(true);
       const printerSlot = await chooseBillPrinter("Print bill where?");
       if (!printerSlot) return;
-      const scope = { orderId: currentOrder.order.id, printerSlot };
-      await client.generateBill(currentOrder.order.id, { idempotencyKey: operationKey("mobile-bill-generate", scope), printerSlot });
+      const trimmedCustomerName = customerName?.trim() || undefined;
+      const scope = { orderId: currentOrder.order.id, printerSlot, customerName: trimmedCustomerName };
+      await client.generateBill(currentOrder.order.id, { idempotencyKey: operationKey("mobile-bill-generate", scope), printerSlot, customerName: trimmedCustomerName });
       await refresh(false);
       await loadTableOrder(selectedTableId);
       setMessage("Bill generated and print queued for this table.");

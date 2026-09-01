@@ -7,6 +7,7 @@ type BillSummaryRow = {
   bill_id: string;
   bill_number: number;
   order_id: string;
+  customer_name: string | null;
   table_name: string;
   status: string;
   subtotal_paise: number;
@@ -90,7 +91,7 @@ export function buildDaySummary(db: SqliteDatabase, posDayId: string): DaySummar
     .prepare(
       `SELECT b.id AS bill_id, b.bill_number, b.order_id, b.status, b.subtotal_paise, b.tax_paise,
         b.total_paise, b.discount_paise, b.tip_paise, b.final_total_paise, b.settled_at,
-        b.is_nc, b.nc_reason, b.revision_number, t.name AS table_name
+        b.is_nc, b.nc_reason, b.revision_number, b.customer_name, t.name AS table_name
        FROM bills b
        JOIN orders o ON o.id = b.order_id
        JOIN restaurant_tables t ON t.id = o.table_id
@@ -278,6 +279,7 @@ export function buildDaySummary(db: SqliteDatabase, posDayId: string): DaySummar
       billId: bill.bill_id,
       billNumber: bill.bill_number,
       orderId: bill.order_id,
+      customerName: bill.customer_name,
       tableName: bill.table_name,
       status: bill.status,
       subtotalPaise: bill.subtotal_paise,

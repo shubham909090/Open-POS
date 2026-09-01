@@ -54,6 +54,7 @@ function ReportHistoryTable({
                 <tr key={bill.billId}>
                   <td className="strong-cell">
                     #{bill.billNumber ?? bill.billId}
+                    {bill.customerName ? <small>{bill.customerName}</small> : null}
                     {bill.modified ? <small className="modified-pill">Modified</small> : bill.revisionNumber ? <small>rev {bill.revisionNumber}</small> : null}
                     {bill.isNc ? <small className="nc-pill">NC</small> : null}
                     {bill.discountPaise > 0 ? <small className="discount-pill">Discount</small> : null}

@@ -24,7 +24,7 @@ function CaptainBillingPanel({
   currentOrder: HubOrder | null;
   hasNewItems: boolean;
   sending: boolean;
-  onGenerateBill: () => void;
+  onGenerateBill: (customerName?: string) => void;
   onReprintBill: (pin: string, reason: string) => void;
   onMarkNc: (pin: string, reason: string) => void;
   onReviseBill: (pin: string, reason: string) => void;
@@ -41,12 +41,14 @@ function CaptainBillingPanel({
   const [discountValue, setDiscountValue] = useState("0");
   const [tipValue, setTipValue] = useState("0");
   const [reference, setReference] = useState("");
+  const [customerName, setCustomerName] = useState("");
   const [paymentInputs, setPaymentInputs] = useState<Record<PaymentMethod, string>>({ cash: "0", upi: "0", card: "0", online: "0" });
   const [managerPin, setManagerPin] = useState("");
   const [managerReason, setManagerReason] = useState("");
   const [approvalAction, setApprovalAction] = useState<"reprint" | "nc" | "revise" | null>(null);
 
   useEffect(() => {
+    setCustomerName(bill?.customer_name ?? "");
     if (!bill) return;
     setDiscountType("amount");
     setDiscountValue(paiseToRupeeInput(bill.discount_paise ?? 0));
@@ -55,7 +57,7 @@ function CaptainBillingPanel({
     setApprovalAction(null);
     setManagerPin("");
     setManagerReason("");
-  }, [bill?.id]);
+  }, [currentOrder?.order?.id, bill?.id]);
 
   if (!canBill) return null;
 
@@ -111,13 +113,30 @@ function CaptainBillingPanel({
       {!currentOrder?.order ? (
         <Text style={styles.smallMuted}>Send items for this table before billing.</Text>
       ) : !bill ? (
-        <Pressable style={[styles.primaryButton, styles.heroSendButton, sending && styles.buttonDisabled]} disabled={sending} onPress={onGenerateBill}>
-          <Text style={styles.primaryButtonText}>{sending ? "Working..." : "Generate and Print Bill"}</Text>
-        </Pressable>
+        <>
+          <UncontrolledInput
+            inputKey={`bill-name-${currentOrder.order.id}`}
+            label="Bill name"
+            defaultValue={customerName}
+            onChangeText={(value) => setCustomerName(value.slice(0, 80))}
+            placeholder="Customer name, optional"
+            autoCapitalize="words"
+            autoCorrect={false}
+            returnKeyType="done"
+          />
+          <Pressable
+            style={[styles.primaryButton, styles.heroSendButton, sending && styles.buttonDisabled]}
+            disabled={sending}
+            onPress={() => onGenerateBill(customerName)}
+          >
+            <Text style={styles.primaryButtonText}>{sending ? "Working..." : "Generate and Print Bill"}</Text>
+          </Pressable>
+        </>
       ) : (
         <>
           <View style={styles.billTotals}>
             <Text style={styles.sentName}>Bill {bill.revision_number ? `rev ${bill.revision_number}` : ""}</Text>
+            {bill.customer_name ? <Text style={styles.muted}>Name: {bill.customer_name}</Text> : null}
             <Text style={styles.muted}>Items Rs {formatRupees(bill.total_paise)}</Text>
             <Text style={styles.muted}>Already paid Rs {formatRupees(existingPaidPaise)}</Text>
             <Text style={[styles.totalText, { fontSize: 20 }]}>Balance Rs {formatRupees(balancePaise)}</Text>

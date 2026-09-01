@@ -2,6 +2,7 @@ export type BillAdjustmentPayload = {
   discountType?: "amount" | "percent";
   discountValue?: number;
   tipPaise?: number;
+  customerName?: string;
 };
 
 export interface OrderItem {
@@ -29,6 +30,7 @@ export interface OrderItem {
 export interface Bill {
   id: string;
   order_id: string;
+  customer_name?: string | null;
   status: "pending" | "paid" | string;
   total_paise: number;
   discount_paise: number;

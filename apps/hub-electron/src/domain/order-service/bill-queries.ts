@@ -8,6 +8,7 @@ const billSelection = {
   id: bills.id,
   bill_number: bills.billNumber,
   order_id: bills.orderId,
+  customer_name: bills.customerName,
   status: bills.status,
   subtotal_paise: bills.subtotalPaise,
   tax_paise: bills.taxPaise,

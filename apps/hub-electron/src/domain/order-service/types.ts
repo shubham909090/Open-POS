@@ -120,6 +120,7 @@ export interface BillRow {
   id: string;
   bill_number: number;
   order_id: string;
+  customer_name: string | null;
   status: string;
   subtotal_paise: number;
   tax_paise: number;
@@ -192,6 +193,7 @@ export interface DaySummary {
     billId: string;
     billNumber?: number;
     orderId: string;
+    customerName?: string | null;
     tableName: string;
     status: string;
     subtotalPaise: number;

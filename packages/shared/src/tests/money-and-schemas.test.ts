@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { calculateLineTotal, calculateTax, formatCompactInr, formatInr } from "../money.js";
 import { getOrderStateSignature } from "../order-state-signature.js";
-import { billPrintDestinationSchema, billPrinterProfileSchema, createMenuItemSchema, createPairingCodeSchema, markNcBillSchema, printLayoutSettingsSchema, reportRangeQuerySchema, setMasterPinSchema, submitOrderSchema, updateReceiptPrinterSchema } from "../schemas.js";
+import { billPrintDestinationSchema, billPrinterProfileSchema, createMenuItemSchema, createPairingCodeSchema, generateBillSchema, markNcBillSchema, printLayoutSettingsSchema, reportRangeQuerySchema, setMasterPinSchema, submitOrderSchema, updateReceiptPrinterSchema } from "../schemas.js";
 import { getTableDisplayState, isTransferTargetTable, tableDisplayClass, tableDisplayLabel } from "../table-state.js";
 
 describe("shared money helpers", () => {
@@ -55,6 +55,12 @@ describe("shared command schemas", () => {
     expect(submitOrderSchema.parse({ ...input, items: [{ menuItemId: "item-1", quantity: 1, note: "No onion" }] }).items[0]?.note).toBe("No onion");
     expect(submitOrderSchema.parse({ ...input, printMode: "kot" }).printMode).toBe("kot");
     expect(() => submitOrderSchema.parse({ ...input, printMode: "paperless" })).toThrow();
+  });
+
+  it("accepts an optional customer name when generating a bill", () => {
+    expect(generateBillSchema.parse({ customerName: "  Sharma Family  " }).customerName).toBe("Sharma Family");
+    expect(generateBillSchema.parse({}).customerName).toBeUndefined();
+    expect(() => generateBillSchema.parse({ customerName: "x".repeat(81) })).toThrow();
   });
 
   it("validates printer mode and rejects invalid pairing inputs", () => {

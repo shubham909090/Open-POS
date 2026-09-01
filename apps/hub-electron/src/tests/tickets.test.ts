@@ -31,6 +31,23 @@ describe("ticket rendering", () => {
     expect(payload).not.toContain("₹");
   });
 
+  it("prints an optional bill name below the bill number", () => {
+    const payload = renderBillTicket({
+      tableName: "T1",
+      billId: "BILL-1",
+      customerName: "Sharma Family",
+      createdAt: "2026-05-15T00:00:00.000Z",
+      subtotalPaise: 24_690,
+      taxPaise: 0,
+      totalPaise: 24_690,
+      lineWidthChars: 32
+    });
+
+    expect(payload).toContain("Name: Sharma Family");
+    expect(payload.indexOf("BILL BILL-1")).toBeLessThan(payload.indexOf("Name: Sharma Family"));
+    expect(payload.indexOf("Name: Sharma Family")).toBeLessThan(payload.indexOf("Table: T1"));
+  });
+
   it("uses wider centered layout for 80mm tickets", () => {
     const payload = renderBillTicket({
       tableName: "T1",

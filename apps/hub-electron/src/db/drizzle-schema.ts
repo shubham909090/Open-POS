@@ -262,6 +262,7 @@ export const bills = sqliteTable(
     id: text("id").primaryKey(),
     billNumber: integer("bill_number").notNull().default(0),
     orderId: text("order_id").notNull().references(() => orders.id),
+    customerName: text("customer_name"),
     status: text("status").notNull(),
     subtotalPaise: integer("subtotal_paise").notNull(),
     taxPaise: integer("tax_paise").notNull(),

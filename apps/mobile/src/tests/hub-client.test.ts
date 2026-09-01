@@ -328,7 +328,7 @@ describe("HubClient", () => {
     const client = new HubClient("http://hub.local:3737", "captain-token");
     const approval = { managerApproval: { pin: "1234", reason: "Customer copy", approvedBy: "Manager" } };
 
-    await client.generateBill("order-1", { idempotencyKey: "generate-once" });
+    await client.generateBill("order-1", { idempotencyKey: "generate-once", customerName: "  Sharma Family  " });
     await client.printBill("bill-1", { idempotencyKey: "print-once" });
     await client.reprintBill("bill-1", approval, { idempotencyKey: "reprint-once" });
     await client.historyReprintBill("bill-1", { idempotencyKey: "history-reprint-once" });
@@ -360,7 +360,7 @@ describe("HubClient", () => {
       expect.objectContaining({
         method: "POST",
         headers: expect.objectContaining({ "Idempotency-Key": "generate-once" }),
-        body: JSON.stringify({ printerSlot: "default" })
+        body: JSON.stringify({ printerSlot: "default", customerName: "Sharma Family" })
       })
     );
     expect(fetchMock).toHaveBeenNthCalledWith(

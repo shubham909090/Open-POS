@@ -31,6 +31,39 @@ describe("OrderService billing and bill printing", () => {
     database.close();
   });
 
+  it("prints and keeps an optional bill name for customer reprints", () => {
+    const { database, orderService } = createTestHub();
+    orderService.setManagerPin({ newPin: "1234", updatedBy: "admin" });
+
+    const order = orderService.submitOrder({
+      tableId: "table-t1",
+      captainId: "waiter-1",
+      pax: 1,
+      orderType: "dine_in",
+      items: [{ menuItemId: "item-dal-fry", quantity: 1 }]
+    });
+    const bill = orderService.generateBill(order.orderId, "default", {
+      customerName: "  Sharma Family  "
+    });
+
+    const savedBill = database.db.prepare("SELECT customer_name FROM bills WHERE id = ?").get(bill.billId) as { customer_name: string | null };
+    const firstPrint = database.db.prepare("SELECT payload FROM print_jobs WHERE id = ?").get(bill.printJobId) as { payload: string };
+    const summary = orderService.getCurrentBusinessDaySummary() as { billSummaries: Array<{ customerName?: string | null }> };
+    expect(savedBill.customer_name).toBe("Sharma Family");
+    expect(stripPrintStyleMarkers(firstPrint.payload)).toContain("Name: Sharma Family");
+    expect(summary.billSummaries[0]?.customerName).toBe("Sharma Family");
+
+    const reprint = orderService.reprintBill(bill.billId, {
+      requestedBy: "captain-1",
+      reason: "Customer copy",
+      managerApproval: { pin: "1234", reason: "Customer copy", approvedBy: "manager" }
+    });
+    const reprintJob = database.db.prepare("SELECT payload FROM print_jobs WHERE id = ?").get(reprint.printJobId) as { payload: string };
+    expect(stripPrintStyleMarkers(reprintJob.payload)).toContain("Name: Sharma Family");
+
+    database.close();
+  });
+
   it("keeps itemized dish lines on manager-approved bill reprints", () => {
     const { database, orderService } = createTestHub();
     orderService.setManagerPin({ newPin: "1234", updatedBy: "admin" });

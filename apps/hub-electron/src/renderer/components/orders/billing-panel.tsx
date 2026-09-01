@@ -45,6 +45,7 @@ export function BillingPanel({
   const [discountType, setDiscountType] = useState<"amount" | "percent">("amount");
   const [discount, setDiscount] = useState("0");
   const [tip, setTip] = useState("0");
+  const [customerName, setCustomerName] = useState("");
   const [receivedAmount, setReceivedAmount] = useState("");
   const [reference, setReference] = useState("");
   const [payments, setPayments] = useState({ cash: "0", upi: "0", card: "0", online: "0" });
@@ -70,9 +71,10 @@ export function BillingPanel({
     (): BillAdjustmentPayload => ({
       discountType,
       discountValue: discountType === "percent" ? Number(discount || 0) : discountPaise,
-      tipPaise
+      tipPaise,
+      customerName: customerName.trim() || undefined
     }),
-    [discountType, discount, discountPaise, tipPaise]
+    [discountType, discount, discountPaise, tipPaise, customerName]
   );
 
   const settle = useMutation({
@@ -216,6 +218,10 @@ export function BillingPanel({
     setTip(String((bill.tip_paise ?? 0) / 100));
   }, [bill?.id]);
 
+  useEffect(() => {
+    setCustomerName(bill?.customer_name ?? "");
+  }, [bill?.id, tableOrder?.order?.id]);
+
   if (!tableOrder?.order) {
     return <EmptyState title="No active order" description="Add dishes and send them before generating a bill." />;
   }
@@ -245,6 +251,24 @@ export function BillingPanel({
     </section>
   );
 
+  const billNameControl = (
+    <section className="bill-adjustments">
+      <div className="mini-title">
+        <strong>Bill name</strong>
+        <span>Optional print label</span>
+      </div>
+      <label>
+        Name on bill
+        <input
+          aria-label="Name on bill"
+          value={customerName}
+          onChange={(event) => setCustomerName(event.target.value.slice(0, 80))}
+          placeholder="Customer name, optional"
+        />
+      </label>
+    </section>
+  );
+
   if (!bill) {
     return (
       <div className="bill-start bill-start-with-adjustments">
@@ -253,6 +277,7 @@ export function BillingPanel({
           <Metric label="Discount" value={formatInr(discountPaise)} />
           <Metric label="Final bill" value={formatInr(finalTotal)} />
         </div>
+        {billNameControl}
         {adjustmentControls}
         <button type="button" disabled={sentTotal <= 0 || generating} onClick={() => generateBill(billAdjustments())}>
           {generating ? "Generating..." : "Generate bill"}
@@ -268,6 +293,7 @@ export function BillingPanel({
         <Metric label="Already paid" value={formatInr(existingPaid)} />
         <Metric label="Balance" value={formatInr(Math.max(0, finalTotal - existingPaid))} />
       </div>
+      {bill.customer_name ? <p className="text-sm text-muted">Name: {bill.customer_name}</p> : null}
       {bill.revision_number ? <p className="text-sm text-muted">Bill revision {bill.revision_number}{bill.is_nc ? ` · NC: ${bill.nc_reason ?? ""}` : ""}</p> : null}
       {adjustmentControls}
       <section className="bill-payment-section">

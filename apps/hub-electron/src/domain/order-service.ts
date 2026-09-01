@@ -11,6 +11,7 @@ import {
   type CreateSaleGroupInput,
   type CreateTableInput,
   type DomainEvent,
+  type GenerateBillInput,
   type HistoryEditBillInput,
   type HubConnectionSettingsInput,
   type KotType,
@@ -472,7 +473,7 @@ export class OrderService {
     return updatePrintLayoutModel(this.settingsActionContext(), input);
   }
 
-  generateBill(orderId: string, printerSlot: BillPrinterSlot = "default", input: BillAdjustmentInput = {}): { billId: string; billNumber: number; totalPaise: number; finalTotalPaise: number; printJobId: string } {
+  generateBill(orderId: string, printerSlot: BillPrinterSlot = "default", input: GenerateBillInput = {}): { billId: string; billNumber: number; totalPaise: number; finalTotalPaise: number; printJobId: string } {
     return generateBillModel(this.billLifecycleContext(), orderId, printerSlot, input);
   }
 
@@ -1024,7 +1025,7 @@ export class OrderService {
   }
 
   private buildBillTicket(input: {
-    bill: Pick<BillRow, "id" | "bill_number" | "order_id" | "subtotal_paise" | "tax_paise" | "total_paise" | "discount_paise" | "tip_paise" | "final_total_paise" | "revision_number" | "nc_reason">;
+    bill: Pick<BillRow, "id" | "bill_number" | "order_id" | "customer_name" | "subtotal_paise" | "tax_paise" | "total_paise" | "discount_paise" | "tip_paise" | "final_total_paise" | "revision_number" | "nc_reason">;
     tableName: string;
     createdAt: string;
     discountPaise?: number;

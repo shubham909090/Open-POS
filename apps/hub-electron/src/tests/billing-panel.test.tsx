@@ -99,17 +99,19 @@ describe("hub billing shortcuts", () => {
     expect(screen.queryByLabelText("Split payment breakdown")).toBeNull();
   });
 
-  it("lets discount be entered before bill generation and sends it with generate bill", async () => {
+  it("lets discount and bill name be entered before bill generation", async () => {
     const { BillingPanel } = await importBillingPanel();
     renderBillingPanel(BillingPanel, { bill: null });
 
+    fireEvent.change(screen.getByLabelText("Name on bill"), { target: { value: "Sharma Family" } });
     fireEvent.change(screen.getByLabelText("Discount amount"), { target: { value: "25" } });
     fireEvent.click(screen.getByRole("button", { name: "Generate bill" }));
 
     expect(generateBillMock).toHaveBeenCalledWith(expect.objectContaining({
       discountType: "amount",
       discountValue: 2500,
-      tipPaise: 0
+      tipPaise: 0,
+      customerName: "Sharma Family"
     }));
   });
 

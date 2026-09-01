@@ -85,6 +85,7 @@ export interface HubOrder {
   }>;
   bill: {
     id: string;
+    customer_name?: string | null;
     total_paise: number;
     discount_paise?: number;
     tip_paise?: number;
@@ -118,6 +119,7 @@ export interface CurrentDaySummary {
     billId: string;
     billNumber?: number;
     orderId: string;
+    customerName?: string | null;
     tableName: string;
     status: string;
     subtotalPaise?: number;
@@ -209,4 +211,5 @@ export interface MasterApprovalPayload {
 export interface RequestOptions {
   idempotencyKey?: string;
   printerSlot?: BillPrinterSlot;
+  customerName?: string;
 }

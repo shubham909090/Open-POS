@@ -188,10 +188,11 @@ export class HubClient {
   }
 
   async generateBill(orderId: string, options: RequestOptions = {}): Promise<{ billId: string; billNumber: number; totalPaise: number; printJobId: string }> {
+    const customerName = options.customerName?.trim();
     return this.request(`/bills/${orderId}/generate`, {
       method: "POST",
       headers: { "Idempotency-Key": options.idempotencyKey ?? createIdempotencyKey("mobile-bill-generate") },
-      body: JSON.stringify({ printerSlot: options.printerSlot ?? "default" })
+      body: JSON.stringify({ printerSlot: options.printerSlot ?? "default", ...(customerName ? { customerName } : {}) })
     });
   }
 
