@@ -44,4 +44,4 @@ jobs:
             ${{ runner.temp }}/gpos-update-smoke/*.log
             ${{ runner.temp }}/gpos-update-smoke/*.json
             ${{ runner.temp }}/gpos-update-smoke/*.png
-            ${{ runner.temp }}/gpos-update-smoke/installer-file-operations.csv
+            ${{ runner.temp }}/gpos-update-smoke/previous-uninstaller.exe

@@ -42,6 +42,21 @@ try {
   if ($install.ExitCode -ne 0) { throw "Previous install failed: $($install.ExitCode)" }
   $appPath = Find-InstalledHub
   if ((Get-HubVersion $appPath) -ne $PreviousVersion) { throw "Previous version was not installed" }
+  $previousUninstaller = Join-Path $root "previous-uninstaller.exe"
+  Copy-Item (Join-Path (Split-Path $appPath -Parent) 'Uninstall Gaurav POS Hub.exe') $previousUninstaller
+  $env:SMOKE_UNINSTALLER = $previousUninstaller
+  node --input-type=module -e @'
+import { readFileSync } from 'node:fs';
+import { crc32 } from 'node:zlib';
+import { createHash } from 'node:crypto';
+const b = readFileSync(process.env.SMOKE_UNINSTALLER);
+for (let i = 512; i < b.length - 28; i += 512) {
+  if (b.readUInt32LE(i + 4) !== 0xdeadbeef || b.subarray(i + 8, i + 20).toString() !== 'NullsoftInst') continue;
+  const end = i + b.readUInt32LE(i + 24) - 4;
+  console.log(JSON.stringify({ offset: i, flags: b.readUInt32LE(i), end, size: b.length, stored: b.readUInt32LE(end), actual: crc32(b.subarray(512, end)), sha256: createHash('sha256').update(b).digest('hex') }));
+  break;
+}
+'@
 
   $env:HUB_HOST = "127.0.0.1"
   $env:HUB_PORT = "43737"
@@ -85,23 +100,12 @@ console.log(JSON.stringify(plan));
     if ($LASTEXITCODE -ne 0) { throw "Handoff generation failed" }
   } finally { Pop-Location }
   $plan = $planJson | ConvertFrom-Json
-  $procmonRoot = Join-Path $root "procmon"
-  Invoke-WebRequest "https://download.sysinternals.com/files/ProcessMonitor.zip" -OutFile (Join-Path $root "procmon.zip")
-  Expand-Archive (Join-Path $root "procmon.zip") $procmonRoot
-  $procmon = Join-Path $procmonRoot "Procmon64.exe"
-  Start-Process $procmon -ArgumentList @('/AcceptEula', '/Quiet', '/Minimized', '/BackingFile', (Join-Path $root 'capture.pml')) | Out-Null
-  Start-Process $procmon -ArgumentList '/WaitForIdle' -Wait
   $quotedArgs = $plan.args | ForEach-Object { '"' + $_ + '"' }
   $handoff = Start-Process $plan.filePath -ArgumentList $quotedArgs -PassThru
   Start-Sleep -Seconds 3
   if ((Get-HubVersion $appPath) -ne $PreviousVersion) { throw "Installer ran before the old app exited" }
   if (!$oldApp.CloseMainWindow()) { throw "Could not request a graceful Hub shutdown" }
   if (!$oldApp.WaitForExit(120000)) { throw "Old Hub did not exit cleanly" }
-  Start-Sleep -Seconds 30
-  Start-Process $procmon -ArgumentList '/Terminate', '/Quiet' -Wait
-  Start-Process $procmon -ArgumentList @('/AcceptEula', '/Quiet', '/OpenLog', (Join-Path $root 'capture.pml'), '/SaveAs', (Join-Path $root 'capture.csv')) -Wait
-  Import-Csv (Join-Path $root 'capture.csv') | Where-Object { $_.'Process Name' -match 'old-uninstaller' -or $_.Path -like '*@gaurav-poshub-electron*' } |
-    Export-Csv (Join-Path $root 'installer-file-operations.csv') -NoTypeInformation
   if (!$handoff.WaitForExit(180000)) { throw "Update handoff timed out" }
   if ($handoff.ExitCode -ne 0) { throw "Update handoff failed: $($handoff.ExitCode)" }
   if ((Get-HubVersion $appPath) -ne $version) { throw "Candidate version was not installed" }
@@ -135,6 +139,14 @@ console.log(JSON.stringify(plan));
         $stream.Dispose()
       } catch { [pscustomobject]@{ path = $_.TargetObject; error = $_.Exception.Message } }
     } | ConvertTo-Json | Set-Content (Join-Path $root "file-access-errors.json")
+  }
+  if ($failure.Exception.Message -eq "Update handoff timed out") {
+    Get-Process -Name "Gaurav POS Hub Setup $version" -ErrorAction SilentlyContinue | Stop-Process -Force
+    Write-Host "Diagnostic only: retry legacy uninstaller without CRC check in disposable CI"
+    $retry = Start-Process $previousUninstaller -ArgumentList "/NCRC /S /KEEP_APP_DATA /currentuser --updated _?=$(Split-Path $appPath -Parent)" -PassThru
+    $retryExited = $retry.WaitForExit(60000)
+    Write-Host "Legacy diagnostic exited: $retryExited; exit code: $($retry.ExitCode); app remains: $(Test-Path $appPath); database remains: $(Test-Path $env:HUB_DATABASE_PATH)"
+    if (!$retryExited) { $retry.Kill() }
   }
   throw $failure
 } finally {
