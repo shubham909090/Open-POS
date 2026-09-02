@@ -25,6 +25,15 @@ function Find-InstalledHub {
   return Join-Path (Split-Path $uninstaller -Parent) "Gaurav POS Hub.exe"
 }
 
+function Get-HubVersion([string]$AppPath) {
+  Write-Host "Installed executable: $AppPath; PE version: $((Get-Item $AppPath).VersionInfo.ProductVersion)"
+  $archive = Join-Path (Split-Path $AppPath -Parent) "resources/app.asar"
+  $packageVersion = node --input-type=commonjs -e "const asar = require(require.resolve('@electron/asar', { paths: ['./node_modules/.pnpm/node_modules'] })); console.log(JSON.parse(asar.extractFile(process.argv[1], 'package.json').toString('utf8')).version);" $archive
+  if ($LASTEXITCODE -ne 0) { throw "Could not read installed Hub package version" }
+  Write-Host "Installed package version: $packageVersion"
+  return $packageVersion.Trim()
+}
+
 try {
   gh release download "hub-v$PreviousVersion" --repo shubham909090/Open-POS --pattern "Gaurav-POS-Hub-Setup-$PreviousVersion.exe" --dir $root
   if ($LASTEXITCODE -ne 0) { throw "Previous installer download failed" }
@@ -32,7 +41,7 @@ try {
   $install = Start-Process $previousInstaller -ArgumentList "/S" -PassThru -Wait
   if ($install.ExitCode -ne 0) { throw "Previous install failed: $($install.ExitCode)" }
   $appPath = Find-InstalledHub
-  if ((Get-Item $appPath).VersionInfo.ProductVersion -ne $PreviousVersion) { throw "Previous version was not installed" }
+  if ((Get-HubVersion $appPath) -ne $PreviousVersion) { throw "Previous version was not installed" }
 
   $env:HUB_HOST = "127.0.0.1"
   $env:HUB_PORT = "43737"
@@ -42,6 +51,11 @@ try {
   $env:HUB_UPDATE_DIR = Join-Path $root "updates"
   $env:HUB_CONFIG_FILE = Join-Path $root "empty.env"
   New-Item -ItemType File -Force $env:HUB_CONFIG_FILE | Out-Null
+  # NSIS may relaunch through Explorer, which does not inherit this shell's environment.
+  $configRoot = Join-Path $env:APPDATA "Gaurav POS Hub"
+  New-Item -ItemType Directory -Force $configRoot | Out-Null
+  @("HUB_HOST=$env:HUB_HOST", "HUB_PORT=$env:HUB_PORT", "HUB_ADMIN_TOKEN=$env:HUB_ADMIN_TOKEN", "HUB_DATABASE_PATH=$env:HUB_DATABASE_PATH", "HUB_BACKUP_DIR=$env:HUB_BACKUP_DIR", "HUB_UPDATE_DIR=$env:HUB_UPDATE_DIR") |
+    Set-Content (Join-Path $configRoot "hub.env")
   $oldApp = Start-Process $appPath -PassThru
   Wait-ForHub
 
@@ -74,12 +88,12 @@ console.log(JSON.stringify(plan));
   $quotedArgs = $plan.args | ForEach-Object { '"' + $_ + '"' }
   $handoff = Start-Process $plan.filePath -ArgumentList $quotedArgs -PassThru
   Start-Sleep -Seconds 3
-  if ((Get-Item $appPath).VersionInfo.ProductVersion -ne $PreviousVersion) { throw "Installer ran before the old app exited" }
+  if ((Get-HubVersion $appPath) -ne $PreviousVersion) { throw "Installer ran before the old app exited" }
   if (!$oldApp.CloseMainWindow()) { throw "Could not request a graceful Hub shutdown" }
   if (!$oldApp.WaitForExit(120000)) { throw "Old Hub did not exit cleanly" }
   if (!$handoff.WaitForExit(180000)) { throw "Update handoff timed out" }
   if ($handoff.ExitCode -ne 0) { throw "Update handoff failed: $($handoff.ExitCode)" }
-  if ((Get-Item $appPath).VersionInfo.ProductVersion -ne $version) { throw "Candidate version was not installed" }
+  if ((Get-HubVersion $appPath) -ne $version) { throw "Candidate version was not installed" }
   Wait-ForHub
 
   Invoke-RestMethod "http://127.0.0.1:43737/admin/session/unlock" -Method Post -Headers $headers -ContentType "application/json" -Body '{"pin":"4321"}' | Out-Null
