@@ -117,6 +117,26 @@ console.log(JSON.stringify(plan));
     $graphics.Dispose()
     $bitmap.Dispose()
   } catch { Write-Warning "Could not capture desktop: $_" }
+  if ($appPath -and (Test-Path $appPath)) {
+    Get-ChildItem (Split-Path $appPath -Parent) -Recurse -File | ForEach-Object {
+      try {
+        $stream = [System.IO.File]::Open($_.FullName, [System.IO.FileMode]::Open, [System.IO.FileAccess]::ReadWrite, [System.IO.FileShare]::None)
+        $stream.Dispose()
+      } catch { [pscustomobject]@{ path = $_.TargetObject; error = $_.Exception.Message } }
+    } | ConvertTo-Json | Set-Content (Join-Path $root "file-access-errors.json")
+  }
+  if ($failure.Exception.Message -eq "Update handoff timed out") {
+    Get-Process -Name "Gaurav POS Hub Setup $version" -ErrorAction SilentlyContinue | Stop-Process -Force
+    $sameVolumeTemp = Join-Path (Split-Path (Split-Path $appPath -Parent) -Parent) "gpos-update-smoke-temp"
+    New-Item -ItemType Directory -Force $sameVolumeTemp | Out-Null
+    $env:TEMP = $sameVolumeTemp
+    $env:TMP = $sameVolumeTemp
+    Write-Host "Diagnostic retry with same-volume TEMP: $sameVolumeTemp"
+    $retry = Start-Process $env:SMOKE_INSTALLER -ArgumentList @('--updated', '/S', '--force-run') -PassThru
+    $retryExited = $retry.WaitForExit(90000)
+    Write-Host "Diagnostic retry exited: $retryExited; exit code: $($retry.ExitCode); version: $(Get-HubVersion $appPath)"
+    if (!$retryExited) { $retry.Kill() }
+  }
   throw $failure
 } finally {
   if (Test-Path (Join-Path $root "install-handoff.log")) { Get-Content (Join-Path $root "install-handoff.log") }
