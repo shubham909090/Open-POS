@@ -215,7 +215,7 @@ function validatePreloadBridge(): void {
   const appAsar = join(hubRoot, "release", "win-unpacked", "resources", "app.asar");
   const result = spawnSync(process.execPath, [asarBin, "list", appAsar], { encoding: "utf8" });
   if (result.status !== 0) throw new Error("Could not inspect app.asar");
-  const entries = new Set(result.stdout.split(/\r?\n/).filter(Boolean));
+  const entries = new Set(result.stdout.split(/\r?\n/).filter(Boolean).map((entry) => entry.replaceAll("\\", "/")));
   for (const entry of ["/dist/electron.js", "/preload.cjs"]) {
     if (!entries.has(entry)) throw new Error(`Packaged app is missing ${entry}`);
   }
