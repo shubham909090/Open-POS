@@ -233,7 +233,9 @@ The `Windows Hub Update Smoke` workflow builds on a clean Windows x64 runner,
 installs the preceding stable release, and starts it with an isolated database.
 It verifies that the update handoff waits for the old Hub to exit, installs the
 candidate version, preserves a saved setting, and passes the installed SQLite
-self-test. Do not publish artifacts from a failed run.
+self-test. This tests the candidate handoff against an installed old version;
+it does not replace or prove the updater code already shipped inside that old
+version. Do not publish artifacts from a failed run.
 
 The Windows installer handoff records its progress and errors in
 `install-handoff.log` in the configured Hub update directory. It waits for the

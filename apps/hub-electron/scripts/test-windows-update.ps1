@@ -21,7 +21,7 @@ function Find-InstalledHub {
   $entry = Get-ItemProperty "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*" |
     Where-Object { $_.DisplayName -like "Gaurav POS Hub*" } | Select-Object -First 1
   if (!$entry) { throw "Hub uninstall registration is missing" }
-  $uninstaller = $entry.UninstallString.Trim('"')
+  $uninstaller = if ($entry.UninstallString -match '^"([^"]+)"') { $Matches[1] } else { $entry.UninstallString }
   return Join-Path (Split-Path $uninstaller -Parent) "Gaurav POS Hub.exe"
 }
 

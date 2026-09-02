@@ -309,6 +309,9 @@ describe("Hub API print, catalog, and report routes", () => {
       });
       const headers = { "x-device-token": "test-admin-token" };
       const payload = { masterApproval: { pin: "9876", reason: "Reset liquor balances", approvedBy: "owner" } };
+      await setTestManagerPin(app);
+      const captain = await pairTestDevice(app, "captain", "Stock captain");
+      expect((await app.inject({ method: "POST", url: "/alcohol/stock/reset", headers: { "x-device-token": captain.token }, payload })).statusCode).toBe(403);
       expect((await app.inject({ method: "POST", url: "/alcohol/stock/reset", payload })).statusCode).toBe(401);
       expect((await app.inject({ method: "POST", url: "/alcohol/stock/reset", headers, payload: {} })).statusCode).toBe(400);
       expect((await app.inject({ method: "POST", url: "/alcohol/stock/reset", headers, payload: { masterApproval: { ...payload.masterApproval, pin: "1234" } } })).statusCode).toBe(403);
