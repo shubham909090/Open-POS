@@ -34,6 +34,7 @@ export function writeWindowsInstallerHandoff(input: {
     `  Get-Process -Name ${psQuote(win32.basename(input.appExecutablePath, ".exe"))} -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq ${psQuote(input.appExecutablePath)} } | Wait-Process -Timeout 120 -ErrorAction Stop`,
     `  Write-Output 'Hub exited. Starting the update installer...'`,
     `  $installer = ${startProcessCommand(input.installer)} -PassThru -ErrorAction Stop`,
+    "  Write-Output \"Installer process: $($installer.Id)\"",
     "  $installer.WaitForExit()",
     "  if ($installer.ExitCode -ne 0) { throw \"Installer failed with exit code $($installer.ExitCode).\" }",
     "  Write-Output 'Update installer completed successfully.'",
@@ -46,7 +47,8 @@ export function writeWindowsInstallerHandoff(input: {
     "exit $exitCode"
   ].join("\r\n");
   mkdirSync(dirname(input.scriptPath), { recursive: true });
-  writeFileSync(input.scriptPath, script);
+  // Windows PowerShell 5.1 needs a BOM to preserve Unicode installation paths.
+  writeFileSync(input.scriptPath, `\uFEFF${script}`);
   return {
     filePath: "powershell.exe",
     args: ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", input.scriptPath]

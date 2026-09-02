@@ -15,10 +15,12 @@ describe("windows update handoff", () => {
         logPath: join(root, "install-handoff.log"),
         appExecutablePath: "C:\\Program Files\\Gaurav POS Hub\\Gaurav POS Hub.exe",
         parentPid: 12345,
-        installer: { filePath: "C:\\Temp\\O'Hara & %data%\\setup.exe", args: ["--updated", "/S", "--force-run"] }
+        installer: { filePath: "C:\\Temp\\O'Hara & %data%\\Jos\u00e9\\setup.exe", args: ["--updated", "/S", "--force-run"] }
       });
       expect(plan).toEqual({ filePath: "powershell.exe", args: ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", scriptPath] });
       const script = readFileSync(scriptPath, "utf8");
+      expect(script.charCodeAt(0)).toBe(0xfeff);
+      expect(script).toContain("Jos\u00e9");
       expect(script).toContain("O''Hara & %data%");
       expect(script).toContain("$_.Path -eq");
       expect(script).toContain("Get-Process -Name 'Gaurav POS Hub'");

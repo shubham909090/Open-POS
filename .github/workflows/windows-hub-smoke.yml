@@ -34,8 +34,13 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: windows-hub-release-and-smoke
+          name: windows-hub-release
+          path: apps/hub-electron/release/*
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-update-smoke-logs
           path: |
-            apps/hub-electron/release/*
             ${{ runner.temp }}/gpos-update-smoke/*.log
             ${{ runner.temp }}/gpos-update-smoke/*.json
+            ${{ runner.temp }}/gpos-update-smoke/*.png

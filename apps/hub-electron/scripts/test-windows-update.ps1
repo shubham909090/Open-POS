@@ -74,7 +74,7 @@ try {
 import { join } from 'node:path';
 import { writeWindowsInstallerHandoff } from './dist/update/windows-update-handoff.js';
 const plan = writeWindowsInstallerHandoff({
-  scriptPath: join(process.env.SMOKE_ROOT, 'Install Gaurav POS Update.ps1'),
+  scriptPath: join(process.env.SMOKE_ROOT, "Handoff O'Hara & \u00e9", 'Install Gaurav POS Update.ps1'),
   logPath: join(process.env.SMOKE_ROOT, 'install-handoff.log'),
   parentPid: Number(process.env.SMOKE_PARENT_PID),
   appExecutablePath: process.env.SMOKE_APP_PATH,
@@ -102,6 +102,23 @@ console.log(JSON.stringify(plan));
   if ($selfTest.ExitCode -ne 0) { throw "Installed SQLite self-test failed" }
   @{ previousVersion = $PreviousVersion; installedVersion = $version; databasePreserved = $true; sqliteSelfTest = "passed" } |
     ConvertTo-Json | Set-Content (Join-Path $root "result.json")
+} catch {
+  $failure = $_
+  Get-CimInstance Win32_Process | Where-Object { $_.Name -match "Gaurav|setup|powershell" } |
+    Select-Object ProcessId, ParentProcessId, Name, ExecutablePath, CommandLine |
+    ConvertTo-Json | Set-Content (Join-Path $root "processes.json")
+  try {
+    Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+    $bounds = [System.Windows.Forms.SystemInformation]::VirtualScreen
+    $bitmap = New-Object System.Drawing.Bitmap($bounds.Width, $bounds.Height)
+    $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+    $graphics.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)
+    $bitmap.Save((Join-Path $root "failure.png"))
+    $graphics.Dispose()
+    $bitmap.Dispose()
+  } catch { Write-Warning "Could not capture desktop: $_" }
+  throw $failure
 } finally {
+  if (Test-Path (Join-Path $root "install-handoff.log")) { Get-Content (Join-Path $root "install-handoff.log") }
   Stop-Transcript
 }
