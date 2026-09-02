@@ -85,12 +85,23 @@ console.log(JSON.stringify(plan));
     if ($LASTEXITCODE -ne 0) { throw "Handoff generation failed" }
   } finally { Pop-Location }
   $plan = $planJson | ConvertFrom-Json
+  $procmonRoot = Join-Path $root "procmon"
+  Invoke-WebRequest "https://download.sysinternals.com/files/ProcessMonitor.zip" -OutFile (Join-Path $root "procmon.zip")
+  Expand-Archive (Join-Path $root "procmon.zip") $procmonRoot
+  $procmon = Join-Path $procmonRoot "Procmon64.exe"
+  Start-Process $procmon -ArgumentList @('/AcceptEula', '/Quiet', '/Minimized', '/BackingFile', (Join-Path $root 'capture.pml')) | Out-Null
+  Start-Process $procmon -ArgumentList '/WaitForIdle' -Wait
   $quotedArgs = $plan.args | ForEach-Object { '"' + $_ + '"' }
   $handoff = Start-Process $plan.filePath -ArgumentList $quotedArgs -PassThru
   Start-Sleep -Seconds 3
   if ((Get-HubVersion $appPath) -ne $PreviousVersion) { throw "Installer ran before the old app exited" }
   if (!$oldApp.CloseMainWindow()) { throw "Could not request a graceful Hub shutdown" }
   if (!$oldApp.WaitForExit(120000)) { throw "Old Hub did not exit cleanly" }
+  Start-Sleep -Seconds 30
+  Start-Process $procmon -ArgumentList '/Terminate', '/Quiet' -Wait
+  Start-Process $procmon -ArgumentList @('/AcceptEula', '/Quiet', '/OpenLog', (Join-Path $root 'capture.pml'), '/SaveAs', (Join-Path $root 'capture.csv')) -Wait
+  Import-Csv (Join-Path $root 'capture.csv') | Where-Object { $_.'Process Name' -match 'old-uninstaller' -or $_.Path -like '*@gaurav-poshub-electron*' } |
+    Export-Csv (Join-Path $root 'installer-file-operations.csv') -NoTypeInformation
   if (!$handoff.WaitForExit(180000)) { throw "Update handoff timed out" }
   if ($handoff.ExitCode -ne 0) { throw "Update handoff failed: $($handoff.ExitCode)" }
   if ((Get-HubVersion $appPath) -ne $version) { throw "Candidate version was not installed" }
@@ -124,18 +135,6 @@ console.log(JSON.stringify(plan));
         $stream.Dispose()
       } catch { [pscustomobject]@{ path = $_.TargetObject; error = $_.Exception.Message } }
     } | ConvertTo-Json | Set-Content (Join-Path $root "file-access-errors.json")
-  }
-  if ($failure.Exception.Message -eq "Update handoff timed out") {
-    Get-Process -Name "Gaurav POS Hub Setup $version" -ErrorAction SilentlyContinue | Stop-Process -Force
-    $sameVolumeTemp = Join-Path (Split-Path (Split-Path $appPath -Parent) -Parent) "gpos-update-smoke-temp"
-    New-Item -ItemType Directory -Force $sameVolumeTemp | Out-Null
-    $env:TEMP = $sameVolumeTemp
-    $env:TMP = $sameVolumeTemp
-    Write-Host "Diagnostic retry with same-volume TEMP: $sameVolumeTemp"
-    $retry = Start-Process $env:SMOKE_INSTALLER -ArgumentList @('--updated', '/S', '--force-run') -PassThru
-    $retryExited = $retry.WaitForExit(90000)
-    Write-Host "Diagnostic retry exited: $retryExited; exit code: $($retry.ExitCode); version: $(Get-HubVersion $appPath)"
-    if (!$retryExited) { $retry.Kill() }
   }
   throw $failure
 } finally {
