@@ -29,7 +29,7 @@ const packagePath = join(releaseDir, `${productName}-${metadata.version}.gpos-up
 const onlineMetadataPath = join(releaseDir, ONLINE_UPDATE_METADATA);
 
 run("pnpm", ["build"]);
-run("electron-builder", ["--win", "nsis", "--x64"]);
+run("electron-builder", ["--win", "nsis", "--x64", "--publish", "never"]);
 
 for (const path of [installerPath, unpackedExePath, sqliteNativePath]) {
   if (!existsSync(path)) throw new Error(`Required release file missing: ${path}`);

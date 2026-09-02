@@ -169,7 +169,7 @@ function rebuildInstallerFromUnpacked(): void {
   rmSync(join(hubRoot, "release", `${metadata.productName} Setup ${metadata.version}.exe`), { force: true });
   rmSync(join(hubRoot, "release", `${metadata.productName} Setup ${metadata.version}.exe.blockmap`), { force: true });
   rmSync(join(hubRoot, "release", "builder-debug.yml"), { force: true });
-  run("pnpm", ["exec", "electron-builder", "--win", "nsis", "--x64", "--prepackaged", "release/win-unpacked"]);
+  run("pnpm", ["exec", "electron-builder", "--win", "nsis", "--x64", "--prepackaged", "release/win-unpacked", "--publish", "never"]);
 }
 
 function createUpdatePackage(): void {

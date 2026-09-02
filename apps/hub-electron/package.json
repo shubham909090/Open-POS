@@ -13,7 +13,7 @@
     "dev:desktop": "pnpm build:renderer && dotenv -e ../../.env.local -- electron --no-sandbox --import tsx src/electron.ts",
     "db:generate": "drizzle-kit generate",
     "db:studio": "drizzle-kit studio",
-    "package:win": "pnpm build && electron-builder --win nsis --x64",
+    "package:win": "pnpm build && electron-builder --win nsis --x64 --publish never",
     "package:update": "tsx scripts/create-update-package.ts",
     "release:fresh-windows": "tsx scripts/fresh-windows-release.ts",
     "release:github": "tsx scripts/publish-github-release.ts",
