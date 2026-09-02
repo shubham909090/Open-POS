@@ -34,6 +34,6 @@ describe("Hub update release config", () => {
     expect(source).not.toMatch(/import\s*\{\s*autoUpdater\s*\}\s*from\s*["']electron-updater["']/);
     expect(source).toMatch(/import\s+\w+\s+from\s+["']electron-updater["']/);
     expect(source).toMatch(/const\s*\{\s*autoUpdater\s*\}\s*=\s*\w+/);
-    expect(source).toContain("autoUpdater.quitAndInstall(true, true)");
+    expect(source).not.toContain("autoUpdater.quitAndInstall(");
   });
 });

@@ -1,5 +1,6 @@
 import {
   type AdjustAlcoholStockInput,
+  type ResetAlcoholStockInput,
   type BillAdjustmentInput,
   type BillPrinterSlot,
   type CancelOrderInput,
@@ -73,6 +74,7 @@ import {
 } from "./order-service/alcohol-stock-consumption.js";
 import {
   adjustAlcoholStock as adjustAlcoholStockModel,
+  resetAlcoholStock as resetAlcoholStockModel,
   createAlcoholItem as createAlcoholItemModel,
   importAlcoholItemsFromCsv as importAlcoholItemsFromCsvModel,
   listAlcoholCatalog as listAlcoholCatalogModel,
@@ -641,6 +643,10 @@ export class OrderService {
     return adjustAlcoholStockModel(this.alcoholActionContext(), menuItemId, input);
   }
 
+  resetAlcoholStock(input: ResetAlcoholStockInput): { resetCount: number } {
+    return resetAlcoholStockModel(this.alcoholActionContext(), input);
+  }
+
   listAlcoholStockMovements(limit = 100): unknown[] {
     return listAlcoholStockMovementsModel(this.alcoholActionContext(), limit);
   }
@@ -871,7 +877,7 @@ export class OrderService {
       resolveProductionUnitRef: (value) => this.resolveProductionUnitRef(value),
       parseAlcoholRecipeCsv: (value) => this.parseAlcoholRecipeCsv(value),
       requireAlcoholStock: (menuItemId) => this.requireAlcoholStock(menuItemId),
-      writeAlcoholStock: (menuItemId, sealedLarge, openLargeMl, sealedSmall) => this.writeAlcoholStock(menuItemId, sealedLarge, openLargeMl, sealedSmall),
+      writeAlcoholStock: (menuItemId, sealedLarge, openLargeMl, sealedSmall, allowNegative) => this.writeAlcoholStock(menuItemId, sealedLarge, openLargeMl, sealedSmall, allowNegative),
       recordAlcoholMovement: (input) => this.recordAlcoholMovement(input),
       verifyManagerApproval: (input, action, aggregateType, aggregateId, requestedBy) => this.verifyManagerApproval(input, action, aggregateType, aggregateId, requestedBy),
       verifyMasterApproval: (input, action, aggregateType, aggregateId, requestedBy) => this.verifyMasterApproval(input, action, aggregateType, aggregateId, requestedBy),

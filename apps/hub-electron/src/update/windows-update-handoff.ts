@@ -1,6 +1,6 @@
 import { copyFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { homedir, platform } from "node:os";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, join, win32 } from "node:path";
 import { Buffer } from "node:buffer";
 
 export interface UpdateLaunchPlan {
@@ -15,6 +15,42 @@ export interface WindowsHandoffScriptInput {
   afterWaitLines: string[];
   pauseMessage?: string;
   copyShortcut?: boolean;
+}
+
+export function writeWindowsInstallerHandoff(input: {
+  scriptPath: string;
+  logPath: string;
+  installer: UpdateLaunchPlan;
+  appExecutablePath: string;
+  parentPid: number;
+}): UpdateLaunchPlan {
+  const script = [
+    "$ErrorActionPreference = 'Stop'",
+    "$exitCode = 0",
+    `Start-Transcript -Path ${psQuote(input.logPath)} -Append`,
+    "try {",
+    `  Write-Output 'Waiting for Gaurav POS Hub to exit...'`,
+    `  Get-Process -Id ${input.parentPid} -ErrorAction SilentlyContinue | Wait-Process -Timeout 120 -ErrorAction Stop`,
+    `  Get-Process -Name ${psQuote(win32.basename(input.appExecutablePath, ".exe"))} -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq ${psQuote(input.appExecutablePath)} } | Wait-Process -Timeout 120 -ErrorAction Stop`,
+    `  Write-Output 'Hub exited. Starting the update installer...'`,
+    `  $installer = ${startProcessCommand(input.installer)} -PassThru -ErrorAction Stop`,
+    "  $installer.WaitForExit()",
+    "  if ($installer.ExitCode -ne 0) { throw \"Installer failed with exit code $($installer.ExitCode).\" }",
+    "  Write-Output 'Update installer completed successfully.'",
+    "} catch {",
+    "  Write-Output ($_ | Out-String)",
+    "  $exitCode = 1",
+    "} finally {",
+    "  Stop-Transcript",
+    "}",
+    "exit $exitCode"
+  ].join("\r\n");
+  mkdirSync(dirname(input.scriptPath), { recursive: true });
+  writeFileSync(input.scriptPath, script);
+  return {
+    filePath: "powershell.exe",
+    args: ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", input.scriptPath]
+  };
 }
 
 export function writeWindowsHandoffScript(input: WindowsHandoffScriptInput): string {

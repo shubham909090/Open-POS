@@ -47,8 +47,7 @@ describe("AppUpdateService", () => {
     expect(existsSync(result.backup.path)).toBe(true);
     expect(onlineUpdater.checkForUpdates).toHaveBeenCalledTimes(1);
     expect(onlineUpdater.downloadUpdate).toHaveBeenCalledTimes(1);
-    expect(onlineUpdater.installUpdate).toHaveBeenCalledTimes(1);
-    expect(launchInstaller).not.toHaveBeenCalled();
+    expect(launchInstaller).toHaveBeenCalledWith({ filePath: "powershell.exe", args: expect.arrayContaining(["-File", expect.stringContaining("Install Gaurav POS Update.ps1")]) });
     expect(service.status().online.status).toBe("installing");
 
     fixture.close();
@@ -91,6 +90,23 @@ describe("AppUpdateService", () => {
     fixture.close();
   });
 
+  it("keeps the app open and reports a failed installer handoff", async () => {
+    const fixture = createFixture();
+    try {
+      const exitApp = vi.fn();
+      const onlineUpdater = createOnlineUpdater({ downloadedInstallerPath: writeInstaller(fixture.root, "0.2.0") });
+      const service = createService(fixture, {
+        onlineUpdater, exitApp, platform: "win32",
+        launchInstaller: vi.fn().mockRejectedValue(new Error("PowerShell could not start"))
+      });
+      await expect(service.installOnlineUpdate()).rejects.toThrow("PowerShell could not start");
+      expect(exitApp).not.toHaveBeenCalled();
+      expect(service.status().online).toMatchObject({ status: "error", message: "PowerShell could not start" });
+    } finally {
+      fixture.close();
+    }
+  });
+
   it("rejects a one-click online update with incompatible DB metadata before downloading or backing up", async () => {
     const fixture = createFixture();
     const onlineUpdater = createOnlineUpdater({
@@ -119,8 +135,7 @@ describe("AppUpdateService", () => {
 
     await expect(service.installOnlineUpdate()).rejects.toThrow("already in progress");
     expect(onlineUpdater.checkForUpdates).toHaveBeenCalledTimes(1);
-    expect(onlineUpdater.installUpdate).toHaveBeenCalledTimes(1);
-    expect(launchInstaller).not.toHaveBeenCalled();
+    expect(launchInstaller).toHaveBeenCalledTimes(1);
 
     fixture.close();
   });
@@ -151,8 +166,7 @@ describe("AppUpdateService", () => {
     expect(result.recoveryScriptPath).toBeUndefined();
     expect(onlineUpdater.readUpdateMetadata).toHaveBeenCalledWith("0.2.0");
     expect(onlineUpdater.downloadUpdate).toHaveBeenCalledTimes(1);
-    expect(onlineUpdater.installUpdate).toHaveBeenCalledTimes(1);
-    expect(launchInstaller).not.toHaveBeenCalled();
+    expect(launchInstaller).toHaveBeenCalledTimes(1);
     expect(service.status()).toMatchObject({
       baselineRegistered: false,
       rollbackAvailable: false,
@@ -214,12 +228,15 @@ describe("AppUpdateService", () => {
 
     await service.installUpdate(writePackage(fixture.root, "0.2.0"));
 
-    const launchedPath = launchInstaller.mock.calls[0]?.[0].filePath as string;
-    expect(launchedPath).toContain("Install Gaurav POS Update.cmd");
-    const script = readFileSync(launchedPath, "utf8");
-    const commands = decodePowerShellCommands(script);
-    expect(commands.some((command) => command.includes("Wait-Process -Id $env:GPOS_PARENT_PID"))).toBe(true);
-    expect(commands.some((command) => command.includes("Gaurav POS Hub Setup 0.2.0.exe"))).toBe(true);
+    const plan = launchInstaller.mock.calls[0]?.[0];
+    expect(plan.filePath).toBe("powershell.exe");
+    const scriptPath = plan.args.at(-1) as string;
+    expect(scriptPath).toContain("Install Gaurav POS Update.ps1");
+    const script = readFileSync(scriptPath, "utf8");
+    expect(script).toContain(`Get-Process -Id ${process.pid}`);
+    expect(script).toContain("Wait-Process -Timeout 120");
+    expect(script).toContain("Gaurav POS Hub Setup 0.2.0.exe");
+    expect(script.indexOf("Wait-Process")).toBeLessThan(script.indexOf("Start-Process"));
 
     fixture.close();
   });
@@ -477,7 +494,6 @@ function createOnlineUpdater(input: { updateAvailable?: boolean; availableVersio
       filePath: input.downloadedInstallerPath ?? join(tmpdir(), `Gaurav POS Hub Setup ${version}.exe`),
       args: ["--updated", "/S", "--force-run"]
     })),
-    installUpdate: vi.fn()
   };
 }
 

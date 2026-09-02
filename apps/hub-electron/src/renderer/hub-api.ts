@@ -1,4 +1,5 @@
-import type { HistoryEditBillInput } from "@gaurav-pos/shared";
+import type { HistoryEditBillInput, ResetAlcoholStockInput } from "@gaurav-pos/shared";
+import type { resetAlcoholStock } from "../domain/order-service/alcohol-actions.js";
 
 import type {
   AlcoholCatalog,
@@ -412,6 +413,8 @@ export const hubApi = {
   bulkDeleteAlcoholItems: (masterApproval: MasterApprovalPayload["masterApproval"]) =>
     apiFetch<BulkDeleteResult>("/alcohol/items/bulk-delete", { method: "POST", body: JSON.stringify({ masterApproval }) }),
   adjustAlcoholStock: (id: string, payload: unknown) => apiFetch<{ id: string }>(`/alcohol/stock/${id}/adjust`, { method: "POST", body: JSON.stringify(payload) }),
+  resetAlcoholStock: (payload: ResetAlcoholStockInput) =>
+    apiFetch<ReturnType<typeof resetAlcoholStock>>("/alcohol/stock/reset", { method: "POST", body: JSON.stringify(payload) }),
   updateKotStatus: (kotId: string, status: string) =>
     apiFetch<{ id: string }>(`/kot/${kotId}/status`, { method: "PATCH", body: JSON.stringify({ status }) }),
   processPrints: () => apiFetch<{ printed: number; failed: number }>("/print-jobs/process", { method: "POST" }),

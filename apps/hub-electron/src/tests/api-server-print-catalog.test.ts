@@ -299,6 +299,29 @@ describe("Hub API print, catalog, and report routes", () => {
     database.close();
   });
 
+  it("requires an admin device and Master PIN before resetting liquor stock", async () => {
+    const { app, database, orderService } = createTestServer();
+    try {
+      orderService.setMasterPin({ newPin: "9876", confirmPin: "9876", updatedBy: "owner" });
+      const liquor = orderService.createAlcoholItem({
+        type: "plain_liquor", name: "API reset whisky", openLargeMl: -1140,
+        variants: [{ label: "30 ml", kind: "shot", pricePaise: 10000, volumeMl: 30, inventoryAction: "large_ml", sortOrder: 0, active: true }]
+      });
+      const headers = { "x-device-token": "test-admin-token" };
+      const payload = { masterApproval: { pin: "9876", reason: "Reset liquor balances", approvedBy: "owner" } };
+      expect((await app.inject({ method: "POST", url: "/alcohol/stock/reset", payload })).statusCode).toBe(401);
+      expect((await app.inject({ method: "POST", url: "/alcohol/stock/reset", headers, payload: {} })).statusCode).toBe(400);
+      expect((await app.inject({ method: "POST", url: "/alcohol/stock/reset", headers, payload: { masterApproval: { ...payload.masterApproval, pin: "1234" } } })).statusCode).toBe(403);
+      expect(database.db.prepare("SELECT open_large_ml FROM alcohol_stock_levels WHERE menu_item_id = ?").get(liquor.id)).toEqual({ open_large_ml: -1140 });
+      const response = await app.inject({ method: "POST", url: "/alcohol/stock/reset", headers, payload });
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toEqual({ resetCount: 1 });
+    } finally {
+      await app.close();
+      database.close();
+    }
+  });
+
   it("imports normal dishes from CSV and reports bad rows", async () => {
     const { app, database } = createTestServer();
     const headers = { "x-device-token": "test-admin-token" };

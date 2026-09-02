@@ -3,6 +3,7 @@ import type {
   CreateAlcoholItemInput,
   CreateMenuItemInput,
   DomainEvent,
+  ResetAlcoholStockInput,
   UpdateAlcoholItemInput,
   UpdateMenuItemInput
 } from "@gaurav-pos/shared";
@@ -44,7 +45,7 @@ export type AlcoholActionContext = {
   resolveProductionUnitRef: (value: string | null) => string | null;
   parseAlcoholRecipeCsv: (value: string | null) => Array<{ liquorMenuItemId: string; mlPerUnit: number }>;
   requireAlcoholStock: (menuItemId: string) => AlcoholStockRow;
-  writeAlcoholStock: (menuItemId: string, sealedLarge: number, openLargeMl: number, sealedSmall: number) => void;
+  writeAlcoholStock: (menuItemId: string, sealedLarge: number, openLargeMl: number, sealedSmall: number, allowNegative?: boolean) => void;
   recordAlcoholMovement: (input: {
     menuItemId: string;
     sourceType: string;
@@ -252,7 +253,16 @@ export function adjustAlcoholStock(ctx: AlcoholActionContext, menuItemId: string
       openLargeMl: input.mode === "set" ? (input.openLargeMl ?? stock.open_large_ml) : stock.open_large_ml + (input.openLargeMl ?? 0),
       sealedSmall: input.mode === "set" ? (input.sealedSmallCount ?? stock.sealed_small_count) : stock.sealed_small_count + (input.sealedSmallCount ?? 0)
     };
-    ctx.writeAlcoholStock(menuItemId, next.sealedLarge, next.openLargeMl, next.sealedSmall);
+    const balances = [
+      { before: stock.sealed_large_count, after: next.sealedLarge, supplied: input.sealedLargeCount },
+      { before: stock.open_large_ml, after: next.openLargeMl, supplied: input.openLargeMl },
+      { before: stock.sealed_small_count, after: next.sealedSmall, supplied: input.sealedSmallCount }
+    ];
+    // Sales may leave a deficit. Corrections can improve it without fixing every field at once.
+    if (balances.some(({ before, after, supplied }) => after < 0 && (after < before || (input.mode === "set" && supplied !== undefined)))) {
+      throw new DomainError("Stock corrections cannot create or increase a negative balance");
+    }
+    ctx.writeAlcoholStock(menuItemId, next.sealedLarge, next.openLargeMl, next.sealedSmall, true);
     ctx.recordAlcoholMovement({
       menuItemId,
       sourceType: "manual_adjustment",
@@ -273,4 +283,35 @@ export function adjustAlcoholStock(ctx: AlcoholActionContext, menuItemId: string
 
 export function listAlcoholStockMovements(ctx: AlcoholActionContext, limit = 100): unknown[] {
   return listAlcoholStockMovementReadModels(ctx.db, limit);
+}
+
+export function resetAlcoholStock(ctx: AlcoholActionContext, input: ResetAlcoholStockInput): { resetCount: number } {
+  return ctx.db.transaction(() => {
+    ctx.verifyMasterApproval(input.masterApproval, "alcohol_stock.reset", "alcohol_stock", "all", input.masterApproval.approvedBy);
+    const stocks = ctx.orm.select().from(alcoholStockLevels)
+      .innerJoin(alcoholProfiles, eq(alcoholProfiles.menuItemId, alcoholStockLevels.menuItemId))
+      .where(eq(alcoholProfiles.type, "plain_liquor"))
+      .all();
+    const resetId = makeId("stockreset");
+    let resetCount = 0;
+    for (const { alcohol_stock_levels: stock } of stocks) {
+      if (stock.sealedLargeCount === 0 && stock.openLargeMl === 0 && stock.sealedSmallCount === 0) continue;
+      ctx.writeAlcoholStock(stock.menuItemId, 0, 0, 0);
+      ctx.recordAlcoholMovement({
+        menuItemId: stock.menuItemId,
+        sourceType: "liquor_stock_reset",
+        sourceId: resetId,
+        deltaSealedLarge: -stock.sealedLargeCount,
+        deltaOpenLargeMl: -stock.openLargeMl,
+        deltaSealedSmall: -stock.sealedSmallCount,
+        balanceSealedLarge: 0,
+        balanceOpenLargeMl: 0,
+        balanceSealedSmall: 0,
+        approvedBy: input.masterApproval.approvedBy
+      });
+      resetCount += 1;
+    }
+    ctx.appendEvent("alcohol_stock.reset", "alcohol_stock", resetId, { resetCount, approvedBy: input.masterApproval.approvedBy, reason: input.masterApproval.reason });
+    return { resetCount };
+  })();
 }

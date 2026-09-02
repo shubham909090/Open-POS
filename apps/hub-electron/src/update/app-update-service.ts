@@ -10,7 +10,7 @@ import { DomainError } from "../domain/errors.js";
 import type { OnlineUpdateMetadata, UpdatePackageManifest } from "./update-package.js";
 import { PACKAGED_SQLITE_NATIVE_PATH, UPDATE_APP_ID, sha256, validateOnlineUpdateMetadata, validateUpdatePackage, validateWindowsX64NativeModule } from "./update-package.js";
 import { GithubUpdateSource, compareVersions, type GithubFetch, type GithubUpdateCheckResult, type GithubUpdateInstallRequest } from "./github-update-source.js";
-import { powershellCommand, psQuote, startProcessCommand, writeWindowsHandoffScript, type UpdateLaunchPlan } from "./windows-update-handoff.js";
+import { powershellCommand, psQuote, startProcessCommand, writeWindowsHandoffScript, writeWindowsInstallerHandoff, type UpdateLaunchPlan } from "./windows-update-handoff.js";
 export type { GithubFetch, GithubFetchResponse, GithubRelease, GithubReleaseAsset, GithubUpdateCheckResult, GithubUpdateCheckStatus, GithubUpdateInstallRequest } from "./github-update-source.js";
 export type { UpdateLaunchPlan } from "./windows-update-handoff.js";
 
@@ -89,7 +89,6 @@ export interface OnlineAppUpdater {
   checkForUpdates(): Promise<OnlineUpdateCheckResult>;
   readUpdateMetadata(version: string): Promise<OnlineUpdateMetadata>;
   downloadUpdate(): Promise<UpdateLaunchPlan>;
-  installUpdate(): void;
   onDownloadProgress?(handler: (percent: number) => void): void;
 }
 
@@ -322,7 +321,7 @@ export class AppUpdateService {
       }
       this.writeState({ ...state, pending, ...(previous ? { previous, recoveryScriptPath } : {}) });
       this.setOnlineState({ status: "installing", lastBackupFileName: backup.fileName, message: null });
-      onlineUpdater.installUpdate();
+      await this.launchAndExit({ filePath: pending.installerPath, args: installPlan.args });
       this.onlineUpdateRunning = true;
       return { installing: true, backup, version, ...(recoveryScriptPath ? { recoveryScriptPath } : {}) };
     } catch (error) {
@@ -457,8 +456,19 @@ export class AppUpdateService {
     const launchPlan = this.installerLaunchPlan(plan);
     if (this.input.launchInstaller) await this.input.launchInstaller(launchPlan);
     else {
-      const child = spawn(launchPlan.filePath, launchPlan.args, { detached: true, stdio: "ignore", shell: extname(launchPlan.filePath).toLowerCase() === ".cmd" });
-      child.unref();
+      const isBatch = extname(launchPlan.filePath).toLowerCase() === ".cmd";
+      const command = isBatch ? "powershell.exe" : launchPlan.filePath;
+      const args = isBatch
+        ? ["-NoProfile", "-ExecutionPolicy", "Bypass", "-EncodedCommand", Buffer.from(startProcessCommand(launchPlan), "utf16le").toString("base64")]
+        : launchPlan.args;
+      await new Promise<void>((resolve, reject) => {
+        const child = spawn(command, args, { detached: true, stdio: "ignore", cwd: this.input.updateDir, shell: false });
+        child.once("error", reject);
+        child.once("spawn", () => {
+          child.unref();
+          resolve();
+        });
+      });
     }
     if (this.input.exitApp) this.input.exitApp();
   }
@@ -466,7 +476,13 @@ export class AppUpdateService {
   private installerLaunchPlan(plan: UpdateLaunchPlan): UpdateLaunchPlan {
     const targetPlatform = this.input.platform ?? platform();
     if (targetPlatform !== "win32" || extname(plan.filePath).toLowerCase() !== ".exe") return plan;
-    return { filePath: this.writeInstallerHandoffScript(plan), args: [] };
+    return writeWindowsInstallerHandoff({
+      scriptPath: join(this.input.updateDir, "Install Gaurav POS Update.ps1"),
+      logPath: join(this.input.updateDir, "install-handoff.log"),
+      installer: plan,
+      appExecutablePath: process.execPath,
+      parentPid: process.pid
+    });
   }
 
   private safeCacheRoot(version: string): string {
@@ -520,14 +536,6 @@ export class AppUpdateService {
     });
   }
 
-  private writeInstallerHandoffScript(plan: UpdateLaunchPlan): string {
-    return writeWindowsHandoffScript({
-      scriptPath: join(this.input.updateDir, "Install Gaurav POS Update.cmd"),
-      waitMessage: "Waiting for Gaurav POS Hub to close before installing the update...",
-      afterWaitMilliseconds: 500,
-      afterWaitLines: [powershellCommand(startProcessCommand(plan))]
-    });
-  }
 }
 
 function separator(): string {

@@ -1,0 +1,41 @@
+name: Windows Hub Update Smoke
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [codex/windows-update-stock-fix]
+
+permissions:
+  contents: read
+
+jobs:
+  windows-update:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Fresh native Windows release
+        shell: pwsh
+        run: |
+          $version = (Get-Content apps/hub-electron/package.json | ConvertFrom-Json).version
+          pnpm release:hub:fresh -- --version $version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify previous release update and database preservation
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./apps/hub-electron/scripts/test-windows-update.ps1
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-hub-release-and-smoke
+          path: |
+            apps/hub-electron/release/*
+            ${{ runner.temp }}/gpos-update-smoke/*.log
+            ${{ runner.temp }}/gpos-update-smoke/*.json

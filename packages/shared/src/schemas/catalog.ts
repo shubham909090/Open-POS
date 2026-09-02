@@ -160,6 +160,10 @@ export const adjustAlcoholStockSchema = z.object({
   sealedSmallCount: z.number().int().min(-100_000).optional()
 });
 
+export const resetAlcoholStockSchema = z.object({
+  masterApproval: masterApprovalSchema
+});
+
 export type CreateSaleGroupInput = z.input<typeof createSaleGroupSchema>;
 export type UpdateSaleGroupInput = z.infer<typeof updateSaleGroupSchema>;
 export type CreateFloorInput = z.input<typeof createFloorSchema>;
@@ -178,3 +182,4 @@ export type ImportAlcoholCsvInput = z.infer<typeof importAlcoholCsvSchema>;
 export type CreateAlcoholItemInput = z.input<typeof createAlcoholItemSchema>;
 export type UpdateAlcoholItemInput = z.infer<typeof updateAlcoholItemSchema>;
 export type AdjustAlcoholStockInput = z.infer<typeof adjustAlcoholStockSchema>;
+export type ResetAlcoholStockInput = z.infer<typeof resetAlcoholStockSchema>;

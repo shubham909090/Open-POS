@@ -1,5 +1,6 @@
 import {
   adjustAlcoholStockSchema,
+  resetAlcoholStockSchema,
   bulkDeleteAlcoholItemsSchema,
   bulkDeleteMenuItemsSchema,
   createAlcoholItemSchema,
@@ -19,6 +20,7 @@ import {
   updateTableSchema
 } from "@gaurav-pos/shared";
 import type { HubRouteContext } from "./route-context.js";
+import { DomainError } from "../domain/errors.js";
 
 export function registerCatalogRoutes({ app, input, auth }: HubRouteContext): void {
   const { adminOnly, anyRole, captainOrAdmin } = auth;
@@ -160,6 +162,13 @@ export function registerCatalogRoutes({ app, input, auth }: HubRouteContext): vo
     const params = request.params as { id: string };
     const result = input.orderService.adjustAlcoholStock(params.id, adjustAlcoholStockSchema.parse(request.body));
     input.eventBus.publish({ type: "alcohol_stock.adjusted", result });
+    return result;
+  });
+  app.post("/alcohol/stock/reset", { preHandler: adminOnly }, async (request) => {
+    const parsed = resetAlcoholStockSchema.safeParse(request.body);
+    if (!parsed.success) throw new DomainError("Valid Master PIN approval is required to reset liquor stock", 400);
+    const result = input.orderService.resetAlcoholStock(parsed.data);
+    input.eventBus.publish({ type: "alcohol_stock.reset", result });
     return result;
   });
 }

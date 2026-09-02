@@ -1,9 +1,11 @@
-import { useMutation } from "@tanstack/react-query";
+import { useIsMutating, useMutation } from "@tanstack/react-query";
 import { useState } from "react";
+import { RotateCcw } from "lucide-react";
 import { hubApi, type AlcoholStorageRow } from "../../hub-api.js";
 import { type NoticeSetter, messageOf } from "../../lib/format.js";
 import type { ManagerApproval, ManagerApprovalRequest } from "../../hooks/use-manager-approval.js";
 import { EmptyState } from "../ui/empty-state.js";
+import { Button } from "../ui/button.js";
 
 export function AlcoholStoragePanel({
   rows,
@@ -17,6 +19,16 @@ export function AlcoholStoragePanel({
   requestManagerApproval: ManagerApprovalRequest;
 }) {
   const [search, setSearch] = useState("");
+  const busy = useIsMutating({ mutationKey: ["alcoholStock"] }) > 0;
+  const reset = useMutation({
+    mutationKey: ["alcoholStock"],
+    mutationFn: (approval: ManagerApproval) => hubApi.resetAlcoholStock({ masterApproval: approval }),
+    onSuccess: async ({ resetCount }) => {
+      await invalidate();
+      setNotice({ tone: "good", text: `Liquor stock reset to zero for ${resetCount} item(s).` });
+    },
+    onError: (error) => setNotice({ tone: "bad", text: messageOf(error) }),
+  });
   const visibleRows = rows.filter((row) => {
     const needle = search.trim().toLowerCase();
     if (!needle) return true;
@@ -24,9 +36,31 @@ export function AlcoholStoragePanel({
   });
   return (
     <div className="storage-list">
-      {rows.length > 8 ? (
-        <div className="setup-search-row">
-          <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search liquor stock" />
+      {rows.length > 0 ? (
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          {rows.length > 8 ? (
+            <input className="min-w-0 flex-1" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search liquor stock" aria-label="Search liquor stock" />
+          ) : <span />}
+          <Button
+            type="button"
+            variant="danger"
+            disabled={busy || !rows.some((row) => row.sealed_large_count !== 0 || row.open_large_ml !== 0 || row.sealed_small_count !== 0)}
+            onClick={async () => {
+              const approval = await requestManagerApproval({
+                title: "Reset all liquor stock?",
+                message: "Set every liquor item's large bottles, open ml, and small bottles to zero. Bills, sales, and stock history will be kept. Pending orders will still deduct stock when settled.",
+                defaultReason: "Owner liquor stock reset",
+                pinLabel: "Master PIN",
+                confirmLabel: "Reset stock to zero",
+                approvedBy: "owner",
+                danger: true,
+              }).catch(() => null);
+              if (approval) reset.mutate(approval);
+            }}
+          >
+            <RotateCcw size={16} aria-hidden="true" />
+            {reset.isPending ? "Resetting..." : "Reset liquor stock"}
+          </Button>
         </div>
       ) : null}
       {visibleRows.map((row) => (
@@ -36,6 +70,7 @@ export function AlcoholStoragePanel({
           invalidate={invalidate}
           setNotice={setNotice}
           requestManagerApproval={requestManagerApproval}
+          busy={busy}
         />
       ))}
       {rows.length === 0 ? (
@@ -55,11 +90,13 @@ function AlcoholStorageCard({
   invalidate,
   setNotice,
   requestManagerApproval,
+  busy,
 }: {
   row: AlcoholStorageRow;
   invalidate: () => Promise<void>;
   setNotice: NoticeSetter;
   requestManagerApproval: ManagerApprovalRequest;
+  busy: boolean;
 }) {
   const [mode, setMode] = useState<"delta" | "set">("delta");
   const [large, setLarge] = useState("");
@@ -69,6 +106,7 @@ function AlcoholStorageCard({
   const sensitiveEdit = mode === "set" || [large, open, small].some((value) => Number(value || 0) < 0);
 
   const adjust = useMutation({
+    mutationKey: ["alcoholStock"],
     mutationFn: (approval: ManagerApproval) =>
       hubApi.adjustAlcoholStock(row.id, {
         mode,
@@ -169,7 +207,7 @@ function AlcoholStorageCard({
             inputMode="numeric"
           />
         </label>
-        <button type="submit" disabled={adjust.isPending}>
+        <button type="submit" disabled={busy || [large, open, small].every((value) => value === "")}>
           {adjust.isPending ? "Saving..." : "Save"}
         </button>
       </form>
