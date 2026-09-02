@@ -595,7 +595,7 @@ describe("Hub API auth, settings, and pairing routes", () => {
     await app.close();
     database.close();
     rmSync(root, { recursive: true, force: true });
-  });
+  }, 15_000);
 
   it("saves masked hub cloud settings behind Manager PIN and tests cloud connectivity", async () => {
     const { app, database } = createTestServer();

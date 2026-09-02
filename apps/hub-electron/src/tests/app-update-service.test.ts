@@ -204,7 +204,7 @@ describe("AppUpdateService", () => {
   it("creates a pre-update backup and rollback script before launching installer", async () => {
     const fixture = createFixture();
     const launchInstaller = vi.fn();
-    const service = createService(fixture, { launchInstaller });
+    const service = createService(fixture, { launchInstaller, platform: "win32" });
     service.registerBaseline(writePackage(fixture.root, "0.1.0"));
 
     const result = await service.installUpdate(writePackage(fixture.root, "0.2.0"));
@@ -212,8 +212,8 @@ describe("AppUpdateService", () => {
     expect(existsSync(result.backup.path)).toBe(true);
     expect(existsSync(result.recoveryScriptPath)).toBe(true);
     expect(launchInstaller).toHaveBeenCalledWith({
-      filePath: expect.stringContaining("Gaurav POS Hub Setup 0.2.0.exe"),
-      args: []
+      filePath: "powershell.exe",
+      args: expect.arrayContaining(["-File", expect.stringContaining("Install Gaurav POS Update.ps1")])
     });
     expect(service.status().rollbackAvailable).toBe(true);
 
@@ -379,6 +379,7 @@ describe("AppUpdateService", () => {
     const packagePath = writePackage(fixture.root, "0.2.0");
     const service = createService(fixture, {
       launchInstaller,
+      platform: "win32",
       githubFetch: createGithubFetch({
         releases: [releaseFixture({ tagName: "hub-v0.2.0", assetName: "Gaurav POS Hub-0.2.0.gpos-update.zip", bytes: readFileSync(packagePath) })]
       })
@@ -393,8 +394,8 @@ describe("AppUpdateService", () => {
 
     expect(existsSync(result.backup.path)).toBe(true);
     expect(launchInstaller).toHaveBeenCalledWith({
-      filePath: expect.stringContaining("Gaurav POS Hub Setup 0.2.0.exe"),
-      args: []
+      filePath: "powershell.exe",
+      args: expect.arrayContaining(["-File", expect.stringContaining("Install Gaurav POS Update.ps1")])
     });
     expect(service.status().rollbackAvailable).toBe(true);
 
