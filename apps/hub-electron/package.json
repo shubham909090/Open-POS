@@ -120,7 +120,7 @@
       "identity": null
     },
     "nsis": {
-      "include": "build/installer.nsh",
+      "include": "resources/installer.nsh",
       "oneClick": true,
       "perMachine": false,
       "allowToChangeInstallationDirectory": false,
