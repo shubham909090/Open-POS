@@ -6,6 +6,10 @@ import { currentDbSchemaVersion } from "../src/db/schema-version.js";
 import { readAppMetadata } from "../src/app-metadata.js";
 import { ONLINE_UPDATE_METADATA, PACKAGED_SQLITE_NATIVE_PATH, UPDATE_APP_ID, sha256, validateInstallerContainsSQLiteNative, validateWindowsX64NativeModule, type UpdatePackageManifest } from "../src/update/update-package.js";
 
+if (process.platform !== "win32" || process.arch !== "x64") {
+  throw new Error("Hub update packages must be built and verified on native Windows x64. Use the Windows Hub Update Smoke workflow.");
+}
+
 const root = process.cwd();
 const releaseDir = join(root, "release");
 const metadata = readAppMetadata();
@@ -38,20 +42,8 @@ for (const path of [installerPath, unpackedExePath, sqliteNativePath]) {
 const sqliteBytes = readFileSync(sqliteNativePath);
 validateWindowsX64NativeModule(sqliteBytes);
 
-if (process.platform !== "win32") {
-  throw new Error(
-    [
-      "Windows packaged SQLite self-test cannot run on this OS.",
-      "Create release packages on Windows CI/laptop.",
-      "No .gpos-update.zip created."
-    ].join(" ")
-  );
-}
-
-if (process.platform === "win32") {
-  const selfTest = spawnSync(unpackedExePath, ["--self-test-sqlite"], { stdio: "inherit" });
-  if (selfTest.status !== 0) throw new Error("Packaged SQLite self-test failed");
-}
+const selfTest = spawnSync(unpackedExePath, ["--self-test-sqlite"], { stdio: "inherit" });
+if (selfTest.status !== 0) throw new Error("Packaged SQLite self-test failed");
 
 const installerBytes = readFileSync(installerPath);
 const dbSchemaVersion = currentDbSchemaVersion();

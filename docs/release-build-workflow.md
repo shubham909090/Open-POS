@@ -36,7 +36,7 @@ The trusted Hub release build must be created on Windows x64.
 
 Reason: the package command must run the packaged Windows app with `--self-test-sqlite`. That proves the packaged `better-sqlite3` native binary actually loads inside the packaged Electron app.
 
-If the build is attempted on macOS and the SQLite guard fails, do not use that package.
+The release helpers reject macOS/Linux before changing versions or release files. Cross-built installers are not release-safe, even after replacing the SQLite binary.
 
 Also verify that the Electron preload bridge is packaged. The app update file picker depends on `/preload.cjs` being present inside `app.asar`. If it is missing, the App Updates screen will fall back to pasted paths instead of opening the native file picker.
 
@@ -77,8 +77,7 @@ That command:
 - runs Hub tests and typecheck
 - deletes and recreates `apps/hub-electron/release`
 - creates the Windows installer
-- on macOS, repairs the cross-built SQLite native to Windows x64 `PE32+`
-- rebuilds the installer after native repair
+- requires native Windows x64 for installer and uninstaller generation
 - creates and validates the `.gpos-update.zip`
 - verifies `/preload.cjs` exists in `app.asar`
 - cleans the Hub release folder to only the current Hub release assets
@@ -232,8 +231,9 @@ The app still creates a pre-update DB backup before installer launch. If the run
 The `Windows Hub Update Smoke` workflow builds on a clean Windows x64 runner,
 installs the preceding stable release, and starts it with an isolated database.
 It verifies that the update handoff waits for the old Hub to exit, installs the
-candidate version, preserves a saved setting, and passes the installed SQLite
-self-test. This tests the candidate handoff against an installed old version;
+candidate version, preserves a saved setting, checks the new uninstaller's CRC,
+reinstalls using that new uninstaller, and passes the installed SQLite self-test.
+This tests the candidate handoff against an installed old version;
 it does not replace or prove the updater code already shipped inside that old
 version. Do not publish artifacts from a failed run.
 
@@ -245,78 +245,17 @@ An older installed Hub still uses its older update-launch code. If that update
 fails, create a database backup, close the Hub, and run the new installer
 manually. Never delete the database or uninstall with a data-removal option.
 
+The installer has a recovery path for legacy `0.1.x` versions below `0.1.20`
+whose uninstallers exit with code 2. It requires the registered installation
+location to match, then runs the new installer's own native-built uninstaller
+with application-data preservation flags. It does not disable CRC checking.
+
 ## Mac Cross-Build Warning
 
-macOS can produce a Windows `.exe`, but it may package the wrong SQLite native binary. We saw this happen: `better_sqlite3.node` inside `win-unpacked` was a macOS Mach-O file even though the app target was Windows.
-
-For a trusted restaurant build, prefer Windows x64 and `package:update`.
-
-If you must cross-build from macOS temporarily, do all of this before sending files:
-
-1. Build the Windows app:
-
-```bash
-pnpm --filter @gaurav-pos/hub-electron package:win
-```
-
-2. Check the packaged SQLite native:
-
-```bash
-file "apps/hub-electron/release/win-unpacked/resources/app.asar.unpacked/node_modules/better-sqlite3/build/Release/better_sqlite3.node"
-```
-
-It must say something like:
-
-```text
-PE32+ executable (DLL) (GUI) x86-64, for MS Windows
-```
-
-If it says `Mach-O`, `ELF`, `arm64`, or anything non-Windows, stop. Do not use that installer.
-
-3. Fetch the Electron Windows x64 prebuild for the exact Electron version and replace only `better_sqlite3.node`:
-
-```bash
-REPO_ROOT="$(pwd)"
-rm -rf .agent/tmp/better-sqlite3-electron-win32-x64
-mkdir -p .agent/tmp/better-sqlite3-electron-win32-x64
-cp node_modules/.pnpm/better-sqlite3@12.9.0/node_modules/better-sqlite3/package.json .agent/tmp/better-sqlite3-electron-win32-x64/package.json
-cd .agent/tmp/better-sqlite3-electron-win32-x64
-"$REPO_ROOT/node_modules/.pnpm/node_modules/.bin/prebuild-install" --runtime electron --target 38.8.6 --platform win32 --arch x64 --verbose
-cd "$REPO_ROOT"
-cp .agent/tmp/better-sqlite3-electron-win32-x64/build/Release/better_sqlite3.node \
-  apps/hub-electron/release/win-unpacked/resources/app.asar.unpacked/node_modules/better-sqlite3/build/Release/better_sqlite3.node
-```
-
-4. Remove any non-Windows test `.node` files from the packaged app:
-
-```bash
-rm -f apps/hub-electron/release/win-unpacked/resources/app.asar.unpacked/node_modules/better-sqlite3/build/Release/test_extension.node
-find apps/hub-electron/release/win-unpacked -name "*.node" -print -exec file {} \;
-```
-
-Only `better_sqlite3.node` should remain, and it must be Windows x64 `PE32+`.
-
-5. Rebuild the installer from corrected `win-unpacked`:
-
-```bash
-rm -f "apps/hub-electron/release/Gaurav POS Hub Setup 0.1.20.exe" \
-  "apps/hub-electron/release/Gaurav POS Hub Setup 0.1.20.exe.blockmap" \
-  apps/hub-electron/release/builder-debug.yml
-pnpm --filter @gaurav-pos/hub-electron exec electron-builder --win nsis --x64 --prepackaged release/win-unpacked
-```
-
-6. Create the `.gpos-update.zip` only after the native binary passes validation.
-
-On macOS cross-builds, `package:update` intentionally stops before creating the update zip if the packaged SQLite native is not Windows `PE32+` or if the Windows self-test cannot run. If you repair the native binary manually as above, create the update zip only after all of these pass:
-
-```bash
-node_modules/.pnpm/node_modules/@electron/asar/bin/asar.js list \
-  "apps/hub-electron/release/win-unpacked/resources/app.asar" | rg "^/preload\\.cjs$|^/dist/electron\\.js$"
-
-pnpm --filter @gaurav-pos/hub-electron exec tsx -e "import { readFileSync } from 'node:fs'; import { validateInstallerContainsSQLiteNative, validateWindowsX64NativeModule, sha256 } from './src/update/update-package.ts'; const native=readFileSync('./release/win-unpacked/resources/app.asar.unpacked/node_modules/better-sqlite3/build/Release/better_sqlite3.node'); validateWindowsX64NativeModule(native); validateInstallerContainsSQLiteNative(readFileSync('./release/Gaurav POS Hub Setup 0.1.20.exe'), sha256(native)); console.log({ sqliteNativeSha256: sha256(native) });"
-```
-
-Then create the zip using the app's update manifest format and immediately run the final validator below. If this feels clumsy, stop and build on Windows x64 instead.
+Do not ship macOS cross-built Windows installers. Replacing `better_sqlite3.node`
+does not validate or repair the separately generated NSIS uninstaller. Use the
+native Windows workflow, then download its verified release artifacts for
+publishing from macOS if needed. Do not bypass the host guard or CRC checks.
 
 ## Preload Picker Validation
 

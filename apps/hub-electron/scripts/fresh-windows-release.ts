@@ -1,19 +1,14 @@
-import AdmZip from "adm-zip";
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
-import { existsSync, readFileSync, rmSync, statSync, writeFileSync, mkdirSync, cpSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { currentDbSchemaVersion } from "../src/db/schema-version.js";
 import { readAppMetadata } from "../src/app-metadata.js";
 import {
   ONLINE_UPDATE_METADATA,
-  PACKAGED_SQLITE_NATIVE_PATH,
-  UPDATE_APP_ID,
   sha256,
-  validateInstallerContainsSQLiteNative,
   validateUpdatePackage,
-  validateWindowsX64NativeModule,
   type UpdatePackageManifest
 } from "../src/update/update-package.js";
 
@@ -30,10 +25,13 @@ if (args.has("--help") || args.has("-h")) {
     "",
     "Defaults:",
     "  --version is optional; without it, the patch version is bumped automatically.",
-    "  On macOS, the script repairs the cross-built SQLite native to Windows x64 PE32+ before creating the update zip.",
+    "  Builds require native Windows x64; macOS cross-builds are not release-safe.",
     "  --publish runs release:github after local validation."
   ].join("\n"));
   process.exit(0);
+}
+if (process.platform !== "win32" || process.arch !== "x64") {
+  throw new Error("Fresh Hub releases must be built on native Windows x64. Use the Windows Hub Update Smoke workflow; do not cross-build release installers.");
 }
 const explicitVersion = readArg("--version");
 const skipTests = args.has("--skip-tests");
@@ -60,14 +58,7 @@ if (!skipTests) {
 
 rmSync(join(hubRoot, "release"), { recursive: true, force: true });
 
-if (process.platform === "win32") {
-  run("pnpm", ["package:update"]);
-} else {
-  run("pnpm", ["package:win"]);
-  repairCrossBuiltWindowsSqlite();
-  rebuildInstallerFromUnpacked();
-  createUpdatePackage();
-}
+run("pnpm", ["package:update"]);
 
 validatePreloadBridge();
 createCleanReleaseFolder();
@@ -133,83 +124,6 @@ function run(command: string, commandArgs: string[], options: { cwd?: string; en
   if (result.status !== 0) throw new Error(`${command} ${commandArgs.join(" ")} failed`);
 }
 
-function repairCrossBuiltWindowsSqlite(): void {
-  const metadata = readAppMetadata();
-  const nativePath = packagedSqliteNativePath();
-  const nativeBytes = readFileSync(nativePath);
-  try {
-    validateWindowsX64NativeModule(nativeBytes);
-    removeTestNative();
-    return;
-  } catch {
-    // macOS cross-builds usually place a Mach-O native here. Replace it with the
-    // Electron win32-x64 prebuild before rebuilding the installer.
-  }
-
-  const tempRoot = join(repoRoot, ".agent", "tmp", "better-sqlite3-electron-win32-x64");
-  rmSync(tempRoot, { recursive: true, force: true });
-  mkdirSync(tempRoot, { recursive: true });
-  const betterSqlitePackage = require.resolve("better-sqlite3/package.json");
-  cpSync(betterSqlitePackage, join(tempRoot, "package.json"));
-  const prebuildInstall = join(repoRoot, "node_modules", ".pnpm", "node_modules", ".bin", process.platform === "win32" ? "prebuild-install.cmd" : "prebuild-install");
-  run(prebuildInstall, ["--runtime", "electron", "--target", metadata.electronVersion, "--platform", "win32", "--arch", "x64", "--verbose"], { cwd: tempRoot });
-  cpSync(join(tempRoot, "build", "Release", "better_sqlite3.node"), nativePath);
-  removeTestNative();
-  validateWindowsX64NativeModule(readFileSync(nativePath));
-}
-
-function removeTestNative(): void {
-  rmSync(join(hubRoot, "release", "win-unpacked", "resources", "app.asar.unpacked", "node_modules", "better-sqlite3", "build", "Release", "test_extension.node"), {
-    force: true
-  });
-}
-
-function rebuildInstallerFromUnpacked(): void {
-  const metadata = readAppMetadata();
-  rmSync(join(hubRoot, "release", `${metadata.productName} Setup ${metadata.version}.exe`), { force: true });
-  rmSync(join(hubRoot, "release", `${metadata.productName} Setup ${metadata.version}.exe.blockmap`), { force: true });
-  rmSync(join(hubRoot, "release", "builder-debug.yml"), { force: true });
-  run("pnpm", ["exec", "electron-builder", "--win", "nsis", "--x64", "--prepackaged", "release/win-unpacked", "--publish", "never"]);
-}
-
-function createUpdatePackage(): void {
-  const metadata = readAppMetadata();
-  if (metadata.appId !== UPDATE_APP_ID) throw new Error(`Unexpected appId ${metadata.appId}`);
-  const releaseDir = join(hubRoot, "release");
-  const installerName = `${metadata.productName} Setup ${metadata.version}.exe`;
-  const installerPath = join(releaseDir, installerName);
-  const nativePath = packagedSqliteNativePath();
-  const packagePath = join(releaseDir, `${metadata.productName}-${metadata.version}.gpos-update.zip`);
-  const nativeBytes = readFileSync(nativePath);
-  validateWindowsX64NativeModule(nativeBytes);
-  const installerBytes = readFileSync(installerPath);
-  validateInstallerContainsSQLiteNative(installerBytes, sha256(nativeBytes));
-  const manifest: UpdatePackageManifest = {
-    schemaVersion: 1,
-    appId: UPDATE_APP_ID,
-    productName: metadata.productName,
-    version: metadata.version,
-    platform: "win32",
-    arch: "x64",
-    electronVersion: metadata.electronVersion,
-    dbSchemaVersion: currentDbSchemaVersion(),
-    minSourceDbSchemaVersion: 0,
-    createdAt: new Date().toISOString(),
-    installer: { fileName: installerName, sha256: sha256(installerBytes), sizeBytes: statSync(installerPath).size },
-    sqliteNative: { fileName: PACKAGED_SQLITE_NATIVE_PATH, sha256: sha256(nativeBytes), sizeBytes: statSync(nativePath).size, format: "pe32plus-x64" }
-  };
-  writeFileSync(join(releaseDir, ONLINE_UPDATE_METADATA), JSON.stringify(toOnlineMetadata(manifest), null, 2));
-  const zip = new AdmZip();
-  zip.addFile("gpos-update.json", Buffer.from(JSON.stringify(manifest, null, 2), "utf8"));
-  zip.addFile(installerName, installerBytes);
-  zip.addFile(manifest.sqliteNative.fileName, nativeBytes);
-  zip.writeZip(packagePath);
-}
-
-function packagedSqliteNativePath(): string {
-  return join(hubRoot, "release", PACKAGED_SQLITE_NATIVE_PATH);
-}
-
 function validatePreloadBridge(): void {
   const asarBin = join(repoRoot, "node_modules", ".pnpm", "node_modules", "@electron", "asar", "bin", "asar.js");
   const appAsar = join(hubRoot, "release", "win-unpacked", "resources", "app.asar");
@@ -250,18 +164,4 @@ function validateFinalPackage(): UpdatePackageManifest {
     if (onlineMetadata[key] !== (manifest as unknown as Record<string, unknown>)[key]) throw new Error(`${ONLINE_UPDATE_METADATA} does not match package manifest field ${key}`);
   }
   return manifest;
-}
-
-function toOnlineMetadata(manifest: UpdatePackageManifest) {
-  return {
-    schemaVersion: manifest.schemaVersion,
-    appId: manifest.appId,
-    productName: manifest.productName,
-    version: manifest.version,
-    platform: manifest.platform,
-    arch: manifest.arch,
-    dbSchemaVersion: manifest.dbSchemaVersion,
-    minSourceDbSchemaVersion: manifest.minSourceDbSchemaVersion,
-    createdAt: manifest.createdAt
-  };
 }

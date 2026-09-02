@@ -34,6 +34,35 @@ function Get-HubVersion([string]$AppPath) {
   return $packageVersion.Trim()
 }
 
+function Get-UninstallerIntegrity([string]$AppPath) {
+  $env:SMOKE_UNINSTALLER = Join-Path (Split-Path $AppPath -Parent) 'Uninstall Gaurav POS Hub.exe'
+  $result = node --input-type=module -e @'
+import { readFileSync } from 'node:fs';
+import { crc32 } from 'node:zlib';
+import { createHash } from 'node:crypto';
+const b = readFileSync(process.env.SMOKE_UNINSTALLER);
+for (let i = 512; i < b.length - 28; i += 512) {
+  if (b.readUInt32LE(i + 4) !== 0xdeadbeef || b.subarray(i + 8, i + 20).toString() !== 'NullsoftInst') continue;
+  const end = i + b.readUInt32LE(i + 24) - 4;
+  const stored = b.readUInt32LE(end);
+  const actual = crc32(b.subarray(512, end));
+  console.log(JSON.stringify({ valid: stored === actual, stored, actual, sha256: createHash('sha256').update(b).digest('hex') }));
+  break;
+}
+'@
+  if ($LASTEXITCODE -ne 0 -or !$result) { throw "Could not inspect uninstaller integrity" }
+  Write-Host "Uninstaller integrity: $result"
+  return $result | ConvertFrom-Json
+}
+
+function Stop-HubGracefully {
+  $processes = @(Get-Process -Name "Gaurav POS Hub" -ErrorAction SilentlyContinue)
+  $processes | Where-Object { $_.MainWindowHandle -ne 0 } | ForEach-Object { $_.CloseMainWindow() | Out-Null }
+  foreach ($process in $processes) {
+    if (!$process.WaitForExit(120000)) { throw "Hub process did not exit: $($process.Id)" }
+  }
+}
+
 try {
   gh release download "hub-v$PreviousVersion" --repo shubham909090/Open-POS --pattern "Gaurav-POS-Hub-Setup-$PreviousVersion.exe" --dir $root
   if ($LASTEXITCODE -ne 0) { throw "Previous installer download failed" }
@@ -42,21 +71,7 @@ try {
   if ($install.ExitCode -ne 0) { throw "Previous install failed: $($install.ExitCode)" }
   $appPath = Find-InstalledHub
   if ((Get-HubVersion $appPath) -ne $PreviousVersion) { throw "Previous version was not installed" }
-  $previousUninstaller = Join-Path $root "previous-uninstaller.exe"
-  Copy-Item (Join-Path (Split-Path $appPath -Parent) 'Uninstall Gaurav POS Hub.exe') $previousUninstaller
-  $env:SMOKE_UNINSTALLER = $previousUninstaller
-  node --input-type=module -e @'
-import { readFileSync } from 'node:fs';
-import { crc32 } from 'node:zlib';
-import { createHash } from 'node:crypto';
-const b = readFileSync(process.env.SMOKE_UNINSTALLER);
-for (let i = 512; i < b.length - 28; i += 512) {
-  if (b.readUInt32LE(i + 4) !== 0xdeadbeef || b.subarray(i + 8, i + 20).toString() !== 'NullsoftInst') continue;
-  const end = i + b.readUInt32LE(i + 24) - 4;
-  console.log(JSON.stringify({ offset: i, flags: b.readUInt32LE(i), end, size: b.length, stored: b.readUInt32LE(end), actual: crc32(b.subarray(512, end)), sha256: createHash('sha256').update(b).digest('hex') }));
-  break;
-}
-'@
+  $legacyIntegrity = Get-UninstallerIntegrity $appPath
 
   $env:HUB_HOST = "127.0.0.1"
   $env:HUB_PORT = "43737"
@@ -109,13 +124,24 @@ console.log(JSON.stringify(plan));
   if (!$handoff.WaitForExit(180000)) { throw "Update handoff timed out" }
   if ($handoff.ExitCode -ne 0) { throw "Update handoff failed: $($handoff.ExitCode)" }
   if ((Get-HubVersion $appPath) -ne $version) { throw "Candidate version was not installed" }
+  if (!(Get-UninstallerIntegrity $appPath).valid) { throw "New uninstaller integrity check failed" }
   Wait-ForHub
 
   Invoke-RestMethod "http://127.0.0.1:43737/admin/session/unlock" -Method Post -Headers $headers -ContentType "application/json" -Body '{"pin":"4321"}' | Out-Null
-  Get-Process -Name "Gaurav POS Hub" -ErrorAction SilentlyContinue | ForEach-Object { $_.CloseMainWindow() | Out-Null; $_.WaitForExit(30000) | Out-Null }
+  Stop-HubGracefully
+  # The freshly installed uninstaller must also support the next replacement.
+  $repeatInstall = Start-Process $env:SMOKE_INSTALLER -ArgumentList '/S', '--updated' -PassThru
+  if (!$repeatInstall.WaitForExit(120000)) { throw "Normal reinstall timed out" }
+  if ($repeatInstall.ExitCode -ne 0) { throw "Normal reinstall failed: $($repeatInstall.ExitCode)" }
+  if ((Get-HubVersion $appPath) -ne $version) { throw "Normal reinstall changed package version" }
+  if (!(Get-UninstallerIntegrity $appPath).valid) { throw "Reinstalled uninstaller integrity check failed" }
+  Start-Process $appPath | Out-Null
+  Wait-ForHub
+  Invoke-RestMethod "http://127.0.0.1:43737/admin/session/unlock" -Method Post -Headers $headers -ContentType "application/json" -Body '{"pin":"4321"}' | Out-Null
+  Stop-HubGracefully
   $selfTest = Start-Process $appPath -ArgumentList "--self-test-sqlite" -PassThru -Wait
   if ($selfTest.ExitCode -ne 0) { throw "Installed SQLite self-test failed" }
-  @{ previousVersion = $PreviousVersion; installedVersion = $version; databasePreserved = $true; sqliteSelfTest = "passed" } |
+  @{ previousVersion = $PreviousVersion; installedVersion = $version; legacyUninstallerIntegrity = $legacyIntegrity; normalReinstall = "passed"; databasePreserved = $true; sqliteSelfTest = "passed" } |
     ConvertTo-Json | Set-Content (Join-Path $root "result.json")
 } catch {
   $failure = $_
@@ -139,14 +165,6 @@ console.log(JSON.stringify(plan));
         $stream.Dispose()
       } catch { [pscustomobject]@{ path = $_.TargetObject; error = $_.Exception.Message } }
     } | ConvertTo-Json | Set-Content (Join-Path $root "file-access-errors.json")
-  }
-  if ($failure.Exception.Message -eq "Update handoff timed out") {
-    Get-Process -Name "Gaurav POS Hub Setup $version" -ErrorAction SilentlyContinue | Stop-Process -Force
-    Write-Host "Diagnostic only: retry legacy uninstaller without CRC check in disposable CI"
-    $retry = Start-Process $previousUninstaller -ArgumentList "/NCRC /S /KEEP_APP_DATA /currentuser --updated _?=$(Split-Path $appPath -Parent)" -PassThru
-    $retryExited = $retry.WaitForExit(60000)
-    Write-Host "Legacy diagnostic exited: $retryExited; exit code: $($retry.ExitCode); app remains: $(Test-Path $appPath); database remains: $(Test-Path $env:HUB_DATABASE_PATH)"
-    if (!$retryExited) { $retry.Kill() }
   }
   throw $failure
 } finally {
