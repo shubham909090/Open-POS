@@ -184,7 +184,8 @@ describe("ticket rendering", () => {
     expect(payload).not.toContain("because guest moved outside");
     expect(payload).toContain("Station: Bar");
     expect(payload).toContain("Table: T2");
-    expect(payload).toContain("Time:");
+    expect(payload).toContain("Time: 12/07/2026 at");
+    expect(payload).not.toContain("July");
     expect(payload).toContain("+2 x Whisky 30 ml");
     expect(payload).not.toContain("Reason:");
     expect(payload).not.toContain("T00:");

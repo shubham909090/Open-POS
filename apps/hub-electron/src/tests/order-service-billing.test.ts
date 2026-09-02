@@ -113,8 +113,9 @@ describe("OrderService billing and bill printing", () => {
 
       const printJob = database.db.prepare("SELECT payload FROM print_jobs WHERE id = ?").get(reprint.printJobId) as { payload: string };
       const payload = stripPrintStyleMarkers(printJob.payload);
-      expect(payload).toContain("Date: 8 May 2026");
-      expect(payload).not.toContain("Date: 29 May 2026");
+      expect(payload).toContain("Date: 08/05/2026");
+      expect(payload).not.toContain("Date: 29/05/2026");
+      expect(payload).not.toContain("May");
     } finally {
       database.close();
       vi.useRealTimers();
