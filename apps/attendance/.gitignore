@@ -1,0 +1,5 @@
+android/
+ios/
+release/
+artifacts/
+.env.local

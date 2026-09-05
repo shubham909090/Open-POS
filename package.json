@@ -12,11 +12,15 @@
     "release:hub:fresh": "pnpm --filter @gaurav-pos/hub-electron release:fresh-windows",
     "release:mobile:local": "pnpm --filter @gaurav-pos/mobile release:local-apk",
     "test": "vitest run convex/*.test.ts && pnpm -r --if-present test",
-    "typecheck": "pnpm -r --if-present typecheck"
+    "typecheck": "pnpm -r --if-present typecheck",
+    "dev:attendance": "pnpm --filter @gaurav-pos/attendance dev",
+    "test:attendance": "vitest run convex/attendance*.test.ts && pnpm --filter @gaurav-pos/attendance test"
   },
   "devDependencies": {
+    "@edge-runtime/vm": "^5.0.0",
     "@types/node": "^22.15.17",
-    "convex": "^1.38.0",
+    "convex": "^1.45.0",
+    "convex-test": "^0.0.56",
     "dotenv-cli": "^11.0.0",
     "tsx": "^4.19.4",
     "typescript": "^5.8.3",

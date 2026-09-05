@@ -1,6 +1,7 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 import { activationStatusValidator, backupDomainValidator, leaseStatusValidator, licenseStatusValidator } from "./backupModel";
+import { attendanceStatusValidator } from "./attendanceModel";
 
 export default defineSchema({
   restaurants: defineTable({
@@ -128,5 +129,87 @@ export default defineSchema({
     lastReceivedAt: v.string()
   })
     .index("by_restaurant_and_domain", ["restaurantId", "domain"])
-    .index("by_restaurant_and_receivedAt", ["restaurantId", "lastReceivedAt"])
+    .index("by_restaurant_and_receivedAt", ["restaurantId", "lastReceivedAt"]),
+  attendanceEmployees: defineTable({
+    restaurantId: v.id("restaurants"),
+    name: v.string(),
+    role: v.string(),
+    joiningDate: v.string(),
+    currentMonthlySalaryPaise: v.number(),
+    archivedAt: v.optional(v.string()),
+    archivedDate: v.optional(v.string()),
+    createdAt: v.string(),
+    updatedAt: v.string()
+  })
+    .index("by_restaurantId", ["restaurantId"])
+    .index("by_restaurantId_and_archivedDate", ["restaurantId", "archivedDate"]),
+  attendanceEmployeeCompensations: defineTable({
+    restaurantId: v.id("restaurants"),
+    employeeId: v.id("attendanceEmployees"),
+    effectiveMonth: v.string(),
+    monthlySalaryPaise: v.number(),
+    createdAt: v.string(),
+    updatedAt: v.string()
+  })
+    .index("by_employeeId_and_effectiveMonth", ["employeeId", "effectiveMonth"])
+    .index("by_restaurantId_and_effectiveMonth", ["restaurantId", "effectiveMonth"]),
+  attendancePolicies: defineTable({
+    restaurantId: v.id("restaurants"),
+    effectiveMonth: v.string(),
+    paidOffDays: v.number(),
+    standardHours: v.number(),
+    overtimeMultiplier: v.number(),
+    createdAt: v.string(),
+    updatedAt: v.string()
+  }).index("by_restaurantId_and_effectiveMonth", ["restaurantId", "effectiveMonth"]),
+  attendanceRecords: defineTable({
+    restaurantId: v.id("restaurants"),
+    employeeId: v.id("attendanceEmployees"),
+    date: v.string(),
+    status: attendanceStatusValidator,
+    overtimeHours: v.number(),
+    notes: v.optional(v.string()),
+    createdAt: v.string(),
+    updatedAt: v.string()
+  })
+    .index("by_employeeId_and_date", ["employeeId", "date"])
+    .index("by_restaurantId_and_date", ["restaurantId", "date"]),
+  attendancePairingCodes: defineTable({
+    restaurantId: v.id("restaurants"),
+    codeHash: v.string(),
+    createdAt: v.string(),
+    expiresAt: v.string(),
+    createdByType: v.union(v.literal("admin"), v.literal("internal")),
+    createdByIdentifier: v.string(),
+    redeemedAt: v.optional(v.string()),
+    revokedAt: v.optional(v.string())
+  })
+    .index("by_codeHash", ["codeHash"])
+    .index("by_restaurantId_and_createdAt", ["restaurantId", "createdAt"]),
+  attendanceDeviceCredentials: defineTable({
+    restaurantId: v.id("restaurants"),
+    tokenHash: v.string(),
+    tokenPrefix: v.string(),
+    createdAt: v.string(),
+    expiresAt: v.string(),
+    revokedAt: v.optional(v.string())
+  })
+    .index("by_tokenHash", ["tokenHash"])
+    .index("by_restaurantId_and_createdAt", ["restaurantId", "createdAt"]),
+  attendanceAuditRecords: defineTable({
+    restaurantId: v.id("restaurants"),
+    deviceCredentialId: v.optional(v.id("attendanceDeviceCredentials")),
+    actorType: v.union(v.literal("device"), v.literal("admin"), v.literal("internal")),
+    actorIdentifier: v.string(),
+    action: v.string(),
+    entityType: v.string(),
+    entityId: v.string(),
+    detailsJson: v.string(),
+    occurredAt: v.string()
+  }).index("by_restaurantId_and_occurredAt", ["restaurantId", "occurredAt"]),
+  attendanceQaFixtures: defineTable({
+    fixtureKey: v.string(),
+    restaurantId: v.id("restaurants"),
+    createdAt: v.string()
+  }).index("by_fixtureKey", ["fixtureKey"])
 });

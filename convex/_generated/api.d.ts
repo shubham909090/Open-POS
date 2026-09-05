@@ -11,6 +11,11 @@
 import type * as admin from "../admin.js";
 import type * as admin_access from "../admin/access.js";
 import type * as admin_membership from "../admin/membership.js";
+import type * as attendance from "../attendance.js";
+import type * as attendanceAccess from "../attendanceAccess.js";
+import type * as attendanceModel from "../attendanceModel.js";
+import type * as attendancePairing from "../attendancePairing.js";
+import type * as attendanceProvisioning from "../attendanceProvisioning.js";
 import type * as backup from "../backup.js";
 import type * as backupModel from "../backupModel.js";
 import type * as http from "../http.js";
@@ -28,6 +33,11 @@ declare const fullApi: ApiFromModules<{
   admin: typeof admin;
   "admin/access": typeof admin_access;
   "admin/membership": typeof admin_membership;
+  attendance: typeof attendance;
+  attendanceAccess: typeof attendanceAccess;
+  attendanceModel: typeof attendanceModel;
+  attendancePairing: typeof attendancePairing;
+  attendanceProvisioning: typeof attendanceProvisioning;
   backup: typeof backup;
   backupModel: typeof backupModel;
   http: typeof http;

@@ -1,0 +1,31 @@
+{
+  "expo": {
+    "name": "Sky Attendance",
+    "slug": "sky-attendance",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "sky-attendance",
+    "userInterfaceStyle": "light",
+    "android": {
+      "package": "com.skylounge.attendance",
+      "versionCode": 1,
+      "blockedPermissions": [
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.SYSTEM_ALERT_WINDOW",
+        "android.permission.RECORD_AUDIO"
+      ]
+    },
+    "plugins": [
+      "expo-secure-store",
+      "expo-font"
+    ],
+    "splash": {
+      "backgroundColor": "#F7F6F0"
+    },
+    "experiments": {
+      "autolinkingModuleResolution": true
+    },
+    "icon": "./assets/icon.png"
+  }
+}
