@@ -297,3 +297,19 @@ describe("attendance device credential isolation", () => {
     expect(second.isDone).toBe(true);
   });
 });
+
+ it("supports two-day operator codes while retaining the admin limit and one-use pairing", async () => {
+  const t = convexTest(schema, modules);
+  const fixture = await t.mutation(setupQaFixture, { fixtureKey: "two-day-code" });
+  const { createAttendancePairingCode } = await import("./attendanceAccess");
+  const result = await t.run(async (ctx) => {
+    const result = await createAttendancePairingCode(ctx, { restaurantId: fixture.restaurantId, expiresInMinutes: 2880, createdByType: "internal", createdByIdentifier: "test" });
+    const stored = await ctx.db.get(result.pairingCodeId);
+    expect(Date.parse(result.expiresAt) - Date.parse(stored!.createdAt)).toBe(48 * 60 * 60 * 1000);
+    return result;
+  });
+  await expect(t.run((ctx) => createAttendancePairingCode(ctx, { restaurantId: fixture.restaurantId, expiresInMinutes: 2881, createdByType: "internal", createdByIdentifier: "test" }))).rejects.toThrow("2880 minutes");
+  await expect(t.run((ctx) => createAttendancePairingCode(ctx, { restaurantId: fixture.restaurantId, expiresInMinutes: 2880, createdByType: "admin", createdByIdentifier: "test" }))).rejects.toThrow("60 minutes");
+  await t.mutation(pair, { code: result.code });
+  await expect(t.mutation(pair, { code: result.code })).rejects.toThrow();
+});

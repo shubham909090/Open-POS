@@ -24,9 +24,9 @@ export function deviceTokenHash(value: string) {
   return sha256Hex(value.trim());
 }
 
-function expiresAtFromMinutes(now: string, minutes: number) {
-  if (!Number.isInteger(minutes) || minutes < 1 || minutes > 60) {
-    throw new Error("Pairing code expiry must be between 1 and 60 minutes");
+function expiresAtFromMinutes(now: string, minutes: number, maximumMinutes: number) {
+  if (!Number.isInteger(minutes) || minutes < 1 || minutes > maximumMinutes) {
+    throw new Error(`Pairing code expiry must be between 1 and ${maximumMinutes} minutes`);
   }
   return new Date(Date.parse(now) + minutes * 60_000).toISOString();
 }
@@ -49,7 +49,7 @@ export async function createAttendancePairingCode(
   const groups = entropy.match(/.{1,8}/g) ?? [entropy];
   const code = `${PAIRING_CODE_PREFIX}-${groups.join("-")}`;
   const codeHash = await pairingCodeHash(code);
-  const expiresAt = expiresAtFromMinutes(now, args.expiresInMinutes ?? DEFAULT_PAIRING_MINUTES);
+  const expiresAt = expiresAtFromMinutes(now, args.expiresInMinutes ?? DEFAULT_PAIRING_MINUTES, args.createdByType === "internal" ? 2880 : 60);
   const pairingCodeId = await ctx.db.insert("attendancePairingCodes", {
     restaurantId: args.restaurantId,
     codeHash,
