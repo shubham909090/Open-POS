@@ -2,6 +2,45 @@ import { describe, expect, it } from "vitest";
 import { createTestHub } from "./helpers.js";
 
 describe("OrderService alcohol catalog rules", () => {
+  it("updates and reactivates matching liquor without changing its stock ledger", () => {
+    const { database, orderService } = createTestHub();
+    orderService.setManagerPin({ newPin: "1234", updatedBy: "admin" });
+    const liquor = orderService.createAlcoholItem({
+      type: "plain_liquor",
+      name: "Import Whisky",
+      productionUnitId: "unit-bar",
+      largeBottleMl: 750,
+      smallBottleMl: 180,
+      sealedLargeCount: 2,
+      openLargeMl: 90,
+      sealedSmallCount: 1,
+      variants: [{ id: "legacy-import-whisky-shot", label: "30 ml", kind: "shot", pricePaise: 10_000, volumeMl: 30, inventoryAction: "large_ml", sortOrder: 0, active: true }],
+      recipeIngredients: []
+    });
+    orderService.adjustAlcoholStock(liquor.id, {
+      mode: "delta",
+      sealedLargeCount: 1,
+      managerApproval: { pin: "1234", reason: "Received bottle", approvedBy: "manager" }
+    });
+    orderService.updateAlcoholItem(liquor.id, { active: false });
+    const stockBefore = database.db.prepare("SELECT sealed_large_count, open_large_ml, sealed_small_count FROM alcohol_stock_levels WHERE menu_item_id = ?").get(liquor.id);
+    const movementsBefore = database.db.prepare("SELECT COUNT(*) AS count FROM alcohol_stock_movements WHERE menu_item_id = ?").get(liquor.id);
+
+    const result = orderService.importAlcoholItemsFromCsv([
+      "name,bar_counter,large_bottle_ml,small_bottle_ml,shot_price,small_bottle_price,large_bottle_price,sealed_large_count,open_large_ml,sealed_small_count,active",
+      "import whisky,Bar,750,180,140,650,2200,99,99,99,true"
+    ].join("\n"), "plain_liquor");
+
+    expect(result).toEqual({ created: 0, updated: 1, failed: 0, ids: [liquor.id], errors: [] });
+    expect(database.db.prepare("SELECT active FROM menu_items WHERE id = ?").get(liquor.id)).toEqual({ active: 1 });
+    expect(database.db.prepare("SELECT sealed_large_count, open_large_ml, sealed_small_count FROM alcohol_stock_levels WHERE menu_item_id = ?").get(liquor.id)).toEqual(stockBefore);
+    expect(database.db.prepare("SELECT COUNT(*) AS count FROM alcohol_stock_movements WHERE menu_item_id = ?").get(liquor.id)).toEqual(movementsBefore);
+    expect(database.db.prepare("SELECT price_paise FROM menu_item_variants WHERE menu_item_id = ? AND kind = 'shot'").get(liquor.id)).toEqual({ price_paise: 14_000 });
+    expect(database.db.prepare("SELECT id FROM menu_item_variants WHERE menu_item_id = ? AND kind = 'shot'").get(liquor.id)).toEqual({ id: "legacy-import-whisky-shot" });
+
+    database.close();
+  });
+
   it("clears stale recipes when an alcohol product becomes plain liquor", () => {
     const { database, orderService } = createTestHub();
     const vodka = orderService.createAlcoholItem({

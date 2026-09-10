@@ -41,7 +41,6 @@ export type AlcoholActionContext = {
   updateMenuItem: (id: string, input: UpdateMenuItemInput) => { id: string };
   replaceAlcoholVariants: (menuItemId: string, variants: CreateAlcoholItemInput["variants"]) => void;
   replaceAlcoholRecipe: (menuItemId: string, ingredients: CreateAlcoholItemInput["recipeIngredients"]) => void;
-  findMenuItemIdByName: (name: string) => string | null;
   resolveProductionUnitRef: (value: string | null) => string | null;
   parseAlcoholRecipeCsv: (value: string | null) => Array<{ liquorMenuItemId: string; mlPerUnit: number }>;
   requireAlcoholStock: (menuItemId: string) => AlcoholStockRow;
@@ -118,11 +117,15 @@ export function createAlcoholItem(ctx: AlcoholActionContext, input: CreateAlcoho
 export function importAlcoholItemsFromCsv(ctx: AlcoholActionContext, csv: string, type: "plain_liquor" | "prepared_product"): CsvImportResult {
   const run = ctx.db.transaction(() => {
     const rows = parseCsvRows(csv);
-    const result: CsvImportResult = { created: 0, failed: 0, ids: [], errors: [] };
+    const result: CsvImportResult = { created: 0, updated: 0, failed: 0, ids: [], errors: [] };
+    const seenNames = new Map<string, number>();
     for (const row of rows) {
       try {
         const name = requireCsvText(row, ["name", "item_name", "liquor_name", "product_name"]);
-        if (ctx.findMenuItemIdByName(name)) throw new DomainError(`Alcohol item "${name}" already exists`);
+        const normalizedName = name.toLowerCase();
+        const firstRow = seenNames.get(normalizedName);
+        if (firstRow) throw new DomainError(`Duplicate item name in CSV (first used on row ${firstRow})`);
+        seenNames.set(normalizedName, row.rowNumber);
         const productionUnitId = ctx.resolveProductionUnitRef(csvText(row, ["bar_counter", "kitchen_or_counter", "counter", "production_unit"]));
         const active = csvBoolean(csvText(row, ["active"]), true);
         const largeBottleMl = csvInteger(csvText(row, ["large_bottle_ml", "large_ml"]), 750);
@@ -130,11 +133,68 @@ export function importAlcoholItemsFromCsv(ctx: AlcoholActionContext, csv: string
         const shotPricePaise = csvMoneyToPaiseOptional(csvText(row, ["shot_price", "price_30_ml", "thirty_ml_price"]));
         const smallPricePaise = csvMoneyToPaiseOptional(csvText(row, ["small_bottle_price", "small_price"]));
         const largePricePaise = csvMoneyToPaiseOptional(csvText(row, ["large_bottle_price", "large_price"]));
-        const plainVariants: CreateAlcoholItemInput["variants"] = [
+        const plainVariants: NonNullable<UpdateAlcoholItemInput["variants"]> = [
           ...(shotPricePaise > 0 ? [{ label: "30 ml", kind: "shot" as const, pricePaise: shotPricePaise, volumeMl: 30, inventoryAction: "large_ml" as const, sortOrder: 0, active: true }] : []),
           ...(smallPricePaise > 0 ? [{ label: `${smallBottleMl} ml`, kind: "small_bottle" as const, pricePaise: smallPricePaise, volumeMl: smallBottleMl, inventoryAction: "small_bottle" as const, sortOrder: 1, active: true }] : []),
           ...(largePricePaise > 0 ? [{ label: `${largeBottleMl} ml`, kind: "large_bottle" as const, pricePaise: largePricePaise, volumeMl: largeBottleMl, inventoryAction: "large_bottle" as const, sortOrder: 2, active: true }] : [])
         ];
+        const regularVariant: NonNullable<UpdateAlcoholItemInput["variants"]> = type === "prepared_product"
+          ? [
+              {
+                label: "Regular",
+                kind: "default",
+                pricePaise: csvMoneyToPaise(requireCsvText(row, ["price", "price_rupees", "rate"])),
+                volumeMl: null,
+                inventoryAction: "none",
+                sortOrder: 0,
+                active: true
+              }
+            ]
+          : [];
+        const recipeIngredients = type === "prepared_product"
+          ? ctx.parseAlcoholRecipeCsv(csvText(row, ["recipe", "recipe_ml", "ingredients"]))
+          : [];
+        const matchingItems = ctx.db
+          .prepare("SELECT id FROM menu_items WHERE lower(name) = lower(?) ORDER BY id")
+          .all(name.trim()) as Array<{ id: string }>;
+        if (matchingItems.length > 1) throw new DomainError(`Multiple menu items named "${name}" already exist. Rename duplicates before importing this row.`);
+        const existingId = matchingItems[0]?.id;
+        if (existingId) {
+          const profile = ctx.orm
+            .select({ type: alcoholProfiles.type })
+            .from(alcoholProfiles)
+            .where(eq(alcoholProfiles.menuItemId, existingId))
+            .get();
+          if (!profile) throw new DomainError(`A dish named "${name}" already exists`);
+          if (profile.type !== type) {
+            throw new DomainError(
+              `Alcohol item "${name}" already exists as ${profile.type === "plain_liquor" ? "plain liquor" : "a prepared product"}`
+            );
+          }
+          const variantsByKind = new Map(
+            ctx.orm
+              .select({ id: menuItemVariants.id, kind: menuItemVariants.kind })
+              .from(menuItemVariants)
+              .where(eq(menuItemVariants.menuItemId, existingId))
+              .all()
+              .map((variant) => [variant.kind, variant.id])
+          );
+          const importedVariants = (type === "plain_liquor" ? plainVariants : regularVariant).map((variant) => ({
+            ...variant,
+            id: variantsByKind.get(variant.kind)
+          }));
+          updateAlcoholItem(ctx, existingId, {
+            name,
+            productionUnitId,
+            ...(type === "plain_liquor" ? { largeBottleMl, smallBottleMl } : {}),
+            variants: importedVariants,
+            recipeIngredients,
+            active
+          });
+          result.updated += 1;
+          result.ids.push(existingId);
+          continue;
+        }
         const created = type === "plain_liquor"
           ? createAlcoholItem(ctx, {
               type,
@@ -153,18 +213,8 @@ export function importAlcoholItemsFromCsv(ctx: AlcoholActionContext, csv: string
               type,
               name,
               productionUnitId,
-              variants: [
-                {
-                  label: "Regular",
-                  kind: "default",
-                  pricePaise: csvMoneyToPaise(requireCsvText(row, ["price", "price_rupees", "rate"])),
-                  volumeMl: null,
-                  inventoryAction: "none",
-                  sortOrder: 0,
-                  active: true
-                }
-              ],
-              recipeIngredients: ctx.parseAlcoholRecipeCsv(csvText(row, ["recipe", "recipe_ml", "ingredients"])),
+              variants: regularVariant,
+              recipeIngredients,
               active
             });
         result.created += 1;

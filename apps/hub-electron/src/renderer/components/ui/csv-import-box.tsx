@@ -2,6 +2,15 @@ import { useRef, useState } from "react";
 import { Download, FileUp } from "lucide-react";
 import type { CsvImportResult } from "../../hub-api.js";
 
+export async function decodeCsvFile(file: File): Promise<string> {
+  const bytes = await file.arrayBuffer();
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    return new TextDecoder("windows-1252").decode(bytes);
+  }
+}
+
 export function CsvImportBox({
   title,
   description,
@@ -34,7 +43,7 @@ export function CsvImportBox({
   const importFile = async (file: File | null) => {
     if (!file) return;
     setFileName(file.name);
-    onImport(await file.text());
+    onImport(await decodeCsvFile(file));
     if (inputRef.current) inputRef.current.value = "";
   };
 
@@ -65,7 +74,7 @@ export function CsvImportBox({
       {result ? (
         <div className={result.failed ? "csv-import-result has-errors" : "csv-import-result"}>
           <strong>
-            {result.created} imported
+            {result.created} added · {result.updated} updated
             {result.failed ? ` · ${result.failed} need fixing` : ""}
           </strong>
           {result.errors.length ? (

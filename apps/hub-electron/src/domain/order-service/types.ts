@@ -155,6 +155,7 @@ export interface BillTotals {
 
 export type CsvImportResult = {
   created: number;
+  updated: number;
   failed: number;
   ids: string[];
   errors: Array<{ row: number; message: string }>;

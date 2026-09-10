@@ -95,6 +95,61 @@ describe("OrderService setup catalog", () => {
     database.close();
   });
 
+  it("updates and reactivates a matching disabled dish during CSV import", () => {
+    const { database, orderService } = createTestHub();
+    const order = orderService.submitOrder({
+      tableId: "table-t1",
+      captainId: "waiter-1",
+      pax: 1,
+      orderType: "dine_in",
+      items: [{ menuItemId: "item-dal-fry", quantity: 1 }]
+    });
+    orderService.setManagerPin({ newPin: "1234", updatedBy: "admin" });
+    orderService.cancelOrder(order.orderId, {
+      reason: "Test cleanup",
+      requestedBy: "captain-1",
+      managerApproval: { pin: "1234", reason: "Test cleanup", approvedBy: "manager" }
+    });
+    expect(orderService.removeMenuItem("item-dal-fry")).toEqual({ id: "item-dal-fry", deleted: false, active: false });
+
+    const result = orderService.importMenuItemsFromCsv([
+      "name,price,kitchen_or_counter,sale_category,active",
+      "dal fry,225,Kitchen,Food,true"
+    ].join("\n"));
+
+    expect(result).toEqual({ created: 0, updated: 1, failed: 0, ids: ["item-dal-fry"], errors: [] });
+    expect(database.db.prepare("SELECT name, price_paise, active FROM menu_items WHERE id = ?").get("item-dal-fry")).toEqual({
+      name: "dal fry",
+      price_paise: 22_500,
+      active: 1
+    });
+    expect(database.db.prepare("SELECT menu_item_id FROM order_items WHERE order_id = ?").get(order.orderId)).toEqual({
+      menu_item_id: "item-dal-fry"
+    });
+
+    database.close();
+  });
+
+  it("refuses an ambiguous CSV update when duplicate menu names already exist", () => {
+    const { database, orderService } = createTestHub();
+    orderService.createMenuItem({ name: "Duplicate Soup", pricePaise: 10_000 });
+    orderService.createMenuItem({ name: "duplicate soup", pricePaise: 12_000 });
+
+    const result = orderService.importMenuItemsFromCsv([
+      "name,price,kitchen_or_counter,sale_category,active",
+      "DUPLICATE SOUP,225,Kitchen,Food,true"
+    ].join("\n"));
+
+    expect(result).toMatchObject({ created: 0, updated: 0, failed: 1 });
+    expect(result.errors[0]?.message).toContain("Multiple menu items");
+    expect(database.db.prepare("SELECT price_paise FROM menu_items WHERE lower(name) = lower(?) ORDER BY price_paise").all("Duplicate Soup")).toEqual([
+      { price_paise: 10_000 },
+      { price_paise: 12_000 }
+    ]);
+
+    database.close();
+  });
+
   it("orders floors and tables by saved sort order", () => {
     const { database, orderService } = createTestHub();
     const upstairs = orderService.createFloor({ name: "Upstairs", sortOrder: 10 });

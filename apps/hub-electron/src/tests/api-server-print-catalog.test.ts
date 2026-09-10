@@ -346,6 +346,7 @@ describe("Hub API print, catalog, and report routes", () => {
     expect(response.statusCode).toBe(200);
     expect(response.json()).toMatchObject({
       created: 1,
+      updated: 0,
       failed: 1,
       errors: [{ row: 3 }]
     });

@@ -100,7 +100,7 @@ export function SetupView({
       await invalidate();
       setNotice({
         tone: result.failed ? "bad" : "good",
-        text: result.failed ? `${result.created} dishes imported. ${result.failed} rows need fixing.` : `${result.created} dishes imported.`,
+        text: `${result.created} dishes added, ${result.updated} updated.${result.failed ? ` ${result.failed} rows need fixing.` : ""}`,
       });
     },
     onError: (error) => setNotice({ tone: "bad", text: messageOf(error) }),

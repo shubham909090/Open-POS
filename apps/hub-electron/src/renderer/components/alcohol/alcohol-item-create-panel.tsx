@@ -131,7 +131,7 @@ function AlcoholItemCreatePanel({
       await invalidate();
       setNotice({
         tone: result.failed ? "bad" : "good",
-        text: result.failed ? `${result.created} liquor items imported. ${result.failed} rows need fixing.` : `${result.created} liquor items imported.`,
+        text: `${result.created} liquor items added, ${result.updated} updated.${result.failed ? ` ${result.failed} rows need fixing.` : ""}`,
       });
     },
     onError: (error) => setNotice({ tone: "bad", text: messageOf(error) }),
@@ -143,7 +143,7 @@ function AlcoholItemCreatePanel({
       await invalidate();
       setNotice({
         tone: result.failed ? "bad" : "good",
-        text: result.failed ? `${result.created} alcohol products imported. ${result.failed} rows need fixing.` : `${result.created} alcohol products imported.`,
+        text: `${result.created} alcohol products added, ${result.updated} updated.${result.failed ? ` ${result.failed} rows need fixing.` : ""}`,
       });
     },
     onError: (error) => setNotice({ tone: "bad", text: messageOf(error) }),

@@ -79,6 +79,7 @@ export interface SaleGroup {
 
 export interface CsvImportResult {
   created: number;
+  updated: number;
   failed: number;
   ids: string[];
   errors: Array<{ row: number; message: string }>;

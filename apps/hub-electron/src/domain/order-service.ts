@@ -129,7 +129,6 @@ import {
   requireTable as requireTableModel
 } from "./order-service/floor-table-catalog.js";
 import {
-  findMenuItemIdByName as findMenuItemIdByNameModel,
   getCurrentMenuPopularity as getCurrentMenuPopularityModel,
   getMenuItemsByIds,
   listMenuItemReadModels,
@@ -873,7 +872,6 @@ export class OrderService {
       updateMenuItem: (id, input) => this.updateMenuItem(id, input),
       replaceAlcoholVariants: (menuItemId, variants) => this.replaceAlcoholVariants(menuItemId, variants),
       replaceAlcoholRecipe: (menuItemId, ingredients) => this.replaceAlcoholRecipe(menuItemId, ingredients),
-      findMenuItemIdByName: (name) => this.findMenuItemIdByName(name),
       resolveProductionUnitRef: (value) => this.resolveProductionUnitRef(value),
       parseAlcoholRecipeCsv: (value) => this.parseAlcoholRecipeCsv(value),
       requireAlcoholStock: (menuItemId) => this.requireAlcoholStock(menuItemId),
@@ -1141,10 +1139,6 @@ export class OrderService {
 
   private requireSaleGroup(id: string) {
     return requireSaleGroupModel(this.db, id);
-  }
-
-  private findMenuItemIdByName(name: string): string | null {
-    return findMenuItemIdByNameModel(this.db, name);
   }
 
   private resolveProductionUnitRef(value: string | null): string | null {

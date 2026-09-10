@@ -41,13 +41,6 @@ export function getCurrentMenuPopularity(db: SqliteDatabase, businessDayId: stri
     .all(businessDayId) as Array<{ menuItemId: string; quantity: number }>;
 }
 
-export function findMenuItemIdByName(db: SqliteDatabase, name: string): string | null {
-  const row = db
-    .prepare("SELECT id FROM menu_items WHERE lower(name) = lower(?) LIMIT 1")
-    .get(name.trim()) as { id: string } | undefined;
-  return row?.id ?? null;
-}
-
 export function listVariantsForMenuItems(db: SqliteDatabase, menuItemIds: string[], includeInactive = false): Map<string, MenuItemVariantRow[]> {
   const uniqueIds = [...new Set(menuItemIds)];
   if (uniqueIds.length === 0) return new Map();

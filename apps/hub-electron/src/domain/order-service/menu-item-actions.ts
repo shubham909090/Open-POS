@@ -59,20 +59,35 @@ export function createMenuItem(ctx: MenuItemActionContext, input: CreateMenuItem
 export function importMenuItemsFromCsv(ctx: MenuItemActionContext, csv: string): CsvImportResult {
   const run = ctx.db.transaction(() => {
     const rows = parseCsvRows(csv);
-    const result: CsvImportResult = { created: 0, failed: 0, ids: [], errors: [] };
+    const result: CsvImportResult = { created: 0, updated: 0, failed: 0, ids: [], errors: [] };
+    const seenNames = new Map<string, number>();
     for (const row of rows) {
       try {
         const name = requireCsvText(row, ["name", "item_name", "dish_name"]);
-        if (findMenuItemIdByName(ctx, name)) throw new DomainError(`Menu item "${name}" already exists`);
+        const normalizedName = name.toLowerCase();
+        const firstRow = seenNames.get(normalizedName);
+        if (firstRow) throw new DomainError(`Duplicate item name in CSV (first used on row ${firstRow})`);
+        seenNames.set(normalizedName, row.rowNumber);
         const pricePaise = csvMoneyToPaise(requireCsvText(row, ["price", "price_rupees", "rate"]));
         const productionUnitId = ctx.resolveProductionUnitRef(csvText(row, ["kitchen_or_counter", "kitchen", "counter", "production_unit"]));
         const saleGroupId = ctx.resolveSaleGroupRef(csvText(row, ["sale_category", "sale_group", "category"]) || "Food");
+        const active = csvBoolean(csvText(row, ["active"]), true);
+        const matchingIds = findMenuItemIdsByName(ctx, name);
+        if (matchingIds.length > 1) throw new DomainError(`Multiple menu items named "${name}" already exist. Rename duplicates before importing this row.`);
+        const existingId = matchingIds[0];
+        if (existingId) {
+          if (ctx.isAlcoholMenuItem(existingId)) throw new DomainError(`An alcohol item named "${name}" already exists`);
+          updateMenuItem(ctx, existingId, { name, pricePaise, productionUnitId, saleGroupId, active });
+          result.updated += 1;
+          result.ids.push(existingId);
+          continue;
+        }
         const created = createMenuItem(ctx, {
           name,
           pricePaise,
           productionUnitId,
           saleGroupId,
-          active: csvBoolean(csvText(row, ["active"]), true)
+          active
         });
         result.created += 1;
         result.ids.push(created.id);
@@ -211,9 +226,11 @@ export function bulkRemoveMenuItems(ctx: MenuItemActionContext, kind: BulkMenuDe
   return result;
 }
 
-function findMenuItemIdByName(ctx: MenuItemActionContext, name: string): string | null {
-  const row = ctx.orm.select({ id: menuItems.id }).from(menuItems).where(eq(menuItems.name, name)).get();
-  return row?.id ?? null;
+function findMenuItemIdsByName(ctx: MenuItemActionContext, name: string): string[] {
+  const rows = ctx.db
+    .prepare("SELECT id FROM menu_items WHERE lower(name) = lower(?) ORDER BY id")
+    .all(name.trim()) as Array<{ id: string }>;
+  return rows.map((row) => row.id);
 }
 
 function createEntityId(prefix: string, customId: string | undefined, exists: (id: string) => boolean): string {
