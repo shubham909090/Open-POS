@@ -84,6 +84,10 @@ export interface HubOrder {
     menu_item_id: string | null;
     menu_item_variant_id?: string | null;
     name_snapshot: string;
+    kot_sequence?: number | null;
+    kot_created_at?: string | null;
+    kot_ticket_label?: "KOT" | "BOT" | null;
+    kot_type?: string | null;
     unit_price_paise: number;
     quantity: number;
     note?: string | null;

@@ -48,22 +48,30 @@ export function getOrderReadModel(db: SqliteDatabase, orderId: string): unknown 
        WHERE oi.order_id = ?
        ORDER BY oi.created_at, oi.id`
     )
-    .all(orderId);
+    .all(orderId) as Array<{ id: string } & Record<string, unknown>>;
+  const punches = new Map<string, { kot_sequence: number; kot_created_at: string; kot_ticket_label: string; kot_type: string }>();
   const kots = db
     .prepare(
       `SELECT k.*, pu.name AS production_unit_name
        FROM kots k
        JOIN production_units pu ON pu.id = k.production_unit_id
        WHERE k.order_id = ?
-       ORDER BY k.sequence`
+       ORDER BY k.created_at, k.rowid`
     )
     .all(orderId)
-    .map((kot) => ({
-      ...(kot as Record<string, unknown>),
-      items: db
-        .prepare("SELECT name_snapshot, quantity_delta FROM kot_items WHERE kot_id = ? ORDER BY id")
-        .all((kot as { id: string }).id)
-    }));
+    .map((row) => {
+      const kot = row as { id: string; sequence: number; created_at: string; ticket_label: string; type: string } & Record<string, unknown>;
+      const kotItems = db
+        .prepare("SELECT order_item_id, name_snapshot, quantity_delta FROM kot_items WHERE kot_id = ? ORDER BY id")
+        .all(kot.id) as Array<{ order_item_id: string; name_snapshot: string; quantity_delta: number }>;
+      // Reuse this order's ticket history; do not scan all historical ticket items.
+      for (const item of kotItems) {
+        if (item.quantity_delta > 0 && !punches.has(item.order_item_id)) {
+          punches.set(item.order_item_id, { kot_sequence: kot.sequence, kot_created_at: kot.created_at, kot_ticket_label: kot.ticket_label, kot_type: kot.type });
+        }
+      }
+      return { ...kot, items: kotItems };
+    });
   const bill = db.prepare("SELECT * FROM bills WHERE order_id = ? ORDER BY created_at DESC LIMIT 1").get(orderId);
   const payments = (bill
     ? db.prepare("SELECT * FROM payments WHERE bill_id = ? ORDER BY created_at").all((bill as { id: string }).id)
@@ -74,7 +82,7 @@ export function getOrderReadModel(db: SqliteDatabase, orderId: string): unknown 
 
   return {
     order,
-    items,
+    items: items.map((item) => ({ ...item, ...(punches.get(item.id) ?? { kot_sequence: null, kot_created_at: null, kot_ticket_label: null, kot_type: null }) })),
     kots,
     bill: bill
       ? {

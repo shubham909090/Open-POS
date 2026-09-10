@@ -90,6 +90,11 @@
   overflow-wrap: anywhere;
 }
 
+.line-punch {
+  @apply text-xs font-medium leading-5 text-muted;
+  overflow-wrap: anywhere;
+}
+
 .line-category-icon {
   @apply h-8 w-8;
 }

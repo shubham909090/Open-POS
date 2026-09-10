@@ -7,6 +7,7 @@ import { type NoticeSetter, messageOf } from "../../lib/format.js";
 import type { ManagerApprovalRequest } from "../../hooks/use-manager-approval.js";
 import { AlcoholEditForm } from "./alcohol-edit-form.js";
 import { AlcoholItemCreatePanel } from "./alcohol-item-create-panel.js";
+import { Segmented } from "../ui/segmented.js";
 
 export function AlcoholItemsPanel({
   bootstrap,
@@ -23,6 +24,8 @@ export function AlcoholItemsPanel({
 }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [catalogSearch, setCatalogSearch] = useState("");
+  const [status, setStatus] = useState<"active" | "disabled">("active");
+  const activeCount = catalog.items.filter((item) => item.active).length;
   const plainLiquors = catalog.items.filter(
     (item) => item.type === "plain_liquor" && Boolean(item.active),
   );
@@ -63,6 +66,7 @@ export function AlcoholItemsPanel({
   });
   const catalogNeedle = catalogSearch.trim().toLowerCase();
   const matchedCatalogItems = catalog.items.filter((item) => {
+    if (Boolean(item.active) !== (status === "active")) return false;
     if (!catalogNeedle) return true;
     return [
       item.name,
@@ -81,7 +85,7 @@ export function AlcoholItemsPanel({
       <section className="panel">
         <div className="panel-title">
           <h2>Alcohol Catalog</h2>
-          <span>{filteredCatalogItems.length} of {catalog.items.length} items</span>
+          <span>{filteredCatalogItems.length} {status} items</span>
         </div>
         <div className="setup-search-row">
           <input
@@ -94,6 +98,15 @@ export function AlcoholItemsPanel({
           </button>
           {catalogSearchCapped ? <small>Showing first {filteredCatalogItems.length} matches. Keep typing to narrow.</small> : null}
         </div>
+        <Segmented
+          className="catalog-status-filter"
+          value={status}
+          onChange={(value) => { setStatus(value); setEditingId(null); }}
+          options={[
+            { value: "active", label: `Active (${activeCount})` },
+            { value: "disabled", label: `Disabled (${catalog.items.length - activeCount})` },
+          ]}
+        />
         <div className="report-table-wrap alcohol-catalog-wrap">
           <table className="data-table alcohol-catalog-table">
             <thead>
@@ -109,7 +122,7 @@ export function AlcoholItemsPanel({
           {filteredCatalogItems.map((item) => (
             <Fragment key={item.id}>
               <tr>
-                <td className="strong-cell">{item.name}</td>
+                <td className="strong-cell">{item.name}<span className={`record-status ${item.active ? "active" : "disabled"}`}>{item.active ? "Active" : "Disabled"}</span></td>
                 <td>{item.type === "plain_liquor" ? "Plain liquor" : "Prepared product"}</td>
                 <td className="wrap-cell">
                   {item.type === "plain_liquor"
@@ -124,7 +137,7 @@ export function AlcoholItemsPanel({
                 <td>
                   <div className="variant-price-list">
                     {(item.variants ?? [])
-                      .filter((variant) => Boolean(variant.active))
+                      .filter((variant) => !item.active || Boolean(variant.active))
                       .map((variant) => (
                         <span key={variant.id}>
                           {variant.label} {formatInr(variant.price_paise)}
@@ -179,6 +192,7 @@ export function AlcoholItemsPanel({
           ))}
             </tbody>
           </table>
+          {!filteredCatalogItems.length ? <p className="plain-state">No {status} alcohol items{catalogNeedle ? " match this search" : ""}.</p> : null}
         </div>
       </section>
     </div>

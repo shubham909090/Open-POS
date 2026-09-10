@@ -22,6 +22,10 @@ export interface OrderItem {
   sale_group_name_snapshot: string;
   sale_group_kind_snapshot: string;
   ticket_label_snapshot: "KOT" | "BOT";
+  kot_sequence?: number | null;
+  kot_created_at?: string | null;
+  kot_ticket_label?: "KOT" | "BOT" | null;
+  kot_type?: string | null;
   note?: string | null;
   is_open_item?: boolean | number;
   status: string;

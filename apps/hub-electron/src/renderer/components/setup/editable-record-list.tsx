@@ -7,6 +7,7 @@ export function EditableRecordList({
   setNotice,
   rows,
   hideSearch = false,
+  emptyMessage,
 }: {
   setNotice: NoticeSetter;
   rows: Array<{
@@ -23,6 +24,7 @@ export function EditableRecordList({
     editForm: (close: () => void) => ReactNode;
   }>;
   hideSearch?: boolean;
+  emptyMessage?: string;
 }) {
   const [busyId, setBusyId] = useState("");
   const [editingId, setEditingId] = useState("");
@@ -128,8 +130,8 @@ export function EditableRecordList({
       ))}
       {!rows.length ? (
         <EmptyState
-          title="Nothing added yet"
-          description="Saved records appear here immediately."
+          title={emptyMessage ?? "Nothing added yet"}
+          description={emptyMessage ? "" : "Saved records appear here immediately."}
         />
       ) : rows.length > 0 && visibleRows.length === 0 ? (
         <EmptyState

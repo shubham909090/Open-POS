@@ -1,6 +1,6 @@
 import { formatInr } from "@gaurav-pos/shared";
 import { ClipboardList } from "lucide-react";
-import type { Dispatch, SetStateAction } from "react";
+import { useState, type Dispatch, type SetStateAction } from "react";
 import type { ManagerApprovalRequest } from "../../hooks/use-manager-approval.js";
 import { hubApi, type Bootstrap, type CsvImportResult, type MenuItem } from "../../hub-api.js";
 import type { NoticeSetter } from "../../lib/format.js";
@@ -8,6 +8,7 @@ import { CsvImportBox } from "../ui/csv-import-box.js";
 import { DishEditForm } from "./dish-edit-form.js";
 import { EditableRecordList } from "./editable-record-list.js";
 import { SetupCard } from "./setup-card.js";
+import { Segmented } from "../ui/segmented.js";
 
 const DISH_IMPORT_TEMPLATE = [
   "name,price,kitchen_or_counter,sale_category,active",
@@ -66,6 +67,9 @@ export function DishesCard({
   setNotice: NoticeSetter;
   requestManagerApproval: ManagerApprovalRequest;
 }) {
+  const [status, setStatus] = useState<"active" | "disabled">("active");
+  const activeCount = rawSetupDishItems.filter((item) => item.active).length;
+  const visibleItems = setupDishItems.filter((item) => Boolean(item.active) === (status === "active"));
   const deleteAllDishes = async () => {
     const approval = await requestManagerApproval({
       title: "Delete all dishes",
@@ -152,10 +156,21 @@ export function DishesCard({
           Delete all dishes
         </button>
       </div>
+      <Segmented
+        className="catalog-status-filter"
+        value={status}
+        onChange={setStatus}
+        options={[
+          { value: "active", label: `Active (${activeCount})` },
+          { value: "disabled", label: `Disabled (${rawSetupDishItems.length - activeCount})` },
+        ]}
+      />
       <EditableRecordList
+        key={status}
         setNotice={setNotice}
         hideSearch
-        rows={setupDishItems.map((item) => ({
+        emptyMessage={`No ${status} dishes${dishListSearch.trim() ? " match this search" : ""}.`}
+        rows={visibleItems.map((item) => ({
           id: item.id,
           title: item.name,
           meta: `${formatInr(item.price_paise)} · ${item.sale_group_name} · ${item.production_unit_name ?? "No kitchen assigned"} · ${item.active ? "active" : "disabled"}`,

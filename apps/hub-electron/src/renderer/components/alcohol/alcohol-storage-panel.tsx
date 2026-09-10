@@ -6,6 +6,7 @@ import { type NoticeSetter, messageOf } from "../../lib/format.js";
 import type { ManagerApproval, ManagerApprovalRequest } from "../../hooks/use-manager-approval.js";
 import { EmptyState } from "../ui/empty-state.js";
 import { Button } from "../ui/button.js";
+import { Segmented } from "../ui/segmented.js";
 
 export function AlcoholStoragePanel({
   rows,
@@ -19,6 +20,8 @@ export function AlcoholStoragePanel({
   requestManagerApproval: ManagerApprovalRequest;
 }) {
   const [search, setSearch] = useState("");
+  const [status, setStatus] = useState<"active" | "disabled">("active");
+  const activeCount = rows.filter((row) => row.active).length;
   const busy = useIsMutating({ mutationKey: ["alcoholStock"] }) > 0;
   const reset = useMutation({
     mutationKey: ["alcoholStock"],
@@ -30,6 +33,7 @@ export function AlcoholStoragePanel({
     onError: (error) => setNotice({ tone: "bad", text: messageOf(error) }),
   });
   const visibleRows = rows.filter((row) => {
+    if (Boolean(row.active) !== (status === "active")) return false;
     const needle = search.trim().toLowerCase();
     if (!needle) return true;
     return row.name.toLowerCase().includes(needle);
@@ -48,7 +52,7 @@ export function AlcoholStoragePanel({
             onClick={async () => {
               const approval = await requestManagerApproval({
                 title: "Reset all liquor stock?",
-                message: "Set every liquor item's large bottles, open ml, and small bottles to zero. Bills, sales, and stock history will be kept. Pending orders will still deduct stock when settled.",
+                message: "Set all active and disabled liquor items' large bottles, open ml, and small bottles to zero. Bills, sales, and stock history will be kept. Pending orders will still deduct stock when settled.",
                 defaultReason: "Owner liquor stock reset",
                 pinLabel: "Master PIN",
                 confirmLabel: "Reset stock to zero",
@@ -63,6 +67,15 @@ export function AlcoholStoragePanel({
           </Button>
         </div>
       ) : null}
+      <Segmented
+        className="catalog-status-filter"
+        value={status}
+        onChange={setStatus}
+        options={[
+          { value: "active", label: `Active (${activeCount})` },
+          { value: "disabled", label: `Disabled (${rows.length - activeCount})` },
+        ]}
+      />
       {visibleRows.map((row) => (
         <AlcoholStorageCard
           key={row.id}
@@ -79,7 +92,7 @@ export function AlcoholStoragePanel({
           description="Add plain liquor from the Items tab first."
         />
       ) : rows.length > 0 && visibleRows.length === 0 ? (
-        <EmptyState title="No matching stock" description="Clear search or try another liquor name." />
+        <EmptyState title={`No ${status} liquor stock${search.trim() ? " matches this search" : ""}.`} description="" />
       ) : null}
     </div>
   );

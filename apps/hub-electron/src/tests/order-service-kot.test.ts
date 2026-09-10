@@ -2,6 +2,22 @@ import { describe, expect, it } from "vitest";
 import { createTestHub } from "./helpers.js";
 
 describe("OrderService KOT lifecycle", () => {
+  it("returns original punching metadata after edits and leaves unpunched items without a KOT", () => {
+    const { database, orderService } = createTestHub();
+    const first = orderService.submitOrder({ tableId: "table-t1", captainId: "waiter-1", pax: 1, orderType: "dine_in", printMode: "kot", items: [{ menuItemId: "item-dal-fry", quantity: 1 }] });
+    const punchedAt = "2026-09-10T10:00:00.000Z";
+    database.db.prepare("UPDATE kots SET created_at = ? WHERE order_id = ?").run(punchedAt, first.orderId);
+    const original = database.db.prepare("SELECT sequence, ticket_label FROM kots WHERE order_id = ?").get(first.orderId) as { sequence: number; ticket_label: string };
+    orderService.submitOrder({ tableId: "table-t1", captainId: "waiter-1", pax: 1, orderType: "dine_in", items: [{ menuItemId: "item-dal-fry", quantity: 1 }, { menuItemId: "item-lassi", quantity: 1 }] });
+    const read = orderService.getOrder(first.orderId) as { items: Array<{ menu_item_id: string; kot_sequence: number | null; kot_created_at: string | null; kot_ticket_label: string | null }> };
+    expect(read.items.find((item) => item.menu_item_id === "item-dal-fry")).toMatchObject({ kot_sequence: original.sequence, kot_created_at: punchedAt, kot_ticket_label: original.ticket_label });
+    expect(read.items.find((item) => item.menu_item_id === "item-lassi")?.kot_created_at).not.toBe(punchedAt);
+    database.db.prepare("DELETE FROM kot_items WHERE order_item_id IN (SELECT id FROM order_items WHERE menu_item_id = 'item-lassi')").run();
+    const legacy = orderService.getOrder(first.orderId) as typeof read;
+    expect(legacy.items.find((item) => item.menu_item_id === "item-lassi")).toMatchObject({ kot_sequence: null, kot_created_at: null, kot_ticket_label: null });
+    database.close();
+  });
+
   it("defaults printer output to test mode and persists explicit mode changes", () => {
     const { database, orderService } = createTestHub();
 

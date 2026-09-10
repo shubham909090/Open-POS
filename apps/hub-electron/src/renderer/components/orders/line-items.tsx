@@ -12,6 +12,7 @@ export function LineItems({
     id: string;
     title: string;
     meta: string;
+    punch?: string;
     saleGroupKind?: string;
     saleGroupName?: string;
     quantity: number;
@@ -38,6 +39,7 @@ export function LineItems({
               <div className="line-title-copy">
                 <strong>{row.title}</strong>
                 <span>{row.saleGroupName ? `${row.saleGroupName} · ${row.meta}` : row.meta}</span>
+                {row.punch ? <small className="line-punch">{row.punch}</small> : null}
               </div>
             </div>
           </div>

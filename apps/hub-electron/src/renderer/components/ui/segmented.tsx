@@ -17,6 +17,7 @@ export function Segmented<T extends string>({
         <button
           key={opt.value}
           type="button"
+          aria-pressed={value === opt.value}
           onClick={() => onChange(opt.value)}
           className={cn(
             "rounded px-3 py-1.5 text-sm font-semibold transition-colors",

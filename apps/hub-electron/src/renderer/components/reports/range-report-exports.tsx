@@ -3,7 +3,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { defaultTallySaleLedgerName } from "@gaurav-pos/shared";
 import { FileArchive, FileCode2, Save } from "lucide-react";
 
-import { hubApi, type DownloadedFile, type RangeReportDetail, type TallyExportSettings } from "../../hub-api.js";
+import { hubApi, type RangeReportDetail, type TallyExportSettings } from "../../hub-api.js";
+import { triggerDownload } from "../../lib/download.js";
 
 type RangeExportKind = "csv" | "tally";
 type TallyTextField = keyof Omit<TallyExportSettings, "saleLedgerNames">;
@@ -204,17 +205,6 @@ function uniqueSaleGroups(groups: RangeReportDetail["groupSummaries"]) {
     seen.add(group.saleGroupId);
     return true;
   });
-}
-
-function triggerDownload(file: DownloadedFile) {
-  const url = URL.createObjectURL(file.blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = file.fileName;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(url);
 }
 
 function messageFromError(error: unknown) {

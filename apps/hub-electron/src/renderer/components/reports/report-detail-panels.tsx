@@ -1,7 +1,10 @@
 import { type ReactNode, useState } from "react";
 import { formatInr } from "@gaurav-pos/shared";
+import { Download } from "lucide-react";
 import { type CloseSummary, type DailyReportDetail, type RangeReportDetail } from "../../hub-api.js";
 import { ReportHistoryPanel } from "./report-history-panel.js";
+import { buildItemSummaryExport } from "./item-summary-export.js";
+import { triggerDownload } from "../../lib/download.js";
 
 const DETAIL_PAGE_SIZE = 6;
 type ReportSummary = CloseSummary | DailyReportDetail | RangeReportDetail;
@@ -68,6 +71,17 @@ export function ReportDetailPanels({ summary, billHistoryPlaceholder }: { summar
         <div className="mini-title">
           <strong>Item summary</strong>
           <span>{items.length} items</span>
+          <button
+            type="button"
+            className="secondary-inline compact"
+            disabled={!items.length}
+            onClick={() => {
+              const file = buildItemSummaryExport(summary);
+              triggerDownload({ fileName: file.fileName, blob: new Blob([file.csv], { type: "text/csv;charset=utf-8" }) });
+            }}
+          >
+            <Download size={16} /> Download item summary
+          </button>
         </div>
         <div className="report-table-wrap">
           <table className="data-table item-summary-table">

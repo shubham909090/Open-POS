@@ -155,6 +155,9 @@ describe("OrderService table and item transfers", () => {
 
     expect(movement.sourceKotIds).toHaveLength(1);
     expect(movement.targetKotIds).toHaveLength(1);
+    const targetPunch = database.db.prepare("SELECT sequence, created_at FROM kots WHERE id = ?").get(movement.targetKotIds[0]) as { sequence: number; created_at: string };
+    const targetRead = orderService.getOrder(movement.toOrderId) as { items: Array<Record<string, unknown>> };
+    expect(targetRead.items[0]).toMatchObject({ kot_sequence: targetPunch.sequence, kot_created_at: targetPunch.created_at, kot_type: "table_shifted" });
     expect(movement.printJobIds).toHaveLength(2);
     expect(database.db.prepare("SELECT status, current_order_id, occupied_at FROM restaurant_tables WHERE id = 'table-t2'").get()).toMatchObject({
       status: "occupied",

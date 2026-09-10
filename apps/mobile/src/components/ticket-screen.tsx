@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { LayoutAnimation, Modal, Pressable, Text, TextInput, View } from "react-native";
-import { type OrderItemInput } from "@gaurav-pos/shared";
+import { formatItemPunch, type OrderItemInput } from "@gaurav-pos/shared";
 
 import type { HubBootstrap, HubOrder } from "../lib/hub-client";
 import { findMenuVariant, formatRupees } from "../lib/mobile-format";
@@ -103,6 +103,7 @@ function TicketScreen({
     requestStateSave,
     confirmStateSave
   } = useTicketStateEditor({ currentOrder, sentItems, menuItems, onSaveOrderState });
+  const sentById = new Map(sentItems.map((item) => [item.id, item]));
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(["new"]));
   const toggleSection = (id: string) => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -233,6 +234,7 @@ function TicketScreen({
                 <View style={styles.ticketText}>
                   <Text style={styles.ticketName} numberOfLines={2}>{item.name_snapshot}</Text>
                   <Text style={styles.muted}>Rs {formatRupees(item.unit_price_paise)} each</Text>
+                  {formatItemPunch(item) ? <Text style={styles.smallMuted}>{formatItemPunch(item)}</Text> : null}
                 </View>
                 <Text style={styles.qtyValue}>{item.quantity}x</Text>
               </View>
@@ -274,11 +276,13 @@ function TicketScreen({
                   const variant = findMenuVariant(menuItem, item.menuItemVariantId);
                   const name = item.openName ?? `${menuItem?.name ?? item.menuItemId}${variant && variant.kind !== "default" ? ` ${variant.label}` : ""}`;
                   const unitPrice = item.openPricePaise ?? item.unitPricePaise ?? variant?.price_paise ?? menuItem?.price_paise ?? 0;
+                  const punch = formatItemPunch(sentById.get(item.orderItemId ?? ""));
                   return (
                     <View key={`${item.orderItemId ?? item.menuItemId}-${item.menuItemVariantId ?? "default"}-${index}`} style={styles.ticketLine}>
                       <View style={styles.ticketText}>
                         <Text style={styles.ticketName} numberOfLines={2}>{name}</Text>
                         <Text style={styles.muted}>Rs {formatRupees(unitPrice * item.quantity)}</Text>
+                        {punch ? <Text style={styles.smallMuted}>{punch}</Text> : null}
                       </View>
                       <View style={styles.qtyControls}>
                         <Pressable style={styles.qtyButton} onPress={() => changeStateQty(index, -1)}>

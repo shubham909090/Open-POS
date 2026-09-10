@@ -53,6 +53,10 @@
   @apply min-w-[900px];
 }
 
+.alcohol-catalog-table .record-status {
+  @apply ml-2;
+}
+
 .alcohol-catalog-table .variant-price-list {
   @apply flex flex-wrap gap-1.5;
   grid-template-columns: none;

@@ -1,4 +1,4 @@
-import { formatInr } from "@gaurav-pos/shared";
+import { formatInr, formatItemPunch } from "@gaurav-pos/shared";
 import { useCallback, type Dispatch, type SetStateAction } from "react";
 import { useKeyboardListNavigation } from "../../hooks/use-keyboard-list-navigation.js";
 import type { Bootstrap, MenuItem, OrderItem, Table, TableOrder } from "../../hub-api.js";
@@ -73,6 +73,7 @@ export function SentOrderPanel({
   cancelOrderPending: boolean;
   onCancelOrder: () => void;
 }) {
+  const sentById = new Map(sentItems.map((item) => [item.id, item]));
   const orderStateMatchIds = orderStateMatches.map((item) => item.id).join("|");
   const addKeyboardStateItem = useCallback(
     (item: MenuItem) => {
@@ -170,6 +171,7 @@ export function SentOrderPanel({
           id: item.key,
           title: item.name,
           meta: `${formatInr(item.pricePaise)} each`,
+          punch: formatItemPunch(sentById.get(item.orderItemId ?? "")),
           saleGroupKind: item.saleGroupKind,
           saleGroupName: item.saleGroupName,
           quantity: item.quantity,

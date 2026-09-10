@@ -14,6 +14,14 @@ const row: AlcoholStorageRow = {
 describe("liquor stock reset", () => {
   afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
+  it("keeps disabled stock in a separate view", () => {
+    render(<QueryClientProvider client={new QueryClient()}><AlcoholStoragePanel rows={[row, { ...row, id: "old", name: "Old Whisky", active: false }]} invalidate={vi.fn()} setNotice={vi.fn()} requestManagerApproval={vi.fn()} /></QueryClientProvider>);
+    expect(screen.queryByText("Old Whisky")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Disabled (1)" }));
+    expect(screen.getByText("Old Whisky")).toBeTruthy();
+    expect(screen.queryByText("100 PIPERS")).toBeNull();
+  });
+
   it("requires an explicit Master PIN confirmation before resetting all balances", async () => {
     const approval = { pin: "9876", reason: "Physical stock reset", approvedBy: "owner" };
     const requestManagerApproval = vi.fn().mockResolvedValue(approval);

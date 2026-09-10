@@ -25,6 +25,22 @@
   @apply m-0 text-base font-bold leading-6 text-ink;
 }
 
+.item-summary-panel > .mini-title {
+  @apply flex-wrap items-center;
+}
+
+.catalog-status-filter {
+  @apply w-fit max-w-full flex-wrap;
+}
+
+.catalog-status-filter button {
+  @apply border-0 bg-transparent text-muted shadow-none;
+}
+
+.catalog-status-filter button.active {
+  @apply bg-ink text-white;
+}
+
 .panel-title span,
 .mini-title span,
 .plain-state,

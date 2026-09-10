@@ -21,6 +21,16 @@ const cancelPendingRestoreMock = vi.fn();
 const restartPendingRestoreMock = vi.fn();
 
 describe("reports history payment edit", () => {
+  it("downloads the item summary from the current report", async () => {
+    currentBusinessDaySummaryMock.mockResolvedValue({ ...summary(), itemSummaries: [{ menuItemId: "dish", name: "Dal Fry", saleGroupName: "Food", quantity: 2, grossSalesPaise: 40000 }] });
+    const { ReportsView } = await importReportsView();
+    const download = await import("../renderer/lib/download.js");
+    const trigger = vi.spyOn(download, "triggerDownload").mockImplementation(() => {});
+    renderReportsView(ReportsView);
+    const button = await screen.findByRole("button", { name: "Download item summary" });
+    fireEvent.click(button);
+    expect(trigger).toHaveBeenCalledWith({ fileName: expect.stringMatching(/^item-summary-.*\.csv$/), blob: expect.any(Blob) });
+  });
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();

@@ -49,6 +49,7 @@ describe("hub table workspace send actions", () => {
 
     await screen.findByText("Edited total");
     expect(document.activeElement).not.toBe(screen.getByPlaceholderText("Search menu item"));
+    expect(screen.getByText(/KOT #42/)).toBeTruthy();
   });
 
   it("uses F6 for Print and KOT only when send buttons are visible and enabled", async () => {
@@ -292,6 +293,9 @@ function tableOrder(quantity: number) {
         sale_group_name_snapshot: "Food",
         sale_group_kind_snapshot: "food",
         ticket_label_snapshot: "KOT",
+        kot_sequence: 42,
+        kot_created_at: "2026-09-10T10:00:00.000Z",
+        kot_ticket_label: "KOT",
         status: "sent"
       }
     ],
