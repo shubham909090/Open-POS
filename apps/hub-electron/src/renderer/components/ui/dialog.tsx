@@ -24,10 +24,10 @@ export function Dialog({
   return (
     <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
       <DialogPrimitive.Portal>
-        <DialogPrimitive.Overlay className="fixed inset-0 z-40 bg-ink/55 backdrop-blur-sm" />
+        <DialogPrimitive.Overlay className="dialog-overlay fixed inset-0 z-40 bg-ink/30 backdrop-blur-[2px]" />
         <DialogPrimitive.Content
           className={cn(
-            "fixed left-1/2 top-1/2 z-50 grid max-h-[86vh] -translate-x-1/2 -translate-y-1/2 gap-4 overflow-auto rounded-lg border bg-panel p-5 shadow-2xl outline-none",
+            "dialog-surface fixed left-1/2 top-1/2 z-50 grid max-h-[86dvh] -translate-x-1/2 -translate-y-1/2 gap-4 overflow-auto rounded-xl border bg-panel p-6 shadow-pos-lg outline-none",
             size === "wide" ? "w-[min(980px,calc(100vw-32px))]" : "w-[min(560px,calc(100vw-32px))]",
             danger ? "border-danger/30" : "border-line"
           )}

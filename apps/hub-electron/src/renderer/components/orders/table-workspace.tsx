@@ -303,6 +303,30 @@ export function TableWorkspace({
     );
   }
 
+  if (tableOrder.isPending) {
+    return (
+      <section className="ticket-workspace panel" aria-busy="true">
+        <div className="workspace-load-state" role="status">Loading {tableName}…</div>
+      </section>
+    );
+  }
+
+  if (tableOrder.isError && data === undefined) {
+    return (
+      <section className="ticket-workspace panel">
+        <EmptyState
+          title="Table could not load"
+          description={messageOf(tableOrder.error)}
+          action={
+            <button type="button" className="secondary-button" disabled={tableOrder.isFetching} onClick={() => void tableOrder.refetch()}>
+              {tableOrder.isFetching ? "Retrying…" : "Retry"}
+            </button>
+          }
+        />
+      </section>
+    );
+  }
+
   return (
     <section className="ticket-workspace panel">
       <div className="ticket-header">
@@ -320,9 +344,9 @@ export function TableWorkspace({
         </div>
       </div>
       <div className="segmented">
-        <button type="button" className={orderPanel === "new" ? "active" : ""} onClick={() => setOrderPanel("new")}>New order</button>
-        <button type="button" className={orderPanel === "sent" ? "active" : ""} onClick={() => setOrderPanel("sent")}>Sent items</button>
-        <button type="button" className={orderPanel === "bill" ? "active" : ""} onClick={() => setOrderPanel("bill")}>Bill</button>
+        <button type="button" aria-pressed={orderPanel === "new"} className={orderPanel === "new" ? "active" : ""} onClick={() => setOrderPanel("new")}>New order</button>
+        <button type="button" aria-pressed={orderPanel === "sent"} className={orderPanel === "sent" ? "active" : ""} onClick={() => setOrderPanel("sent")}>Sent items</button>
+        <button type="button" aria-pressed={orderPanel === "bill"} className={orderPanel === "bill" ? "active" : ""} onClick={() => setOrderPanel("bill")}>Bill</button>
       </div>
 
       {orderPanel === "new" ? (

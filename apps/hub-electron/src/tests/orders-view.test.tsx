@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Bootstrap } from "../renderer/hub-api.js";
 
@@ -15,9 +15,9 @@ describe("hub orders view layout", () => {
     const { OrdersView, useHubStore } = await importOrdersView();
     useHubStore.setState({ selectedTableId: "table-t1", orderPanel: "sent", menuSearch: "", drafts: {} });
 
-    const { container } = render(<OrdersView bootstrap={bootstrap()} setNotice={vi.fn()} requestManagerApproval={vi.fn()} />);
+    const { baseElement } = render(<OrdersView bootstrap={bootstrap()} setNotice={vi.fn()} requestManagerApproval={vi.fn()} />);
 
-    expect(container.querySelector(".order-modal-layout.menu-closed")).not.toBeNull();
+    expect(baseElement.querySelector(".order-modal-layout.menu-closed")).not.toBeNull();
     expect(screen.getByRole("button", { name: "Open menu" })).not.toBeNull();
     expect(screen.getByTestId("selected-workspace")).not.toBeNull();
     expect(screen.queryByPlaceholderText("Search dish")).toBeNull();
@@ -27,17 +27,17 @@ describe("hub orders view layout", () => {
     const { OrdersView, useHubStore } = await importOrdersView();
     useHubStore.setState({ selectedTableId: "table-t1", orderPanel: "new", menuSearch: "", drafts: {} });
 
-    const { container } = render(<OrdersView bootstrap={bootstrap()} setNotice={vi.fn()} requestManagerApproval={vi.fn()} />);
+    const { baseElement } = render(<OrdersView bootstrap={bootstrap()} setNotice={vi.fn()} requestManagerApproval={vi.fn()} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Open menu" }));
 
-    expect(container.querySelector(".order-modal-layout.menu-open")).not.toBeNull();
+    expect(baseElement.querySelector(".order-modal-layout.menu-open")).not.toBeNull();
     expect(screen.getByPlaceholderText("Search dish")).not.toBeNull();
     expect(screen.getByText("Imported Whisky")).not.toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "Hide menu" }));
 
-    expect(container.querySelector(".order-modal-layout.menu-closed")).not.toBeNull();
+    expect(baseElement.querySelector(".order-modal-layout.menu-closed")).not.toBeNull();
     expect(screen.queryByPlaceholderText("Search dish")).toBeNull();
   });
 
@@ -50,6 +50,20 @@ describe("hub orders view layout", () => {
     render(<OrdersView bootstrap={bootstrap()} setNotice={vi.fn()} requestManagerApproval={vi.fn()} />);
 
     expect(screen.getByText("1h 5m")).not.toBeNull();
+  });
+
+  it("closes the table workspace with Escape and returns focus to its table", async () => {
+    const { OrdersView, useHubStore } = await importOrdersView();
+    useHubStore.setState({ selectedTableId: null, orderPanel: "new", menuSearch: "", drafts: {} });
+    render(<OrdersView bootstrap={bootstrap()} setNotice={vi.fn()} requestManagerApproval={vi.fn()} />);
+    const table = screen.getByRole("button", { name: /Open table T1, Running/ });
+    table.focus();
+    fireEvent.click(table);
+    const workspace = await screen.findByRole("dialog");
+    expect(workspace).not.toBeNull();
+    fireEvent.keyDown(workspace, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(table));
   });
 
   it("marks only free tables with local unsent drafts as draft warning tiles", async () => {
@@ -83,11 +97,11 @@ describe("hub orders view layout", () => {
       }
     });
 
-    const { container } = render(<OrdersView bootstrap={data} setNotice={vi.fn()} requestManagerApproval={vi.fn()} />);
+    const { baseElement } = render(<OrdersView bootstrap={data} setNotice={vi.fn()} requestManagerApproval={vi.fn()} />);
 
     expect(screen.getByText("Draft 2 items")).not.toBeNull();
     expect(screen.getByText("₹80.00")).not.toBeNull();
-    expect(container.querySelector(".table-tile.draft-warning")).not.toBeNull();
+    expect(baseElement.querySelector(".table-tile.draft-warning")).not.toBeNull();
   });
 
   it("keeps running table color higher priority than local unsent draft warning", async () => {
@@ -110,11 +124,11 @@ describe("hub orders view layout", () => {
       }
     });
 
-    const { container } = render(<OrdersView bootstrap={bootstrap()} setNotice={vi.fn()} requestManagerApproval={vi.fn()} />);
+    const { baseElement } = render(<OrdersView bootstrap={bootstrap()} setNotice={vi.fn()} requestManagerApproval={vi.fn()} />);
 
     expect(screen.getByText("Running")).not.toBeNull();
-    expect(container.querySelector(".table-tile.running")).not.toBeNull();
-    expect(container.querySelector(".table-tile.draft-warning")).toBeNull();
+    expect(baseElement.querySelector(".table-tile.running")).not.toBeNull();
+    expect(baseElement.querySelector(".table-tile.draft-warning")).toBeNull();
   });
 });
 

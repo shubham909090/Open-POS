@@ -40,6 +40,17 @@ describe("hub table workspace send actions", () => {
     await waitFor(() => expect(document.activeElement).toBe(screen.getByPlaceholderText("Search menu item")));
   });
 
+  it("requires a table request to recover before showing bill controls", async () => {
+    const { TableWorkspace, useHubStore } = await importWorkspace();
+    tableOrderMock.mockRejectedValueOnce(new Error("Hub is unavailable")).mockResolvedValue(null);
+    useHubStore.setState({ selectedTableId: "table-t1", orderPanel: "bill", drafts: {} });
+    renderWorkspace(TableWorkspace);
+    expect(await screen.findByText("Table could not load")).not.toBeNull();
+    expect(screen.queryByText("No active order")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(await screen.findByText("No active order")).not.toBeNull();
+  });
+
   it("does not steal focus for sent-item editor when a table opens outside new order", async () => {
     const { TableWorkspace, useHubStore } = await importWorkspace();
     tableOrderMock.mockResolvedValue(tableOrder(1));
@@ -58,6 +69,7 @@ describe("hub table workspace send actions", () => {
     seedDraft(useHubStore);
 
     const { rerender } = renderWorkspace(TableWorkspace);
+    await screen.findByRole("button", { name: "KOT F3" });
     fireEvent.keyDown(window, { key: "F6" });
     await waitFor(() => expect(submitOrderMock).toHaveBeenCalledWith(expect.objectContaining({ printMode: "kot_print" }), expect.any(String)));
 

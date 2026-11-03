@@ -4,24 +4,24 @@
 .payment-qr-heading {
   @apply flex flex-wrap items-center gap-3;
 }
-.payment-qr-heading h3 { @apply text-xl font-black text-ink; }
+.payment-qr-heading h3 { @apply text-xl font-semibold text-ink; }
 .payment-qr-heading p { @apply mt-1 text-sm text-muted; }
 .payment-qr-icon { @apply rounded-xl bg-accent-soft p-3 text-accent-dark; }
-.payment-qr-lock { @apply ml-auto inline-flex items-center gap-1.5 rounded-full border border-line bg-white px-3 py-1 text-xs font-bold text-muted; }
+.payment-qr-lock { @apply ml-auto inline-flex items-center gap-1.5 rounded-full border border-line bg-white px-3 py-1 text-xs font-medium text-muted; }
 .payment-qr-content { @apply grid items-start gap-6; grid-template-columns: 230px minmax(0,1fr); }
 .payment-qr-paper { @apply grid justify-items-center gap-2 rounded-xl border border-line bg-white p-4 text-center; }
 .payment-qr-paper > svg { @apply my-10 text-muted; }
 .payment-qr-paper img { width: 198px; max-width: 100%; aspect-ratio: 1; object-fit: contain; image-rendering: pixelated; }
-.payment-qr-paper strong { @apply text-base font-black; }
+.payment-qr-paper strong { @apply text-base font-semibold; }
 .payment-qr-paper small { @apply break-all text-xs text-muted; }
 .payment-qr-options { @apply grid min-w-0 gap-3; }
 .payment-qr-options > p { @apply text-sm leading-6; }
 .payment-qr-options > small { @apply text-xs text-muted; }
 .payment-qr-actions { @apply flex flex-wrap items-center gap-2; }
 .payment-qr-actions > button, .payment-qr-download { @apply inline-flex items-center justify-center gap-2; }
-.payment-qr-download { @apply rounded-lg border border-line px-3 py-2 text-sm font-bold no-underline; }
+.payment-qr-download { @apply rounded-lg border border-line px-3 py-2 text-sm font-medium no-underline; }
 .payment-qr-size { @apply grid gap-2 rounded-lg border border-line bg-white p-3; }
-.payment-qr-size > span { @apply flex items-center justify-between text-sm font-bold; }
+.payment-qr-size > span { @apply flex items-center justify-between text-sm font-medium; }
 .payment-qr-size output { @apply rounded-md bg-accent-soft px-2 py-1 text-accent-dark; font-variant-numeric: tabular-nums; }
 .payment-qr-size input { @apply w-full; accent-color: var(--accent); }
 .payment-qr-size > small { @apply flex justify-between text-xs text-muted; }
@@ -70,7 +70,7 @@
 .printer-output-panel span,
 .printer-summary-panel span,
 .printer-slot-head span {
-  @apply text-xs font-black uppercase tracking-wide text-muted;
+  @apply text-xs font-semibold normal-case tracking-wide text-muted;
 }
 
 .printer-section-header strong,
@@ -78,7 +78,7 @@
 .printer-output-panel strong,
 .printer-summary-panel strong,
 .printer-slot-head strong {
-  @apply truncate text-lg font-black text-ink;
+  @apply truncate text-lg font-semibold text-ink;
 }
 
 .printer-saved-panel {
@@ -98,7 +98,7 @@
 }
 
 .printer-choice-intro strong {
-  @apply text-base font-black leading-5 text-ink;
+  @apply text-base font-semibold leading-5 text-ink;
 }
 
 .printer-choice-intro span,
@@ -137,11 +137,11 @@
 }
 
 .printer-choice-copy > span {
-  @apply text-xs font-black uppercase tracking-normal text-muted;
+  @apply text-xs font-semibold normal-case tracking-normal text-muted;
 }
 
 .printer-choice-copy strong {
-  @apply min-w-0 truncate text-base font-black leading-5 text-ink;
+  @apply min-w-0 truncate text-base font-semibold leading-5 text-ink;
 }
 
 .printer-choice-copy small {
@@ -149,7 +149,7 @@
 }
 
 .printer-choice-button b {
-  @apply inline-flex min-h-8 shrink-0 items-center rounded-full border border-line bg-panel px-3 text-xs font-black uppercase text-ink;
+  @apply inline-flex min-h-8 shrink-0 items-center rounded-full border border-line bg-panel px-3 text-xs font-semibold normal-case text-ink;
 }
 
 .printer-output-panel {
@@ -174,7 +174,7 @@
 }
 
 .printer-pc-toolbar strong {
-  @apply text-sm font-black text-ink;
+  @apply text-sm font-semibold text-ink;
 }
 
 .printer-pc-toolbar span {
@@ -203,7 +203,7 @@
 
 .printer-slot-required,
 .printer-slot-optional {
-  @apply inline-flex min-h-7 shrink-0 items-center rounded-full border px-2.5 text-xs font-black uppercase;
+  @apply inline-flex min-h-7 shrink-0 items-center rounded-full border px-2.5 text-xs font-semibold normal-case;
 }
 
 .printer-slot-required {
@@ -219,7 +219,7 @@
 }
 
 .printer-mode-tabs button {
-  @apply min-h-10 flex-1 rounded-md bg-transparent px-3 text-sm font-bold text-muted shadow-none hover:bg-white hover:text-ink;
+  @apply min-h-10 flex-1 rounded-md bg-transparent px-3 text-sm font-medium text-muted shadow-none hover:bg-white hover:text-ink;
 }
 
 .printer-mode-tabs button.active {
@@ -255,3 +255,29 @@
 .printer-summary-panel small {
   @apply min-w-0 break-words text-sm font-semibold leading-5 text-muted;
 }
+.settings-workspace .payment-qr-panel { border: 1px solid var(--line); border-radius: 8px; background: var(--panel); padding: 20px; }
+.settings-workspace .payment-qr-heading h3 { font-size: 15px; font-weight: 600; }
+.settings-workspace .payment-qr-heading p { font-size: 12px; line-height: 1.6; }
+.settings-workspace .payment-qr-icon { padding: 0; color: var(--muted); background: transparent; }
+.settings-workspace .payment-qr-icon svg { width: 20px; height: 20px; stroke-width: 1.6; }
+.settings-workspace .payment-qr-lock { border-radius: 5px; font-size: 10px; font-weight: 400; }
+.settings-workspace .payment-qr-options > p { margin: 0; font-size: 12px; line-height: 1.7; }
+.settings-workspace .printer-saved-panel { border-color: var(--line); background: var(--wash); }
+.settings-workspace .printer-saved-panel p { color: var(--muted); font-weight: 400; font-size: 12px; }
+.settings-workspace .printer-section-header strong, .settings-workspace .printer-saved-panel strong, .settings-workspace .printer-summary-panel strong, .settings-workspace .printer-slot-head strong { font-size: 14px; font-weight: 500; }
+.settings-workspace .printer-output-panel.live { border-color: var(--line); background: var(--panel); }
+
+/* Connection information stays quiet; only a live operation needs emphasis. */
+.printer-console { align-items: start; }
+.printer-config-main, .printer-config-side { align-content: start; }
+.printer-output-panel, .printer-summary-panel { align-content: start; }
+.printer-output-panel { gap: 10px; border-color: var(--line); background: var(--wash); }
+.printer-output-panel .segment-row { align-items: center; }
+.printer-summary-panel > div { border: 0; border-radius: 0; background: transparent; padding: 8px 0; }
+.printer-summary-panel > div + div { border-top: 1px solid var(--line); }
+.printer-summary-panel small, .printer-pc-toolbar span { font-weight: 400; }
+.settings-workspace .printer-section-header { border: 0; padding: 0 0 8px; }
+.settings-workspace .printer-setup-form { border: 0; padding: 0; }
+.settings-workspace .printer-pc-toolbar { border-color: var(--line); background: var(--wash); }
+.settings-workspace .printer-slot-card.primary { border-color: var(--line); background: var(--panel); }
+.settings-workspace .printer-slot-required, .settings-workspace .printer-slot-optional { min-height: 24px; border-color: var(--line); border-radius: 5px; color: var(--muted); font-weight: 400; }

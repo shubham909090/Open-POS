@@ -5,8 +5,7 @@
 }
 
 .bill-adjustments {
-  @apply bg-accent-soft;
-  border-color: rgb(47 125 116 / 0.4);
+  @apply bg-panel;
 }
 
 .bill-adjustments .adjust-grid,
@@ -28,8 +27,13 @@
 }
 
 .change-helper-row strong {
-  @apply inline-flex min-h-10 items-center justify-center rounded-md border border-line bg-white px-3 text-sm font-black text-ink shadow-sm;
+  @apply inline-flex min-h-10 items-center justify-center rounded-md border border-line bg-white px-3 text-sm font-semibold text-ink;
 }
+
+.change-helper-row strong,
+.bill-adjustments input,
+.bill-payment-section input,
+.bill-payment-section strong { font-variant-numeric: tabular-nums; }
 
 .reprint-action-row {
   @apply grid gap-2;
@@ -41,7 +45,7 @@
 
 .reprint-bill-button kbd,
 .punch-button kbd {
-  @apply rounded border border-line bg-wash px-2 py-1 text-xs font-black text-muted;
+  @apply rounded border border-line bg-wash px-2 py-1 text-xs font-semibold text-muted;
 }
 
 .change-helper.good {

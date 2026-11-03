@@ -3,48 +3,45 @@
 }
 
 .table-tile {
-  @apply grid h-full min-h-[120px] overflow-hidden rounded-lg border border-l-4 border-line bg-white transition hover:-translate-y-0.5 hover:border-line-strong hover:shadow-md;
+  @apply grid h-full min-h-[120px] overflow-hidden rounded-lg border border-line bg-panel transition-colors hover:border-line-strong;
 }
 
 .table-tile.active {
-  @apply border-l-accent ring-2 ring-accent;
+  @apply border-accent ring-2 ring-accent ring-offset-2 ring-offset-panel;
 }
 
 .table-tile.free {
-  @apply border-line border-l-accent bg-white;
+  @apply border-line bg-panel;
 }
 
 .table-tile.draft-warning {
-  border-color: #ef4444;
-  border-left-color: #b91c1c;
-  background: #fee2e2;
-  color: #450a0a;
+  border-color: color-mix(in srgb, var(--danger) 35%, var(--line));
+  background: var(--danger-soft);
+  color: var(--ink);
 }
 
 .table-tile.occupied,
 .table-tile.running {
-  border-color: #d97706;
-  border-left-color: #b45309;
-  background: #fcd34d;
-  color: #1f1300;
+  border-color: color-mix(in srgb, var(--warning) 25%, var(--line));
+  background: color-mix(in srgb, var(--warning-soft) 65%, var(--panel));
+  color: var(--ink);
 }
 
 .table-tile.billed,
 .table-tile.bill_printed,
 .table-tile.bill-printed {
-  border-color: #16a34a;
-  border-left-color: #15803d;
-  background: #86efac;
-  color: #052e16;
+  border-color: color-mix(in srgb, var(--accent) 25%, var(--line));
+  background: color-mix(in srgb, var(--accent-soft) 65%, var(--panel));
+  color: var(--ink);
 }
 
 .table-tile.needs_attention,
 .table-tile.needs-attention {
-  @apply border-danger border-l-danger bg-danger-soft;
+  @apply border-danger bg-danger-soft;
 }
 
 .table-tile-main {
-  @apply grid min-h-20 w-full content-between gap-2 rounded-none bg-transparent p-3 text-left text-ink hover:bg-black/[0.03];
+  @apply grid min-h-24 w-full content-between gap-3 rounded-none bg-transparent p-4 text-left text-ink hover:bg-black/[0.02];
 }
 
 .table-tile-topline {
@@ -56,13 +53,14 @@
 }
 
 .table-tile-heading strong {
-  @apply truncate text-xl font-black leading-none;
+  @apply truncate text-xl font-semibold leading-6 tracking-tight;
 }
 
 .table-tile-heading span,
 .table-tile-total,
 .total-chip {
-  @apply text-xs font-bold uppercase text-muted;
+  @apply text-xs font-medium text-muted;
+  font-variant-numeric: tabular-nums;
 }
 
 .table-tile.running .table-tile-heading span,
@@ -91,7 +89,7 @@
 }
 
 .table-tile-duration {
-  @apply inline-flex h-7 shrink-0 items-center gap-1 rounded-full border border-black/15 bg-white/70 px-2 text-xs font-black leading-none text-ink shadow-sm;
+  @apply inline-flex h-6 shrink-0 items-center gap-1 rounded-md border border-line bg-panel px-1.5 text-xs font-medium leading-none text-muted;
 }
 
 .table-tile-duration svg {
@@ -100,17 +98,17 @@
 
 .table-tile.running .table-tile-duration,
 .table-tile.occupied .table-tile-duration {
-  border-color: #b45309;
-  background: #fffbeb;
-  color: #5f3700;
+  border-color: color-mix(in srgb, var(--warning) 20%, var(--line));
+  background: var(--panel);
+  color: var(--warning);
 }
 
 .table-tile.bill-printed .table-tile-duration,
 .table-tile.bill_printed .table-tile-duration,
 .table-tile.billed .table-tile-duration {
-  border-color: #15803d;
-  background: #f0fdf4;
-  color: #14532d;
+  border-color: color-mix(in srgb, var(--accent) 20%, var(--line));
+  background: var(--panel);
+  color: var(--accent);
 }
 
 .table-tile-actions {
@@ -119,21 +117,21 @@
 
 .table-tile.running .table-tile-actions,
 .table-tile.occupied .table-tile-actions {
-  border-top-color: #d97706;
+  border-top-color: color-mix(in srgb, var(--warning) 20%, var(--line));
 }
 
 .table-tile.bill-printed .table-tile-actions,
 .table-tile.bill_printed .table-tile-actions,
 .table-tile.billed .table-tile-actions {
-  border-top-color: #16a34a;
+  border-top-color: color-mix(in srgb, var(--accent) 20%, var(--line));
 }
 
 .table-tile-shortcut {
-  @apply min-h-9 rounded-none border-0 bg-white text-xs font-bold text-ink hover:bg-wash;
+  @apply min-h-9 rounded-none border-0 bg-panel text-xs font-medium text-muted hover:bg-wash hover:text-ink;
 }
 
 .table-tile-shortcut.primary {
-  @apply bg-ink text-white hover:bg-accent-dark;
+  @apply border-l border-line bg-transparent text-accent-dark hover:bg-accent-soft;
 }
 
 .table-map-counts {
@@ -141,11 +139,11 @@
 }
 
 .state-dot {
-  @apply inline-flex min-h-8 items-center gap-2 rounded-full border border-line bg-white px-3 text-xs font-bold uppercase text-muted;
+  @apply inline-flex min-h-7 items-center gap-1.5 px-1 text-xs font-medium text-muted;
 }
 
 .state-dot::before {
-  @apply block h-2.5 w-2.5 rounded-full content-[''];
+  @apply block h-1.5 w-1.5 rounded-full content-[''];
 }
 
 .state-dot.free::before {
@@ -157,5 +155,9 @@
 }
 
 .state-dot.billed::before {
-  background: #16a34a;
+  background: var(--accent);
+}
+
+@media (pointer: coarse) {
+  .table-tile-shortcut { min-height: 44px; }
 }

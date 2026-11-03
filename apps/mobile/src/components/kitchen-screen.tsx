@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Alert, LayoutAnimation, Pressable, ScrollView, SectionList, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Alert, ScrollView, SectionList, Text, TextInput, View } from "react-native";
+import { Pressable } from "./pressable";
 import { formatPosDateTime, getTableDisplayState, searchMenuItems, tableDisplayLabel, type OrderItemInput, type SaleGroupKind } from "@gaurav-pos/shared";
 
 import type { CurrentDaySummary, DailyReportDetail, DailyReportRow, HubBootstrap, HubOrder, KdsTicket } from "../lib/hub-client";
@@ -67,7 +68,7 @@ function KitchenScreen({
                     <Text style={styles.muted}>KOT #{ticket.sequence}</Text>
                   </View>
                   <View style={[styles.kotStatusPill, ticket.status === "ready" && styles.kotStatusReady]}>
-                    <Text style={[styles.kotStatusText, ticket.status === "ready" && styles.kotStatusTextReady]}>{ticket.status.toUpperCase()}</Text>
+                    <Text style={[styles.kotStatusText, ticket.status === "ready" && styles.kotStatusTextReady]}>{ticket.status.charAt(0).toUpperCase() + ticket.status.slice(1)}</Text>
                   </View>
                 </View>
                 <View style={styles.kotItems}>

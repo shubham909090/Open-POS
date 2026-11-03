@@ -26,6 +26,8 @@
     @apply grid gap-3;
   }
 
+  .workspace-load-state { @apply grid min-h-36 place-content-center text-sm text-muted; }
+
   .ticket-header,
   .ticket-header-actions,
   .guest-row,
@@ -38,11 +40,11 @@
   }
 
   .ticket-header span {
-    @apply text-xs font-bold uppercase text-muted;
+    @apply text-xs font-medium text-muted;
   }
 
   .ticket-header h2 {
-    @apply m-0 text-xl font-black leading-7 text-ink;
+    @apply m-0 text-xl font-semibold leading-7 text-ink;
   }
 
   .ticket-header-actions {
@@ -54,7 +56,7 @@
   }
 
   .guest-row {
-    @apply grid items-end gap-3 rounded-lg border border-line bg-wash p-3;
+    @apply grid items-end gap-3 rounded-lg border border-line bg-panel p-3;
     grid-template-columns: minmax(92px, 112px) minmax(260px, 1fr) minmax(282px, max-content);
   }
 
@@ -63,7 +65,7 @@
   }
 
   .guest-count-field input {
-    @apply h-11 text-center text-base font-black;
+    @apply h-11 text-center text-base font-semibold;
   }
 
   .send-action-row {
@@ -72,11 +74,11 @@
   }
 
   .send-action-row button {
-    @apply min-h-11 min-w-0 bg-ink px-3 text-sm font-black leading-5 text-white hover:bg-accent-dark disabled:bg-muted disabled:text-white disabled:opacity-70;
+    @apply min-h-11 min-w-0 bg-ink px-3 text-sm font-semibold leading-5 text-white hover:bg-accent-dark disabled:bg-muted disabled:text-white disabled:opacity-70;
   }
 
   .send-action-row kbd {
-    @apply rounded border border-white/20 bg-white/10 px-1.5 py-0.5 text-xs font-black;
+    @apply rounded border border-white/20 bg-white/10 px-1.5 py-0.5 text-xs font-semibold;
   }
 
   .order-menu-panel .menu-filter-row {
@@ -126,12 +128,13 @@
   }
 
   .order-modal-backdrop {
-    @apply place-items-start overflow-y-auto p-3 md:p-5;
+    @apply backdrop-blur-sm;
+    background: color-mix(in srgb, var(--ink) 35%, transparent);
   }
 
   .order-modal-card {
-    @apply mx-auto grid w-[min(1180px,100%)] gap-4 rounded-lg border border-line bg-panel p-4 shadow-2xl;
-    max-height: calc(100vh - 2rem);
+    @apply fixed left-1/2 top-1/2 z-50 grid w-[min(1180px,calc(100vw-32px))] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl border border-line bg-panel p-5 shadow-2xl outline-none;
+    max-height: calc(100dvh - 2rem);
     overflow: auto;
   }
 
@@ -140,7 +143,7 @@
   }
 
   .order-modal-header span {
-    @apply text-xs font-bold uppercase text-muted;
+    @apply text-xs font-medium text-muted;
   }
 
   .order-modal-kicker {
@@ -148,11 +151,11 @@
   }
 
   .order-modal-header .order-modal-duration {
-    @apply inline-flex min-h-6 items-center gap-1 rounded-full border border-line bg-white px-2 text-xs font-black normal-case text-ink;
+    @apply inline-flex min-h-6 items-center gap-1 rounded-full border border-line bg-white px-2 text-xs font-semibold normal-case text-ink;
   }
 
   .order-modal-header h2 {
-    @apply m-0 text-2xl font-black leading-8 text-ink;
+    @apply m-0 text-xl font-semibold leading-7 tracking-tight text-ink;
   }
 
   .order-modal-actions {
@@ -171,17 +174,35 @@
     grid-template-columns: minmax(0, 1fr);
   }
 
+  .order-modal-layout > .ticket-workspace {
+    @apply rounded-none border-0 bg-transparent p-0 shadow-none;
+  }
+
+  .order-modal-card[data-state="open"] {
+    animation: order-workspace-enter 120ms ease-out;
+  }
+
+  @keyframes order-workspace-enter {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .order-modal-card[data-state="open"] { animation: none; }
+  }
+
   .order-menu-panel {
-    @apply max-h-[calc(100vh-9rem)] overflow-auto rounded-lg border border-line bg-wash p-3;
+    @apply max-h-[calc(100dvh-9rem)] overflow-auto rounded-lg border border-line bg-panel p-3;
+    scrollbar-gutter: stable;
   }
 
   .line-note-field {
-    @apply col-span-full grid gap-2 rounded-md border border-dashed border-line bg-wash p-2;
+    @apply col-span-full grid gap-2 rounded-md border border-line bg-wash p-2;
     grid-area: note;
   }
 
   .line-note-field summary {
-    @apply cursor-pointer text-[11px] font-black uppercase tracking-normal text-muted;
+    @apply cursor-pointer text-[11px] font-semibold tracking-normal text-muted;
   }
 
   .line-note-field input {
@@ -189,7 +210,7 @@
   }
 
   .line-note-text {
-    @apply col-span-full rounded-md border border-dashed border-line bg-wash px-3 py-2 text-sm font-semibold text-muted;
+    @apply col-span-full rounded-md border border-line bg-wash px-3 py-2 text-sm font-medium text-muted;
     grid-area: note;
   }
 
@@ -205,6 +226,10 @@
   }
 
   @media (max-width: 720px) {
+    .order-modal-card {
+      width: calc(100vw - 16px);
+      max-height: calc(100dvh - 16px);
+    }
     .line-row {
       grid-template-areas:
         "main qty"
@@ -236,4 +261,10 @@
     .state-search-actions {
       @apply justify-start;
     }
+  }
+
+  @media (pointer: coarse) {
+    .order-menu-panel .menu-variant-buttons button,
+    .order-modal-actions button,
+    .state-search-actions button { min-height: 44px; }
   }

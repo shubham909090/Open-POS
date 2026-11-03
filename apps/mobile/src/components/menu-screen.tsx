@@ -1,11 +1,14 @@
+import { FormModal } from "./form-modal";
 import { useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Alert, LayoutAnimation, Modal, Pressable, ScrollView, SectionList, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Alert, ScrollView, SectionList, Text, TextInput, View } from "react-native";
+import { Pressable } from "./pressable";
+import { Coffee, Ellipsis, Search, Utensils, Wine, X } from "lucide-react-native";
 import { formatPosDateTime, getTableDisplayState, searchMenuItems, tableDisplayLabel, type OrderItemInput, type SaleGroupKind } from "@gaurav-pos/shared";
 
 import type { CurrentDaySummary, DailyReportDetail, DailyReportRow, HubBootstrap, HubOrder, KdsTicket } from "../lib/hub-client";
 import { mobileDraftOrderStateSignature, mobileSavedOrderStateSignature } from "../lib/order-state";
 import { formatMobileMenuActionLabel } from "../lib/menu-actions";
-import { amountInputToPaise, categoryToneFor, findMenuVariant, formatRupees, paiseToRupeeInput } from "../lib/mobile-format";
+import { amountInputToPaise, findMenuVariant, formatRupees, paiseToRupeeInput } from "../lib/mobile-format";
 import type { ConnectionState, MobileOrderStateItem, OrderStateSaveMode, PaymentMethod, PrintMode } from "../lib/mobile-types";
 import { palette, styles } from "../styles/app-styles";
 import { CollapsibleSection, EmptyState, LabeledMoneyInput, SummaryBox, UncontrolledInput } from "./app-shell";
@@ -67,24 +70,26 @@ function MenuScreen({
         </View>
         <Text style={styles.totalText}>Rs {formatRupees(draftTotal)}</Text>
       </View>
-      <View style={styles.inputGroup}>
-        <Text style={styles.inputLabel}>Search dishes</Text>
+      <View style={styles.menuSearch}>
+        <Search size={18} strokeWidth={1.7} color={palette.muted} />
         <TextInput
-          style={styles.input}
+          accessibilityLabel="Search dishes"
+          style={styles.menuSearchInput}
           value={searchValue}
           onChangeText={onSearchChange}
           autoCorrect={false}
           returnKeyType="search"
-          placeholder="Type dish name"
+          placeholder="Search dishes…"
           placeholderTextColor={palette.muted}
         />
+        {searchValue ? <Pressable accessibilityLabel="Clear dish search" style={styles.searchClear} onPress={() => onSearchChange("")}><X size={16} color={palette.muted} strokeWidth={1.7} /></Pressable> : null}
       </View>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always" contentContainerStyle={styles.filterChips}>
-        <Pressable style={[styles.filterChip, selectedSaleGroup === null && styles.filterChipActive]} onPress={() => onSaleGroupChange(null)}>
+        <Pressable accessibilityState={{ selected: selectedSaleGroup === null }} style={[styles.filterChip, selectedSaleGroup === null && styles.filterChipActive]} onPress={() => onSaleGroupChange(null)}>
           <Text style={[styles.filterChipText, selectedSaleGroup === null && styles.filterChipTextActive]}>All</Text>
         </Pressable>
         {saleGroupFilters.map(([kind, label]) => (
-          <Pressable key={kind} style={[styles.filterChip, selectedSaleGroup === kind && styles.filterChipActive]} onPress={() => onSaleGroupChange(kind)}>
+          <Pressable key={kind} accessibilityState={{ selected: selectedSaleGroup === kind }} style={[styles.filterChip, selectedSaleGroup === kind && styles.filterChipActive]} onPress={() => onSaleGroupChange(kind)}>
             <Text style={[styles.filterChipText, selectedSaleGroup === kind && styles.filterChipTextActive]}>{label}</Text>
           </Pressable>
         ))}
@@ -129,7 +134,7 @@ function MenuScreen({
     closeOpenItem();
   };
   const openItemModal = (
-    <Modal visible={openItemVisible} transparent animationType="fade" onRequestClose={closeOpenItem}>
+    <FormModal visible={openItemVisible} transparent animationType="fade" onRequestClose={closeOpenItem}>
       <View style={styles.popupBackdrop}>
         <View style={styles.popupCard}>
           <View style={styles.sectionHeaderRow}>
@@ -141,7 +146,7 @@ function MenuScreen({
               <Text style={styles.secondaryButtonText}>Close</Text>
             </Pressable>
           </View>
-          <View style={styles.formStack}>
+          <ScrollView style={styles.popupScroll} contentContainerStyle={styles.formStack} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
             <View style={styles.inputGroup}>
               <Text style={styles.inputLabel}>Item name</Text>
               <TextInput
@@ -198,10 +203,10 @@ function MenuScreen({
             <Pressable accessibilityLabel="Confirm open item" style={styles.primaryButton} onPress={submitOpenItem}>
               <Text style={styles.primaryButtonText}>Add open item</Text>
             </Pressable>
-          </View>
+          </ScrollView>
         </View>
       </View>
-    </Modal>
+    </FormModal>
   );
 
   if (virtualized) {
@@ -229,8 +234,9 @@ function MenuScreen({
             )
           }
           stickySectionHeadersEnabled={false}
-          keyboardShouldPersistTaps="always"
-          contentContainerStyle={styles.virtualMenuList}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          contentContainerStyle={[styles.virtualMenuList, Object.keys(draftQuantitiesByMenuItemId).length > 0 && styles.screenContentWithDraft]}
           />
         </View>
         {openItemModal}
@@ -309,7 +315,7 @@ function MenuItemRow({
 }) {
   const variants = menuItem.variants?.filter((variant) => Boolean(variant.active)) ?? [];
   const activeVariants = variants.length || menuItem.sale_group_kind === "alcohol" ? variants : [{ id: "", label: "Regular", kind: "default", price_paise: menuItem.price_paise }];
-  const categoryTone = categoryToneFor(menuItem.sale_group_kind);
+  const CategoryIcon = menuItem.sale_group_kind === "alcohol" ? Wine : menuItem.sale_group_kind === "beverage" ? Coffee : menuItem.sale_group_kind === "food" ? Utensils : Ellipsis;
   const hasMultipleVariants = activeVariants.length > 1;
   return (
     <View style={[styles.menuItem, draftQuantity > 0 && styles.menuItemSelected, styles.menuItemInline, draftSelectionLabel && styles.menuItemWithSelection, hasMultipleVariants && styles.menuItemVariantRow]}>
@@ -319,12 +325,12 @@ function MenuItemRow({
         </View>
       ) : null}
       <View style={[styles.menuIdentity, draftQuantity > 0 && styles.menuIdentityWithBadge]}>
-        <View style={[styles.menuCategoryIcon, { backgroundColor: categoryTone.soft }]}>
-          <Text style={[styles.menuCategoryIconText, { color: categoryTone.ink }]}>{categoryTone.icon}</Text>
+        <View style={[styles.menuCategoryIcon, { backgroundColor: palette.wash }]} importantForAccessibility="no-hide-descendants">
+          <CategoryIcon size={18} color={palette.muted} strokeWidth={1.7} />
         </View>
         <View style={styles.menuText}>
           <Text style={styles.menuName} numberOfLines={2}>{menuItem.name}</Text>
-          <Text style={[styles.muted, { color: categoryTone.ink }]} numberOfLines={1}>{menuItem.sale_group_name ?? menuItem.production_unit_name ?? "Menu"}</Text>
+          <Text style={styles.muted} numberOfLines={1}>{menuItem.sale_group_name ?? menuItem.production_unit_name ?? "Menu"}</Text>
         </View>
       </View>
       <View style={hasMultipleVariants ? styles.variantStripBlock : styles.menuPriceBlock}>
@@ -333,14 +339,14 @@ function MenuItemRow({
         ) : activeVariants.length === 1 ? (
           (() => { const v = activeVariants[0]!; return (
           <View style={styles.singleVariantBlock}>
-            <Pressable style={styles.addButton} onPress={() => onAddItem(menuItem.id, v.id || undefined)}>
+            <Pressable accessibilityLabel={`Add ${menuItem.name}, ${formatMobileMenuActionLabel({ kind: v.kind, pricePaise: v.price_paise })}`} style={styles.addButton} onPress={() => onAddItem(menuItem.id, v.id || undefined)}>
               <Text style={styles.addButtonText}>{formatMobileMenuActionLabel({ kind: v.kind, pricePaise: v.price_paise })}</Text>
             </Pressable>
           </View>); })()
         ) : (
           <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always" contentContainerStyle={styles.variantWrap}>
             {activeVariants.map((variant) => (
-              <Pressable key={variant.id || menuItem.id} style={styles.variantChip} onPress={() => onAddItem(menuItem.id, variant.id || undefined)}>
+              <Pressable key={variant.id || menuItem.id} accessibilityLabel={`Add ${menuItem.name}, ${variant.label}, Rs ${formatRupees(variant.price_paise)}`} style={styles.variantChip} onPress={() => onAddItem(menuItem.id, variant.id || undefined)}>
                 <Text style={styles.variantPrice} numberOfLines={1}>{formatMobileMenuActionLabel({ kind: variant.kind, label: variant.label, pricePaise: variant.price_paise })}</Text>
               </Pressable>
             ))}

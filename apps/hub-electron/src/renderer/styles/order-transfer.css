@@ -7,11 +7,11 @@
 }
 
 .transfer-panel-toggle strong {
-  @apply text-base font-black text-ink;
+  @apply text-base font-semibold text-ink;
 }
 
 .transfer-panel-toggle span {
-  @apply rounded-md bg-wash px-2.5 py-1 text-xs font-black uppercase text-muted;
+  @apply rounded-md bg-wash px-2.5 py-1 text-xs font-semibold text-muted;
 }
 
 .transfer-panel-body {
@@ -28,7 +28,7 @@
 }
 
 .transfer-mode-toggle button {
-  @apply min-h-10 rounded-md bg-transparent px-4 text-sm font-black text-muted shadow-none hover:bg-white hover:text-ink;
+  @apply min-h-10 rounded-md bg-transparent px-4 text-sm font-semibold text-muted shadow-none hover:bg-white hover:text-ink;
 }
 
 .transfer-mode-toggle button.active {
@@ -48,11 +48,11 @@
 }
 
 .transfer-warning {
-  @apply m-0 rounded-md border border-warning bg-warning-soft px-3 py-2 text-sm font-black leading-5 text-warning;
+  @apply m-0 rounded-md border border-warning bg-warning-soft px-3 py-2 text-sm font-semibold leading-5 text-warning;
 }
 
 .transfer-submit-button {
-  @apply inline-flex min-h-11 w-fit min-w-64 items-center justify-center rounded-md bg-ink px-4 text-sm font-black text-white shadow-sm hover:bg-accent-dark disabled:bg-wash disabled:text-muted disabled:opacity-100;
+  @apply inline-flex min-h-11 w-fit min-w-64 items-center justify-center rounded-md bg-ink px-4 text-sm font-semibold text-white hover:bg-accent-dark disabled:bg-wash disabled:text-muted disabled:opacity-100;
 }
 
 .transfer-item-list {
@@ -69,7 +69,7 @@
 }
 
 .transfer-item-row strong {
-  @apply min-w-0 text-sm font-black text-ink;
+  @apply min-w-0 text-sm font-semibold text-ink;
 }
 
 .transfer-item-row span {

@@ -4,24 +4,24 @@ import { type ButtonHTMLAttributes, forwardRef } from "react";
 import { cn } from "../../lib/utils.js";
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:pointer-events-none disabled:opacity-45",
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md border border-transparent text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-45",
   {
     variants: {
       variant: {
-        default: "bg-ink text-white hover:bg-accent-dark",
+        default: "bg-ink text-white hover:bg-zinc-700",
         accent: "bg-accent text-white hover:bg-accent-dark",
         secondary: "border border-line bg-panel text-ink hover:bg-wash",
         ghost: "bg-transparent text-muted hover:bg-wash hover:text-ink",
-        danger: "bg-danger text-white hover:bg-danger",
+        danger: "bg-danger text-white hover:bg-red-800",
         warning: "bg-warning text-white hover:bg-warning",
       },
       size: {
-        sm: "h-9 px-3 text-xs",
-        md: "h-10 px-4",
+        sm: "h-8 min-h-8 px-3 text-xs",
+        md: "h-9 min-h-9 px-3.5",
         lg: "h-11 px-5",
         touch: "h-11 px-5 text-base",
         icon: "h-10 w-10 p-0",
-        "icon-sm": "h-9 w-9 p-0",
+        "icon-sm": "h-8 min-h-8 w-8 p-0",
       },
     },
     defaultVariants: {

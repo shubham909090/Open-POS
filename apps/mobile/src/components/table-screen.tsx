@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Alert, LayoutAnimation, Pressable, ScrollView, SectionList, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Alert, ScrollView, SectionList, Text, TextInput, View } from "react-native";
+import { Pressable } from "./pressable";
 import { formatPosDateTime, getTableDisplayState, searchMenuItems, tableDisplayLabel, type OrderItemInput, type SaleGroupKind } from "@gaurav-pos/shared";
 
 import type { CurrentDaySummary, DailyReportDetail, DailyReportRow, HubBootstrap, HubOrder, KdsTicket } from "../lib/hub-client";
@@ -25,12 +26,13 @@ function TablePicker({
   onSelectTable: (tableId: string) => void;
 }) {
   const floorGroups = groupTablesByFloor(activeTables, floors);
+  const availableCount = activeTables.filter((table) => getTableDisplayState(table) === "free").length;
   return (
     <View style={styles.panel}>
       <View style={styles.cardHeader}>
         <View style={styles.flexText}>
           <Text style={styles.sectionTitle}>Tables</Text>
-          <Text style={styles.muted}>{activeTables.length} tables available</Text>
+          <Text style={styles.muted}>{availableCount} available · {activeTables.length - availableCount} in service</Text>
         </View>
         {loading ? <ActivityIndicator /> : null}
       </View>
@@ -69,6 +71,8 @@ function TableTile({
   const state = getTableDisplayState(table);
   return (
     <Pressable
+      accessibilityLabel={`Table ${table.name}, ${tableDisplayLabel(state)}`}
+      accessibilityState={{ selected }}
       style={[
         styles.tableTile,
         state === "running" && styles.busyTable,

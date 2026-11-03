@@ -17,7 +17,7 @@
 }
 
 .compact-menu-card .menu-card-main strong {
-  @apply min-w-0 text-base font-black leading-5 text-ink;
+  @apply min-w-0 text-base font-semibold leading-5 text-ink;
   overflow-wrap: anywhere;
 }
 
@@ -47,7 +47,7 @@
 
 .compact-menu-card.keyboard-active,
 .state-search-row.keyboard-active {
-  @apply border-accent bg-accent-soft shadow-md;
+  @apply border-accent bg-accent-soft shadow-none;
 }
 
 .compact-menu-card.keyboard-active .menu-card-icon,
@@ -56,7 +56,7 @@
 }
 
 .csv-import-details {
-  @apply mt-3 overflow-hidden rounded-lg border border-line-strong bg-panel p-0 shadow-sm;
+  @apply mt-3 overflow-hidden rounded-lg border border-line-strong bg-panel p-0 shadow-none;
 }
 
 .setup-subdetails {
@@ -65,16 +65,16 @@
 
 .setup-subdetails summary,
 .csv-import-details summary {
-  @apply relative grid min-h-16 cursor-pointer list-none items-center gap-3 px-4 py-3 text-sm font-black text-ink transition;
+  @apply relative grid min-h-16 cursor-pointer list-none items-center gap-3 px-4 py-3 text-sm font-semibold text-ink transition;
   grid-template-columns: minmax(0, 1fr) auto auto;
   padding-left: 1.25rem;
-  background: linear-gradient(90deg, var(--accent-soft) 0%, var(--panel) 46%);
+  background: var(--panel);
 }
 
 .setup-subdetails summary::before,
 .csv-import-details summary::before {
   content: "";
-  @apply absolute bottom-0 left-0 top-0 w-1 bg-accent;
+  display: none;
 }
 
 .setup-subdetails summary::-webkit-details-marker,
@@ -85,18 +85,18 @@
 .setup-subdetails summary::after,
 .csv-import-details summary::after {
   content: "⌄";
-  @apply grid h-9 w-9 shrink-0 place-items-center rounded-md border border-line bg-panel text-base text-muted shadow-sm transition-transform;
+  @apply grid h-9 w-9 shrink-0 place-items-center rounded-md border border-line bg-panel text-base text-muted shadow-none transition-transform;
 }
 
 .setup-subdetails summary:hover,
 .csv-import-details summary:hover {
-  background: linear-gradient(90deg, var(--accent-soft) 0%, var(--wash) 54%);
+  background: var(--wash);
 }
 
 .setup-subdetails[open] summary,
 .csv-import-details[open] summary {
   @apply border-b border-line;
-  background: linear-gradient(90deg, var(--accent-soft) 0%, var(--wash) 48%);
+  background: var(--wash);
 }
 
 .setup-subdetails[open] summary::after,
@@ -106,12 +106,12 @@
 
 .setup-subdetails summary span,
 .csv-import-details summary span {
-  @apply min-w-0 text-base font-black leading-5 text-ink;
+  @apply min-w-0 text-base font-semibold leading-5 text-ink;
 }
 
 .setup-subdetails summary small,
 .csv-import-details summary small {
-  @apply max-w-[240px] truncate rounded-full border border-line bg-panel px-3 py-1 text-xs font-black uppercase text-muted shadow-sm;
+  @apply max-w-[240px] truncate rounded-full border border-line bg-panel px-3 py-1 text-xs font-medium text-muted shadow-none;
 }
 
 .csv-import-details:not([open]) .csv-import-grid {
@@ -135,11 +135,11 @@
 }
 
 .payment-summary-grid small {
-  @apply text-xs font-bold uppercase text-muted;
+  @apply text-xs font-medium text-muted;
 }
 
 .payment-summary-grid b {
-  @apply text-base font-black text-ink;
+  @apply text-base font-semibold text-ink;
 }
 
 .compact-row small {
@@ -192,7 +192,7 @@
 }
 
 .kot-note-field {
-  @apply grid gap-1 text-sm font-bold text-muted;
+  @apply grid gap-1 text-sm font-semibold text-muted;
 }
 
 .kot-note-field input {

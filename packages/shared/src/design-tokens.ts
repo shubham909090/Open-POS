@@ -9,22 +9,22 @@
 
 export const colors = {
   ink: "#18181b",
-  muted: "#71717a",
-  paper: "#fafafa",
+  muted: "#667085",
+  paper: "#f8f9fb",
   panel: "#ffffff",
-  wash: "#f4f4f5",
-  line: "#d4d4d8",
-  lineStrong: "#a1a1aa",
+  wash: "#f1f3f6",
+  line: "#e4e7ec",
+  lineStrong: "#c8ced8",
   accent: "#0f766e",
   accentDark: "#134e4a",
-  accentSoft: "#e5f3ed",
+  accentSoft: "#edf6f3",
   warning: "#b45309",
   warningSoft: "#fffbeb",
   danger: "#b91c1c",
   dangerSoft: "#fef2f2",
   blue: "#1d4ed8",
   blueSoft: "#eff6ff",
-  sidebar: "#18181b",
+  sidebar: "#f3f5f7",
 } as const;
 
 export const radius = {

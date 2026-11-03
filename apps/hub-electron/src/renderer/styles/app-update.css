@@ -16,7 +16,7 @@
 }
 
 .update-status-card strong {
-  @apply min-w-0 text-base font-black leading-5 text-ink;
+  @apply min-w-0 text-base font-semibold leading-5 text-ink;
 }
 
 .update-status-card span:not(.record-status) {
@@ -37,11 +37,11 @@
 }
 
 .update-package-card label {
-  @apply grid min-w-0 gap-1 text-sm font-bold text-muted;
+  @apply grid min-w-0 gap-1 text-sm font-medium text-muted;
 }
 
 .update-package-card label span {
-  @apply text-xs font-black uppercase tracking-normal text-muted;
+  @apply text-xs font-semibold normal-case tracking-normal text-muted;
 }
 
 .update-picker-actions,
@@ -71,7 +71,7 @@
 }
 
 .update-action-card > strong {
-  @apply text-sm font-black uppercase tracking-normal text-ink;
+  @apply text-sm font-semibold normal-case tracking-normal text-ink;
 }
 
 .github-update-result {
@@ -79,11 +79,11 @@
 }
 
 .github-update-result strong {
-  @apply text-base font-black text-ink;
+  @apply text-base font-semibold text-ink;
 }
 
 .github-update-result a {
-  @apply font-black text-blue underline underline-offset-2;
+  @apply font-semibold text-blue underline underline-offset-2;
 }
 
 .github-update-result p {
@@ -119,3 +119,7 @@
     @apply justify-start;
   }
 }
+.settings-workspace .update-status-card { background: var(--panel); border-color: var(--line); gap: 12px; }
+.settings-workspace .update-status-card strong { font-size: 13px; font-weight: 500; }
+.settings-workspace .update-status-card span:not(.record-status) { font-size: 12px; font-weight: 400; line-height: 1.6; }
+.settings-workspace .github-update-card { background: var(--wash); border-color: var(--line); }

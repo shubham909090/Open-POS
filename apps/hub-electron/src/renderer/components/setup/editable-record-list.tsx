@@ -2,6 +2,7 @@ import { type ReactNode, useState } from "react";
 import { ArrowDown, ArrowUp, Pencil, Trash2, X } from "lucide-react";
 import { type NoticeSetter, messageOf } from "../../lib/format.js";
 import { EmptyState } from "../ui/empty-state.js";
+import { ConfirmationDialog } from "../ui/confirmation-dialog.js";
 
 export function EditableRecordList({
   setNotice,
@@ -29,21 +30,28 @@ export function EditableRecordList({
   const [busyId, setBusyId] = useState("");
   const [editingId, setEditingId] = useState("");
   const [search, setSearch] = useState("");
+  const [deleting, setDeleting] = useState<(typeof rows)[number] | null>(null);
   const needle = search.trim().toLowerCase();
   const matchedRows = rows.filter((row) => {
-      if (!needle) return true;
-      return [row.title, row.meta].some((part) => part.toLowerCase().includes(needle));
-    });
+    if (!needle) return true;
+    return [row.title, row.meta].some((part) =>
+      part.toLowerCase().includes(needle),
+    );
+  });
   const visibleRows = needle ? matchedRows.slice(0, 150) : matchedRows;
-  const searchCapped = Boolean(needle && matchedRows.length > visibleRows.length);
+  const searchCapped = Boolean(
+    needle && matchedRows.length > visibleRows.length,
+  );
 
   async function run(id: string, action: () => Promise<unknown>) {
     setBusyId(id);
     try {
       await action();
       setNotice({ tone: "good", text: "Saved." });
+      return true;
     } catch (error) {
       setNotice({ tone: "bad", text: messageOf(error) });
+      return false;
     } finally {
       setBusyId("");
     }
@@ -53,8 +61,16 @@ export function EditableRecordList({
     <div className="record-list">
       {!hideSearch && rows.length > 12 ? (
         <div className="setup-search-row">
-          <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search saved records" />
-          {searchCapped ? <small>Showing first {visibleRows.length} matches. Keep typing to narrow.</small> : null}
+          <input
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search saved records"
+          />
+          {searchCapped ? (
+            <small>
+              Showing first {visibleRows.length} matches. Keep typing to narrow.
+            </small>
+          ) : null}
         </div>
       ) : null}
       {visibleRows.map((row) => (
@@ -65,18 +81,25 @@ export function EditableRecordList({
           <div className="record-row-main">
             <div className="record-row-title">
               <strong>{row.title}</strong>
-              <span className={`record-status${row.active ? " active" : " disabled"}`}>
+              <span
+                className={`record-status${row.active ? " active" : " disabled"}`}
+              >
                 {row.active ? "Active" : "Disabled"}
               </span>
             </div>
             <span>{row.meta}</span>
           </div>
           {row.onMoveUp || row.onMoveDown ? (
-            <div className="record-move-controls" aria-label={`Move ${row.title}`}>
+            <div
+              className="record-move-controls"
+              aria-label={`Move ${row.title}`}
+            >
               <button
                 type="button"
                 className="record-action icon-only"
-                disabled={busyId === row.id || row.moveUpDisabled || !row.onMoveUp}
+                disabled={
+                  busyId === row.id || row.moveUpDisabled || !row.onMoveUp
+                }
                 onClick={() => row.onMoveUp && void run(row.id, row.onMoveUp)}
                 aria-label={`Move ${row.title} up`}
               >
@@ -85,8 +108,12 @@ export function EditableRecordList({
               <button
                 type="button"
                 className="record-action icon-only"
-                disabled={busyId === row.id || row.moveDownDisabled || !row.onMoveDown}
-                onClick={() => row.onMoveDown && void run(row.id, row.onMoveDown)}
+                disabled={
+                  busyId === row.id || row.moveDownDisabled || !row.onMoveDown
+                }
+                onClick={() =>
+                  row.onMoveDown && void run(row.id, row.onMoveDown)
+                }
                 aria-label={`Move ${row.title} down`}
               >
                 <ArrowDown size={15} />
@@ -99,9 +126,7 @@ export function EditableRecordList({
               className="record-action"
               disabled={busyId === row.id}
               onClick={() =>
-                setEditingId((current) =>
-                  current === row.id ? "" : row.id,
-                )
+                setEditingId((current) => (current === row.id ? "" : row.id))
               }
             >
               {editingId === row.id ? <X size={15} /> : <Pencil size={15} />}
@@ -119,7 +144,7 @@ export function EditableRecordList({
               type="button"
               className="record-action danger icon-only"
               disabled={busyId === row.id}
-              onClick={() => void run(row.id, row.onDelete)}
+              onClick={() => setDeleting(row)}
               aria-label={`Delete ${row.title}`}
             >
               <Trash2 size={16} />
@@ -131,7 +156,9 @@ export function EditableRecordList({
       {!rows.length ? (
         <EmptyState
           title={emptyMessage ?? "Nothing added yet"}
-          description={emptyMessage ? "" : "Saved records appear here immediately."}
+          description={
+            emptyMessage ? "" : "Saved records appear here immediately."
+          }
         />
       ) : rows.length > 0 && visibleRows.length === 0 ? (
         <EmptyState
@@ -139,6 +166,23 @@ export function EditableRecordList({
           description="Clear search or try another name."
         />
       ) : null}
+      <ConfirmationDialog
+        open={Boolean(deleting)}
+        title={`Delete ${deleting?.title ?? "record"}?`}
+        message="Remove this record from restaurant setup? The hub will keep any information required by existing orders and bills."
+        confirmLabel={busyId ? "Deleting…" : "Delete record"}
+        danger
+        busy={Boolean(busyId)}
+        onCancel={() => {
+          if (!busyId) setDeleting(null);
+        }}
+        onConfirm={() => {
+          if (!deleting || busyId) return;
+          void run(deleting.id, deleting.onDelete).then((saved) => {
+            if (saved) setDeleting(null);
+          });
+        }}
+      />
     </div>
   );
 }

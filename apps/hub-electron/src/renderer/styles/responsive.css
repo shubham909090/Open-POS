@@ -1,16 +1,4 @@
 @media (max-width: 1180px) {
-  .hub-shell {
-    @apply grid-cols-1;
-  }
-
-  .side-rail {
-    @apply static grid-cols-[auto_minmax(0,1fr)_auto] items-center;
-  }
-
-  .side-rail nav {
-    @apply grid grid-cols-6 gap-1;
-  }
-
   .orders-grid.has-selection,
   .order-modal-layout.menu-open,
   .reports-layout .report-detail-grid,
@@ -24,8 +12,6 @@
 }
 
 @media (max-width: 760px) {
-  .side-rail,
-  .topbar,
   .panel-title,
   .saved-settings-card,
   .pairing-card,
@@ -42,7 +28,6 @@
     grid-template-columns: 1fr;
   }
 
-  .topbar,
   .panel-title {
     @apply items-start;
   }
@@ -115,7 +100,4 @@
     @apply justify-start;
   }
 
-  .side-rail nav {
-    @apply grid-cols-2;
-  }
 }

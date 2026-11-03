@@ -63,7 +63,8 @@
 }
 
 .alcohol-catalog-table .variant-price-list span {
-  @apply rounded-full border border-line bg-wash px-2 py-1 text-xs font-black text-ink;
+  @apply rounded-md border border-line bg-wash px-2 py-1 text-xs font-medium text-ink;
+  font-variant-numeric: tabular-nums;
 }
 
 .alcohol-catalog-table .action-cell {
@@ -110,12 +111,18 @@
 }
 
 .stock-metrics span {
-  @apply grid gap-1 rounded-md border border-line bg-wash px-3 py-2 text-xs font-bold uppercase text-muted;
+  @apply grid gap-1 rounded-md border border-line bg-panel px-3 py-3 text-xs font-medium text-muted;
 }
 
 .stock-metrics b {
-  @apply text-lg font-black normal-case text-ink;
+  @apply text-xl font-semibold normal-case text-ink;
+  font-variant-numeric: tabular-nums;
 }
+
+.alcohol-loading { @apply grid min-h-36 place-content-center text-sm text-muted; }
+.alcohol-error { @apply items-center justify-between; }
+.alcohol-tabs { @apply w-fit; }
+.stock-reset-button { @apply border-danger/20 text-danger hover:bg-danger-soft hover:text-danger; }
 
 .stock-adjust-form {
   @apply items-end rounded-lg border border-line bg-panel p-3;
@@ -132,4 +139,11 @@
   .alcohol-catalog-row {
     grid-template-columns: minmax(0, 1fr);
   }
+}
+.alcohol-board { min-width: 0; grid-template-columns: minmax(0, 1fr); }
+.alcohol-layout { min-width: 0; }
+
+@media (max-width: 720px) {
+  .alcohol-board .alcohol-form, .alcohol-board .three-col { grid-template-columns: minmax(0, 1fr); }
+  .alcohol-board .panel-title { flex-wrap: wrap; }
 }

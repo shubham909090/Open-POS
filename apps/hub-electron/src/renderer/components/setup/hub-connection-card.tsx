@@ -1,6 +1,6 @@
 import { useMutation } from "@tanstack/react-query";
 import { CloudOff, CloudUpload, Settings } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { hubApi, type Bootstrap } from "../../hub-api.js";
 import type { ManagerApprovalRequest } from "../../hooks/use-manager-approval.js";
@@ -28,10 +28,11 @@ export function HubConnectionCard({
   const cloudBackupEnabled = Boolean(bootstrap.setup?.cloudBackupEnabled);
   const masterPinConfigured = Boolean(bootstrap.setup?.masterPinConfigured);
   const license = bootstrap.setup?.license;
+  const edited = useRef(false);
 
   useEffect(() => {
     const connection = bootstrap.setup?.hubConnection;
-    if (!connection) return;
+    if (!connection || edited.current) return;
     setCloudUrl(connection.cloudUrl);
     setInstallationId(connection.installationId);
     setSyncSecret(connection.syncSecret);
@@ -41,6 +42,7 @@ export function HubConnectionCard({
   const revealHubConnection = useMutation({
     mutationFn: (pin: string) => hubApi.hubConnection(pin),
     onSuccess: (result) => {
+      edited.current = true;
       setCloudUrl(result.cloudUrl);
       setInstallationId(result.installationId);
       setSyncSecret(result.syncSecret);
@@ -54,6 +56,7 @@ export function HubConnectionCard({
   const saveHubConnection = useMutation({
     mutationFn: (pin: string) => hubApi.updateHubConnection({ cloudUrl, installationId, syncSecret, hubPublicUrl }, pin),
     onSuccess: async () => {
+      edited.current = false;
       await onSaved();
       setConnectionEditing(false);
       setNotice({ tone: "good", text: "Cloud connection saved." });
@@ -187,23 +190,23 @@ export function HubConnectionCard({
             <input className="sr-only" name="username" tabIndex={-1} autoComplete="username" value="hub-sync" readOnly aria-hidden="true" />
             <label>
               Cloud URL
-              <input value={cloudUrl} onChange={(event) => setCloudUrl(event.target.value)} placeholder="https://your-deployment.convex.site" autoComplete="off" />
+              <input value={cloudUrl} onChange={(event) => { edited.current = true; setCloudUrl(event.target.value); }} placeholder="https://your-deployment.convex.site" autoComplete="off" />
             </label>
             <label>
               Setup key
-              <input value={setupKey} onChange={(event) => setSetupKey(event.target.value)} placeholder="GAV-..." autoComplete="off" />
+              <input value={setupKey} onChange={(event) => { edited.current = true; setSetupKey(event.target.value); }} placeholder="GAV-..." autoComplete="off" />
             </label>
             <label>
               Hub connection ID
-              <input value={installationId} onChange={(event) => setInstallationId(event.target.value)} autoComplete="off" />
+              <input value={installationId} onChange={(event) => { edited.current = true; setInstallationId(event.target.value); }} autoComplete="off" />
             </label>
             <label>
               Sync secret
-              <input value={syncSecret} onChange={(event) => setSyncSecret(event.target.value)} type="password" autoComplete="current-password" />
+              <input value={syncSecret} onChange={(event) => { edited.current = true; setSyncSecret(event.target.value); }} type="password" autoComplete="current-password" />
             </label>
             <label>
               Hub public URL
-              <input value={hubPublicUrl} onChange={(event) => setHubPublicUrl(event.target.value)} placeholder="http://192.168.1.20:3737" autoComplete="off" />
+              <input value={hubPublicUrl} onChange={(event) => { edited.current = true; setHubPublicUrl(event.target.value); }} placeholder="http://192.168.1.20:3737" autoComplete="off" />
             </label>
             <div className="row-actions hub-connection-actions">
               <button
@@ -225,7 +228,18 @@ export function HubConnectionCard({
                 Save connection
               </button>
               {connectionConfigured ? (
-                <button type="button" className="secondary-button" onClick={() => setConnectionEditing(false)}>
+                <button type="button" className="secondary-button" onClick={() => {
+                  edited.current = false;
+                  const connection = bootstrap.setup?.hubConnection;
+                  if (connection) {
+                    setCloudUrl(connection.cloudUrl);
+                    setInstallationId(connection.installationId);
+                    setSyncSecret(connection.syncSecret);
+                    setHubPublicUrl(connection.hubPublicUrl);
+                  }
+                  setSetupKey("");
+                  setConnectionEditing(false);
+                }}>
                   Cancel
                 </button>
               ) : null}

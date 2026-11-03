@@ -1,5 +1,7 @@
+import { FormModal } from "./form-modal";
 import { useEffect, useMemo, useState } from "react";
-import { Modal, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { ScrollView, Text, TextInput, View } from "react-native";
+import { Pressable } from "./pressable";
 import { getTableDisplayState, isTransferTargetTable, tableDisplayLabel } from "@gaurav-pos/shared";
 
 import type { HubBootstrap, HubOrder } from "../lib/hub-client";
@@ -146,7 +148,7 @@ function TicketTransferSection({
         )}
       </CollapsibleSection>
 
-      <Modal visible={Boolean(targetPickerMode)} transparent animationType="fade" onRequestClose={() => setTargetPickerMode(null)}>
+      <FormModal visible={Boolean(targetPickerMode)} transparent animationType="fade" onRequestClose={() => setTargetPickerMode(null)}>
         <View style={styles.popupBackdrop}>
           <View style={styles.popupCard}>
             <View style={styles.sectionHeaderRow}>
@@ -199,7 +201,7 @@ function TicketTransferSection({
             </Pressable>
           </View>
         </View>
-      </Modal>
+      </FormModal>
     </>
   );
 }

@@ -1,4 +1,5 @@
 import type { HistoryEditBillInput, PaymentQr, SubmitOrderInput } from "@gaurav-pos/shared";
+import { MOBILE_HEALTH_TIMEOUT_MS } from "./connection-health";
 import { buildRealtimeUrl, createIdempotencyKey, HubHttpError } from "./hub-client-helpers";
 import type {
   BillPrinters,
@@ -47,11 +48,15 @@ export class HubClient {
   ) {}
 
   async health(): Promise<boolean> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), MOBILE_HEALTH_TIMEOUT_MS);
     try {
-      const response = await fetch(`${this.baseUrl}/health`);
+      const response = await fetch(`${this.baseUrl}/health`, { signal: controller.signal });
       return response.ok;
     } catch {
       return false;
+    } finally {
+      clearTimeout(timeout);
     }
   }
 

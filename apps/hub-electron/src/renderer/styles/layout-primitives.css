@@ -22,7 +22,7 @@
 .pane-title h2,
 .section-title,
 .action-title {
-  @apply m-0 text-base font-bold leading-6 text-ink;
+  @apply m-0 text-base font-semibold leading-6 text-ink;
 }
 
 .item-summary-panel > .mini-title {
@@ -172,7 +172,7 @@
 .subhead,
 .input-label,
 .mini-label {
-  @apply m-0 text-xs font-bold uppercase text-muted;
+  @apply m-0 text-xs font-medium text-muted;
 }
 
 .ticket-toolbar,

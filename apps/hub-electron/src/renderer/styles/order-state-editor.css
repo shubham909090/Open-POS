@@ -11,19 +11,19 @@
 }
 
 .state-editor-total small {
-  @apply text-xs font-black uppercase tracking-normal text-muted;
+  @apply text-xs font-semibold tracking-normal text-muted;
 }
 
 .state-editor-total strong {
-  @apply text-xl font-black leading-6 text-ink;
+  @apply text-xl font-semibold leading-6 text-ink;
 }
 
 .state-editor-status {
-  @apply inline-flex min-h-8 items-center rounded-full border border-accent bg-accent-soft px-3 text-xs font-black uppercase text-accent-dark;
+  @apply inline-flex min-h-8 items-center rounded-full border border-accent bg-accent-soft px-3 text-xs font-semibold text-accent-dark;
 }
 
 .state-editor-warning {
-  @apply m-0 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-900;
+  @apply m-0 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-900;
 }
 
 .state-editor-actions {
@@ -39,7 +39,7 @@
 }
 
 .state-search-field span {
-  @apply text-xs font-black uppercase tracking-normal text-muted;
+  @apply text-xs font-semibold tracking-normal text-muted;
 }
 
 .state-search-field input {

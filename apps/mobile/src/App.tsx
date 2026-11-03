@@ -6,7 +6,6 @@ import {
   ScrollView,
   StatusBar,
   Text,
-  UIManager,
   useWindowDimensions,
   View
 } from "react-native";
@@ -33,10 +32,6 @@ import {
   nextConnectionAfterDevicePairing,
   shouldShowMobileOnboarding
 } from "./lib/connection-health";
-
-if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
 
 export default function App() {
   const { width } = useWindowDimensions();
@@ -391,7 +386,6 @@ export default function App() {
   ) : (
     <>
       <ConnectionBanner message={licenseWarning ? license.message : message} savingDraft={savingDraft} />
-      <ModeTabs mode={mode} onModeChange={setMode} newItemCount={items.reduce((total, item) => total + item.quantity, 0)} showHistory={canBill} />
       {workArea}
     </>
   );
@@ -403,11 +397,17 @@ export default function App() {
         <KeyboardAvoidingView style={styles.keyboardShell} behavior={Platform.OS === "ios" ? "padding" : undefined}>
           <AppHeader
             connection={connection}
-            title={isKitchenDevice ? "Kitchen Screen" : selectedTable ? `Table ${selectedTable.name}` : canBill ? "Captain POS" : "Waiter"}
-            subtitle={isKitchenDevice ? deviceName || "Kitchen device" : selectedTable ? "Add dishes or review sent items" : "Pick a table to start"}
+            title={shouldShowOnboarding ? "Connection" : isKitchenDevice ? "Kitchen" : selectedTable ? `Table ${selectedTable.name}` : canBill ? "Captain POS" : "Waiter"}
+            subtitle={shouldShowOnboarding ? "Connect and manage this phone" : isKitchenDevice ? deviceName || "Kitchen device" : selectedTable ? "Add dishes or review sent items" : "Pick a table to start"}
             onSetupPress={() => openSetup(hubUrl, deviceToken)}
             onPaymentQrPress={deviceToken && !shouldShowOnboarding ? () => setPaymentQrOpen(true) : undefined}
+            setupVisible={shouldShowOnboarding}
+            onBackPress={deviceToken && connection === "online" ? () => setSetupOpen(false) : undefined}
           />
+
+          {!shouldShowOnboarding && !isKitchenDevice && !licenseBlocked ? (
+            <ModeTabs mode={mode} onModeChange={setMode} newItemCount={items.reduce((total, item) => total + item.quantity, 0)} showHistory={canBill} />
+          ) : null}
 
           {shouldShowOnboarding ? (
             <OnboardingScreen
@@ -439,7 +439,7 @@ export default function App() {
                   </View>
                 </View>
               ) : (
-                <ScrollView style={styles.screen} contentContainerStyle={styles.screenContent} keyboardShouldPersistTaps="always">
+                <ScrollView style={styles.screen} contentContainerStyle={[styles.screenContent, hasNewItems && mode !== "ticket" && !isKitchenDevice && styles.screenContentWithDraft]} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
                   {serviceContent}
                 </ScrollView>
               )}

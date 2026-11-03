@@ -22,5 +22,5 @@ const noticeVariants = cva(
 export interface NoticeProps extends HTMLAttributes<HTMLDivElement>, VariantProps<typeof noticeVariants> {}
 
 export function Notice({ className, variant, ...props }: NoticeProps) {
-  return <div role="alert" className={cn(noticeVariants({ variant }), className)} {...props} />;
+  return <div role={variant === "error" ? "alert" : "status"} className={cn(noticeVariants({ variant }), className)} {...props} />;
 }

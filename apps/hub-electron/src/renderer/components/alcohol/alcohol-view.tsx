@@ -1,6 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { Wine, Beer } from "lucide-react";
 import { hubApi, type Bootstrap } from "../../hub-api.js";
 import { type NoticeSetter, messageOf } from "../../lib/format.js";
 import type { ManagerApprovalRequest } from "../../hooks/use-manager-approval.js";
@@ -38,10 +37,10 @@ export function AlcoholView({
         ]}
       />
       {alcohol.isLoading ? (
-        <div className="text-sm text-muted p-4">Loading alcohol stock...</div>
+        <div className="alcohol-loading" role="status">Loading items and stock…</div>
       ) : null}
       {alcohol.error ? (
-        <Notice variant="error">{messageOf(alcohol.error)}</Notice>
+        <Notice variant="error" className="alcohol-error"><span>{messageOf(alcohol.error)}</span><button type="button" className="secondary-button compact" disabled={alcohol.isFetching} onClick={() => void alcohol.refetch()}>{alcohol.isFetching ? "Retrying…" : "Retry"}</button></Notice>
       ) : null}
       {alcohol.data && tab === "items" ? (
         <AlcoholItemsPanel

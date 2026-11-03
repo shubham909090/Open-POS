@@ -2,6 +2,7 @@ import type { ConnectionState } from "./mobile-types";
 
 export const MOBILE_REFRESH_INTERVAL_MS = 12_000;
 export const MOBILE_REALTIME_REFRESH_DEBOUNCE_MS = 500;
+export const MOBILE_HEALTH_TIMEOUT_MS = 6_000;
 
 export function nextConnectionAfterRefresh(input: {
   success: boolean;
@@ -9,19 +10,36 @@ export function nextConnectionAfterRefresh(input: {
   failures: number;
   hasBootstrap: boolean;
   showSpinner: boolean;
-}): { connection: ConnectionState; failures: number; shouldShowOfflineMessage: boolean } {
-  if (input.success) return { connection: "online", failures: 0, shouldShowOfflineMessage: false };
+}): {
+  connection: ConnectionState;
+  failures: number;
+  shouldShowOfflineMessage: boolean;
+} {
+  if (input.success)
+    return {
+      connection: "online",
+      failures: 0,
+      shouldShowOfflineMessage: false,
+    };
 
   const failures = input.failures + 1;
-  const shouldKeepLastKnownOnline = input.hasBootstrap && failures < 2 && !input.showSpinner;
+  const shouldKeepLastKnownOnline =
+    input.hasBootstrap && failures < 2 && !input.showSpinner;
   if (shouldKeepLastKnownOnline) {
-    return { connection: input.previous === "checking" ? "online" : input.previous, failures, shouldShowOfflineMessage: false };
+    return {
+      connection: input.previous === "checking" ? "online" : input.previous,
+      failures,
+      shouldShowOfflineMessage: false,
+    };
   }
 
   return { connection: "offline", failures, shouldShowOfflineMessage: true };
 }
 
-export function nextConnectionAfterDevicePairing(): { connection: ConnectionState; failures: number } {
+export function nextConnectionAfterDevicePairing(): {
+  connection: ConnectionState;
+  failures: number;
+} {
   return { connection: "checking", failures: 0 };
 }
 
@@ -30,5 +48,7 @@ export function shouldShowMobileOnboarding(input: {
   deviceToken: string;
   connection: ConnectionState;
 }): boolean {
-  return input.setupOpen || !input.deviceToken || input.connection === "offline";
+  return (
+    input.setupOpen || !input.deviceToken || input.connection === "offline"
+  );
 }

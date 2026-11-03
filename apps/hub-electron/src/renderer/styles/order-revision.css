@@ -3,7 +3,7 @@
 }
 
 .revision-search-result {
-  @apply flex min-w-0 items-center justify-between gap-3 rounded-md border border-line bg-white p-2 text-left text-ink shadow-sm hover:bg-accent-soft;
+  @apply flex min-w-0 items-center justify-between gap-3 rounded-md border border-line bg-white p-2 text-left text-ink hover:bg-accent-soft;
 }
 
 .revision-search-result span {
@@ -11,7 +11,7 @@
 }
 
 .revision-search-result strong {
-  @apply min-w-0 text-sm font-black leading-5;
+  @apply min-w-0 text-sm font-semibold leading-5;
 }
 
 .revision-search-result small {
@@ -19,9 +19,9 @@
 }
 
 .revision-search-result b {
-  @apply shrink-0 text-sm font-black;
+  @apply shrink-0 text-sm font-semibold;
 }
 
 .revision-search-result.keyboard-active {
-  @apply border-accent bg-accent-soft shadow-sm;
+  @apply border-accent bg-accent-soft;
 }

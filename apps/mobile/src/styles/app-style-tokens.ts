@@ -1,20 +1,21 @@
-import { Platform, StatusBar } from "react-native";
+import { Platform, StatusBar, type TextStyle } from "react-native";
+import { colors } from "@gaurav-pos/shared";
 
 import { getAndroidStatusBarTopInset } from "../lib/safe-area";
 
 export const palette = {
-  ink: "#18181b",
-  muted: "#71717a",
-  paper: "#fafafa",
-  wash: "#f4f4f5",
-  line: "#d4d4d8",
+  ink: colors.ink,
+  muted: colors.muted,
+  paper: colors.panel,
+  wash: colors.paper,
+  line: colors.line,
   lineSoft: "#e4e4e7",
   lineSubtle: "rgba(24,24,27,0.08)",
   white: "#ffffff",
-  green: "#0f766e",
-  greenSoft: "#ecfdf5",
-  greenBold: "#115e59",
-  greenLine: "#99f6e4",
+  green: colors.accent,
+  greenSoft: colors.accentSoft,
+  greenBold: colors.accentDark,
+  greenLine: "#c5ddd8",
   amber: "#b45309",
   amberSoft: "#fffbeb",
   amberBold: "#92400e",
@@ -34,3 +35,4 @@ export const palette = {
 };
 
 export const androidStatusBarTopInset = getAndroidStatusBarTopInset(Platform.OS, StatusBar.currentHeight);
+export const tabularFigures: NonNullable<TextStyle["fontVariant"]> = ["tabular-nums"];

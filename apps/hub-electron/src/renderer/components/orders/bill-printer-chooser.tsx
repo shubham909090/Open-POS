@@ -76,7 +76,8 @@ export function BillPrinterChooser({
           <strong>Select bill printer</strong>
           <span>Choose where this bill print should go.</span>
         </div>
-        {billPrinters.isLoading ? <p className="plain-state">Loading bill printers...</p> : null}
+        {billPrinters.isLoading ? <p className="plain-state" role="status">Loading bill printers…</p> : null}
+        {billPrinters.isError ? <div className="printer-choice-note" role="alert"><p>Bill printers could not load. Try again before printing.</p><button type="button" className="secondary-button compact" onClick={() => void billPrinters.refetch()} disabled={billPrinters.isFetching}>{billPrinters.isFetching ? "Retrying…" : "Retry"}</button></div> : null}
         <div className="printer-choice-list">
           {options.map(({ slot, profile }) => (
             <button

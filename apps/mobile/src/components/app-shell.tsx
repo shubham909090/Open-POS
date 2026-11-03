@@ -1,73 +1,69 @@
-import { useEffect, useRef, type ReactNode } from "react";
-import { ActivityIndicator, Animated, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { ActivityIndicator, Animated, ScrollView, Text, TextInput, View } from "react-native";
+import { Pressable } from "./pressable";
 
 import { formatRupees } from "../lib/mobile-format";
 import type { ConnectionState, ViewMode } from "../lib/mobile-types";
 import { palette, styles } from "../styles/app-styles";
-import { paymentQrStyles } from "../styles/payment-qr-styles";
+import { useReducedMotion } from "../hooks/use-reduced-motion";
+import { QrCode, Settings2, X } from "lucide-react-native";
 
 function AppHeader({
   connection,
   title,
   subtitle,
   onSetupPress,
-  onPaymentQrPress
+  onPaymentQrPress,
+  onBackPress,
+  setupVisible = false,
 }: {
   connection: ConnectionState;
   title: string;
   subtitle: string;
   onSetupPress: () => void;
   onPaymentQrPress?: () => void;
+  onBackPress?: () => void;
+  setupVisible?: boolean;
 }) {
   return (
     <View>
       <View style={styles.header}>
         <View style={styles.headerText}>
-          <Text style={styles.kicker}>Gaurav POS</Text>
+          <View style={styles.headerBrandRow}>
+            <Text style={styles.kicker}>Gaurav POS</Text>
+            <StatusPill connection={connection} />
+          </View>
           <Text style={styles.title} numberOfLines={1}>{title}</Text>
           <Text style={styles.muted} numberOfLines={1}>{subtitle}</Text>
         </View>
         <View style={styles.headerActions}>
-          <StatusPill connection={connection} />
-          <Pressable style={styles.iconButton} onPress={onSetupPress} hitSlop={8}>
-            <Text style={styles.iconButtonText}>Setup</Text>
-          </Pressable>
+          {onPaymentQrPress ? (
+            <Pressable accessibilityLabel="Show payment QR" style={[styles.iconButton, styles.paymentHeaderButton]} onPress={onPaymentQrPress}>
+              <QrCode size={19} color={palette.greenBold} strokeWidth={1.7} />
+            </Pressable>
+          ) : null}
+          {setupVisible ? onBackPress ? (
+            <Pressable accessibilityLabel="Return to service" style={styles.iconButton} onPress={onBackPress}>
+              <X size={19} color={palette.muted} strokeWidth={1.7} />
+            </Pressable>
+          ) : null : (
+            <Pressable accessibilityLabel="Connection settings" style={styles.iconButton} onPress={onSetupPress} hitSlop={4}>
+              <Settings2 size={19} color={palette.muted} strokeWidth={1.7} />
+            </Pressable>
+          )}
         </View>
       </View>
-      {onPaymentQrPress ? (
-        <View style={paymentQrStyles.shortcutWrap}>
-          <Pressable accessibilityRole="button" accessibilityLabel="Show payment QR" style={paymentQrStyles.shortcut} onPress={onPaymentQrPress}>
-            <Text style={paymentQrStyles.shortcutIcon} importantForAccessibility="no">▦</Text>
-            <Text style={paymentQrStyles.shortcutText}>Show payment QR</Text>
-            <Text style={paymentQrStyles.shortcutArrow} importantForAccessibility="no">↗</Text>
-          </Pressable>
-        </View>
-      ) : null}
     </View>
   );
 }
 
 function StatusPill({ connection }: { connection: ConnectionState }) {
-  const pulseAnim = useRef(new Animated.Value(1)).current;
-  useEffect(() => {
-    if (connection === "offline") {
-      const loop = Animated.loop(
-        Animated.sequence([
-          Animated.timing(pulseAnim, { toValue: 0.3, duration: 800, useNativeDriver: true }),
-          Animated.timing(pulseAnim, { toValue: 1, duration: 800, useNativeDriver: true })
-        ])
-      );
-      loop.start();
-      return () => loop.stop();
-    }
-    pulseAnim.setValue(1);
-  }, [connection, pulseAnim]);
   return (
     <View style={[styles.statusPill, styles[`status_${connection}`]]}>
       {connection === "checking" ? (
         <ActivityIndicator size="small" />
       ) : (
-        <Animated.View style={[styles.dot, styles[connection], connection === "offline" ? { opacity: pulseAnim } : undefined]} />
+        <View style={[styles.dot, styles[connection]]} />
       )}
       <Text style={styles.statusText}>{connection === "online" ? "Online" : connection === "offline" ? "Offline" : "Checking"}</Text>
     </View>
@@ -113,16 +109,17 @@ function OnboardingScreen({
   onPair: () => void;
   onStart: () => void;
 }) {
+  const [manualOpen, setManualOpen] = useState(false);
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={styles.onboardingContent} keyboardShouldPersistTaps="always">
+    <ScrollView style={styles.screen} contentContainerStyle={styles.onboardingContent} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
       <View style={styles.heroPanel}>
-        <Text style={styles.kicker}>Phone Setup</Text>
-        <Text style={styles.heroTitle}>Connect this phone to the hub PC.</Text>
-        <Text style={styles.heroCopy}>Keep this phone on the same Wi-Fi as the hub. Scanning the QR is the easiest way.</Text>
+        <Text style={styles.kicker}>Connection settings</Text>
+        <Text style={styles.heroTitle}>Connect to your hub.</Text>
+        <Text style={styles.heroCopy}>Join the same Wi-Fi as the hub PC, then scan its pairing QR to start service.</Text>
       </View>
 
       <View style={styles.stepCard}>
-        <StepNumber value="1" label="Find Hub" />
+        <StepNumber value="1" label="Hub connection" />
         <Text style={styles.muted}>{message}</Text>
         <UncontrolledInput
           inputKey={`hub-${formRevision}`}
@@ -137,7 +134,7 @@ function OnboardingScreen({
         />
         <View style={styles.buttonStack}>
           <Pressable style={styles.primaryButton} onPress={onSaveConnection} disabled={loading}>
-            <Text style={styles.primaryButtonText}>{loading ? "Checking..." : "Save And Check Hub"}</Text>
+            <Text style={styles.primaryButtonText}>{loading ? "Checking connection…" : "Save and connect"}</Text>
           </Pressable>
           <Pressable style={styles.secondaryButton} onPress={onRetry} disabled={loading}>
             <Text style={styles.secondaryButtonText}>Retry</Text>
@@ -146,60 +143,47 @@ function OnboardingScreen({
       </View>
 
       <View style={styles.stepCard}>
-        <StepNumber value="2" label="Pair This Phone" />
+        <StepNumber value="2" label="Pair this phone" />
         <Pressable style={styles.scanButton} onPress={onScan}>
-          <Text style={styles.scanButtonText}>Scan Hub QR</Text>
-          <Text style={styles.scanButtonMeta}>Recommended</Text>
+          <Text style={styles.scanButtonText}>Scan pairing QR</Text>
         </Pressable>
         <UncontrolledInput
           inputKey={`pair-code-${formRevision}`}
-          label="Pairing code"
+          label="Or enter the six-digit pairing code"
           defaultValue={pairingCode}
           onChangeText={onPairingCodeChange}
           keyboardType="number-pad"
           returnKeyType="done"
           placeholder="Six digits"
         />
-        <UncontrolledInput
-          inputKey={`payload-${formRevision}`}
-          label="Paste QR text"
-          defaultValue={pairingPayload}
-          onChangeText={onPairingPayloadChange}
-          autoCapitalize="none"
-          autoCorrect={false}
-          multiline
-          placeholder="Use this only if scanning is not available"
-        />
         <Pressable style={styles.primaryButton} onPress={onPair}>
-          <Text style={styles.primaryButtonText}>Pair Phone</Text>
+          <Text style={styles.primaryButtonText}>Pair phone</Text>
         </Pressable>
       </View>
 
       <View style={styles.stepCard}>
-        <StepNumber value="3" label="Ready For Orders" />
+        <StepNumber value="3" label="Ready for service" />
         <Text style={styles.muted}>
           {connection === "online" && hasSavedToken
             ? "This phone is connected. Start taking table orders."
             : "Once the phone is paired and the hub is online, orders can be sent to the kitchen."}
         </Text>
-        <UncontrolledInput
-          inputKey={`token-${formRevision}`}
-          label="Saved device password"
-          defaultValue={deviceToken}
-          onChangeText={onDeviceTokenChange}
-          autoCapitalize="none"
-          autoCorrect={false}
-          secureTextEntry
-          placeholder="Filled by pairing"
-        />
         <Pressable
           style={[styles.primaryButton, (connection !== "online" || !hasSavedToken) && styles.buttonDisabled]}
           onPress={onStart}
           disabled={connection !== "online" || !hasSavedToken}
         >
-          <Text style={styles.primaryButtonText}>Start Taking Orders</Text>
+          <Text style={styles.primaryButtonText}>{hasSavedToken ? "Return to service" : "Start taking orders"}</Text>
         </Pressable>
       </View>
+      <CollapsibleSection title="Manual connection" subtitle="QR text and device password" expanded={manualOpen} onToggle={() => setManualOpen((value) => !value)}>
+        <Text style={styles.muted}>Use these fields only if QR scanning or code pairing is unavailable.</Text>
+        <UncontrolledInput inputKey={`payload-${formRevision}`} label="Pairing QR text" defaultValue={pairingPayload} onChangeText={onPairingPayloadChange} autoCapitalize="none" autoCorrect={false} multiline placeholder="Paste the pairing text from the hub" />
+        <UncontrolledInput inputKey={`token-${formRevision}`} label="Device password" defaultValue={deviceToken} onChangeText={onDeviceTokenChange} autoCapitalize="none" autoCorrect={false} secureTextEntry placeholder="Filled automatically when paired" />
+        <Pressable style={styles.secondaryButton} onPress={pairingPayload.trim() ? onPair : onSaveConnection} disabled={loading}>
+          <Text style={styles.secondaryButtonText}>{pairingPayload.trim() ? "Pair with QR text" : "Save manual connection"}</Text>
+        </Pressable>
+      </CollapsibleSection>
     </ScrollView>
   );
 }
@@ -239,7 +223,7 @@ function ModeTabs({
   return (
     <View style={styles.modeTabs}>
       {tabs.map((entry) => (
-        <Pressable key={entry} style={[styles.modeTab, mode === entry && styles.modeTabActive]} onPress={() => onModeChange(entry)}>
+        <Pressable key={entry} accessibilityRole="tab" accessibilityState={{ selected: mode === entry }} style={[styles.modeTab, mode === entry && styles.modeTabActive]} onPress={() => onModeChange(entry)}>
           <Text style={[styles.modeTabText, mode === entry && styles.modeTabTextActive]}>
             {entry === "tables" ? "Tables" : entry === "menu" ? "Menu" : entry === "ticket" ? "Check" : "History"}
           </Text>
@@ -271,12 +255,12 @@ function CollapsibleSection({
 }) {
   return (
     <View style={[styles.collapsibleWrap, accentColor ? { borderLeftWidth: 4, borderLeftColor: accentColor } : undefined]}>
-      <Pressable style={[styles.collapsibleHeader, expanded && styles.collapsibleHeaderExpanded]} onPress={onToggle}>
+      <Pressable accessibilityState={{ expanded }} style={[styles.collapsibleHeader, expanded && styles.collapsibleHeaderExpanded]} onPress={onToggle}>
         <View style={styles.flexText}>
           <Text style={styles.collapsibleTitle}>{title}</Text>
           {subtitle ? <Text style={styles.muted}>{subtitle}</Text> : null}
         </View>
-        <Text style={styles.collapsibleChevron}>{expanded ? "\u25BC" : "\u25B6"}</Text>
+        <Text style={styles.collapsibleChevron} importantForAccessibility="no">{expanded ? "−" : "+"}</Text>
       </Pressable>
       {expanded ? <View style={styles.collapsibleBody}>{children}</View> : null}
     </View>
@@ -297,6 +281,7 @@ function LabeledMoneyInput({ label, value, onChange }: { label: string; value: s
     <View style={styles.moneyInputWrap}>
       <Text style={styles.inputLabel}>{label}</Text>
       <TextInput
+        accessibilityLabel={label}
         style={styles.input}
         value={value}
         onChangeText={(next) => onChange(next.replace(/[^0-9.]/g, "").slice(0, 8))}
@@ -308,10 +293,15 @@ function LabeledMoneyInput({ label, value, onChange }: { label: string; value: s
 }
 
 function DraftBar({ count, total, onReview }: { count: number; total: number; onReview: () => void }) {
-  const slideAnim = useRef(new Animated.Value(100)).current;
+  const reducedMotion = useReducedMotion();
+  const slideAnim = useRef(new Animated.Value(0)).current;
   useEffect(() => {
-    Animated.spring(slideAnim, { toValue: 0, useNativeDriver: true, tension: 60, friction: 9 }).start();
-  }, [slideAnim]);
+    if (reducedMotion) { slideAnim.setValue(0); return; }
+    slideAnim.setValue(12);
+    const animation = Animated.timing(slideAnim, { toValue: 0, duration: 160, useNativeDriver: true });
+    animation.start();
+    return () => animation.stop();
+  }, [reducedMotion, slideAnim]);
   return (
     <Animated.View style={[styles.draftBar, { transform: [{ translateY: slideAnim }] }]}>
       <View style={styles.draftBarMain}>
@@ -360,6 +350,7 @@ function UncontrolledInput({
       <Text style={styles.inputLabel}>{label}</Text>
       <TextInput
         key={inputKey}
+        accessibilityLabel={label}
         defaultValue={defaultValue}
         onChangeText={onChangeText}
         style={[styles.input, multiline && styles.multilineInput]}

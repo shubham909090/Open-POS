@@ -22,7 +22,7 @@
   }
 
   .role-card strong {
-    @apply text-sm font-black leading-5 text-ink;
+    @apply text-sm font-semibold leading-5 text-ink;
   }
 
   .role-card span,
@@ -31,7 +31,7 @@
   }
 
   .role-card small {
-    @apply text-xs uppercase;
+    @apply text-xs normal-case;
   }
 
   .role-card.active {
@@ -57,7 +57,7 @@
   }
 
   .pairing-code strong {
-    @apply text-xl font-black leading-6 text-ink;
+    @apply text-xl font-semibold leading-6 text-ink;
     overflow-wrap: anywhere;
   }
 
@@ -75,7 +75,7 @@
   }
 
   .pairing-payload-panel strong {
-    @apply text-sm font-black text-ink;
+    @apply text-sm font-semibold text-ink;
   }
 
   .pairing-payload-panel span {
@@ -85,3 +85,9 @@
   .pairing-payload-panel textarea {
     @apply min-h-32 w-full resize-y whitespace-pre-wrap break-all font-mono text-xs leading-5;
   }
+.settings-workspace .role-card { gap: 5px; min-height: 108px; padding: 14px; box-shadow: none; }
+.settings-workspace .role-card.active { border-color: var(--accent); background: var(--accent-soft); box-shadow: none; }
+.settings-workspace .role-card.active strong { color: var(--accent-dark); }
+.settings-workspace .role-card.active span, .settings-workspace .role-card.active small { color: var(--muted); }
+.settings-workspace .role-card small { font-size: 11px; line-height: 1.6; }
+@container (max-width: 680px) { .role-card-grid { grid-template-columns: minmax(0, 1fr); } .role-card { min-height: 80px; } }

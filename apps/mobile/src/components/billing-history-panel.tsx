@@ -1,5 +1,7 @@
+import { FormModal } from "./form-modal";
 import { useState } from "react";
-import { Modal, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { ScrollView, Text, TextInput, View } from "react-native";
+import { Pressable } from "./pressable";
 import { formatPosDateTime, type HistoryEditSaveMode } from "@gaurav-pos/shared";
 
 import { getBillingHistoryViewModel } from "../lib/billing-history";
@@ -40,6 +42,7 @@ function BillingHistoryPanel({
     : [];
   const editTotal = editItems.reduce((total, item) => total + Math.max(0, item.quantity) * item.unitPricePaise, 0);
   const canSaveEdit = Boolean(editingBill && masterPin.trim().length >= 4 && editItems.some((item) => item.quantity > 0) && !sending);
+  const closeHistoryEdit = () => { setEditingBill(null); setMasterPin(""); };
 
   const openHistoryEdit = (bill: NonNullable<CurrentDaySummary["billSummaries"]>[number]) => {
     setEditingBill(bill);
@@ -95,6 +98,8 @@ function BillingHistoryPanel({
 
   const saveHistoryEdit = async (saveMode: HistoryEditSaveMode) => {
     if (!editingBill || !canSaveEdit) return;
+    const submittedPin = masterPin.trim();
+    setMasterPin("");
     const saved = await onHistoryEdit(
       editingBill.billId,
       editItems
@@ -105,7 +110,7 @@ function BillingHistoryPanel({
             : { orderItemId: item.orderItemId, openName: item.name, openPricePaise: item.unitPricePaise, saleGroupId: item.saleGroupId ?? "sg-food", productionUnitId: item.productionUnitId ?? null, quantity: item.quantity }
         ),
       customerName.trim(),
-      masterPin.trim(),
+      submittedPin,
       saveMode
     );
     if (saved !== false) setEditingBill(null);
@@ -115,7 +120,7 @@ function BillingHistoryPanel({
     <View style={[styles.panel, styles.historyScreenPanel]}>
       <View style={styles.sectionHeaderRow}>
         <View style={styles.flexText}>
-          <Text style={styles.sectionTitle}>Billing History</Text>
+          <Text style={styles.sectionTitle}>Billing history</Text>
           <Text style={styles.muted}>{history.label} · {history.bills.length} bills</Text>
         </View>
       </View>
@@ -194,7 +199,7 @@ function BillingHistoryPanel({
         )}
       </View>
 
-      <Modal visible={Boolean(editingBill)} transparent animationType="fade" onRequestClose={() => setEditingBill(null)}>
+      <FormModal visible={Boolean(editingBill)} transparent animationType="fade" onRequestClose={closeHistoryEdit}>
         <View style={styles.popupBackdrop}>
           <View style={styles.popupCard}>
             <View style={styles.sectionHeaderRow}>
@@ -202,11 +207,11 @@ function BillingHistoryPanel({
                 <Text style={styles.sectionTitle}>Edit bill #{editingBill?.billNumber ?? editingBill?.billId}</Text>
                 <Text style={styles.muted}>Rs {formatRupees(editTotal)} edited total</Text>
               </View>
-              <Pressable style={styles.secondaryButton} onPress={() => setEditingBill(null)}>
+              <Pressable style={styles.secondaryButton} onPress={closeHistoryEdit}>
                 <Text style={styles.secondaryButtonText}>Close</Text>
               </Pressable>
             </View>
-            <ScrollView style={styles.popupScroll} contentContainerStyle={styles.historyEditStack}>
+            <ScrollView style={styles.popupScroll} contentContainerStyle={styles.historyEditStack} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
               <View style={styles.inputGroup}>
                 <Text style={styles.inputLabel}>Bill name</Text>
                 <TextInput
@@ -255,7 +260,7 @@ function BillingHistoryPanel({
                   </View>
                 );
               })}
-              <TextInput style={styles.input} value={masterPin} onChangeText={setMasterPin} secureTextEntry placeholder="Master PIN" placeholderTextColor={palette.muted} />
+              <TextInput accessibilityLabel="Master PIN" style={styles.input} value={masterPin} onChangeText={setMasterPin} secureTextEntry placeholder="Master PIN" placeholderTextColor={palette.muted} />
               <View style={styles.historyEditActionRow}>
                 <Pressable style={[styles.secondaryButton, styles.historyEditActionButton, !canSaveEdit && styles.buttonDisabled]} disabled={!canSaveEdit} onPress={() => void saveHistoryEdit("save_print")}>
                   <Text style={styles.secondaryButtonText}>{sending ? "Saving..." : "Save + Print"}</Text>
@@ -267,7 +272,7 @@ function BillingHistoryPanel({
             </ScrollView>
           </View>
         </View>
-      </Modal>
+      </FormModal>
     </View>
   );
 }

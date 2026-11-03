@@ -15,13 +15,13 @@
 .shift-button,
 .quick-pay-button,
 .history-print-button {
-  @apply inline-flex min-h-10 items-center justify-center gap-2 rounded-md border border-line bg-panel px-3 text-sm font-semibold text-ink shadow-sm hover:bg-wash disabled:opacity-45;
+  @apply inline-flex min-h-10 items-center justify-center gap-2 rounded-md border border-line bg-panel px-3 text-sm font-semibold text-ink shadow-none hover:bg-wash disabled:opacity-45;
 }
 
 .danger-button,
 .danger-link,
 .danger-small-button {
-  @apply inline-flex min-h-10 items-center justify-center rounded-md border border-danger bg-danger px-3 text-sm font-semibold text-white shadow-sm hover:bg-danger disabled:opacity-45;
+  @apply inline-flex min-h-10 items-center justify-center rounded-md border border-danger bg-danger px-3 text-sm font-semibold text-white shadow-none hover:bg-danger disabled:opacity-45;
 }
 
 .punch-button,
@@ -29,7 +29,7 @@
 .scan-button,
 .draft-bar-button,
 .hero-send-button {
-  @apply inline-flex min-h-10 items-center justify-center rounded-md bg-ink px-4 text-sm font-semibold text-white shadow-sm hover:bg-accent-dark disabled:opacity-45;
+  @apply inline-flex min-h-10 items-center justify-center rounded-md bg-ink px-4 text-sm font-semibold text-white shadow-none hover:bg-accent-dark disabled:opacity-45;
 }
 
 .split-input,
@@ -65,7 +65,7 @@
 }
 
 .csv-file-button {
-  @apply inline-flex min-h-9 w-fit cursor-pointer items-center justify-center gap-2 rounded-md bg-accent px-3 text-sm font-bold text-white hover:bg-accent-dark;
+  @apply inline-flex min-h-9 w-fit cursor-pointer items-center justify-center gap-2 rounded-md bg-accent px-3 text-sm font-semibold text-white hover:bg-accent-dark;
 }
 
 .csv-file-button input {

@@ -12,15 +12,15 @@
 }
 
 .stock-movement-main strong {
-  @apply min-w-0 text-sm font-black text-ink;
+  @apply min-w-0 text-sm font-semibold text-ink;
 }
 
 .stock-movement-main span {
-  @apply text-xs font-bold uppercase text-muted;
+  @apply text-xs font-medium text-muted;
 }
 
 .stock-movement-delta {
-  @apply whitespace-nowrap rounded-full border border-line bg-wash px-2.5 py-1 text-sm font-black text-ink;
+  @apply whitespace-nowrap rounded-full border border-line bg-wash px-2.5 py-1 text-sm font-semibold text-ink;
 }
 
 .stock-movement-balance {
@@ -28,7 +28,7 @@
 }
 
 .stock-movement-balance b {
-  @apply rounded-full border border-line bg-panel px-2 py-1 text-xs font-black text-ink;
+  @apply rounded-full border border-line bg-panel px-2 py-1 text-xs font-semibold text-ink;
 }
 
 .stock-movement-row time {

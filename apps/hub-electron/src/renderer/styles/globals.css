@@ -16,6 +16,23 @@ body {
   margin: 0;
   overflow-x: hidden;
   background: var(--paper);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+::selection { background: #cfe7e0; color: var(--ink); }
+button, a, input, select, textarea, summary { -webkit-tap-highlight-color: transparent; }
+button, a, summary { touch-action: manipulation; }
+button svg { flex-shrink: 0; }
+input[type="range"] { box-shadow: none; padding: 0; accent-color: var(--accent); }
+input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
+input[type="number"], output, time, td { font-variant-numeric: tabular-nums; }
+h1, h2, h3, p { overflow-wrap: break-word; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+[hidden] { display: none !important; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
 }
 
 button,
@@ -27,18 +44,18 @@ textarea {
 
 @layer base {
   label {
-    @apply grid min-w-0 gap-1.5 text-sm font-semibold leading-none text-muted;
+    @apply grid min-w-0 gap-1.5 text-sm font-medium leading-5 text-ink;
   }
 
   input,
   select,
   textarea {
-    @apply min-w-0 rounded-md border border-line bg-panel px-3 text-sm text-ink shadow-sm outline-none transition placeholder:text-muted focus:border-accent focus:ring-2 focus:ring-accent disabled:cursor-not-allowed disabled:bg-wash disabled:text-muted;
+    @apply min-w-0 rounded-md border border-line-strong bg-panel px-3 text-sm text-ink outline-none transition-colors placeholder:text-muted focus:border-accent focus:ring-2 focus:ring-accent/15 disabled:cursor-not-allowed disabled:bg-wash disabled:text-muted;
   }
 
   input,
   select {
-    @apply h-10;
+    height: var(--control-height);
   }
 
   textarea {
@@ -50,13 +67,17 @@ textarea {
   }
 
   button {
-    @apply inline-flex min-h-10 items-center justify-center gap-2 rounded-md bg-ink px-4 text-sm font-semibold text-white transition-colors hover:bg-accent-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:pointer-events-none disabled:opacity-45;
+    @apply inline-flex items-center justify-center gap-2 rounded-md bg-ink px-3 text-sm font-medium text-white transition-colors hover:bg-accent-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-45;
+    min-height: var(--control-height);
+    transition-duration: var(--motion-fast);
     cursor: pointer;
   }
 
   button:disabled {
     cursor: not-allowed;
   }
+
+  button:not(:disabled):active { filter: brightness(0.96); }
 
   details {
     @apply rounded-lg border border-line bg-panel;
@@ -82,4 +103,9 @@ textarea {
   details[open] > summary::after {
     transform: rotate(180deg);
   }
+}
+
+@media (pointer: coarse) {
+  :root { --control-height: 44px; }
+  button, select, input:not([type="checkbox"]):not([type="radio"]):not([type="range"]) { min-height: 44px; }
 }

@@ -1,6 +1,7 @@
 import { formatInr, getTableDisplayState, searchMenuItems, tableDisplayClass, tableDisplayLabel, type SaleGroupKind } from "@gaurav-pos/shared";
 import { Clock3, PanelLeftOpen, X } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import * as DialogPrimitive from "@radix-ui/react-dialog";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { NoticeSetter } from "../../lib/format.js";
 import type { ManagerApprovalRequest } from "../../hooks/use-manager-approval.js";
 import { useKeyboardListNavigation } from "../../hooks/use-keyboard-list-navigation.js";
@@ -22,6 +23,7 @@ export function OrdersView({ bootstrap, setNotice, requestManagerApproval }: { b
   const [saleGroupFilter, setSaleGroupFilter] = useState<SaleGroupKind | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [nowMs, setNowMs] = useState(() => Date.now());
+  const tableTriggerRef = useRef<HTMLElement | null>(null);
   const activeTables = bootstrap.tables.filter((table) => table.active);
   const selectedTable = activeTables.find((table) => table.id === selectedTableId) ?? null;
   const selectedTableDuration = selectedTable ? formatTableDuration(selectedTable, nowMs) : null;
@@ -52,6 +54,7 @@ export function OrdersView({ bootstrap, setNotice, requestManagerApproval }: { b
   });
   const activeKeyboardItemId = activeItems[menuKeyboard.activeIndex]?.id;
   const openTablePanel = (tableId: string, panel: OrderPanel) => {
+    if (!selectedTable && document.activeElement instanceof HTMLElement) tableTriggerRef.current = document.activeElement;
     selectTable(tableId);
     setOrderPanel(panel);
   };
@@ -105,7 +108,7 @@ export function OrdersView({ bootstrap, setNotice, requestManagerApproval }: { b
                         key={table.id}
                         className={tileClass}
                       >
-                        <button type="button" className="table-tile-main" onClick={() => openTablePanel(table.id, "new")}>
+                        <button type="button" className="table-tile-main" aria-label={`Open table ${table.name}, ${hasLocalDraftWarning ? `${draftQuantity} unsent items` : tableDisplayLabel(displayState)}${duration ? `, open for ${duration}` : ""}`} onClick={() => openTablePanel(table.id, "new")}>
                           <span className="table-tile-topline">
                             <span className="table-tile-heading">
                               <strong>{table.name}</strong>
@@ -145,8 +148,15 @@ export function OrdersView({ bootstrap, setNotice, requestManagerApproval }: { b
       </section>
 
       {selectedTable ? (
-        <div className="modal-backdrop order-modal-backdrop" role="presentation">
-          <section className="order-modal-card" role="dialog" aria-modal="true" aria-label={`${selectedTable.name} order workspace`}>
+        <DialogPrimitive.Root open onOpenChange={(open) => { if (!open) clearSelectedTable(); }}>
+          <DialogPrimitive.Portal>
+          <DialogPrimitive.Overlay className="modal-backdrop order-modal-backdrop" />
+          <DialogPrimitive.Content className="order-modal-card" aria-label={`${selectedTable.name} order workspace`} onPointerDownOutside={(event) => event.preventDefault()} onCloseAutoFocus={(event) => {
+            if (tableTriggerRef.current?.isConnected) {
+              event.preventDefault();
+              tableTriggerRef.current.focus();
+            }
+          }}>
             <header className="order-modal-header">
               <div>
                 <div className="order-modal-kicker">
@@ -158,7 +168,8 @@ export function OrdersView({ bootstrap, setNotice, requestManagerApproval }: { b
                     </span>
                   ) : null}
                 </div>
-                <h2>{selectedTable.name}</h2>
+                <DialogPrimitive.Title asChild><h2>{selectedTable.name}<span className="sr-only"> order workspace</span></h2></DialogPrimitive.Title>
+                <DialogPrimitive.Description className="sr-only">Add items, review kitchen tickets and settle this table's bill.</DialogPrimitive.Description>
               </div>
               <div className="order-modal-actions">
                 <button type="button" className="secondary-button" onClick={() => setMenuOpen((open) => !open)}>
@@ -177,6 +188,7 @@ export function OrdersView({ bootstrap, setNotice, requestManagerApproval }: { b
                     <h2>Menu</h2>
                     <div className="menu-browser-title-actions">
                       <input
+                        aria-label="Search dishes"
                         value={search}
                         onChange={(event) => setSearch(event.target.value)}
                         onKeyDown={menuKeyboard.onKeyDown}
@@ -186,7 +198,7 @@ export function OrdersView({ bootstrap, setNotice, requestManagerApproval }: { b
                   </div>
                   <div className="menu-filter-row" aria-label="Menu filters">
                     {saleGroupKinds.map(([kind, label]) => (
-                      <button key={kind} type="button" className={activeSaleGroup === kind ? "active" : ""} onClick={() => setSaleGroupFilter(kind as SaleGroupKind)}>
+                      <button key={kind} type="button" aria-pressed={activeSaleGroup === kind} className={activeSaleGroup === kind ? "active" : ""} onClick={() => setSaleGroupFilter(kind as SaleGroupKind)}>
                         {label}
                       </button>
                     ))}
@@ -210,8 +222,9 @@ export function OrdersView({ bootstrap, setNotice, requestManagerApproval }: { b
                 requestManagerApproval={requestManagerApproval}
               />
             </div>
-          </section>
-        </div>
+          </DialogPrimitive.Content>
+          </DialogPrimitive.Portal>
+        </DialogPrimitive.Root>
       ) : null}
     </div>
   );

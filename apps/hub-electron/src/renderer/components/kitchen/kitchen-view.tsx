@@ -87,8 +87,14 @@ export function KitchenView({
     <div className="kitchen-layout">
       <section className="panel">
         <div className="panel-title">
-          <h2>Kitchen screen</h2>
+          <div>
+            <h2>Kitchen queue</h2>
+            <span className="kitchen-queue-summary">{visibleTickets.length} active ticket{visibleTickets.length === 1 ? "" : "s"}</span>
+          </div>
+          <div className="kitchen-station-picker">
+          <label htmlFor="kitchen-station">Station</label>
           <select
+            id="kitchen-station"
             value={unitId}
             onChange={(event) => setSelectedKdsUnitId(event.target.value)}
             disabled={!kdsEnabled || activeUnits.length === 0}
@@ -100,6 +106,7 @@ export function KitchenView({
               </option>
             ))}
           </select>
+          </div>
         </div>
         {!kdsEnabled ? (
           <EmptyState
@@ -112,6 +119,18 @@ export function KitchenView({
             title="No kitchen added"
             description="Add a kitchen or counter in Setup."
           />
+        ) : null}
+        {kdsEnabled && unitId && tickets.isLoading ? (
+          <div className="kot-load-state" role="status">Loading kitchen tickets…</div>
+        ) : null}
+        {kdsEnabled && unitId && tickets.isError ? (
+          <div className="kitchen-error" role="alert">
+            <span>{messageOf(tickets.error)}</span>
+            <button type="button" disabled={tickets.isFetching} onClick={() => void tickets.refetch()}>{tickets.isFetching ? "Retrying…" : "Retry"}</button>
+          </div>
+        ) : null}
+        {kdsEnabled && unitId && !tickets.isLoading && !tickets.isError && visibleTickets.length === 0 ? (
+          <EmptyState title="All caught up" description="New kitchen tickets will appear here as orders are sent." />
         ) : null}
         <div className="kot-grid">
           {visibleTickets.map((ticket) => (
@@ -137,6 +156,8 @@ export function KitchenView({
                     key={status}
                     type="button"
                     className={`kot-status-button ${status}`}
+                    aria-label={`Mark ticket ${ticket.sequence} ${status}`}
+                    aria-pressed={ticket.status === status}
                     disabled={
                       ticket.status === status || statusMutation.isPending
                     }
@@ -144,7 +165,7 @@ export function KitchenView({
                       statusMutation.mutate({ id: ticket.id, status })
                     }
                   >
-                    {status}
+                    {statusMutation.isPending && statusMutation.variables?.id === ticket.id && statusMutation.variables.status === status ? "Saving…" : status}
                   </button>
                 ))}
               </footer>

@@ -4,29 +4,32 @@
 
   /* Canonical palette — synced with packages/shared/src/design-tokens.ts */
   --ink: #18181b;
-  --muted: #71717a;
-  --paper: #fafafa;
+  --muted: #667085;
+  --paper: #f8f9fb;
   --panel: #ffffff;
-  --wash: #f4f4f5;
-  --line: #d4d4d8;
-  --line-strong: #a1a1aa;
+  --wash: #f1f3f6;
+  --line: #e4e7ec;
+  --line-strong: #c8ced8;
   --accent: #0f766e;
   --accent-dark: #134e4a;
-  --accent-soft: #e5f3ed;
+  --accent-soft: #edf6f3;
   --danger: #b91c1c;
   --danger-soft: #fef2f2;
   --warning: #b45309;
   --warning-soft: #fffbeb;
   --blue: #1d4ed8;
   --blue-soft: #eff6ff;
-  --sidebar: #18181b;
+  --sidebar: #f3f5f7;
 
-  --shadow: 0 12px 30px rgba(24, 24, 27, 0.08);
-  --shadow-lg: 0 18px 50px rgba(24, 24, 27, 0.1);
+  --shadow: 0 1px 3px rgba(24, 24, 27, 0.05);
+  --shadow-lg: 0 12px 40px -8px rgba(24, 24, 27, 0.18);
+  --control-height: 36px;
+  --motion-fast: 120ms;
+  --motion-enter: 160ms;
 
   font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  font-size: 15px;
-  line-height: 1.4;
+  font-size: 14px;
+  line-height: 1.5;
   color: var(--ink);
   background: var(--paper);
 }
