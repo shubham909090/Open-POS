@@ -1,5 +1,5 @@
 import AdmZip from "adm-zip";
-import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { currentDbSchemaVersion } from "../src/db/schema-version.js";
@@ -44,13 +44,15 @@ validateWindowsX64NativeModule(sqliteBytes);
 
 // pnpm's transitive optional dependencies can be omitted by packaging. Fail
 // before Electron opens an error dialog if a required print binary is absent.
-for (const relativePath of [
-  "@img/sharp-win32-x64/lib/sharp-win32-x64.node",
-  "@napi-rs/canvas-win32-x64-msvc/skia.win32-x64-msvc.node"
+for (const packageName of [
+  "@img/sharp-win32-x64",
+  "@napi-rs/canvas-win32-x64-msvc"
 ]) {
-  const path = join(releaseDir, "win-unpacked", "resources", "app.asar.unpacked", "node_modules", relativePath);
-  if (!existsSync(path)) throw new Error(`Packaged print dependency missing: ${relativePath}`);
-  validateWindowsX64NativeModule(readFileSync(path));
+  const directory = join(releaseDir, "win-unpacked", "resources", "app.asar.unpacked", "node_modules", packageName);
+  if (!existsSync(directory)) throw new Error(`Packaged print dependency missing: ${packageName}`);
+  const binaries = readdirSync(directory, { recursive: true }).filter((name) => name.endsWith(".node"));
+  if (!binaries.length) throw new Error(`Packaged print binary missing: ${packageName}`);
+  for (const name of binaries) validateWindowsX64NativeModule(readFileSync(join(directory, name)));
 }
 console.log("Checking packaged SQLite, payment QR decoding and text rasterization...");
 const selfTest = spawnSync(unpackedExePath, ["--self-test-sqlite"], { stdio: "inherit", timeout: 60_000 });
