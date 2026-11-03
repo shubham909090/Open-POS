@@ -158,7 +158,7 @@ function AlcoholItemCreatePanel({
   return (
     <section className="panel alcohol-form-panel">
       <div className="panel-title">
-        <h2>Add Alcohol Item</h2>
+        <h2>Add alcohol item</h2>
         <span>{type === "plain_liquor" ? "Liquor stock" : "Cocktail recipe"}</span>
       </div>
       <form

@@ -19,7 +19,8 @@
 }
 
 .state-editor-status {
-  @apply inline-flex min-h-8 items-center rounded-full border border-accent bg-accent-soft px-3 text-xs font-semibold text-accent-dark;
+  @apply inline-flex min-h-7 items-center rounded-full border border-line bg-panel px-2.5 text-xs font-medium text-muted;
+  font-variant-numeric: tabular-nums;
 }
 
 .state-editor-warning {

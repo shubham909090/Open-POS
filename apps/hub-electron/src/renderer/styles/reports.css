@@ -474,3 +474,5 @@
 @media (pointer: coarse) {
   .report-tabs button, .history-actions button, .range-export-actions button { min-height: 44px; }
 }
+
+.data-table .numeric-cell { text-align: right; font-variant-numeric: tabular-nums; }

@@ -291,6 +291,7 @@ export default function App() {
           selectedSaleGroup={activeMenuGroup}
           hasSearch={hasMenuSearch}
           draftTotal={draftTotal}
+          hasNewItems={hasNewItems}
           draftQuantitiesByMenuItemId={draftQuantitiesByMenuItemId}
           draftSelectionLabelsByMenuItemId={draftSelectionLabelsByMenuItemId}
           searchValue={menuSearch}

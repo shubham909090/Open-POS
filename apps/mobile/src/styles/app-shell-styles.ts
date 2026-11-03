@@ -152,7 +152,7 @@ export const appShellStyles = {
   primaryButton: {
     minHeight: 44,
     borderRadius: 8,
-    backgroundColor: palette.green,
+    backgroundColor: palette.ink,
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 16
@@ -174,7 +174,7 @@ export const appShellStyles = {
   scanButton: {
     minHeight: 52,
     borderRadius: 8,
-    backgroundColor: palette.green,
+    backgroundColor: palette.ink,
     alignItems: "center",
     justifyContent: "center",
     gap: 3

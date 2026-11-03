@@ -71,3 +71,8 @@
     @apply justify-start;
   }
 }
+
+/* Unit picker (Rs / %) stays narrow; the amount field takes the remaining width. */
+.split-input {
+  grid-template-columns: minmax(76px, max-content) minmax(0, 1fr);
+}

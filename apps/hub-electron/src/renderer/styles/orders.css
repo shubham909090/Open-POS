@@ -36,19 +36,29 @@
   }
 
   .ticket-header {
-    @apply justify-between border-b border-line pb-3;
+    @apply items-center justify-between gap-3;
   }
 
-  .ticket-header span {
+  .ticket-header .segmented {
+    @apply min-w-0 flex-1;
+    max-width: 560px;
+  }
+
+  .ticket-total {
+    @apply grid justify-items-end leading-tight;
+  }
+
+  .ticket-total span {
     @apply text-xs font-medium text-muted;
   }
 
-  .ticket-header h2 {
-    @apply m-0 text-xl font-semibold leading-7 text-ink;
+  .ticket-total strong {
+    @apply text-lg font-semibold leading-6 text-ink;
+    font-variant-numeric: tabular-nums;
   }
 
   .ticket-header-actions {
-    @apply justify-end;
+    @apply items-center justify-end;
   }
 
   .ticket-section {
@@ -57,7 +67,7 @@
 
   .guest-row {
     @apply grid items-end gap-3 rounded-lg border border-line bg-panel p-3;
-    grid-template-columns: minmax(92px, 112px) minmax(260px, 1fr) minmax(282px, max-content);
+    grid-template-columns: minmax(92px, 112px) minmax(0, 1fr);
   }
 
   .guest-row label {
@@ -69,8 +79,13 @@
   }
 
   .send-action-row {
-    @apply grid min-w-0 justify-end gap-2;
+    @apply grid min-w-0 justify-end justify-self-end gap-2;
     grid-template-columns: 96px 174px;
+  }
+
+  /* Open items are a secondary path; KOT stays the one strong action on this panel. */
+  .open-item-form button[type="submit"] {
+    @apply border border-line-strong bg-panel font-semibold text-ink hover:bg-wash;
   }
 
   .send-action-row button {
@@ -220,8 +235,9 @@
     }
 
     .send-action-row {
+      @apply justify-self-stretch;
       grid-column: 1 / -1;
-      @apply justify-start;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr);
     }
   }
 

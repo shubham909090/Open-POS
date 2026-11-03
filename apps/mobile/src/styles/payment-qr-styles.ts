@@ -23,7 +23,7 @@ export const paymentQrStyles = StyleSheet.create({
   note: { color: palette.muted, fontSize: 12, lineHeight: 18, textAlign: "center", paddingHorizontal: 8 },
   action: { minHeight: 50, borderRadius: 10, borderWidth: 1, borderColor: palette.line, backgroundColor: palette.white, paddingHorizontal: 16, paddingVertical: 12, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 8 },
   actionText: { color: palette.ink, fontSize: 14, fontWeight: "600" },
-  primary: { borderColor: palette.greenBold, backgroundColor: palette.greenBold },
+  primary: { borderColor: palette.ink, backgroundColor: palette.ink },
   primaryText: { color: palette.white },
   danger: { borderColor: palette.redLine, backgroundColor: palette.redSoft },
   dangerText: { color: palette.red },

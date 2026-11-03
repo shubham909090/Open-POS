@@ -1,5 +1,5 @@
 .bill-history-table {
-  @apply min-w-[1120px];
+  @apply min-w-[1040px];
 }
 
 .bill-history-table th:nth-child(1),
@@ -24,7 +24,7 @@
 
 .bill-history-table th:nth-child(7),
 .bill-history-table td:nth-child(7) {
-  @apply min-w-80;
+  @apply min-w-64;
 }
 
 .bill-history-table th:nth-child(8),

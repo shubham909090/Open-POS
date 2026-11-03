@@ -1,6 +1,7 @@
 import { palette, tabularFigures } from "./app-style-tokens";
 
 export const menuTicketStyles = {
+  ticketPanel: { borderWidth: 0, backgroundColor: "transparent", padding: 0 },
   menuSearch: { flexDirection: "row", alignItems: "center", gap: 9, borderWidth: 1, borderColor: palette.line, borderRadius: 8, backgroundColor: palette.wash, paddingLeft: 12 },
   menuSearchInput: { flex: 1, minWidth: 0, minHeight: 48, color: palette.ink, fontSize: 15, paddingRight: 12 },
   searchClear: { minWidth: 44, alignItems: "center", justifyContent: "center" },
@@ -21,14 +22,15 @@ export const menuTicketStyles = {
   filterChipTextActive: { color: palette.greenBold },
   openItemLaunchRow: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 10 },
   openItemLaunchButton: { minHeight: 44, paddingHorizontal: 16 },
-  virtualMenuList: { padding: 14, gap: 14, paddingBottom: 24 },
+  // Rows are divider-separated, so no extra gap between list cells.
+  virtualMenuList: { padding: 14, paddingBottom: 24 },
   menuSection: { gap: 10 },
-  menuSectionHeader: { paddingTop: 8, paddingBottom: 8, backgroundColor: palette.paper },
-  menuList: { gap: 10 },
+  menuSectionHeader: { paddingTop: 16, paddingBottom: 4, backgroundColor: palette.paper },
+  menuList: { gap: 0 },
   menuItem: {
     position: "relative",
-    minHeight: 80,
-    paddingVertical: 14,
+    minHeight: 64,
+    paddingVertical: 10,
     paddingHorizontal: 0,
     borderRadius: 0,
     borderBottomWidth: 1,

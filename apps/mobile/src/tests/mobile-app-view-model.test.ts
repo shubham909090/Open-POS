@@ -51,6 +51,20 @@ const currentOrder: HubOrder = {
 };
 
 describe("mobile service view model", () => {
+  it("keeps open-item-only drafts visible to review even without catalog selection badges", () => {
+    const viewModel = getMobileServiceViewModel({
+      bootstrap,
+      selectedTableId: "table-1",
+      currentOrder: null,
+      draftItems: [{ openName: "Chef special", openPricePaise: 12500, saleGroupId: "sg-food", quantity: 2 }],
+      menuSearch: "",
+      menuGroupFilter: null
+    });
+    expect(viewModel.hasNewItems).toBe(true);
+    expect(viewModel.draftTotal).toBe(25000);
+    expect(viewModel.draftQuantitiesByMenuItemId).toEqual({});
+  });
+
   it("derives active tables, totals, menu filters, and KDS units", () => {
     const viewModel = getMobileServiceViewModel({
       bootstrap,

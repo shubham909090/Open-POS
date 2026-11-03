@@ -329,24 +329,24 @@ export function TableWorkspace({
 
   return (
     <section className="ticket-workspace panel">
+      {/* The order modal header already names the table; this row carries the panel switch and running total. */}
       <div className="ticket-header">
-        <div>
-          <span>Selected table</span>
-          <h2>{tableName}</h2>
+        <div className="segmented" role="group" aria-label={`${tableName} order panels`}>
+          <button type="button" aria-pressed={orderPanel === "new"} className={orderPanel === "new" ? "active" : ""} onClick={() => setOrderPanel("new")}>New order</button>
+          <button type="button" aria-pressed={orderPanel === "sent"} className={orderPanel === "sent" ? "active" : ""} onClick={() => setOrderPanel("sent")}>Sent items</button>
+          <button type="button" aria-pressed={orderPanel === "bill"} className={orderPanel === "bill" ? "active" : ""} onClick={() => setOrderPanel("bill")}>Bill</button>
         </div>
         <div className="ticket-header-actions">
-          <div className="total-chip">{formatInr(draftTotal + sentTotal)}</div>
+          <div className="ticket-total">
+            <span>Table total</span>
+            <strong>{formatInr(draftTotal + sentTotal)}</strong>
+          </div>
           {onClose ? (
             <button type="button" className="quiet-button" onClick={onClose}>
               Close
             </button>
           ) : null}
         </div>
-      </div>
-      <div className="segmented">
-        <button type="button" aria-pressed={orderPanel === "new"} className={orderPanel === "new" ? "active" : ""} onClick={() => setOrderPanel("new")}>New order</button>
-        <button type="button" aria-pressed={orderPanel === "sent"} className={orderPanel === "sent" ? "active" : ""} onClick={() => setOrderPanel("sent")}>Sent items</button>
-        <button type="button" aria-pressed={orderPanel === "bill"} className={orderPanel === "bill" ? "active" : ""} onClick={() => setOrderPanel("bill")}>Bill</button>
       </div>
 
       {orderPanel === "new" ? (

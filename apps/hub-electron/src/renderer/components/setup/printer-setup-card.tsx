@@ -642,7 +642,8 @@ export function PrinterSetupCard({
               Retry layouts
             </button>
           </div>
-        ) : (
+        ) : null}
+        {printLayouts.data || !printLayouts.isError ? (
           <PrintLayoutEditor
             layouts={printLayouts.data}
             paymentQr={paymentQr.isError ? null : paymentQr.data?.qr}
@@ -654,7 +655,7 @@ export function PrinterSetupCard({
               await invalidate();
             }}
           />
-        )}
+        ) : null}
       </section>
     </SetupCard>
   );

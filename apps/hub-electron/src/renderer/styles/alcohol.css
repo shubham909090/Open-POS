@@ -141,7 +141,9 @@
   }
 }
 .alcohol-board { min-width: 0; grid-template-columns: minmax(0, 1fr); }
-.alcohol-layout { min-width: 0; }
+.alcohol-layout { @apply grid min-w-0 gap-3; }
+.alcohol-layout > .panel { @apply grid content-start gap-3; }
+.alcohol-catalog-wrap .plain-state { @apply m-0 px-3 py-4; }
 
 @media (max-width: 720px) {
   .alcohol-board .alcohol-form, .alcohol-board .three-col { grid-template-columns: minmax(0, 1fr); }

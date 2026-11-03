@@ -168,7 +168,10 @@ function BillingHistoryPanel({
                     <Text style={styles.historyBillTitle}>Bill #{historyBill.billNumber ?? historyBill.billId}</Text>
                     <Text style={styles.historyAmount}>Rs {formatRupees(historyBill.finalTotalPaise)}</Text>
                   </View>
-                  {historyBill.modified ? <Text style={styles.historyModifiedTag}>Modified</Text> : null}
+                  <View style={styles.historyTagRow}>
+                    <Text style={[styles.historyStatusTag, historyStatusTagStyle(historyBill.status)]}>{historyStatusLabel(historyBill.status)}</Text>
+                    {historyBill.modified ? <Text style={styles.historyModifiedTag}>Modified</Text> : null}
+                  </View>
                   {historyBill.customerName ? <Text style={styles.historyMeta}>Name: {historyBill.customerName}</Text> : null}
                   <Text style={styles.historyMeta}>Table {historyBill.tableName} · paid Rs {formatRupees(historyBill.paidPaise)}</Text>
                   <View style={styles.historyItemLines}>
@@ -294,3 +297,16 @@ type HistoryEditItem = {
   quantity: number;
   unitPricePaise: number;
 };
+
+// Same meaning as the hub Reports bill status: paid = settled, pending = printed but unpaid.
+function historyStatusLabel(status: string): string {
+  if (!status) return "Unknown";
+  return status.charAt(0).toUpperCase() + status.slice(1);
+}
+
+function historyStatusTagStyle(status: string) {
+  if (status === "paid") return styles.historyStatusPaid;
+  if (status === "pending") return styles.historyStatusPending;
+  if (status === "void") return styles.historyStatusVoid;
+  return null;
+}

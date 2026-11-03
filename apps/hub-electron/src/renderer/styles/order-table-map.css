@@ -1,118 +1,128 @@
+/*
+ * Table map. Every tile shares one geometry regardless of floor or state:
+ * fixed column width (auto-fill keeps empty tracks, so a floor with two tables
+ * does not stretch them across the row) and fixed row height. The name and
+ * state line sit at the same position in every tile; live tables add a
+ * shortcut strip in the bottom band that free tables leave empty.
+ *
+ * Status colors match the shared StatusBadge and the mobile app:
+ * free = neutral, running = amber, bill printed = blue, attention = red.
+ */
+.table-map {
+  @apply grid gap-4;
+}
+
 .table-list {
-  grid-auto-rows: minmax(120px, auto);
+  /* Keep tile geometry in step with enlarged interface text. */
+  --table-tile-height: 6.875rem;
+  @apply grid gap-2;
+  grid-template-columns: repeat(auto-fill, minmax(10.5rem, 1fr));
+  grid-auto-rows: var(--table-tile-height);
 }
 
 .table-tile {
-  @apply grid h-full min-h-[120px] overflow-hidden rounded-lg border border-line bg-panel transition-colors hover:border-line-strong;
+  @apply relative grid min-w-0 overflow-hidden rounded-lg border border-line bg-panel transition-colors hover:border-line-strong;
+  grid-template-rows: minmax(0, 1fr) auto;
 }
 
 .table-tile.active {
-  @apply border-accent ring-2 ring-accent ring-offset-2 ring-offset-panel;
-}
-
-.table-tile.free {
-  @apply border-line bg-panel;
-}
-
-.table-tile.draft-warning {
-  border-color: color-mix(in srgb, var(--danger) 35%, var(--line));
-  background: var(--danger-soft);
-  color: var(--ink);
-}
-
-.table-tile.occupied,
-.table-tile.running {
-  border-color: color-mix(in srgb, var(--warning) 25%, var(--line));
-  background: color-mix(in srgb, var(--warning-soft) 65%, var(--panel));
-  color: var(--ink);
-}
-
-.table-tile.billed,
-.table-tile.bill_printed,
-.table-tile.bill-printed {
-  border-color: color-mix(in srgb, var(--accent) 25%, var(--line));
-  background: color-mix(in srgb, var(--accent-soft) 65%, var(--panel));
-  color: var(--ink);
-}
-
-.table-tile.needs_attention,
-.table-tile.needs-attention {
-  @apply border-danger bg-danger-soft;
+  @apply border-accent ring-2 ring-accent ring-offset-1 ring-offset-panel;
 }
 
 .table-tile-main {
-  @apply grid min-h-24 w-full content-between gap-3 rounded-none bg-transparent p-4 text-left text-ink hover:bg-black/[0.02];
+  @apply grid w-full gap-0.5 rounded-none bg-transparent px-3 pb-2 pt-2.5 text-left text-ink shadow-none hover:bg-black/[0.025] focus-visible:ring-inset focus-visible:ring-offset-0;
+  align-content: start;
+  justify-content: stretch;
+  min-height: 0;
 }
 
-.table-tile-topline {
-  @apply flex min-w-0 items-start justify-between gap-2;
+.table-tile-topline,
+.table-tile-meta {
+  @apply flex min-w-0 items-center justify-between gap-2;
 }
 
-.table-tile-heading {
-  @apply grid min-w-0 gap-0.5;
+.table-tile-name {
+  @apply truncate text-lg font-semibold leading-6 tracking-tight;
 }
 
-.table-tile-heading strong {
-  @apply truncate text-xl font-semibold leading-6 tracking-tight;
-}
-
-.table-tile-heading span,
-.table-tile-total,
-.total-chip {
-  @apply text-xs font-medium text-muted;
-  font-variant-numeric: tabular-nums;
-}
-
-.table-tile.running .table-tile-heading span,
-.table-tile.occupied .table-tile-heading span,
-.table-tile.running .table-tile-total,
-.table-tile.occupied .table-tile-total {
-  color: #5f3700;
-}
-
-.table-tile.bill-printed .table-tile-heading span,
-.table-tile.bill_printed .table-tile-heading span,
-.table-tile.billed .table-tile-heading span,
-.table-tile.bill-printed .table-tile-total,
-.table-tile.bill_printed .table-tile-total,
-.table-tile.billed .table-tile-total {
-  color: #14532d;
-}
-
-.table-tile.draft-warning .table-tile-heading span,
-.table-tile.draft-warning .table-tile-total {
-  color: #991b1b;
+.table-tile-state {
+  @apply truncate text-xs font-medium leading-5 text-muted;
 }
 
 .table-tile-total {
-  @apply justify-self-end text-right text-sm text-ink;
+  @apply shrink-0 text-sm font-semibold leading-5 text-ink;
+  font-variant-numeric: tabular-nums;
 }
 
 .table-tile-duration {
   @apply inline-flex h-6 shrink-0 items-center gap-1 rounded-md border border-line bg-panel px-1.5 text-xs font-medium leading-none text-muted;
-}
-
-.table-tile-duration svg {
-  @apply shrink-0;
-}
-
-.table-tile.running .table-tile-duration,
-.table-tile.occupied .table-tile-duration {
-  border-color: color-mix(in srgb, var(--warning) 20%, var(--line));
-  background: var(--panel);
-  color: var(--warning);
-}
-
-.table-tile.bill-printed .table-tile-duration,
-.table-tile.bill_printed .table-tile-duration,
-.table-tile.billed .table-tile-duration {
-  border-color: color-mix(in srgb, var(--accent) 20%, var(--line));
-  background: var(--panel);
-  color: var(--accent);
+  font-variant-numeric: tabular-nums;
 }
 
 .table-tile-actions {
   @apply grid grid-cols-2 border-t border-line;
+}
+
+.table-tile-shortcut {
+  @apply min-h-9 rounded-none border-0 bg-transparent text-xs font-medium text-muted shadow-none hover:bg-black/[0.04] hover:text-ink focus-visible:ring-inset focus-visible:ring-offset-0;
+}
+
+.table-tile-shortcut.primary {
+  @apply border-l border-line font-semibold text-accent-dark hover:bg-accent-soft hover:text-accent-dark;
+}
+
+/* Running */
+.table-tile.running,
+.table-tile.occupied {
+  border-color: color-mix(in srgb, var(--warning) 28%, var(--line));
+  background: color-mix(in srgb, var(--warning-soft) 70%, var(--panel));
+}
+
+.table-tile.running .table-tile-state,
+.table-tile.occupied .table-tile-state,
+.table-tile.running .table-tile-duration,
+.table-tile.occupied .table-tile-duration {
+  color: #92400e;
+}
+
+/* Bill printed */
+.table-tile.billed,
+.table-tile.bill_printed,
+.table-tile.bill-printed {
+  border-color: color-mix(in srgb, var(--blue) 24%, var(--line));
+  background: color-mix(in srgb, var(--blue-soft) 75%, var(--panel));
+}
+
+.table-tile.billed .table-tile-state,
+.table-tile.bill_printed .table-tile-state,
+.table-tile.bill-printed .table-tile-state,
+.table-tile.billed .table-tile-duration,
+.table-tile.bill_printed .table-tile-duration,
+.table-tile.bill-printed .table-tile-duration {
+  color: var(--blue);
+}
+
+/* Unsent local draft on a free table, or a table flagged for attention */
+.table-tile.draft-warning,
+.table-tile.needs_attention,
+.table-tile.needs-attention {
+  border-color: color-mix(in srgb, var(--danger) 35%, var(--line));
+  background: var(--danger-soft);
+}
+
+.table-tile.draft-warning .table-tile-state,
+.table-tile.needs-attention .table-tile-state,
+.table-tile.needs_attention .table-tile-state {
+  color: var(--danger);
+}
+
+.table-tile.running .table-tile-duration,
+.table-tile.occupied .table-tile-duration,
+.table-tile.billed .table-tile-duration,
+.table-tile.bill_printed .table-tile-duration,
+.table-tile.bill-printed .table-tile-duration {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--panel) 70%, transparent);
 }
 
 .table-tile.running .table-tile-actions,
@@ -120,44 +130,66 @@
   border-top-color: color-mix(in srgb, var(--warning) 20%, var(--line));
 }
 
-.table-tile.bill-printed .table-tile-actions,
+.table-tile.running .table-tile-shortcut.primary,
+.table-tile.occupied .table-tile-shortcut.primary {
+  border-left-color: color-mix(in srgb, var(--warning) 20%, var(--line));
+}
+
+.table-tile.billed .table-tile-actions,
 .table-tile.bill_printed .table-tile-actions,
-.table-tile.billed .table-tile-actions {
-  border-top-color: color-mix(in srgb, var(--accent) 20%, var(--line));
+.table-tile.bill-printed .table-tile-actions {
+  border-top-color: color-mix(in srgb, var(--blue) 18%, var(--line));
 }
 
-.table-tile-shortcut {
-  @apply min-h-9 rounded-none border-0 bg-panel text-xs font-medium text-muted hover:bg-wash hover:text-ink;
+.table-tile.billed .table-tile-shortcut.primary,
+.table-tile.bill_printed .table-tile-shortcut.primary,
+.table-tile.bill-printed .table-tile-shortcut.primary {
+  border-left-color: color-mix(in srgb, var(--blue) 18%, var(--line));
 }
 
-.table-tile-shortcut.primary {
-  @apply border-l border-line bg-transparent text-accent-dark hover:bg-accent-soft;
+.table-map > .panel-title {
+  @apply flex-wrap gap-y-1;
 }
 
 .table-map-counts {
-  @apply flex flex-wrap justify-end gap-2;
+  @apply ml-auto flex flex-wrap justify-end gap-x-3 gap-y-1;
 }
 
-.state-dot {
-  @apply inline-flex min-h-7 items-center gap-1.5 px-1 text-xs font-medium text-muted;
+.table-map .panel-title .state-dot {
+  @apply inline-flex min-h-6 items-center gap-1.5 text-xs font-medium text-muted;
+  font-variant-numeric: tabular-nums;
 }
 
 .state-dot::before {
-  @apply block h-1.5 w-1.5 rounded-full content-[''];
+  @apply block h-2 w-2 rounded-full content-[''];
 }
 
 .state-dot.free::before {
-  @apply bg-accent;
+  @apply border border-line-strong bg-panel;
 }
 
 .state-dot.running::before {
-  background: #d97706;
+  background: var(--warning);
 }
 
 .state-dot.billed::before {
-  background: var(--accent);
+  background: var(--blue);
+}
+
+.floor-group {
+  @apply gap-2;
+}
+
+.floor-group-header {
+  @apply flex items-baseline gap-2;
+}
+
+.floor-group-header span {
+  @apply text-xs text-muted;
+  font-variant-numeric: tabular-nums;
 }
 
 @media (pointer: coarse) {
+  .table-list { --table-tile-height: 7.75rem; }
   .table-tile-shortcut { min-height: 44px; }
 }

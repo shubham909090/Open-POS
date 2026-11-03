@@ -205,9 +205,9 @@ export function ReportsView({ requestManagerApproval }: { requestManagerApproval
             <thead>
               <tr>
                 <th>Business day</th>
-                <th>Bills</th>
-                <th>Sales</th>
-                <th>Payments</th>
+                <th className="numeric-cell">Bills</th>
+                <th className="numeric-cell">Sales</th>
+                <th className="numeric-cell">Payments</th>
                 <th>Finalized</th>
                 <th aria-label="Actions" />
               </tr>
@@ -217,9 +217,9 @@ export function ReportsView({ requestManagerApproval }: { requestManagerApproval
                 <Fragment key={report.pos_day_id}>
                   <tr>
                     <td className="strong-cell">{report.business_date}</td>
-                    <td>{report.bill_count}</td>
-                    <td>{formatInr(report.final_sales_paise)}</td>
-                    <td>{formatInr(report.total_payments_paise)}</td>
+                    <td className="numeric-cell">{report.bill_count}</td>
+                    <td className="numeric-cell">{formatInr(report.final_sales_paise)}</td>
+                    <td className="numeric-cell">{formatInr(report.total_payments_paise)}</td>
                     <td>{formatPosDateTime(report.finalized_at)}</td>
                     <td className="action-cell">
                       <button
@@ -355,9 +355,9 @@ export function ReportsView({ requestManagerApproval }: { requestManagerApproval
                 <th>Item</th>
                 <th>Source</th>
                 <th>Movement</th>
-                <th>Large</th>
-                <th>Open ml</th>
-                <th>Small</th>
+                <th className="numeric-cell">Large</th>
+                <th className="numeric-cell">Open ml</th>
+                <th className="numeric-cell">Small</th>
                 <th>Time</th>
               </tr>
             </thead>
@@ -367,9 +367,9 @@ export function ReportsView({ requestManagerApproval }: { requestManagerApproval
                   <td className="strong-cell">{movement.item_name}</td>
                   <td>{alcoholMovementSourceLabel(movement.source_type)}</td>
                   <td>{alcoholMovementDeltaText(movement)}</td>
-                  <td>{movement.balance_sealed_large}</td>
-                  <td>{movement.balance_open_large_ml}</td>
-                  <td>{movement.balance_sealed_small}</td>
+                  <td className="numeric-cell">{movement.balance_sealed_large}</td>
+                  <td className="numeric-cell">{movement.balance_open_large_ml}</td>
+                  <td className="numeric-cell">{movement.balance_sealed_small}</td>
                   <td>{formatPosDateTime(movement.created_at)}</td>
                 </tr>
               ))}
@@ -448,12 +448,12 @@ function RangeReportSummary({
             <thead>
               <tr>
                 <th>Business day</th>
-                <th>Bills</th>
-                <th>Sales</th>
-                <th>Cash</th>
-                <th>UPI</th>
-                <th>Card</th>
-                <th>Online</th>
+                <th className="numeric-cell">Bills</th>
+                <th className="numeric-cell">Sales</th>
+                <th className="numeric-cell">Cash</th>
+                <th className="numeric-cell">UPI</th>
+                <th className="numeric-cell">Card</th>
+                <th className="numeric-cell">Online</th>
                 <th>Finalized</th>
               </tr>
             </thead>
@@ -461,12 +461,12 @@ function RangeReportSummary({
               {report.availableDays.map((day) => (
                 <tr key={day.pos_day_id}>
                   <td className="strong-cell">{day.business_date}</td>
-                  <td>{day.bill_count}</td>
-                  <td>{formatInr(day.final_sales_paise)}</td>
-                  <td>{formatInr(day.cash_payments_paise)}</td>
-                  <td>{formatInr(day.upi_payments_paise)}</td>
-                  <td>{formatInr(day.card_payments_paise)}</td>
-                  <td>{formatInr(day.online_payments_paise)}</td>
+                  <td className="numeric-cell">{day.bill_count}</td>
+                  <td className="numeric-cell">{formatInr(day.final_sales_paise)}</td>
+                  <td className="numeric-cell">{formatInr(day.cash_payments_paise)}</td>
+                  <td className="numeric-cell">{formatInr(day.upi_payments_paise)}</td>
+                  <td className="numeric-cell">{formatInr(day.card_payments_paise)}</td>
+                  <td className="numeric-cell">{formatInr(day.online_payments_paise)}</td>
                   <td>{formatPosDateTime(day.finalized_at)}</td>
                 </tr>
               ))}

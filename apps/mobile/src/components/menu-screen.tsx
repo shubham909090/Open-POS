@@ -20,6 +20,7 @@ function MenuScreen({
   selectedSaleGroup,
   hasSearch,
   draftTotal,
+  hasNewItems,
   draftQuantitiesByMenuItemId,
   draftSelectionLabelsByMenuItemId,
   searchValue,
@@ -37,6 +38,7 @@ function MenuScreen({
   selectedSaleGroup: SaleGroupKind | null;
   hasSearch: boolean;
   draftTotal: number;
+  hasNewItems: boolean;
   draftQuantitiesByMenuItemId: Record<string, number>;
   draftSelectionLabelsByMenuItemId: Record<string, string>;
   searchValue: string;
@@ -236,7 +238,7 @@ function MenuScreen({
           stickySectionHeadersEnabled={false}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
-          contentContainerStyle={[styles.virtualMenuList, Object.keys(draftQuantitiesByMenuItemId).length > 0 && styles.screenContentWithDraft]}
+          contentContainerStyle={[styles.virtualMenuList, hasNewItems && styles.screenContentWithDraft]}
           />
         </View>
         {openItemModal}

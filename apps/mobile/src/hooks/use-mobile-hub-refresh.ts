@@ -212,7 +212,7 @@ export function useMobileHubRefresh({
         setKdsTickets(nextTickets);
         setMessage(
           nextUnitId
-            ? `Kitchen screen connected for ${kitchenUnits.find((unit) => unit.id === nextUnitId)?.name ?? "selected counter"}.`
+            ? ""
             : kdsEnabled
               ? "No enabled kitchen screen is available. Enable KDS on the hub setup screen."
               : "KDS is off. Turn on Kitchen Display on the hub setup screen.",
@@ -250,9 +250,8 @@ export function useMobileHubRefresh({
         setSelectedHistoryDetail(null);
       }
       await checkReadyNotifications();
-      setMessage(
-        `Connected. Business day ${nextBootstrap.currentBusinessDay.business_date} is active.`,
-      );
+      // Online state already lives in the header; reserve the banner for actionable feedback.
+      setMessage("");
       if (selectedTableId) await loadTableOrder(selectedTableId);
     } catch (error) {
       const next = nextConnectionAfterRefresh({

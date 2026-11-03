@@ -42,8 +42,8 @@ function ReportHistoryTable({
                 <th>Table</th>
                 <th>Status</th>
                 <th>Items</th>
-                <th>Total</th>
-                <th>Paid</th>
+                <th className="numeric-cell">Total</th>
+                <th className="numeric-cell">Paid</th>
                 <th>Breakup</th>
                 <th>Settled</th>
                 <th aria-label="Actions" />
@@ -62,11 +62,11 @@ function ReportHistoryTable({
                   <td>{bill.tableName}</td>
                   <td><span className={`bill-status ${bill.status}`}>{bill.status}</span></td>
                   <td className="wrap-cell history-item-lines">{bill.items?.length ? bill.items.map((item) => <span key={item.orderItemId}>{item.quantity} x {item.name}</span>) : "No item detail"}</td>
-                  <td>
+                  <td className="numeric-cell">
                     <strong>{formatInr(bill.finalTotalPaise)}</strong>
                     {bill.discountPaise > 0 ? <small className="history-discount-text">Discount {formatInr(bill.discountPaise)}</small> : null}
                   </td>
-                  <td>{formatInr(bill.paidPaise)}</td>
+                  <td className="numeric-cell">{formatInr(bill.paidPaise)}</td>
                   <td className="wrap-cell">
                     <div className="history-breakup">
                       <span>Subtotal {formatInr(bill.subtotalPaise ?? Math.max(0, bill.totalPaise - (bill.taxPaise ?? 0)))}</span>

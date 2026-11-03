@@ -95,7 +95,7 @@ export function FloorsTablesCard({
 
   return (
     <SetupCard
-      title="Floors And Tables"
+      title="Floors & tables"
       done={bootstrap.tables.some((table) => table.active)}
       icon={<Users size={20} />}
       summary={`${bootstrap.tables.filter((table) => table.active).length} active tables`}

@@ -55,19 +55,19 @@
 }
 
 .kot-status-button {
-  @apply min-h-11 w-full px-2 text-sm font-medium capitalize;
+  @apply min-h-11 w-full border px-2 text-sm font-medium capitalize;
 }
 
 .kot-status-button.preparing {
-  @apply border-warning bg-warning-soft text-warning hover:bg-warning hover:text-white;
+  @apply border-warning/40 bg-warning-soft text-[#92400e] hover:border-warning hover:bg-warning hover:text-white;
 }
 
 .kot-status-button.ready {
-  @apply border-accent bg-accent-soft text-accent-dark hover:bg-accent hover:text-white;
+  @apply border-accent/40 bg-accent-soft text-accent-dark hover:border-accent hover:bg-accent hover:text-white;
 }
 
 .kot-status-button.served {
-  @apply border-line bg-panel text-ink hover:bg-wash;
+  @apply border-line-strong bg-panel text-ink hover:bg-wash;
 }
 
 .kot-note {

@@ -158,10 +158,10 @@ function TicketScreen({
     setApprovalPin("");
   };
   return (
-    <View style={styles.panel}>
+    <View style={[styles.panel, styles.ticketPanel]}>
       <View style={styles.cardHeader}>
         <View style={styles.flexText}>
-          <Text style={styles.sectionTitle}>Table Check</Text>
+          <Text style={styles.sectionTitle}>Check</Text>
           <Text style={styles.muted}>
             {selectedTableName
               ? `Table ${selectedTableName}`
@@ -171,15 +171,8 @@ function TicketScreen({
         <Text style={styles.totalText}>Rs {formatRupees(tableTotal)}</Text>
       </View>
 
-      <View style={styles.totalStrip}>
-        <Text style={styles.totalLabel}>New Rs {formatRupees(draftTotal)}</Text>
-        <Text style={styles.totalLabel}>
-          Table Rs {formatRupees(tableTotal)}
-        </Text>
-      </View>
-
       <CollapsibleSection
-        title="Service Stats"
+        title="Service details"
         subtitle={`Pax / ${deviceName || "device"}`}
         expanded={expandedSections.has("stats")}
         onToggle={() => toggleSection("stats")}
@@ -194,7 +187,7 @@ function TicketScreen({
             <Text style={styles.serviceStatValue}>{sentCount}</Text>
           </View>
           <View style={styles.serviceStatWide}>
-            <Text style={styles.inputLabel}>Table Total</Text>
+            <Text style={styles.inputLabel}>Table total</Text>
             <Text style={styles.serviceStatValue}>
               Rs {formatRupees(tableTotal)}
             </Text>
@@ -218,7 +211,7 @@ function TicketScreen({
       <View style={styles.actionSection}>
         <View style={styles.sectionHeaderRow}>
           <View>
-            <Text style={styles.actionTitle}>Send Order</Text>
+            <Text style={styles.actionTitle}>Send order</Text>
             <Text style={styles.actionMeta}>
               {items.length
                 ? `${newCount} new item${newCount === 1 ? "" : "s"} ready`
@@ -262,7 +255,7 @@ function TicketScreen({
       </View>
 
       <CollapsibleSection
-        title={`New Items (${newCount})`}
+        title={`New items (${newCount})`}
         subtitle={newCount > 0 ? `Rs ${formatRupees(draftTotal)}` : undefined}
         expanded={expandedSections.has("new")}
         onToggle={() => toggleSection("new")}
@@ -345,7 +338,7 @@ function TicketScreen({
       </CollapsibleSection>
 
       <CollapsibleSection
-        title={`Already Sent (${sentCount})`}
+        title={`Sent items (${sentCount})`}
         subtitle={
           sentCount > 0
             ? `Rs ${formatRupees(sentItems.reduce((t, i) => t + i.unit_price_paise * i.quantity, 0))}`
@@ -565,7 +558,7 @@ function TicketScreen({
 
       {canBill ? (
         <CollapsibleSection
-          title="Captain Billing"
+          title="Billing"
           subtitle="Bill, pay, print, NC, revise"
           expanded={expandedSections.has("billing")}
           onToggle={() => toggleSection("billing")}

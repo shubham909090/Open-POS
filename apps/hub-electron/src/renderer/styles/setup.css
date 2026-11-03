@@ -67,7 +67,11 @@
 .unit-edit-fields { grid-template-columns: minmax(220px, 0.8fr) minmax(260px, 1.2fr); }
 .setup-status { @apply border-line bg-wash text-muted; font-weight: 400; font-size: 10px; }
 .setup-status.ready { color: var(--accent-dark); border-color: transparent; background: var(--accent-soft); }
-.setup-search-row small { @apply text-xs font-normal text-muted; }
+.setup-search-row { @apply flex min-w-0 flex-wrap items-center gap-2; }
+.setup-search-row > input { @apply min-w-0 flex-1; max-width: 28rem; }
+.setup-search-row small { @apply basis-full text-xs font-normal text-muted; }
+/* Bulk destructive actions sit apart from search and stay outline until hovered. */
+.setup-search-row .danger-link { @apply ml-auto border-danger/30 bg-panel text-danger hover:bg-danger-soft; }
 .settings-view-panel .danger-zone { border-color: color-mix(in srgb, var(--danger) 22%, var(--line)); background: var(--panel); }
 .settings-view-panel .danger-zone .panel-title h2 { color: var(--danger); }
 .settings-view-panel .danger-zone .warning-text { margin: 0; padding: 12px 14px; border: 1px solid color-mix(in srgb, var(--danger) 18%, var(--line)); border-radius: 6px; background: var(--danger-soft); font-size: 12px; line-height: 1.7; }
@@ -111,3 +115,8 @@
   .payment-qr-lock { margin-left: 0; }
   .printer-config-side { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* Reset row: the destructive action keeps normal control height instead of stretching to the label column. */
+.reset-options { @apply items-end; }
+.reset-options > button { @apply w-fit min-w-36 justify-self-start; min-height: var(--control-height); }
+.reset-options > .checkbox-row { min-height: var(--control-height); }

@@ -13,7 +13,11 @@ import { printLayoutSettingsSchema } from "@gaurav-pos/shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PrinterSetupCard } from "../renderer/components/setup/printer-setup-card.js";
 import { SettingsPageContext } from "../renderer/components/setup/setup-card.js";
-import type { BillPrinters, Bootstrap } from "../renderer/hub-api.js";
+import {
+  hubApi,
+  type BillPrinters,
+  type Bootstrap,
+} from "../renderer/hub-api.js";
 
 vi.mock("../renderer/hub-api.js", () => ({
   hubApi: {
@@ -71,7 +75,7 @@ const bootstrap: Bootstrap = {
   },
   floors: [],
   tables: [],
-  productionUnits: [],
+  productionUnits: [{ id: "unit-kitchen", name: "Kitchen", active: true }],
   saleGroups: [],
   menuItems: [],
   printJobs: [],
@@ -94,13 +98,23 @@ function renderPrinterSettings() {
   });
   clients.push(client);
   client.setQueryData(["bill-printers"], initialPrinters);
-  client.setQueryData(["system-printers"], [
-    { name: "EPSON", displayName: "EPSON", isDefault: true },
-  ]);
+  client.setQueryData(
+    ["system-printers"],
+    [{ name: "EPSON", displayName: "EPSON", isDefault: true }],
+  );
   client.setQueryData(["print-layouts"], {
     default: printLayoutSettingsSchema.parse({ scope: "default" }),
     receipt: printLayoutSettingsSchema.parse({ scope: "receipt" }),
-    units: [],
+    units: [
+      {
+        productionUnitId: "unit-kitchen",
+        name: "Kitchen",
+        layout: printLayoutSettingsSchema.parse({
+          scope: "unit",
+          productionUnitId: "unit-kitchen",
+        }),
+      },
+    ],
   });
   client.setQueryData(["payment-qr"], { qr: null });
   render(
@@ -135,6 +149,38 @@ async function replaceBackgroundCache(client: QueryClient) {
 }
 
 describe("printer profile drafts", () => {
+  it("keeps unsaved receipt and kitchen layouts after a background refresh fails", async () => {
+    const client = renderPrinterSettings();
+    const footer = () =>
+      screen.getByRole<HTMLInputElement>("textbox", { name: "Footer text" });
+    fireEvent.change(footer(), { target: { value: "Unsaved receipt footer" } });
+    const layoutFor = screen.getByRole("combobox", { name: "Layout for" });
+    fireEvent.change(layoutFor, { target: { value: "unit" } });
+    fireEvent.change(footer(), { target: { value: "Unsaved kitchen footer" } });
+    vi.mocked(hubApi.printLayouts).mockRejectedValueOnce(
+      new Error("Layout refresh failed"),
+    );
+    await act(async () => {
+      await client.refetchQueries({ queryKey: ["print-layouts"] });
+    });
+    await waitFor(() =>
+      expect(screen.getByRole("alert").textContent).toContain(
+        "Layout refresh failed",
+      ),
+    );
+    expect(footer().value).toBe("Unsaved kitchen footer");
+    vi.mocked(hubApi.printLayouts).mockResolvedValueOnce(
+      client.getQueryData(["print-layouts"])!,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Retry layouts" }));
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+    expect(footer().value).toBe("Unsaved kitchen footer");
+    fireEvent.change(screen.getByRole("combobox", { name: "Layout for" }), {
+      target: { value: "receipt" },
+    });
+    expect(footer().value).toBe("Unsaved receipt footer");
+  });
+
   it("keeps both unsaved printer labels when background query data changes", async () => {
     const client = renderPrinterSettings();
     const labels = () =>
@@ -146,7 +192,9 @@ describe("printer profile drafts", () => {
       "Downstairs",
     ]);
     fireEvent.change(labels()[0]!, { target: { value: "My counter draft" } });
-    fireEvent.change(labels()[1]!, { target: { value: "My downstairs draft" } });
+    fireEvent.change(labels()[1]!, {
+      target: { value: "My downstairs draft" },
+    });
 
     await replaceBackgroundCache(client);
 
@@ -159,8 +207,12 @@ describe("printer profile drafts", () => {
   it("keeps mode-only edits for both printers when background query data changes", async () => {
     const client = renderPrinterSettings();
     const labels = screen.getAllByRole("textbox", { name: "Printer label" });
-    const primary = within(labels[0]!.closest<HTMLElement>(".printer-slot-card")!);
-    const alternate = within(labels[1]!.closest<HTMLElement>(".printer-slot-card")!);
+    const primary = within(
+      labels[0]!.closest<HTMLElement>(".printer-slot-card")!,
+    );
+    const alternate = within(
+      labels[1]!.closest<HTMLElement>(".printer-slot-card")!,
+    );
     // No input changes here: mode buttons must mark the draft dirty themselves.
     fireEvent.click(primary.getByRole("button", { name: "LAN printer" }));
     fireEvent.click(alternate.getByRole("button", { name: "PC printer" }));
@@ -168,14 +220,22 @@ describe("printer profile drafts", () => {
     await replaceBackgroundCache(client);
 
     expect(
-      primary.getByRole("button", { name: "LAN printer" }).classList.contains("active"),
+      primary
+        .getByRole("button", { name: "LAN printer" })
+        .classList.contains("active"),
     ).toBe(true);
     expect(primary.getByRole("textbox", { name: "Printer IP" })).toBeTruthy();
-    expect(primary.queryByRole("combobox", { name: "Installed printer" })).toBeNull();
     expect(
-      alternate.getByRole("button", { name: "PC printer" }).classList.contains("active"),
+      primary.queryByRole("combobox", { name: "Installed printer" }),
+    ).toBeNull();
+    expect(
+      alternate
+        .getByRole("button", { name: "PC printer" })
+        .classList.contains("active"),
     ).toBe(true);
-    expect(alternate.getByRole("combobox", { name: "Installed printer" })).toBeTruthy();
+    expect(
+      alternate.getByRole("combobox", { name: "Installed printer" }),
+    ).toBeTruthy();
     expect(alternate.queryByRole("textbox", { name: "Printer IP" })).toBeNull();
   });
 });

@@ -1,4 +1,4 @@
-import { formatInr, getTableDisplayState, searchMenuItems, tableDisplayClass, tableDisplayLabel, type SaleGroupKind } from "@gaurav-pos/shared";
+import { formatInr, getTableDisplayState, searchMenuItems, tableDisplayClass, tableDisplayLabel, type SaleGroupKind, type TableDisplayState } from "@gaurav-pos/shared";
 import { Clock3, PanelLeftOpen, X } from "lucide-react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -88,7 +88,10 @@ export function OrdersView({ bootstrap, setNotice, requestManagerApproval }: { b
             if (!floorTables.length) return null;
             return (
               <div className="floor-group" key={floor.id}>
-                <h3>{floor.name}</h3>
+                <div className="floor-group-header">
+                  <h3>{floor.name}</h3>
+                  <span>{floorTables.length}</span>
+                </div>
                 <div className="table-list">
                   {floorTables.map((table) => {
                     const displayState = getTableDisplayState(table);
@@ -110,21 +113,21 @@ export function OrdersView({ bootstrap, setNotice, requestManagerApproval }: { b
                       >
                         <button type="button" className="table-tile-main" aria-label={`Open table ${table.name}, ${hasLocalDraftWarning ? `${draftQuantity} unsent items` : tableDisplayLabel(displayState)}${duration ? `, open for ${duration}` : ""}`} onClick={() => openTablePanel(table.id, "new")}>
                           <span className="table-tile-topline">
-                            <span className="table-tile-heading">
-                              <strong>{table.name}</strong>
-                              <span>
-                                {hasLocalDraftWarning ? `Draft ${draftQuantity} ${draftQuantity === 1 ? "item" : "items"}` : tableDisplayLabel(displayState)}
-                              </span>
-                            </span>
+                            <strong className="table-tile-name">{table.name}</strong>
                             {duration ? (
-                              <span className="table-tile-duration" aria-label={`${table.name} open for ${duration}`}>
-                                <Clock3 size={13} />
+                              <span className="table-tile-duration" aria-hidden="true">
+                                <Clock3 size={12} />
                                 <span>{duration}</span>
                               </span>
                             ) : null}
                           </span>
-                          {isLiveTable ? <b className="table-tile-total">{formatInr(table.current_order_total_paise)}</b> : null}
-                          {hasLocalDraftWarning ? <b className="table-tile-total">{formatInr(draftTotal)}</b> : null}
+                          <span className="table-tile-meta">
+                            <span className="table-tile-state">
+                              {hasLocalDraftWarning ? `Draft ${draftQuantity} ${draftQuantity === 1 ? "item" : "items"}` : tileStateLabel(displayState)}
+                            </span>
+                            {isLiveTable ? <b className="table-tile-total">{formatInr(table.current_order_total_paise)}</b> : null}
+                            {hasLocalDraftWarning ? <b className="table-tile-total">{formatInr(draftTotal)}</b> : null}
+                          </span>
                         </button>
                         {isLiveTable ? (
                           <div className="table-tile-actions" aria-label={`${table.name} shortcuts`}>
@@ -228,6 +231,11 @@ export function OrdersView({ bootstrap, setNotice, requestManagerApproval }: { b
       ) : null}
     </div>
   );
+}
+
+// Tiles are narrow; "Billed" matches the header count wording. Screen readers get the full label from the button.
+function tileStateLabel(state: TableDisplayState): string {
+  return state === "bill_printed" ? "Billed" : tableDisplayLabel(state);
 }
 
 export function formatTableDuration(table: Pick<Bootstrap["tables"][number], "occupied_at" | "timer_ended_at" | "status">, nowMs = Date.now()): string | null {

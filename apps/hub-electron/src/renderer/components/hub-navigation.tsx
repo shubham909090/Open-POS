@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   BadgeIndianRupee,
   ChefHat,
@@ -95,13 +95,21 @@ export function HubNavigation({
     () => localStorage.getItem("hub-sidebar-collapsed") === "true",
   );
   const [searchOpen, setSearchOpen] = useState(false);
+  const searchOpener = useRef<HTMLElement | null>(null);
+  const openSearch = () => {
+    searchOpener.current =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+    setSearchOpen(true);
+  };
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
       if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "k")
         return;
       if (document.querySelector('[role="dialog"]')) return;
       event.preventDefault();
-      setSearchOpen((value) => !value);
+      openSearch();
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
@@ -142,12 +150,12 @@ export function HubNavigation({
         <button
           type="button"
           className="workspace-search"
-          onClick={() => setSearchOpen(true)}
-          title="Go to a page (⌘K / Ctrl+K)"
+          onClick={openSearch}
+          title="Go to a page (Ctrl+K)"
         >
           <Search size={15} />
           <span>Go to…</span>
-          <kbd>⌘K</kbd>
+          <kbd>Ctrl K</kbd>
         </button>
         <nav aria-label="Hub sections">
           {["Service", "Management", "Configuration"].map((group) => (
@@ -196,6 +204,11 @@ export function HubNavigation({
         <WorkspaceSearch
           onClose={() => setSearchOpen(false)}
           onChange={onChange}
+          onCloseAutoFocus={(event) => {
+            if (!searchOpener.current?.isConnected) return;
+            event.preventDefault();
+            searchOpener.current.focus();
+          }}
         />
       )}
     </>
@@ -205,9 +218,11 @@ export function HubNavigation({
 function WorkspaceSearch({
   onClose,
   onChange,
+  onCloseAutoFocus,
 }: {
   onClose: () => void;
   onChange: (view: HubView) => void;
+  onCloseAutoFocus: (event: Event) => void;
 }) {
   const [query, setQuery] = useState("");
   const results = hubNavigation.filter((item) =>
@@ -228,6 +243,7 @@ function WorkspaceSearch({
     <Dialog
       open
       title="Go to a page"
+      onCloseAutoFocus={onCloseAutoFocus}
       onOpenChange={(open) => {
         if (!open) onClose();
       }}

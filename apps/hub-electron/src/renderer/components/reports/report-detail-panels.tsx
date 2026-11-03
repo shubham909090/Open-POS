@@ -45,18 +45,18 @@ export function ReportDetailPanels({ summary, billHistoryPlaceholder }: { summar
             <thead>
               <tr>
                 <th>Category</th>
-                <th>Qty</th>
-                <th>Tax</th>
-                <th>Sales</th>
+                <th className="numeric-cell">Qty</th>
+                <th className="numeric-cell">Tax</th>
+                <th className="numeric-cell">Sales</th>
               </tr>
             </thead>
             <tbody>
               {groups.map((group) => (
                 <tr key={group.saleGroupId}>
                   <td className="strong-cell">{group.name}</td>
-                  <td>{group.quantity}</td>
-                  <td>{formatInr(group.taxPaise)}</td>
-                  <td>{formatInr(group.finalSalesPaise)}</td>
+                  <td className="numeric-cell">{group.quantity}</td>
+                  <td className="numeric-cell">{formatInr(group.taxPaise)}</td>
+                  <td className="numeric-cell">{formatInr(group.finalSalesPaise)}</td>
                 </tr>
               ))}
             </tbody>
@@ -89,8 +89,8 @@ export function ReportDetailPanels({ summary, billHistoryPlaceholder }: { summar
               <tr>
                 <th>Item</th>
                 <th>Group</th>
-                <th>Sold</th>
-                <th>Gross</th>
+                <th className="numeric-cell">Sold</th>
+                <th className="numeric-cell">Gross</th>
               </tr>
             </thead>
             <tbody>
@@ -98,8 +98,8 @@ export function ReportDetailPanels({ summary, billHistoryPlaceholder }: { summar
                 <tr key={item.menuItemId}>
                   <td className="strong-cell">{item.name}</td>
                   <td>{item.saleGroupName}</td>
-                  <td>{item.quantity}</td>
-                  <td>{formatInr(item.grossSalesPaise)}</td>
+                  <td className="numeric-cell">{item.quantity}</td>
+                  <td className="numeric-cell">{formatInr(item.grossSalesPaise)}</td>
                 </tr>
               ))}
             </tbody>
@@ -122,14 +122,14 @@ function ReportTable({ columns, rows }: { columns: string[]; rows: string[][] })
       <table className="data-table">
         <thead>
           <tr>
-            {columns.map((column) => <th key={column}>{column}</th>)}
+            {columns.map((column, index) => <th key={column} className={index > 0 ? "numeric-cell" : undefined}>{column}</th>)}
           </tr>
         </thead>
         <tbody>
           {rows.map((row) => (
             <tr key={row.join(":")}>
               {row.map((cell, index) => (
-                <td key={`${cell}-${index}`} className={index === 0 ? "strong-cell" : ""}>{cell}</td>
+                <td key={`${cell}-${index}`} className={index === 0 ? "strong-cell" : "numeric-cell"}>{cell}</td>
               ))}
             </tr>
           ))}

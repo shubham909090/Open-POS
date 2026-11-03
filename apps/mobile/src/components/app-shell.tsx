@@ -110,11 +110,17 @@ function OnboardingScreen({
   onStart: () => void;
 }) {
   const [manualOpen, setManualOpen] = useState(false);
+  // Exactly one solid action at a time: connect while offline, scan while online but unpaired,
+  // otherwise return to service. Everything else stays outlined.
+  const isOnline = connection === "online";
+  const isReady = isOnline && hasSavedToken;
+  const connectIsPrimary = !isOnline;
+  const scanIsPrimary = isOnline && !hasSavedToken;
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.onboardingContent} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
       <View style={styles.heroPanel}>
         <Text style={styles.kicker}>Connection settings</Text>
-        <Text style={styles.heroTitle}>Connect to your hub.</Text>
+        <Text style={styles.heroTitle}>{isReady ? "Connected to your hub." : "Connect to your hub."}</Text>
         <Text style={styles.heroCopy}>Join the same Wi-Fi as the hub PC, then scan its pairing QR to start service.</Text>
       </View>
 
@@ -133,8 +139,8 @@ function OnboardingScreen({
           placeholder="http://192.168.1.202:3737"
         />
         <View style={styles.buttonStack}>
-          <Pressable style={styles.primaryButton} onPress={onSaveConnection} disabled={loading}>
-            <Text style={styles.primaryButtonText}>{loading ? "Checking connection…" : "Save and connect"}</Text>
+          <Pressable style={[connectIsPrimary ? styles.primaryButton : styles.secondaryButton, loading && styles.buttonDisabled]} onPress={onSaveConnection} disabled={loading}>
+            <Text style={connectIsPrimary ? styles.primaryButtonText : styles.secondaryButtonText}>{loading ? "Checking connection…" : "Save and connect"}</Text>
           </Pressable>
           <Pressable style={styles.secondaryButton} onPress={onRetry} disabled={loading}>
             <Text style={styles.secondaryButtonText}>Retry</Text>
@@ -144,8 +150,8 @@ function OnboardingScreen({
 
       <View style={styles.stepCard}>
         <StepNumber value="2" label="Pair this phone" />
-        <Pressable style={styles.scanButton} onPress={onScan}>
-          <Text style={styles.scanButtonText}>Scan pairing QR</Text>
+        <Pressable style={scanIsPrimary ? styles.scanButton : styles.secondaryButton} onPress={onScan}>
+          <Text style={scanIsPrimary ? styles.scanButtonText : styles.secondaryButtonText}>Scan pairing QR</Text>
         </Pressable>
         <UncontrolledInput
           inputKey={`pair-code-${formRevision}`}
@@ -156,22 +162,22 @@ function OnboardingScreen({
           returnKeyType="done"
           placeholder="Six digits"
         />
-        <Pressable style={styles.primaryButton} onPress={onPair}>
-          <Text style={styles.primaryButtonText}>Pair phone</Text>
+        <Pressable style={styles.secondaryButton} onPress={onPair}>
+          <Text style={styles.secondaryButtonText}>Pair with code</Text>
         </Pressable>
       </View>
 
       <View style={styles.stepCard}>
         <StepNumber value="3" label="Ready for service" />
         <Text style={styles.muted}>
-          {connection === "online" && hasSavedToken
+          {isReady
             ? "This phone is connected. Start taking table orders."
             : "Once the phone is paired and the hub is online, orders can be sent to the kitchen."}
         </Text>
         <Pressable
-          style={[styles.primaryButton, (connection !== "online" || !hasSavedToken) && styles.buttonDisabled]}
+          style={[styles.primaryButton, !isReady && styles.buttonDisabled]}
           onPress={onStart}
-          disabled={connection !== "online" || !hasSavedToken}
+          disabled={!isReady}
         >
           <Text style={styles.primaryButtonText}>{hasSavedToken ? "Return to service" : "Start taking orders"}</Text>
         </Pressable>
@@ -200,9 +206,10 @@ function StepNumber({ value, label }: { value: string; label: string }) {
 }
 
 function ConnectionBanner({ message, savingDraft }: { message: string; savingDraft: boolean }) {
+  if (!message && !savingDraft) return null;
   return (
     <View style={styles.banner}>
-      <Text style={styles.bannerText}>{message}</Text>
+      {message ? <Text style={styles.bannerText}>{message}</Text> : null}
       {savingDraft ? <Text style={styles.bannerMeta}>Saving draft...</Text> : null}
     </View>
   );
