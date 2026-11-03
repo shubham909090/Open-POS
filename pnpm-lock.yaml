@@ -344,6 +344,13 @@ importers:
       ws:
         specifier: ^8.20.1
         version: 8.20.1
+    optionalDependencies:
+      '@img/sharp-win32-x64':
+        specifier: 0.35.5
+        version: 0.35.5
+      '@napi-rs/canvas-win32-x64-msvc':
+        specifier: 1.1.0
+        version: 1.1.0
 
   apps/mobile:
     dependencies:

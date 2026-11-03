@@ -134,5 +134,9 @@
       "createStartMenuShortcut": true,
       "shortcutName": "Gaurav POS Hub"
     }
+  },
+  "optionalDependencies": {
+    "@img/sharp-win32-x64": "0.35.5",
+    "@napi-rs/canvas-win32-x64-msvc": "1.1.0"
   }
 }
