@@ -2,7 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain } from "electron";
 import { fileURLToPath } from "node:url";
 import { chooseUpdateFile, restoreRendererFocus, type UpdateFileDialogKind } from "./electron-dialogs.js";
 import { startHub } from "./runtime.js";
-import { runSqliteSelfTest } from "./self-test.js";
+import { runPrintSelfTest, runSqliteSelfTest } from "./self-test.js";
 import { createElectronOnlineUpdater } from "./update/electron-online-updater.js";
 
 let mainWindow: BrowserWindow | null = null;
@@ -13,13 +13,14 @@ let shutdownPromise: Promise<void> | null = null;
 
 const selfTestOnly = process.argv.includes("--self-test-sqlite");
 if (selfTestOnly) {
-  try {
+  void (async () => {
     runSqliteSelfTest();
+    await runPrintSelfTest();
     app.exit(0);
-  } catch (error) {
+  })().catch((error) => {
     console.error(error);
     app.exit(1);
-  }
+  });
 } else {
   ipcMain.handle("updates:choose-package", async (_event, kindRaw?: string) => {
     const kind: UpdateFileDialogKind = kindRaw === "installer" ? "installer" : "update";

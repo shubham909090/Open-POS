@@ -42,8 +42,19 @@ for (const path of [installerPath, unpackedExePath, sqliteNativePath]) {
 const sqliteBytes = readFileSync(sqliteNativePath);
 validateWindowsX64NativeModule(sqliteBytes);
 
-const selfTest = spawnSync(unpackedExePath, ["--self-test-sqlite"], { stdio: "inherit" });
-if (selfTest.status !== 0) throw new Error("Packaged SQLite self-test failed");
+// pnpm's transitive optional dependencies can be omitted by packaging. Fail
+// before Electron opens an error dialog if a required print binary is absent.
+for (const relativePath of [
+  "@img/sharp-win32-x64/lib/sharp-win32-x64.node",
+  "@napi-rs/canvas-win32-x64-msvc/skia.win32-x64-msvc.node"
+]) {
+  const path = join(releaseDir, "win-unpacked", "resources", "app.asar.unpacked", "node_modules", relativePath);
+  if (!existsSync(path)) throw new Error(`Packaged print dependency missing: ${relativePath}`);
+  validateWindowsX64NativeModule(readFileSync(path));
+}
+console.log("Checking packaged SQLite, payment QR decoding and text rasterization...");
+const selfTest = spawnSync(unpackedExePath, ["--self-test-sqlite"], { stdio: "inherit", timeout: 60_000 });
+if (selfTest.error || selfTest.status !== 0) throw new Error(`Packaged capability self-test failed: ${selfTest.error?.message ?? selfTest.status}`);
 
 const installerBytes = readFileSync(installerPath);
 const dbSchemaVersion = currentDbSchemaVersion();
