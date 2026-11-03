@@ -24,6 +24,9 @@ import {
   type MoveOrderItemsInput,
   type MoveTableInput,
   type PrintLayoutSettingsInput,
+  type PaymentQr,
+  type UpdatePaymentQrInput,
+  type RemovePaymentQrInput,
   type PrinterOutputMode,
   type ReportRangeQueryInput,
   type ReprintBillInput,
@@ -49,6 +52,7 @@ import {
   type UpdateTableInput
 } from "@gaurav-pos/shared";
 import type { HubOrm, SqliteDatabase } from "../db/database.js";
+import { DomainError } from "./errors.js";
 import {
   assertAlcoholHasSellableVariant as assertAlcoholHasSellableVariantModel,
   assertAlcoholRecipeMatchesType as assertAlcoholRecipeMatchesTypeModel,
@@ -123,6 +127,7 @@ import {
   refreshDailyReportSnapshot as refreshDailyReportSnapshotModel
 } from "./order-service/business-day-lifecycle.js";
 import { verifyApproval } from "./order-service/approvals.js";
+import { PAYMENT_QR_SETTING_KEY, preparePaymentQr, readPaymentQr } from "./order-service/payment-qr-settings.js";
 import {
   listFloorReadModels,
   listTableReadModels,
@@ -464,6 +469,37 @@ export class OrderService {
 
   getPrintLayouts(): { default: PrintLayoutSettingsInput; receipt: PrintLayoutSettingsInput; units: Array<{ productionUnitId: string; name: string; layout: PrintLayoutSettingsInput }> } {
     return getPrintLayoutsModel(this.settingsActionContext());
+  }
+
+  getPaymentQr(): PaymentQr | null {
+    return readPaymentQr((key) => this.getSetting(key));
+  }
+
+  async updatePaymentQr(input: UpdatePaymentQrInput, requestedBy: string): Promise<{ qr: PaymentQr }> {
+    this.verifyMasterApproval(input.masterApproval, "payment_qr.updated", "hub_setting", PAYMENT_QR_SETTING_KEY, requestedBy);
+    const qr = await preparePaymentQr(input.imageDataUrl, input.sizeMm);
+    this.db.transaction(() => {
+      this.assertPaymentQrVersion(input.expectedUpdatedAt);
+      this.upsertSetting(PAYMENT_QR_SETTING_KEY, JSON.stringify(qr));
+      this.appendEvent("payment_qr.updated", "hub_setting", PAYMENT_QR_SETTING_KEY, { configured: true, updatedAt: qr.updatedAt, requestedBy });
+    })();
+    return { qr };
+  }
+
+  removePaymentQr(input: RemovePaymentQrInput, requestedBy: string): { qr: null } {
+    this.db.transaction(() => {
+      this.verifyMasterApproval(input.masterApproval, "payment_qr.removed", "hub_setting", PAYMENT_QR_SETTING_KEY, requestedBy);
+      this.assertPaymentQrVersion(input.expectedUpdatedAt);
+      this.upsertSetting(PAYMENT_QR_SETTING_KEY, "");
+      this.appendEvent("payment_qr.updated", "hub_setting", PAYMENT_QR_SETTING_KEY, { configured: false, requestedBy });
+    })();
+    return { qr: null };
+  }
+
+  private assertPaymentQrVersion(expectedUpdatedAt: string | null | undefined): void {
+    if (expectedUpdatedAt !== undefined && expectedUpdatedAt !== (this.getPaymentQr()?.updatedAt ?? null)) {
+      throw new DomainError("Payment QR changed on another device. Cancel and reopen QR settings before saving.", 409);
+    }
   }
 
   getPrintLayout(scope: PrintLayoutSettingsInput["scope"], productionUnitId?: string): PrintLayoutSettingsInput {
@@ -889,6 +925,7 @@ export class OrderService {
       readSetting: (key) => this.getSetting(key),
       writeSetting: (key, value) => this.upsertSetting(key, value),
       getPrintLayout: (scope, productionUnitId) => this.getPrintLayout(scope, productionUnitId),
+      getPaymentQr: () => this.getPaymentQr(),
       enqueuePrintJob: (input) => this.enqueuePrintJob(input),
       appendEvent: (type, aggregateType, aggregateId, payload) => this.appendEvent(type, aggregateType, aggregateId, payload)
     };
@@ -1041,7 +1078,8 @@ export class OrderService {
       db: this.db,
       ...input,
       orderItems: this.getOrderItems(input.bill.order_id),
-      receiptLayout: this.getPrintLayout("receipt")
+      receiptLayout: this.getPrintLayout("receipt"),
+      paymentQr: this.getPaymentQr()
     });
   }
 

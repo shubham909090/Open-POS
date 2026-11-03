@@ -1,6 +1,7 @@
 import type { PrintLayoutSettings } from "../../hub-api.js";
+import { printSizeLevel } from "@gaurav-pos/shared";
 
-const defaultSectionStyle = { size: "normal", bold: false, align: "left" } as const;
+const defaultSectionStyle: PrintLayoutSettings["sectionStyles"][string] = { size: "normal", bold: false, align: "left" };
 type SectionStyleKey = keyof PrintLayoutSettings["sectionStyles"];
 type SectionStylePatch = Partial<PrintLayoutSettings["sectionStyles"][string]>;
 
@@ -37,16 +38,18 @@ export function PrintLayoutStyleControls({
             <div key={key} className="print-style-row">
               <strong>{label}</strong>
               <div className="print-style-fields">
-                <label>
-                  <span>Size</span>
-                  <select
-                    value={style.size}
-                    onChange={(event) => updateSectionStyle(key, { size: event.target.value as "small" | "normal" | "large" })}
-                  >
-                    <option value="small">Small</option>
-                    <option value="normal">Normal</option>
-                    <option value="large">Large</option>
-                  </select>
+                <label className="print-size-control">
+                  <span>Size <output>{printSizeLevel(style.size, style.sizeLevel)} / 10</output></span>
+                  <input
+                    aria-label={`${label} text size`}
+                    type="range"
+                    min={0}
+                    max={10}
+                    step={1}
+                    value={printSizeLevel(style.size, style.sizeLevel)}
+                    onChange={(event) => updateSectionStyle(key, { sizeLevel: Number(event.target.value) })}
+                  />
+                  <small>Smaller <span>Larger</span></small>
                 </label>
                 <label>
                   <span>Align</span>

@@ -1,3 +1,39 @@
+.payment-qr-panel {
+  @apply grid gap-5 rounded-xl border border-line bg-wash p-5;
+}
+.payment-qr-heading {
+  @apply flex flex-wrap items-center gap-3;
+}
+.payment-qr-heading h3 { @apply text-xl font-black text-ink; }
+.payment-qr-heading p { @apply mt-1 text-sm text-muted; }
+.payment-qr-icon { @apply rounded-xl bg-accent-soft p-3 text-accent-dark; }
+.payment-qr-lock { @apply ml-auto inline-flex items-center gap-1.5 rounded-full border border-line bg-white px-3 py-1 text-xs font-bold text-muted; }
+.payment-qr-content { @apply grid items-start gap-6; grid-template-columns: 230px minmax(0,1fr); }
+.payment-qr-paper { @apply grid justify-items-center gap-2 rounded-xl border border-line bg-white p-4 text-center; }
+.payment-qr-paper > svg { @apply my-10 text-muted; }
+.payment-qr-paper img { width: 198px; max-width: 100%; aspect-ratio: 1; object-fit: contain; image-rendering: pixelated; }
+.payment-qr-paper strong { @apply text-base font-black; }
+.payment-qr-paper small { @apply break-all text-xs text-muted; }
+.payment-qr-options { @apply grid min-w-0 gap-3; }
+.payment-qr-options > p { @apply text-sm leading-6; }
+.payment-qr-options > small { @apply text-xs text-muted; }
+.payment-qr-actions { @apply flex flex-wrap items-center gap-2; }
+.payment-qr-actions > button, .payment-qr-download { @apply inline-flex items-center justify-center gap-2; }
+.payment-qr-download { @apply rounded-lg border border-line px-3 py-2 text-sm font-bold no-underline; }
+.payment-qr-size { @apply grid gap-2 rounded-lg border border-line bg-white p-3; }
+.payment-qr-size > span { @apply flex items-center justify-between text-sm font-bold; }
+.payment-qr-size output { @apply rounded-md bg-accent-soft px-2 py-1 text-accent-dark; font-variant-numeric: tabular-nums; }
+.payment-qr-size input { @apply w-full; accent-color: var(--accent); }
+.payment-qr-size > small { @apply flex justify-between text-xs text-muted; }
+.payment-qr-hint { @apply text-muted; }
+.payment-qr-actions .payment-qr-remove { @apply ml-auto border-transparent bg-transparent text-danger; }
+@media (max-width: 700px) {
+  .payment-qr-panel { @apply p-3; }
+  .payment-qr-content { grid-template-columns: minmax(0,1fr); }
+  .payment-qr-paper { @apply mx-auto w-full; max-width: 260px; }
+  .payment-qr-lock { @apply ml-0; }
+}
+
 .printer-console {
   @apply grid min-w-0 gap-3;
   grid-template-columns: minmax(0, 1fr) minmax(280px, 340px);

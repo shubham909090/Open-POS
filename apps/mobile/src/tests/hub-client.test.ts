@@ -48,6 +48,32 @@ describe("HubClient", () => {
     );
   });
 
+  it("reads the shared QR with device authentication and requires master approval for mutations", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async () => new Response(JSON.stringify({ qr: null }), { status: 200 }));
+    const client = new HubClient("http://hub.local:3737", "captain-token");
+    const approval = { masterApproval: { pin: "9876", reason: "Update restaurant payment QR", approvedBy: "Owner" } };
+
+    await client.paymentQr();
+    await client.updatePaymentQr("data:image/png;base64,aW1hZ2U=", approval, 35);
+    await client.removePaymentQr(approval);
+
+    expect(fetchMock).toHaveBeenNthCalledWith(1, "http://hub.local:3737/settings/payment-qr", {
+      signal: undefined,
+      cache: "no-store",
+      headers: { "x-device-token": "captain-token" }
+    });
+    expect(fetchMock).toHaveBeenNthCalledWith(2, "http://hub.local:3737/settings/payment-qr", expect.objectContaining({
+      method: "PUT",
+      headers: { "x-device-token": "captain-token", "content-type": "application/json" },
+      body: JSON.stringify({ imageDataUrl: "data:image/png;base64,aW1hZ2U=", sizeMm: 35, ...approval })
+    }));
+    expect(fetchMock).toHaveBeenNthCalledWith(3, "http://hub.local:3737/settings/payment-qr", expect.objectContaining({
+      method: "DELETE",
+      body: JSON.stringify(approval)
+    }));
+    expect(fetchMock.mock.calls[0]?.[1]?.body).toBeUndefined();
+  });
+
   it("ignores malformed saved realtime URLs instead of crashing the app", () => {
     vi.stubGlobal(
       "WebSocket",

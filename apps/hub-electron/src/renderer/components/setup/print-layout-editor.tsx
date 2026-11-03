@@ -12,6 +12,7 @@ import { defaultSectionStyle, PrintLayoutStyleControls } from "./print-layout-st
 
 export function PrintLayoutEditor({
   layouts,
+  paymentQr,
   units,
   setNotice,
   requestManagerApproval,
@@ -26,6 +27,7 @@ export function PrintLayoutEditor({
       layout: PrintLayoutSettings;
     }>;
   };
+  paymentQr?: import("@gaurav-pos/shared").PaymentQr | null;
   units: ProductionUnit[];
   setNotice: NoticeSetter;
   requestManagerApproval: ManagerApprovalRequest;
@@ -371,6 +373,7 @@ export function PrintLayoutEditor({
         </form>
         <PrintLayoutPreview
           draft={draft}
+          paymentQr={paymentQr}
           scope={scope}
           selectedUnitId={selectedUnitId}
           units={units}

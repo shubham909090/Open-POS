@@ -24,6 +24,7 @@ export type PrintSettingsActionContext = {
   readSetting: (key: string) => string | undefined;
   writeSetting: (key: string, value: string) => void;
   getPrintLayout: (scope: PrintLayoutSettingsInput["scope"], productionUnitId?: string) => PrintLayoutSettingsInput;
+  getPaymentQr?: () => import("../tickets.js").BillTicket["paymentQr"];
   enqueuePrintJob: (input: PrintJobInput) => string;
   appendEvent: (type: string, aggregateType: string, aggregateId: string, payload: unknown) => DomainEvent;
 };
@@ -127,7 +128,7 @@ export function enqueueTestBillPrint(ctx: PrintSettingsActionContext, requestedB
     targetId: "test-bill",
     productionUnitId: null,
     ...resolveBillPrinter(ctx, printerSlot),
-    payload: buildTestBillPrintPayload(template)
+    payload: buildTestBillPrintPayload(template, ctx.getPaymentQr?.())
   });
   ctx.appendEvent("print_job.test_bill_queued", "print_job", printJobId, { requestedBy, printJobId });
   return { printJobId };

@@ -1,4 +1,4 @@
-import type { HistoryEditBillInput, SubmitOrderInput } from "@gaurav-pos/shared";
+import type { HistoryEditBillInput, PaymentQr, SubmitOrderInput } from "@gaurav-pos/shared";
 import { buildRealtimeUrl, createIdempotencyKey, HubHttpError } from "./hub-client-helpers";
 import type {
   BillPrinters,
@@ -65,6 +65,24 @@ export class HubClient {
 
   async billPrinters(): Promise<BillPrinters> {
     return this.request("/settings/bill-printers");
+  }
+
+  async paymentQr(signal?: AbortSignal): Promise<{ qr: PaymentQr | null }> {
+    return this.request("/settings/payment-qr", { signal, cache: "no-store" });
+  }
+
+  async updatePaymentQr(imageDataUrl: string, approval: MasterApprovalPayload, sizeMm?: number, expectedUpdatedAt?: string | null): Promise<{ qr: PaymentQr | null }> {
+    return this.request("/settings/payment-qr", {
+      method: "PUT",
+      body: JSON.stringify({ imageDataUrl, ...(sizeMm === undefined ? {} : { sizeMm }), ...approval, ...(expectedUpdatedAt === undefined ? {} : { expectedUpdatedAt }) })
+    });
+  }
+
+  async removePaymentQr(approval: MasterApprovalPayload, expectedUpdatedAt?: string | null): Promise<{ qr: PaymentQr | null }> {
+    return this.request("/settings/payment-qr", {
+      method: "DELETE",
+      body: JSON.stringify({ ...approval, ...(expectedUpdatedAt === undefined ? {} : { expectedUpdatedAt }) })
+    });
   }
 
   async tableOrder(tableId: string): Promise<HubOrder | null> {

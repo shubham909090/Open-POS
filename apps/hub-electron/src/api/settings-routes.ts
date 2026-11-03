@@ -3,6 +3,9 @@ import {
   managerPinSchema,
   managerPinUnlockSchema,
   printLayoutSettingsSchema,
+  PAYMENT_QR_MAX_DATA_URL_LENGTH,
+  updatePaymentQrSchema,
+  removePaymentQrSchema,
   setMasterPinSchema,
   tallyExportSettingsSchema,
   ticketTemplateSchema,
@@ -28,6 +31,25 @@ function isLocalRequest(request: LocalRequest): boolean {
 
 export function registerSettingsRoutes({ app, input, auth }: HubRouteContext): void {
   const { adminOnly, captainOrAdmin } = auth;
+
+  app.get("/settings/payment-qr", { preHandler: auth.anyRole }, async (_request, reply) => {
+    reply.header("cache-control", "no-store");
+    return { qr: input.orderService.getPaymentQr() };
+  });
+  app.put("/settings/payment-qr", { preHandler: captainOrAdmin, bodyLimit: PAYMENT_QR_MAX_DATA_URL_LENGTH + 2048 }, async (request) => {
+    const parsed = updatePaymentQrSchema.safeParse(request.body);
+    if (!parsed.success) throw new DomainError(parsed.error.issues[0]?.message ?? "Invalid payment QR settings", 400);
+    const result = await input.orderService.updatePaymentQr(parsed.data, auth.getSession(request).name);
+    input.eventBus.publish({ type: "payment_qr.updated", result: { configured: true, updatedAt: result.qr.updatedAt } });
+    return result;
+  });
+  app.delete("/settings/payment-qr", { preHandler: captainOrAdmin }, async (request) => {
+    const parsed = removePaymentQrSchema.safeParse(request.body ?? {});
+    if (!parsed.success) throw new DomainError(parsed.error.issues[0]?.message ?? "Invalid payment QR approval", 400);
+    const result = input.orderService.removePaymentQr(parsed.data, auth.getSession(request).name);
+    input.eventBus.publish({ type: "payment_qr.updated", result: { configured: false } });
+    return result;
+  });
 
   const requireManagerPinHeader = (request: HeaderRequest): void => {
     const rawPin = request.headers["x-manager-pin"];

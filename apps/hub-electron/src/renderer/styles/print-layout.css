@@ -66,6 +66,29 @@
   @apply min-h-10 w-full rounded-md border border-line bg-white px-2 text-sm font-semibold normal-case text-ink;
 }
 
+.print-size-control > span, .print-size-control > small {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.print-size-control output {
+  @apply rounded bg-accent-soft px-2 py-1 text-accent-dark;
+  font-variant-numeric: tabular-nums;
+}
+
+.print-size-control input[type="range"] {
+  @apply w-full cursor-pointer accent-accent;
+  min-height: 28px;
+}
+
+.print-size-control small {
+  @apply text-muted;
+  font-size: 10px;
+  text-transform: none;
+}
+
 .inline-check {
   @apply inline-flex min-h-10 items-center gap-2 rounded-md border border-line bg-white px-3 text-sm font-bold normal-case text-ink;
 }

@@ -124,6 +124,11 @@ describe("shared command schemas", () => {
     expect(styled.sectionStyles.restaurantName).toEqual({ size: "large", bold: true, align: "center" });
     expect(styled.sectionStyles.totals).toEqual({ size: "large", bold: true, align: "right" });
     expect(styled.sectionStyles.itemNotes).toEqual({ size: "small", bold: false, align: "left" });
+    const numeric = printLayoutSettingsSchema.parse({ scope: "receipt", sectionStyles: { totals: { sizeLevel: 3 } } });
+    expect(numeric.sectionStyles.totals.sizeLevel).toBe(3);
+    expect(styled.sectionStyles.totals.sizeLevel).toBeUndefined();
+    expect(() => printLayoutSettingsSchema.parse({ scope: "receipt", sectionStyles: { totals: { sizeLevel: 11 } } })).toThrow();
+    expect(() => printLayoutSettingsSchema.parse({ scope: "receipt", sectionStyles: { totals: { sizeLevel: 1.5 } } })).toThrow();
     expect(setMasterPinSchema.parse({ newPin: "9876", confirmPin: "9876", updatedBy: "owner" })).toMatchObject({ newPin: "9876" });
     expect(setMasterPinSchema.parse({ currentPin: "9876", newPin: "1111", confirmPin: "1111", updatedBy: "owner" })).toMatchObject({ currentPin: "9876", newPin: "1111" });
     expect(() => setMasterPinSchema.parse({ newPin: "9876", confirmPin: "1111", updatedBy: "owner" })).toThrow();

@@ -27,6 +27,7 @@ export function buildBillTicket(input: {
   createdAt: string;
   orderItems: OrderItemRow[];
   receiptLayout: PrintLayoutSettingsInput;
+  paymentQr?: BillTicket["paymentQr"];
   discountPaise?: number;
   tipPaise?: number;
   finalTotalPaise?: number;
@@ -59,7 +60,8 @@ export function buildBillTicket(input: {
     payments: billPayments.map((payment) => ({ method: payment.method, amountPaise: payment.amount_paise })),
     revisionNumber: input.bill.revision_number,
     ncReason: input.ncReason ?? input.bill.nc_reason,
-    ...billPrintLayout(input.receiptLayout)
+    ...billPrintLayout(input.receiptLayout),
+    paymentQr: input.paymentQr
   };
 }
 

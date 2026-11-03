@@ -1,3 +1,4 @@
+import { printFontPoints } from "@gaurav-pos/shared";
 import type { CSSProperties } from "react";
 
 import {
@@ -12,14 +13,16 @@ export function PrintLayoutPreview({
   scope,
   selectedUnitId,
   units,
+  paymentQr,
 }: {
   draft: PrintLayoutSettings;
   scope: "receipt" | "unit";
   selectedUnitId: string;
   units: ProductionUnit[];
+  paymentQr?: { imageDataUrl: string; upiUri: string; sizeMm?: number } | null;
 }) {
   const preview = scope === "receipt"
-    ? renderReceiptPreview(draft)
+    ? renderReceiptPreview(draft, paymentQr)
     : renderKotPreview(draft, selectedUnitId, units);
   const previewLines = preview.split(/\r?\n/).map((line) =>
     parsePrintStyleLine(line) ?? {
@@ -29,22 +32,29 @@ export function PrintLayoutPreview({
       align: "left" as const,
       graphicLine: false
     }
-  );
+  ).filter((line) => !("paperWidthChars" in line && line.paperWidthChars));
 
   return (
     <div className="print-preview print-preview-styled">
       {previewLines.map((line, index) => (
-        <div key={`${index}-${line.text}`} style={previewLineStyle(line)}>
-          {line.graphicLine ? "\u00a0" : line.text || "\u00a0"}
-        </div>
+        "qrImageDataUrl" in line && line.qrImageDataUrl ? (
+          <div key={`qr-${index}`} style={{ textAlign: "center", padding: "8px 0" }}>
+            <img src={line.qrImageDataUrl} alt="Payment QR" style={{ display: "inline-block", width: `${Math.min(100, ((line.qrSizeMm ?? 32) / (draft.lineWidthChars <= 25 ? 40 : draft.lineWidthChars <= 28 ? 45 : draft.lineWidthChars <= 32 ? 48 : 72)) * 100)}%`, imageRendering: "pixelated" }} />
+          </div>
+        ) : (
+          <div key={`${index}-${line.text}`} style={previewLineStyle(line)}>
+            {line.graphicLine ? "\u00a0" : line.text || "\u00a0"}
+          </div>
+        )
       ))}
     </div>
   );
 }
 
-function renderReceiptPreview(draft: PrintLayoutSettings): string {
+function renderReceiptPreview(draft: PrintLayoutSettings, paymentQr?: { imageDataUrl: string; upiUri: string; sizeMm?: number } | null): string {
   return renderBillTicketForPrint({
     ...draft,
+    paymentQr,
     tableName: "T1",
     billId: "TEST-BILL",
     createdAt: "2026-05-15T15:00:00.000Z",
@@ -85,6 +95,7 @@ function renderKotPreview(draft: PrintLayoutSettings, selectedUnitId: string, un
 
 function previewLineStyle(line: {
   size: "small" | "normal" | "large";
+  sizeLevel?: number;
   bold: boolean;
   align: "left" | "center" | "right";
   graphicLine?: boolean;
@@ -98,9 +109,9 @@ function previewLineStyle(line: {
     };
   }
   return {
-    fontSize: line.size === "large" ? 16 : line.size === "small" ? 11 : 13,
+    fontSize: line.sizeLevel === undefined ? line.size === "large" ? 16 : line.size === "small" ? 11 : 13 : printFontPoints(line.size, line.sizeLevel) * 13 / 11,
     fontWeight: line.bold ? 800 : 500,
-    lineHeight: line.size === "large" ? "22px" : line.size === "small" ? "15px" : "18px",
+    lineHeight: line.sizeLevel === undefined ? line.size === "large" ? "22px" : line.size === "small" ? "15px" : "18px" : `${Math.ceil(printFontPoints(line.size, line.sizeLevel) * 18 / 11)}px`,
     textAlign: line.align,
     whiteSpace: "pre"
   };

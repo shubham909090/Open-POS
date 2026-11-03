@@ -17,6 +17,7 @@ import { getMobileServiceViewModel } from "./lib/mobile-app-view-model";
 import { palette, styles } from "./styles/app-styles";
 import { AppHeader, ConnectionBanner, DraftBar, ModeTabs, OnboardingScreen } from "./components/app-shell";
 import { PairingScannerModal } from "./components/pairing-scanner-modal";
+import { PaymentQrModal } from "./components/payment-qr-modal";
 import { BillingHistoryPanel, KitchenScreen, MenuScreen, TablePicker, TicketScreen } from "./components/screens";
 import type { ConnectionState, ViewMode } from "./lib/mobile-types";
 import { useBillingHistoryActions } from "./hooks/use-billing-history-actions";
@@ -46,6 +47,7 @@ export default function App() {
   const [deviceToken, setDeviceTokenState] = useState("");
   const [deviceRole, setDeviceRoleState] = useState("");
   const [deviceName, setDeviceNameState] = useState("");
+  const [paymentQrOpen, setPaymentQrOpen] = useState(false);
   const [connection, setConnection] = useState<ConnectionState>("checking");
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
@@ -249,6 +251,10 @@ export default function App() {
     if (!canBill && mode === "history") setMode("tables");
   }, [canBill, mode]);
 
+  useEffect(() => {
+    if (shouldShowOnboarding) setPaymentQrOpen(false);
+  }, [shouldShowOnboarding]);
+
   async function loadTableOrder(tableId: string) {
     try {
       setCurrentOrder(await client.tableOrder(tableId));
@@ -400,6 +406,7 @@ export default function App() {
             title={isKitchenDevice ? "Kitchen Screen" : selectedTable ? `Table ${selectedTable.name}` : canBill ? "Captain POS" : "Waiter"}
             subtitle={isKitchenDevice ? deviceName || "Kitchen device" : selectedTable ? "Add dishes or review sent items" : "Pick a table to start"}
             onSetupPress={() => openSetup(hubUrl, deviceToken)}
+            onPaymentQrPress={deviceToken && !shouldShowOnboarding ? () => setPaymentQrOpen(true) : undefined}
           />
 
           {shouldShowOnboarding ? (
@@ -452,6 +459,15 @@ export default function App() {
           onClose={() => setScannerOpen(false)}
           onScannedPayload={(data) => void handleScannedPayload(data)}
         />
+        {paymentQrOpen && deviceToken && !shouldShowOnboarding ? (
+          <PaymentQrModal
+            client={client}
+            online={connection === "online"}
+            canManage={canBill}
+            deviceName={deviceName}
+            onClose={() => setPaymentQrOpen(false)}
+          />
+        ) : null}
       </SafeAreaView>
     </SafeAreaProvider>
   );

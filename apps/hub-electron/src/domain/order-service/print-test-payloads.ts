@@ -3,8 +3,9 @@ import type { PrintLayoutSettingsInput } from "@gaurav-pos/shared";
 import { renderBillTicketForPrint, renderKotTicketForPrint } from "../tickets.js";
 import type { UnitRow } from "./types.js";
 
-export function buildTestBillPrintPayload(template: PrintLayoutSettingsInput): string {
+export function buildTestBillPrintPayload(template: PrintLayoutSettingsInput, paymentQr?: import("../tickets.js").BillTicket["paymentQr"]): string {
   return renderBillTicketForPrint({
+    paymentQr,
     tableName: "TEST",
     billId: "TEST-BILL",
     items: [{ name: "Test item", quantity: 1, unitPricePaise: 100, lineTotalPaise: 100 }],

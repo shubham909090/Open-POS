@@ -98,6 +98,7 @@ export const printTextSizeSchema = z.enum(["small", "normal", "large"]);
 export const printAlignSchema = z.enum(["left", "center", "right"]);
 export const printSectionStyleSchema = z.object({
   size: printTextSizeSchema.default("normal"),
+  sizeLevel: z.number().int().min(0).max(10).optional(),
   bold: z.boolean().default(false),
   align: printAlignSchema.default("left")
 });

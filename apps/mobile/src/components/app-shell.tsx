@@ -4,31 +4,45 @@ import { ActivityIndicator, Animated, Pressable, ScrollView, Text, TextInput, Vi
 import { formatRupees } from "../lib/mobile-format";
 import type { ConnectionState, ViewMode } from "../lib/mobile-types";
 import { palette, styles } from "../styles/app-styles";
+import { paymentQrStyles } from "../styles/payment-qr-styles";
 
 function AppHeader({
   connection,
   title,
   subtitle,
-  onSetupPress
+  onSetupPress,
+  onPaymentQrPress
 }: {
   connection: ConnectionState;
   title: string;
   subtitle: string;
   onSetupPress: () => void;
+  onPaymentQrPress?: () => void;
 }) {
   return (
-    <View style={styles.header}>
-      <View style={styles.headerText}>
-        <Text style={styles.kicker}>Gaurav POS</Text>
-        <Text style={styles.title} numberOfLines={1}>{title}</Text>
-        <Text style={styles.muted} numberOfLines={1}>{subtitle}</Text>
+    <View>
+      <View style={styles.header}>
+        <View style={styles.headerText}>
+          <Text style={styles.kicker}>Gaurav POS</Text>
+          <Text style={styles.title} numberOfLines={1}>{title}</Text>
+          <Text style={styles.muted} numberOfLines={1}>{subtitle}</Text>
+        </View>
+        <View style={styles.headerActions}>
+          <StatusPill connection={connection} />
+          <Pressable style={styles.iconButton} onPress={onSetupPress} hitSlop={8}>
+            <Text style={styles.iconButtonText}>Setup</Text>
+          </Pressable>
+        </View>
       </View>
-      <View style={styles.headerActions}>
-        <StatusPill connection={connection} />
-        <Pressable style={styles.iconButton} onPress={onSetupPress} hitSlop={8}>
-          <Text style={styles.iconButtonText}>Setup</Text>
-        </Pressable>
-      </View>
+      {onPaymentQrPress ? (
+        <View style={paymentQrStyles.shortcutWrap}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Show payment QR" style={paymentQrStyles.shortcut} onPress={onPaymentQrPress}>
+            <Text style={paymentQrStyles.shortcutIcon} importantForAccessibility="no">▦</Text>
+            <Text style={paymentQrStyles.shortcutText}>Show payment QR</Text>
+            <Text style={paymentQrStyles.shortcutArrow} importantForAccessibility="no">↗</Text>
+          </Pressable>
+        </View>
+      ) : null}
     </View>
   );
 }

@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { PRINT_LINE_MARKER, PRINT_STYLE_MARKER } from "../domain/tickets.js";
 import { buildWindowsSystemPrintCommand, renderEscposPayload } from "../printing/escpos.js";
+import { PRINT_PAPER_MARKER, PRINT_QR_MARKER, parsePrintStyleLine } from "../domain/tickets.js";
+import { qrBitmap, renderTicketPdf, textBitmap } from "../printing/ticket-raster.js";
+import QRCode from "qrcode";
+import { createRequire } from "node:module";
+const jsQR = createRequire(import.meta.url)("jsqr") as typeof import("jsqr").default;
 
 describe("ESC/POS print payload", () => {
   it("keeps LAN printer payload compatible with raw thermal printers before cutting", () => {
@@ -47,5 +52,42 @@ describe("ESC/POS print payload", () => {
     const payload = renderEscposPayload(`${PRINT_LINE_MARKER}8\u001f________\n`);
 
     expect(payload.includes(Buffer.from("________", "utf8"))).toBe(true);
+  });
+
+  it("renders all eleven numeric sizes at distinct, increasing heights", () => {
+    const heights = Array.from({ length: 11 }, (_, level) => textBitmap({ text: "Total 123.45", plainText: "Total 123.45", size: "normal", sizeLevel: level, bold: false, align: "left" }, 576).height);
+    expect(new Set(heights).size).toBe(11);
+    expect(heights).toEqual([...heights].sort((a, b) => a - b));
+    const payload = renderEscposPayload(`${PRINT_PAPER_MARKER}28\n${PRINT_STYLE_MARKER}normal:1:left:3|Total 123.45\n`);
+    expect(payload.includes(Buffer.from([0x1d, 0x76, 0x30, 0]))).toBe(true);
+    expect(payload.includes(Buffer.from([0x1d, 0x21, 0x11]))).toBe(false);
+  });
+
+  it("prints a scannable QR with quiet zone at the requested physical size", async () => {
+    const uri = "upi://pay?pa=restaurant@upi&pn=Restaurant&cu=INR";
+    const image = await QRCode.toDataURL(uri, { scale: 8, margin: 4, errorCorrectionLevel: "M" });
+    const parsed = parsePrintStyleLine(`${PRINT_QR_MARKER}32:${image}`)!;
+    const bitmap = qrBitmap(parsed, 360);
+    expect(bitmap.height).toBeLessThanOrEqual(Math.round(32 * 203 / 25.4));
+    expect(jsQR(new Uint8ClampedArray(bitmap.data), bitmap.width, bitmap.height)?.data).toBe(uri);
+    const payload = `${PRINT_PAPER_MARKER}28\n${PRINT_QR_MARKER}32:${image}\n`;
+    expect(renderEscposPayload(payload).includes(Buffer.from([0x1d, 0x76, 0x30, 0]))).toBe(true);
+    const pdf = renderTicketPdf(payload);
+    expect(pdf.data.subarray(0, 8).toString()).toBe("%PDF-1.4");
+    expect(pdf.widthMm).toBeCloseTo(360 * 25.4 / 203);
+    expect(pdf.data.includes(Buffer.from("/Interpolate false"))).toBe(true);
+    expect(qrBitmap({ ...parsed, qrSizeMm: 45 }, 320).height).toBeLessThan(320);
+  });
+
+  it("keeps signed merchant QR modules aligned and scannable on narrow paper", async () => {
+    for (const length of [200, 1000, 1800]) {
+      const uri = `upi://pay?pa=restaurant@okaxis&pn=Restaurant&sign=${"X".repeat(length)}`;
+      const image = await QRCode.toDataURL(uri, { scale: 8, margin: 4, errorCorrectionLevel: "M" });
+      for (const size of [20, 32, 45]) {
+        const bitmap = qrBitmap(parsePrintStyleLine(`${PRINT_QR_MARKER}${size}:${image}`)!, 320);
+        expect(jsQR(new Uint8ClampedArray(bitmap.data), bitmap.width, bitmap.height)?.data).toBe(uri);
+        expect(bitmap.height).toBeLessThanOrEqual(304);
+      }
+    }
   });
 });

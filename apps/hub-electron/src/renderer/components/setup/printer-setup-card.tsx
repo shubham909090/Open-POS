@@ -7,6 +7,7 @@ import type { ManagerApprovalRequest } from "../../hooks/use-manager-approval.js
 import { messageOf, type NoticeSetter } from "../../lib/format.js";
 import { PrintLayoutEditor } from "./print-layout-editor.js";
 import { SetupCard } from "./setup-card.js";
+import { PaymentQrPanel } from "./payment-qr-panel.js";
 
 export function PrinterSetupCard({
   bootstrap,
@@ -36,6 +37,7 @@ export function PrinterSetupCard({
   const billPrinters = useQuery({ queryKey: ["bill-printers"], queryFn: hubApi.billPrinters });
   const systemPrinters = useQuery({ queryKey: ["system-printers"], queryFn: () => hubApi.systemPrinters(), enabled: false });
   const printLayouts = useQuery({ queryKey: ["print-layouts"], queryFn: hubApi.printLayouts });
+  const paymentQr = useQuery({ queryKey: ["payment-qr"], queryFn: hubApi.paymentQr, refetchInterval: 30_000 });
   const defaultBillPrinter = billPrinters.data?.default;
   const alternateBillPrinter = billPrinters.data?.alternate;
   const savedReceiptMode = defaultBillPrinter?.printerMode ?? (defaultBillPrinter?.printerName ? "system" : "network");
@@ -382,6 +384,11 @@ export function PrinterSetupCard({
             </div>
           </aside>
         </div>
+        <PaymentQrPanel
+          masterPinConfigured={Boolean(bootstrap.setup?.masterPinConfigured)}
+          requestManagerApproval={requestManagerApproval}
+          setNotice={setNotice}
+        />
         <details className="setup-subdetails">
           <summary>
             <span>Print layout templates</span>
@@ -389,6 +396,7 @@ export function PrinterSetupCard({
           </summary>
           <PrintLayoutEditor
             layouts={printLayouts.data}
+            paymentQr={paymentQr.isError ? null : paymentQr.data?.qr}
             units={bootstrap.productionUnits}
             setNotice={setNotice}
             requestManagerApproval={requestManagerApproval}

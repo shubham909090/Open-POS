@@ -1,7 +1,34 @@
 import { describe, expect, it } from "vitest";
-import { parsePrintStyleLine, PRINT_LINE_MARKER, renderBillTicket, renderBillTicketForPrint, renderKotTicket, renderKotTicketForPrint, stripPrintStyleMarkers } from "../domain/tickets.js";
+import { parsePrintStyleLine, PRINT_LINE_MARKER, PRINT_PAPER_MARKER, PRINT_QR_MARKER, renderBillTicket, renderBillTicketForPrint, renderKotTicket, renderKotTicketForPrint, stripPrintStyleMarkers } from "../domain/tickets.js";
 
 describe("ticket rendering", () => {
+  it("places the shared payment QR before the footer and keeps it out of kitchen tickets", () => {
+    const paymentQr = { imageDataUrl: "data:image/png;base64,aGVsbG8=", upiUri: "upi://pay?pa=test@upi", sizeMm: 30 };
+    const common = { tableName: "T1", createdAt: "2026-05-15T00:00:00.000Z", footer: "Visit again", paymentQr };
+    const bill = renderBillTicketForPrint({ ...common, billId: "1", subtotalPaise: 10000, taxPaise: 0, totalPaise: 10000 });
+    expect(bill).toContain(`${PRINT_QR_MARKER}30:${paymentQr.imageDataUrl}`);
+    expect(bill.indexOf(PRINT_QR_MARKER)).toBeLessThan(bill.indexOf("Visit again"));
+    expect(stripPrintStyleMarkers(bill)).not.toContain("base64");
+    const kot = renderKotTicketForPrint({ ...common, sequence: 1, type: "new", productionUnitName: "Kitchen", captainId: "C1", items: [] });
+    expect(kot).not.toContain(PRINT_QR_MARKER);
+    expect(kot).not.toContain("Scan to pay");
+  });
+
+  it("preserves saved legacy directives and carries numeric sizing without losing amounts", () => {
+    const ticket = { tableName: "T1", billId: "1", createdAt: "2026-05-15T00:00:00.000Z", subtotalPaise: 123456, taxPaise: 0, totalPaise: 123456, lineWidthChars: 28 };
+    const legacy = renderBillTicketForPrint({ ...ticket, sectionStyles: { totals: { size: "large", bold: true, align: "left" } } });
+    expect(legacy).not.toContain(PRINT_PAPER_MARKER);
+    expect(legacy).toContain("large:1:left|");
+    const sized = renderBillTicketForPrint({ ...ticket, sectionStyles: { totals: { size: "large", sizeLevel: 7, bold: true, align: "left" } } });
+    expect(sized).toContain(`${PRINT_PAPER_MARKER}28`);
+    const total = sized.split("\n").map(parsePrintStyleLine).find((line) => line?.text.startsWith("Total"))!;
+    expect(total.sizeLevel).toBe(7);
+    expect(total.text).toContain("1234.56");
+    const largest = renderBillTicketForPrint({ ...ticket, lineWidthChars: 25, sectionStyles: { totals: { size: "large", sizeLevel: 10, bold: true, align: "left" } } });
+    const subtotal = largest.split("\n").map(parsePrintStyleLine).find((line) => line?.sizeLevel === 10)!;
+    expect(subtotal.text).toContain("1234.56");
+    expect(subtotal.text.length).toBeLessThanOrEqual(12);
+  });
   it("keeps long itemized bill rows readable on thermal-width tickets", () => {
     const payload = renderBillTicket({
       tableName: "T1",

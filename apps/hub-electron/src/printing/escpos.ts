@@ -4,7 +4,8 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { parsePrintStyleLine, stripPrintStyleMarkers } from "../domain/tickets.js";
+import { bitmapEscpos, qrBitmap, renderTicketPdf, textBitmap, ticketPaperDots } from "./ticket-raster.js";
+import { parsePrintStyleLine, PRINT_PAPER_MARKER, stripPrintStyleMarkers } from "../domain/tickets.js";
 
 export interface PrinterAdapter {
   print(target: PrintTarget): Promise<void>;
@@ -27,10 +28,14 @@ export class DryRunPrinterAdapter implements PrinterAdapter {
 
 export function renderEscposPayload(payload: string): Buffer {
   const chunks: Buffer[] = [Buffer.from([0x1b, 0x40])];
+  const paperDots = ticketPaperDots(payload);
   const lines = payload.split(/\r?\n/);
   if (lines.at(-1) === "") lines.pop();
   for (const line of lines) {
     const parsed = parsePrintStyleLine(line);
+    if (parsed?.paperWidthChars) continue;
+    if (parsed?.qrImageDataUrl) { chunks.push(bitmapEscpos(qrBitmap(parsed, paperDots))); continue; }
+    if (parsed?.sizeLevel !== undefined) { chunks.push(bitmapEscpos(textBitmap(parsed, paperDots))); continue; }
     const text = parsed?.text ?? line;
     const alignByte = parsed?.align === "center" ? 0x01 : parsed?.align === "right" ? 0x02 : 0x00;
     const sizeByte = parsed?.size === "large" ? 0x11 : 0x00;
@@ -60,7 +65,11 @@ export function buildWindowsSystemPrintCommand(file: string, printerName: string
       "$marker = [char]30;",
       "$lineMarker = [char]29 + 'line:';",
       "$plainMarker = [char]31;",
+      "$qrMarker = [char]29 + 'qr:';",
+      "$paperMarker = [char]29 + 'paper:';",
       "function Parse-TicketLine($line) {",
+      "  if ($line.StartsWith($paperMarker)) { return @{ IsPaper = $true; WidthChars = [int]$line.Substring($paperMarker.Length) } }",
+      "  if ($line.StartsWith($qrMarker)) { $qr = $line.Substring($qrMarker.Length); $qrBar = $qr.IndexOf(':data:'); $mm = if ($qrBar -ge 0) { [double]$qr.Substring(0, $qrBar) } else { 32 }; $png = if ($qrBar -ge 0) { $qr.Substring($qrBar + 1) } else { $qr }; return @{ QrBase64 = $png.Substring($png.IndexOf(',') + 1); QrSizeMm = [Math]::Max(20, [Math]::Min(45, $mm)) } }",
       "  if ($line.StartsWith($lineMarker)) {",
       "    $payload = $line.Substring($lineMarker.Length);",
       "    $plainBar = $payload.IndexOf([string]$plainMarker);",
@@ -75,20 +84,37 @@ export function buildWindowsSystemPrintCommand(file: string, printerName: string
       "  $payload = $line.Substring($bar + 1);",
       "  $plainBar = $payload.IndexOf([string]$plainMarker);",
       "  if ($plainBar -ge 0) { $payload = $payload.Substring(0, $plainBar) }",
-      "  return @{ Text = $payload; Size = $parts[0]; Bold = ($parts[1] -eq '1'); Align = $parts[2] }",
+      "  return @{ Text = $payload; Size = $parts[0]; Bold = ($parts[1] -eq '1'); Align = $parts[2]; Level = if ($parts.Length -gt 3) { $parts[3] } else { $null } }",
       "}",
       "$doc = New-Object System.Drawing.Printing.PrintDocument;",
       `$doc.PrinterSettings.PrinterName = ${JSON.stringify(printerName)};`,
       "$doc.PrintController = New-Object System.Drawing.Printing.StandardPrintController;",
       "$doc.DefaultPageSettings.Margins = New-Object System.Drawing.Printing.Margins(0, 0, 0, 0);",
       "$brush = [System.Drawing.Brushes]::Black;",
-      "$script:index = 0;",
+      "$script:index = 0; $script:paperWidth = $null;",
       "$doc.add_PrintPage({",
       "  param($sender, $eventArgs)",
       "  $y = 0;",
       "  while ($script:index -lt $lines.Length) {",
       "    $parsed = Parse-TicketLine $lines[$script:index];",
+      "    if ($parsed.IsPaper) { $dots = if ($parsed.WidthChars -le 25) { 320 } elseif ($parsed.WidthChars -le 28) { 360 } elseif ($parsed.WidthChars -le 32) { 384 } elseif ($parsed.WidthChars -le 48) { 576 } else { 832 }; $script:paperWidth = $dots * 100 / 203; $script:index += 1; continue }",
+      "    $contentWidth = if ($null -ne $script:paperWidth) { [Math]::Min($eventArgs.MarginBounds.Width, $script:paperWidth) } else { $eventArgs.MarginBounds.Width };",
+      "    if ($parsed.QrBase64) {",
+      "      $stream = [System.IO.MemoryStream]::new([Convert]::FromBase64String($parsed.QrBase64));",
+      "      $image = [System.Drawing.Image]::FromStream($stream);",
+      "      $modules = $image.Width / 8; $dpi = $eventArgs.Graphics.DpiX;",
+      "      $availableDots = [Math]::Floor(($contentWidth - 8) * $dpi / 100);",
+      "      $minimumDots = [Math]::Ceiling($dpi * 0.25 / 25.4);",
+      "      if ($modules * $minimumDots -gt $availableDots) { $image.Dispose(); $stream.Dispose(); throw 'Payment QR is too detailed for this paper width.' }",
+      "      $moduleDots = [Math]::Min([Math]::Floor($availableDots / $modules), [Math]::Max($minimumDots, [Math]::Floor($parsed.QrSizeMm * $dpi / 25.4 / $modules)));",
+      "      $side = $modules * $moduleDots * 100 / $dpi;",
+      "      if (($y + $side) -ge $eventArgs.MarginBounds.Bottom -and $y -gt 0) { $image.Dispose(); $stream.Dispose(); break }",
+      "      $eventArgs.Graphics.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::NearestNeighbor;",
+      "      $eventArgs.Graphics.DrawImage($image, [single](($contentWidth - $side) / 2), [single]$y, [single]$side, [single]$side);",
+      "      $image.Dispose(); $stream.Dispose(); $y += $side; $script:index += 1; continue;",
+      "    }",
       "    $fontSize = if ($parsed.Size -eq 'large') { 14 } elseif ($parsed.Size -eq 'small') { 9 } else { 11 };",
+      "    if ($null -ne $parsed.Level -and $parsed.Level -match '^([0-9]|10)$') { $level = [int]$parsed.Level; $fontSize = if ($level -le 2) { 9 + $level } else { 11 + ($level - 2) * 0.375 } }",
       "    $fontStyle = if ($parsed.Bold) { [System.Drawing.FontStyle]::Bold } else { [System.Drawing.FontStyle]::Regular };",
       "    $font = [System.Drawing.Font]::new('Consolas', $fontSize, $fontStyle);",
       "    $lineHeight = [Math]::Ceiling($font.GetHeight($eventArgs.Graphics)) + 1;",
@@ -96,8 +122,13 @@ export function buildWindowsSystemPrintCommand(file: string, printerName: string
       "    if ($parsed.IsLine) { $eventArgs.Graphics.DrawLine([System.Drawing.Pens]::Black, 0, $y + [Math]::Floor($lineHeight / 2), $eventArgs.MarginBounds.Width, $y + [Math]::Floor($lineHeight / 2)); $y += $lineHeight; $script:index += 1; continue }",
       "    $measure = $eventArgs.Graphics.MeasureString($parsed.Text, $font);",
       "    $x = if ($parsed.Align -eq 'center') { [Math]::Max(0, ($eventArgs.MarginBounds.Width - $measure.Width) / 2) } elseif ($parsed.Align -eq 'right') { [Math]::Max(0, $eventArgs.MarginBounds.Width - $measure.Width) } else { 0 };",
-      "    $eventArgs.Graphics.DrawString($parsed.Text, $font, $brush, $x, $y);",
-      "    $y += $lineHeight;",
+      "    if ($null -eq $parsed.Level) { $eventArgs.Graphics.DrawString($parsed.Text, $font, $brush, $x, $y); $font.Dispose(); $y += $lineHeight; $script:index += 1; continue }",
+      "    $wrappedHeight = [Math]::Max($lineHeight, $eventArgs.Graphics.MeasureString($parsed.Text, $font, [int]$contentWidth).Height);",
+      "    if (($y + $wrappedHeight) -ge $eventArgs.MarginBounds.Bottom -and $y -gt 0) { $font.Dispose(); break }",
+      "    $x = if ($parsed.Align -eq 'center') { [Math]::Max(0, ($contentWidth - $measure.Width) / 2) } elseif ($parsed.Align -eq 'right') { [Math]::Max(0, $contentWidth - $measure.Width) } else { 0 };",
+      "    $rect = [System.Drawing.RectangleF]::new([single]$x, [single]$y, [single]([Math]::Max(1, $contentWidth - $x)), [single]($wrappedHeight + $lineHeight));",
+      "    $eventArgs.Graphics.DrawString($parsed.Text, $font, $brush, $rect);",
+      "    $font.Dispose(); $y += [Math]::Ceiling($wrappedHeight);",
       "    $script:index += 1;",
       "  }",
       "  $eventArgs.HasMorePages = $script:index -lt $lines.Length;",
@@ -149,7 +180,14 @@ export class SystemPrinterAdapter implements PrinterAdapter {
       if (process.platform === "win32") {
         await this.execFileAsync("powershell.exe", buildWindowsSystemPrintCommand(file, target.printerName));
       } else {
-        await this.execFileAsync("lp", ["-d", target.printerName, file]);
+        if (target.payload.includes(PRINT_PAPER_MARKER)) {
+          const pdf = renderTicketPdf(target.payload);
+          const pdfFile = join(dir, "ticket.pdf");
+          await writeFile(pdfFile, pdf.data);
+          await this.execFileAsync("lp", ["-d", target.printerName, "-o", `media=Custom.${pdf.widthMm.toFixed(2)}x${pdf.heightMm.toFixed(2)}mm`, "-o", "fit-to-page", pdfFile]);
+        } else {
+          await this.execFileAsync("lp", ["-d", target.printerName, file]);
+        }
       }
     } finally {
       await rm(dir, { recursive: true, force: true });

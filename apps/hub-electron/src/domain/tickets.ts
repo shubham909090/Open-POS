@@ -1,4 +1,4 @@
-import { formatPosDateTime } from "@gaurav-pos/shared";
+import { formatPosDateTime, printSizeScale } from "@gaurav-pos/shared";
 
 export interface KotTicketItem {
   name: string;
@@ -31,6 +31,7 @@ export interface KotTicket {
 }
 
 export interface BillTicket {
+  paymentQr?: { imageDataUrl: string; upiUri: string; sizeMm?: number } | null;
   tableName: string;
   billId: string;
   customerName?: string | null;
@@ -79,6 +80,7 @@ type TicketAlign = "left" | "center" | "right";
 type TicketTextSize = "small" | "normal" | "large";
 interface TicketSectionStyle {
   size: TicketTextSize;
+  sizeLevel?: number;
   bold: boolean;
   align: TicketAlign;
 }
@@ -86,20 +88,28 @@ type TicketSection = "restaurantName" | "address" | "header" | "title" | "metada
 export type TicketSectionStyles = Partial<Record<TicketSection, TicketSectionStyle>>;
 export const PRINT_STYLE_MARKER = "\u001e";
 export const PRINT_LINE_MARKER = "\u001dline:";
+export const PRINT_QR_MARKER = "\u001dqr:";
+export const PRINT_PAPER_MARKER = "\u001dpaper:";
 const PRINT_STYLE_PLAIN_TEXT_SEPARATOR = "\u001f";
 
 export interface ParsedPrintStyleLine {
   text: string;
   plainText: string;
   size: TicketTextSize;
+  sizeLevel?: number;
   bold: boolean;
   align: TicketAlign;
   graphicLine?: boolean;
+  qrImageDataUrl?: string;
+  qrSizeMm?: number;
+  paperWidthChars?: number;
 }
 
 interface TicketLine {
   text: string;
   section: TicketSection;
+  qrImageDataUrl?: string;
+  qrSizeMm?: number;
 }
 
 function defaultSectionStyle(section: TicketSection, align: TicketAlign): TicketSectionStyle {
@@ -115,12 +125,13 @@ function resolvedSectionStyle(styles: TicketSectionStyles | undefined, section: 
 }
 
 function encodePrintStyleLine(line: TicketLine, styles: TicketSectionStyles | undefined, fallbackAlign: TicketAlign): string {
+  if (line.qrImageDataUrl) return `${PRINT_QR_MARKER}${line.qrSizeMm ?? 32}:${line.qrImageDataUrl}`;
   if (isSeparatorText(line.text)) {
     return `${PRINT_LINE_MARKER}${line.text.length}${PRINT_STYLE_PLAIN_TEXT_SEPARATOR}${line.text}`;
   }
   const style = resolvedSectionStyle(styles, line.section, fallbackAlign);
   const text = style.align === "left" ? line.text : line.text.trim();
-  return `${PRINT_STYLE_MARKER}${style.size}:${style.bold ? "1" : "0"}:${style.align}|${text}${PRINT_STYLE_PLAIN_TEXT_SEPARATOR}${line.text}`;
+  return `${PRINT_STYLE_MARKER}${style.size}:${style.bold ? "1" : "0"}:${style.align}${style.sizeLevel === undefined ? "" : `:${style.sizeLevel}`}|${text}${PRINT_STYLE_PLAIN_TEXT_SEPARATOR}${line.text}`;
 }
 
 function defaultPrintAlign(section: TicketSection): TicketAlign {
@@ -128,6 +139,15 @@ function defaultPrintAlign(section: TicketSection): TicketAlign {
 }
 
 export function parsePrintStyleLine(line: string): ParsedPrintStyleLine | null {
+  if (line.startsWith(PRINT_QR_MARKER)) {
+    const qrPayload = line.slice(PRINT_QR_MARKER.length);
+    const delimiter = qrPayload.indexOf(":data:");
+    const qrSizeMm = Math.max(20, Math.min(45, Number(qrPayload.slice(0, delimiter)) || 32));
+    const imageDataUrl = delimiter >= 0 ? qrPayload.slice(delimiter + 1) : qrPayload;
+    if (!/^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(imageDataUrl) || imageDataUrl.length > 1_500_000) return null;
+    return { text: "Scan to pay", plainText: "", size: "normal", bold: false, align: "center", qrImageDataUrl: imageDataUrl, qrSizeMm };
+  }
+  if (line.startsWith(PRINT_PAPER_MARKER)) return { text: "", plainText: "", size: "normal", bold: false, align: "left", paperWidthChars: ticketWidth(Number(line.slice(PRINT_PAPER_MARKER.length))) };
   if (line.startsWith(PRINT_LINE_MARKER)) {
     const payload = line.slice(PRINT_LINE_MARKER.length);
     const plainTextIndex = payload.indexOf(PRINT_STYLE_PLAIN_TEXT_SEPARATOR);
@@ -139,19 +159,21 @@ export function parsePrintStyleLine(line: string): ParsedPrintStyleLine | null {
   if (!line.startsWith(PRINT_STYLE_MARKER)) return null;
   const separatorIndex = line.indexOf("|");
   if (separatorIndex < 0) return null;
-  const [sizeRaw, boldRaw, alignRaw] = line.slice(PRINT_STYLE_MARKER.length, separatorIndex).split(":");
+  const [sizeRaw, boldRaw, alignRaw, levelRaw] = line.slice(PRINT_STYLE_MARKER.length, separatorIndex).split(":");
   const size = sizeRaw === "small" || sizeRaw === "large" ? sizeRaw : "normal";
   const align = alignRaw === "center" || alignRaw === "right" ? alignRaw : "left";
   const payload = line.slice(separatorIndex + 1);
   const plainTextIndex = payload.indexOf(PRINT_STYLE_PLAIN_TEXT_SEPARATOR);
   const text = plainTextIndex >= 0 ? payload.slice(0, plainTextIndex) : payload;
   const plainText = plainTextIndex >= 0 ? payload.slice(plainTextIndex + PRINT_STYLE_PLAIN_TEXT_SEPARATOR.length) : text;
-  return { text, plainText, size, bold: boldRaw === "1", align };
+  const sizeLevel = levelRaw !== undefined && /^\d+$/.test(levelRaw) && Number(levelRaw) <= 10 ? Number(levelRaw) : undefined;
+  return { text, plainText, size, ...(sizeLevel === undefined ? {} : { sizeLevel }), bold: boldRaw === "1", align };
 }
 
 export function stripPrintStyleMarkers(payload: string): string {
   return payload
     .split(/\r?\n/)
+    .filter((line) => !line.startsWith(PRINT_PAPER_MARKER))
     .map((line) => parsePrintStyleLine(line)?.plainText ?? line)
     .join("\n");
 }
@@ -254,7 +276,7 @@ function renderBillItemLines(item: BillTicketItem, width: number): string[] {
   if (width < 32) {
     const amount = money(item.lineTotalPaise);
     const itemText = `${item.quantity} x ${name}`;
-    const itemWidth = Math.max(8, width - amount.length - 1);
+    const itemWidth = Math.max(3, width - amount.length - 1);
     const nameLines = wrapTicketText(itemText, itemWidth);
     return [
       `${(nameLines[0] ?? "").padEnd(itemWidth)} ${amount}`,
@@ -273,7 +295,7 @@ function renderBillItemLines(item: BillTicketItem, width: number): string[] {
 
 function renderMoneyLine(label: string, valuePaise: number, width: number): string {
   const amount = money(valuePaise);
-  return `${truncateTicketText(label, Math.max(8, width - amount.length - 1)).padEnd(Math.max(0, width - amount.length))}${amount}`;
+  return `${truncateTicketText(label, Math.max(1, width - amount.length - 1)).padEnd(Math.max(0, width - amount.length))}${amount}`;
 }
 
 function formatRateBps(rateBps?: number): string | null {
@@ -324,11 +346,12 @@ function sectionLines(text: string | string[], section: TicketSection): TicketLi
   return lines.map((line) => ({ text: line, section }));
 }
 
-function finishTicketLines(lines: TicketLine[], styles: TicketSectionStyles | undefined, topPaddingLines: number | undefined, feedLines: number | undefined, styled: boolean): string {
+function finishTicketLines(lines: TicketLine[], styles: TicketSectionStyles | undefined, topPaddingLines: number | undefined, feedLines: number | undefined, styled: boolean, lineWidthChars?: number): string {
   const visibleLines = styled
     ? lines.map((line) => encodePrintStyleLine(line, styles, defaultPrintAlign(line.section)))
     : lines.map((line) => line.text);
-  return `${ticketTopPadding(topPaddingLines)}${visibleLines.join("\n")}${ticketFeed(feedLines)}`;
+  const paper = styled && (lines.some((line) => line.qrImageDataUrl) || Object.values(styles ?? {}).some((style) => style?.sizeLevel !== undefined)) ? `${PRINT_PAPER_MARKER}${ticketWidth(lineWidthChars)}\n` : "";
+  return `${paper}${ticketTopPadding(topPaddingLines)}${visibleLines.join("\n")}${ticketFeed(feedLines)}`;
 }
 
 function buildKotTicketLines(ticket: KotTicket): TicketLine[] {
@@ -366,15 +389,21 @@ function buildKotTicketLines(ticket: KotTicket): TicketLine[] {
 }
 
 export function renderKotTicket(ticket: KotTicket): string {
-  return finishTicketLines(buildKotTicketLines(ticket), ticket.sectionStyles, ticket.topPaddingLines, ticket.feedLines, false);
+  return finishTicketLines(buildKotTicketLines(ticket), ticket.sectionStyles, ticket.topPaddingLines, ticket.feedLines, false, ticket.lineWidthChars);
 }
 
 export function renderKotTicketForPrint(ticket: KotTicket): string {
-  return finishTicketLines(buildKotTicketLines(ticket), ticket.sectionStyles, ticket.topPaddingLines, ticket.feedLines, true);
+  return finishTicketLines(buildKotTicketLines(ticket), ticket.sectionStyles, ticket.topPaddingLines, ticket.feedLines, true, ticket.lineWidthChars);
 }
 
 function buildBillTicketLines(ticket: BillTicket): TicketLine[] {
   const width = ticketWidth(ticket.lineWidthChars);
+  const sectionWidth = (section: TicketSection) => {
+    const level = ticket.sectionStyles?.[section]?.sizeLevel;
+    return level === undefined ? width : Math.max(12, Math.floor(width / printSizeScale(level)));
+  };
+  const itemsWidth = sectionWidth("items");
+  const totalsWidth = sectionWidth("totals");
   const customerName = ticket.customerName?.trim();
   const restaurantAlign = sectionAlign(ticket.sectionStyles, "restaurantName", ticket.headerAlign ?? "center");
   const addressAlign = sectionAlign(ticket.sectionStyles, "address", ticket.headerAlign ?? "center");
@@ -399,45 +428,50 @@ function buildBillTicketLines(ticket: BillTicket): TicketLine[] {
     ...sectionLines(separator(width), "metadata"),
     ...(ticket.items?.length
 	      ? [
-	          ...sectionLines(width < 32 ? `${"Item".padEnd(Math.max(8, width - 7))} ${right("Amt", 6)}` : `${"Item".padEnd(Math.max(8, width - 25))} ${right("Qty", 4)} ${right("Rate", 8)} ${right("Amt", 9)}`, "items"),
+	          ...sectionLines(itemsWidth < 32 ? `${"Item".padEnd(Math.max(4, itemsWidth - 7))} ${right("Amt", 6)}` : `${"Item".padEnd(Math.max(8, itemsWidth - 25))} ${right("Qty", 4)} ${right("Rate", 8)} ${right("Amt", 9)}`, "items"),
           ...sectionLines(separator(width), "metadata"),
-          ...sectionLines(ticket.items.flatMap((item) => renderBillItemLines(item, width)), "items"),
+          ...sectionLines(ticket.items.flatMap((item) => renderBillItemLines(item, itemsWidth)), "items"),
           ...sectionLines(separator(width), "metadata")
         ]
       : []),
-    ...sectionLines(renderMoneyLine("Subtotal", ticket.subtotalPaise, width), "totals"),
+    ...sectionLines(renderMoneyLine("Subtotal", ticket.subtotalPaise, totalsWidth), "totals"),
     ...(ticket.taxBreakdown?.length
       ? ticket.showTaxBreakup === false
-        ? sectionLines(renderTaxLine("Tax", ticket.taxPaise, width), "totals")
-        : sectionLines(ticket.taxBreakdown.map((line) => renderTaxLine(line.name, line.amountPaise, width, line.rateBps)), "totals")
+        ? sectionLines(renderTaxLine("Tax", ticket.taxPaise, totalsWidth), "totals")
+        : sectionLines(ticket.taxBreakdown.map((line) => renderTaxLine(line.name, line.amountPaise, totalsWidth, line.rateBps)), "totals")
       : ticket.taxPaise > 0
-        ? sectionLines(renderTaxLine("Tax", ticket.taxPaise, width), "totals")
+        ? sectionLines(renderTaxLine("Tax", ticket.taxPaise, totalsWidth), "totals")
         : []),
-    ...sectionLines(renderMoneyLine("Total", ticket.totalPaise, width), "totals")
+    ...sectionLines(renderMoneyLine("Total", ticket.totalPaise, totalsWidth), "totals")
   ];
 
-  if (ticket.showDiscountTip !== false && ticket.discountPaise) lines.push(...sectionLines(renderMoneyLine("Discount", -ticket.discountPaise, width), "totals"));
-  if (ticket.showDiscountTip !== false && ticket.tipPaise) lines.push(...sectionLines(renderMoneyLine("Tip", ticket.tipPaise, width), "totals"));
+  if (ticket.showDiscountTip !== false && ticket.discountPaise) lines.push(...sectionLines(renderMoneyLine("Discount", -ticket.discountPaise, totalsWidth), "totals"));
+  if (ticket.showDiscountTip !== false && ticket.tipPaise) lines.push(...sectionLines(renderMoneyLine("Tip", ticket.tipPaise, totalsWidth), "totals"));
   if (ticket.finalTotalPaise && ticket.finalTotalPaise !== ticket.totalPaise) {
-    lines.push(...sectionLines(renderMoneyLine("Final", ticket.finalTotalPaise, width), "totals"));
+    lines.push(...sectionLines(renderMoneyLine("Final", ticket.finalTotalPaise, totalsWidth), "totals"));
   }
   if (ticket.showPaymentSplit !== false && ticket.payments?.length) {
     lines.push(
       ...sectionLines(separator(width), "metadata"),
       ...sectionLines("Payments", "metadata"),
-      ...sectionLines(ticket.payments.map((payment) => renderMoneyLine(payment.method.toUpperCase(), payment.amountPaise, width)), "totals")
+      ...sectionLines(ticket.payments.map((payment) => renderMoneyLine(payment.method.toUpperCase(), payment.amountPaise, totalsWidth)), "totals")
     );
   }
   if (ticket.showNcReprintRevision !== false && ticket.ncReason) lines.push(...sectionLines(`NC Reason: ${ticket.ncReason}`, "metadata"));
+
+  if (ticket.paymentQr) {
+    lines.push(...sectionLines(separator(width), "metadata"), ...sectionLines(alignTicketText("Scan to pay", width, "center"), "footer"), { text: "", section: "footer", qrImageDataUrl: ticket.paymentQr.imageDataUrl, qrSizeMm: ticket.paymentQr.sizeMm });
+  }
+
   if (ticket.footer) lines.push(...sectionLines(separator(width), "metadata"), ...sectionLines(alignTicketText(ticket.footer, width, footerAlign), "footer"));
 
   return lines;
 }
 
 export function renderBillTicket(ticket: BillTicket): string {
-  return finishTicketLines(buildBillTicketLines(ticket), ticket.sectionStyles, ticket.topPaddingLines, ticket.feedLines, false);
+  return finishTicketLines(buildBillTicketLines(ticket), ticket.sectionStyles, ticket.topPaddingLines, ticket.feedLines, false, ticket.lineWidthChars);
 }
 
 export function renderBillTicketForPrint(ticket: BillTicket): string {
-  return finishTicketLines(buildBillTicketLines(ticket), ticket.sectionStyles, ticket.topPaddingLines, ticket.feedLines, true);
+  return finishTicketLines(buildBillTicketLines(ticket), ticket.sectionStyles, ticket.topPaddingLines, ticket.feedLines, true, ticket.lineWidthChars);
 }

@@ -11,6 +11,9 @@ build/
 apps/hub-electron/release/
 apps/mobile/release-local/
 apps/mobile/dist-web-check/
+apps/mobile/android/
+.playwright-cli/
+output/playwright/
 .turbo/
 .next/
 **/.expo/

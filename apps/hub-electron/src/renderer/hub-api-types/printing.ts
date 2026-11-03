@@ -66,7 +66,7 @@ export interface PrintLayoutSettings {
   lineWidthChars: number;
   headerAlign: "left" | "center";
   footerAlign: "left" | "center";
-  sectionStyles: Record<string, { size: "small" | "normal" | "large"; bold: boolean; align: "left" | "center" | "right" }>;
+  sectionStyles: Record<string, { size: "small" | "normal" | "large"; sizeLevel?: number; bold: boolean; align: "left" | "center" | "right" }>;
   topPaddingLines: number;
   feedLines: number;
   showTable: boolean;

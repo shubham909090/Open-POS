@@ -109,6 +109,11 @@ function fileNameFromContentDisposition(value: string | null) {
 }
 
 export const hubApi = {
+  paymentQr: () => apiFetch<{ qr: import("@gaurav-pos/shared").PaymentQr | null }>("/settings/payment-qr"),
+  updatePaymentQr: (imageDataUrl: string, sizeMm: number, masterApproval: MasterApprovalPayload["masterApproval"], expectedUpdatedAt: string | null) =>
+    apiFetch<{ qr: import("@gaurav-pos/shared").PaymentQr }>("/settings/payment-qr", { method: "PUT", body: JSON.stringify({ imageDataUrl, sizeMm, masterApproval, expectedUpdatedAt }) }),
+  removePaymentQr: (masterApproval: MasterApprovalPayload["masterApproval"], expectedUpdatedAt: string | null) =>
+    apiFetch<{ qr: null }>("/settings/payment-qr", { method: "DELETE", body: JSON.stringify({ masterApproval, expectedUpdatedAt }) }),
   adminSessionStatus: () => apiFetch<{ managerPinConfigured: boolean }>("/admin/session/status"),
   unlockAdminSession: (pin: string) => apiFetch<{ token: string; role: "admin" }>("/admin/session/unlock", { method: "POST", body: JSON.stringify({ pin }) }),
   lockAdminSession: () => apiFetch<{ locked: boolean }>("/admin/session/lock", { method: "POST", body: JSON.stringify({}) }),
