@@ -117,6 +117,18 @@
       "**/7zip-bin/**"
     ],
     "win": {
+      "files": [
+        {
+          "from": "node_modules/@img/sharp-win32-x64",
+          "to": "node_modules/@img/sharp-win32-x64",
+          "filter": ["**/*"]
+        },
+        {
+          "from": "node_modules/@napi-rs/canvas-win32-x64-msvc",
+          "to": "node_modules/@napi-rs/canvas-win32-x64-msvc",
+          "filter": ["**/*"]
+        }
+      ],
       "target": [
         "nsis"
       ],
