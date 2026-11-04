@@ -309,7 +309,7 @@ describe("AppUpdateService", () => {
   it("schedules rollback restore and launches cached previous installer", async () => {
     const fixture = createFixture();
     const launchInstaller = vi.fn();
-    const service = createService(fixture, { launchInstaller });
+    const service = createService(fixture, { launchInstaller, platform: "win32" });
     service.registerBaseline(writePackage(fixture.root, "0.1.0"));
     await service.installUpdate(writePackage(fixture.root, "0.2.0"));
     const recoveryScriptPath = join(fixture.root, "updates", "Rollback Gaurav POS Update.cmd");
@@ -319,10 +319,12 @@ describe("AppUpdateService", () => {
 
     expect(result.rollingBack).toBe(true);
     expect(existsSync(join(fixture.backupDir, "restore-pending.json"))).toBe(false);
-    expect(launchInstaller).toHaveBeenLastCalledWith({
-      filePath: expect.stringContaining("Rollback Gaurav POS Update.cmd"),
-      args: []
-    });
+    expect(launchInstaller).toHaveBeenLastCalledWith(expect.objectContaining({
+      filePath: "powershell.exe",
+      args: expect.arrayContaining(["-File", expect.stringContaining("Install Gaurav POS Update.ps1")])
+    }));
+    const rollbackPlan = launchInstaller.mock.lastCall?.[0];
+    expect(readFileSync(rollbackPlan.args.at(-1), "utf8")).toContain("Rollback Gaurav POS Update.cmd");
     const rollbackScript = readFileSync(recoveryScriptPath, "utf8");
     expect(rollbackScript).not.toContain("stale-pid-marker");
     expect(decodePowerShellCommands(rollbackScript).some((command) => command.includes("Wait-Process -Id $env:GPOS_PARENT_PID"))).toBe(true);
