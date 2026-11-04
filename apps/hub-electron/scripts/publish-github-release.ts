@@ -18,6 +18,7 @@ const tag = `hub-v${version}`;
 const installerName = `${metadata.productName} Setup ${version}.exe`;
 const installerBlockmapName = `${installerName}.blockmap`;
 const packageName = `${metadata.productName}-${version}.gpos-update.zip`;
+const publicPackageName = packageName.replace(/\s+/g, "-");
 const installerPath = join(releaseDir, installerName);
 const installerBlockmapPath = join(releaseDir, installerBlockmapName);
 const packagePath = join(releaseDir, packageName);
@@ -29,6 +30,7 @@ const updaterInstallerBlockmapName = `${updaterInstallerName}.blockmap`;
 const uploadAliasDir = mkdtempSync(join(tmpdir(), "gpos-release-assets-"));
 const updaterInstallerPath = join(uploadAliasDir, updaterInstallerName);
 const updaterInstallerBlockmapPath = join(uploadAliasDir, updaterInstallerBlockmapName);
+const publicPackagePath = join(uploadAliasDir, publicPackageName);
 const mobilePackagePath = join(root, "..", "mobile", "package.json");
 const mobileVersion = existsSync(mobilePackagePath)
   ? (JSON.parse(readFileSync(mobilePackagePath, "utf8")).version as string)
@@ -40,7 +42,8 @@ const mobileMetadataPath = join(mobileReleaseDir, MOBILE_UPDATE_METADATA_FILE);
 const includeMobile = Boolean(mobileApkPath && existsSync(mobileApkPath));
 copyFileSync(installerPath, updaterInstallerPath);
 copyFileSync(installerBlockmapPath, updaterInstallerBlockmapPath);
-const releaseAssets = [updaterInstallerPath, updaterInstallerBlockmapPath, latestYmlPath, onlineMetadataPath, packagePath];
+copyFileSync(packagePath, publicPackagePath);
+const releaseAssets = [updaterInstallerPath, updaterInstallerBlockmapPath, latestYmlPath, onlineMetadataPath, publicPackagePath];
 if (includeMobile && mobileApkPath && mobileApkName && mobileVersion) {
   if (!existsSync(mobileMetadataPath)) throw new Error(`Missing ${MOBILE_UPDATE_METADATA_FILE}; create a validated mobile build first`);
   const appConfig = JSON.parse(readFileSync(join(root, "..", "mobile", "app.json"), "utf8"));
@@ -87,7 +90,7 @@ const notes = [
   `- ${updaterInstallerBlockmapName} (Electron updater differential metadata)`,
   "- latest.yml (Electron updater channel metadata)",
   `- ${ONLINE_UPDATE_METADATA} (Hub DB compatibility metadata)`,
-  `- ${packageName} (fallback DB-safe update package)`,
+  `- ${publicPackageName} (fallback DB-safe update package)`,
   ...(includeMobile ? [`- ${mobileApkName} (Android APK)`, `- ${MOBILE_UPDATE_METADATA_FILE} (mobile version, install size and SHA256)`] : []),
   "- SHA256SUMS (checksums for every release artifact)",
   "",
