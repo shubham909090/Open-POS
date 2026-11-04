@@ -157,6 +157,7 @@ export function SentOrderPanel({
             amount: item.pricePaise * item.quantity,
             onMinus: () => changeStateQty(item.key, -1),
             onPlus: () => changeStateQty(item.key, 1),
+            onRemove: () => changeStateQty(item.key, -item.quantity),
             note: item.note ?? "",
             onNoteChange: (note) => changeStateNote(item.key, note),
             changed: isChangedLine(item, sentById.get(item.orderItemId ?? "")),

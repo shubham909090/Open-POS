@@ -1,5 +1,6 @@
 import { formatInr } from "@gaurav-pos/shared";
 import type { ReactNode } from "react";
+import { Trash2 } from "lucide-react";
 import { EmptyState } from "../ui/empty-state.js";
 import { CategoryBadge } from "./menu-card.js";
 
@@ -19,6 +20,7 @@ export function LineItems({
     amount: number;
     onMinus?: () => void;
     onPlus?: () => void;
+    onRemove?: () => void;
     note?: string;
     onNoteChange?: (note: string) => void;
     /** Unsaved edit against what the kitchen already has. */
@@ -45,7 +47,7 @@ export function LineItems({
                 {row.punch ? <small className="line-punch">{row.punch}</small> : null}
               </div>
             </div>
-            <div className={editable ? "qty-cluster" : "qty-cluster qty-readonly"}>
+            <div className={`${editable ? "qty-cluster" : "qty-cluster qty-readonly"}${row.onRemove ? " has-remove" : ""}`}>
               {row.onMinus ? (
                 <button type="button" onClick={row.onMinus} aria-label={`Decrease ${row.title}`}>
                   −
@@ -55,6 +57,11 @@ export function LineItems({
               {row.onPlus ? (
                 <button type="button" onClick={row.onPlus} aria-label={`Increase ${row.title}`}>
                   +
+                </button>
+              ) : null}
+              {row.onRemove ? (
+                <button type="button" className="remove-line-button" onClick={row.onRemove} disabled={row.quantity === 0} aria-label={`Remove ${row.title}`} title="Remove item">
+                  <Trash2 size={13} aria-hidden="true" />
                 </button>
               ) : null}
             </div>

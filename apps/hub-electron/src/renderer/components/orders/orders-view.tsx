@@ -1,5 +1,5 @@
 import { formatInr, getTableDisplayState, searchMenuItems, tableDisplayClass, tableDisplayLabel, type SaleGroupKind, type TableDisplayState } from "@gaurav-pos/shared";
-import { Clock3, PanelLeftClose, PanelLeftOpen, Search, X } from "lucide-react";
+import { Clock3, PanelLeftClose, Search, X } from "lucide-react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { NoticeSetter } from "../../lib/format.js";
@@ -43,7 +43,6 @@ export function OrdersView({ bootstrap, setNotice, requestManagerApproval, opera
   const tableOrderMode = useHubStore((state) => state.tableOrderMode);
   const [saleGroupFilter, setSaleGroupFilter] = useState<SaleGroupKind | null>(null);
   const [floorFilter, setFloorFilter] = useState<FloorFilter>("all");
-  const [menuOpen, setMenuOpen] = useState(true);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const tableTriggerRef = useRef<HTMLElement | null>(null);
   const activeTables = bootstrap.tables.filter((table) => table.active);
@@ -62,14 +61,11 @@ export function OrdersView({ bootstrap, setNotice, requestManagerApproval, opera
     .reduce((total, table) => total + table.current_order_total_paise, 0);
 
   const saleGroupKinds = Array.from(new Map(bootstrap.saleGroups.filter((group) => group.active).map((group) => [group.kind, group.name])).entries());
-  const preferredSaleGroup = (["food", "beverage", "alcohol", "other"] as SaleGroupKind[]).find((kind) =>
-    saleGroupKinds.some(([saleGroupKind]) => saleGroupKind === kind) &&
-    bootstrap.menuItems.some((item) => item.active && item.sale_group_kind === kind)
-  );
-  const activeSaleGroup = saleGroupFilter ?? preferredSaleGroup ?? (saleGroupKinds[0]?.[0] as SaleGroupKind | undefined);
+  const activeSaleGroup = saleGroupFilter;
   const hasSearch = search.trim().length > 0;
+  const menuOpen = orderPanel === "new" && (hasSearch || activeSaleGroup !== null);
   // A search looks across every group; tabs only narrow an empty search.
-  const activeItems = searchMenuItems(bootstrap.menuItems, search, hasSearch ? {} : { saleGroupKind: activeSaleGroup }).slice(0, 80);
+  const activeItems = menuOpen ? searchMenuItems(bootstrap.menuItems, search, hasSearch ? {} : { saleGroupKind: activeSaleGroup ?? undefined }).slice(0, 80) : [];
   const activeItemIds = activeItems.map((item) => item.id).join("|");
   const addKeyboardMenuItem = useCallback(
     (item: Bootstrap["menuItems"][number]) => {
@@ -98,8 +94,9 @@ export function OrdersView({ bootstrap, setNotice, requestManagerApproval, opera
   };
 
   useEffect(() => {
-    if (selectedTable) setMenuOpen(orderPanel === "new");
-  }, [selectedTable?.id, orderPanel]);
+    setSearch("");
+    setSaleGroupFilter(null);
+  }, [selectedTable?.id, setSearch]);
 
   useEffect(() => {
     const interval = window.setInterval(() => setNowMs(Date.now()), 60_000);
@@ -224,7 +221,7 @@ export function OrdersView({ bootstrap, setNotice, requestManagerApproval, opera
         <DialogPrimitive.Root open onOpenChange={(open) => { if (!open) clearSelectedTable(); }}>
           <DialogPrimitive.Portal>
           <DialogPrimitive.Overlay className="modal-backdrop order-modal-backdrop" />
-          <DialogPrimitive.Content className="order-modal-card" aria-label={`${selectedTable.name} order workspace`} onPointerDownOutside={(event) => event.preventDefault()} onOpenAutoFocus={(event) => {
+          <DialogPrimitive.Content className={`order-modal-card workspace-${orderPanel}${menuOpen ? " catalog-open" : ""}`} aria-label={`${selectedTable.name} order workspace`} onPointerDownOutside={(event) => event.preventDefault()} onOpenAutoFocus={(event) => {
             // Panels that autofocus their own field (menu search) keep it; others start on the
             // workspace itself instead of ringing the first header tab.
             event.preventDefault();
@@ -266,23 +263,22 @@ export function OrdersView({ bootstrap, setNotice, requestManagerApproval, opera
                 ))}
               </div>
               <div className="order-modal-actions">
-                {orderPanel === "new" ? <button
+                {menuOpen ? <button
                   type="button"
                   className="order-header-icon"
-                  aria-label={menuOpen ? "Hide menu" : "Open menu"}
-                  title={menuOpen ? "Hide menu" : "Open menu"}
-                  aria-pressed={menuOpen}
-                  onClick={() => setMenuOpen((open) => !open)}
+                  aria-label="Hide menu"
+                  title="Hide menu"
+                  onClick={() => { setSearch(""); setSaleGroupFilter(null); }}
                 >
-                  {menuOpen ? <PanelLeftClose size={17} /> : <PanelLeftOpen size={17} />}
+                  <PanelLeftClose size={17} />
                 </button> : null}
                 <button type="button" className="order-header-icon" onClick={clearSelectedTable} aria-label="Close selected table" title="Close (Esc)">
                   <X size={18} />
                 </button>
               </div>
             </header>
-            <div className={menuOpen ? "order-modal-layout menu-open" : "order-modal-layout menu-closed"}>
-              {menuOpen ? (
+            <div className={`order-modal-layout ${menuOpen ? "menu-open" : "menu-closed"}${orderPanel === "new" ? " has-menu-controls" : ""}`}>
+              {orderPanel === "new" ? (
                 <section className="menu-browser order-menu-panel" aria-label="Menu">
                   <div className="menu-browser-head">
                     <label className="menu-search">
@@ -308,14 +304,14 @@ export function OrdersView({ bootstrap, setNotice, requestManagerApproval, opera
                           type="button"
                           aria-pressed={!hasSearch && activeSaleGroup === kind}
                           className={`menu-filter-chip category-${kind}${!hasSearch && activeSaleGroup === kind ? " active" : ""}`}
-                          onClick={() => { setSaleGroupFilter(kind as SaleGroupKind); if (hasSearch) setSearch(""); }}
+                          onClick={() => { setSaleGroupFilter(!hasSearch && activeSaleGroup === kind ? null : kind as SaleGroupKind); setSearch(""); }}
                         >
                           {label}
                         </button>
                       ))}
                     </div>
                   </div>
-                  <MenuResultSection
+                  {menuOpen ? <MenuResultSection
                     title={hasSearch ? `${activeItems.length} ${activeItems.length === 1 ? "match" : "matches"}` : (saleGroupKinds.find(([kind]) => kind === activeSaleGroup)?.[1] ?? "Menu")}
                     items={activeItems}
                     mixed={hasSearch}
@@ -326,7 +322,7 @@ export function OrdersView({ bootstrap, setNotice, requestManagerApproval, opera
                     onItemPointerMove={menuKeyboard.onPointerMove}
                     setItemElement={menuKeyboard.setItemElement}
                     emptyText={hasSearch ? "No dishes found. Check spelling or clear filters." : "No dishes found. Add active dishes in setup."}
-                  />
+                  /> : null}
                 </section>
               ) : null}
               <TableWorkspace
@@ -336,7 +332,7 @@ export function OrdersView({ bootstrap, setNotice, requestManagerApproval, opera
                 setNotice={setNotice}
                 requestManagerApproval={requestManagerApproval}
                 operationNotice={operationNotice}
-                menuVisible={menuOpen}
+                menuVisible={orderPanel === "new"}
               />
             </div>
           </DialogPrimitive.Content>

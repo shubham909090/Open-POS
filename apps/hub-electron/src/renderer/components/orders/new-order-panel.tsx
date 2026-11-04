@@ -185,8 +185,8 @@ export function NewOrderPanel({
       </header>
       <div className="ticket-lines">
         <LineItems
-          emptyTitle="Tap dishes to start"
-          emptyText={showSearch ? "Search above, or open the menu." : "Items appear here before they go to the kitchen."}
+          emptyTitle="Add items to this order"
+          emptyText=""
           rows={draft.map((item) => ({
             id: item.lineKey,
             title: item.variantLabel ? `${item.name} ${item.variantLabel}` : item.name,
@@ -197,6 +197,7 @@ export function NewOrderPanel({
             amount: item.pricePaise * item.quantity,
             onMinus: () => changeDraftQty(tableId, item.lineKey, -1),
             onPlus: () => changeDraftQty(tableId, item.lineKey, 1),
+            onRemove: () => changeDraftQty(tableId, item.lineKey, -item.quantity),
             note: item.note ?? "",
             onNoteChange: (note) => setDraftItemNote(tableId, item.lineKey, note)
           }))}

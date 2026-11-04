@@ -5,6 +5,10 @@
  * the new-order ticket.
  */
 .ticket-body.panel-bill { padding: 14px; overflow: auto; justify-content: safe center; }
+.order-modal-card .bill-receipt, .order-modal-card .bill-settle { border-radius: 0; background: transparent; box-shadow: none; }
+.order-modal-card .bill-receipt::after { display: none; }
+.order-modal-card .bill-settle { border-left: 1px solid var(--line); }
+.order-modal-card .bill-settle-bar, .order-modal-card .bill-action-bar { border-radius: 0; background: transparent; }
 .ticket-body.panel-bill > .bill-draft-note, .ticket-body.panel-bill > .workspace-operation-error { width: min(836px, 100%); margin: 0 auto 10px; }
 .bill-layout {
   display: grid; flex: 1; min-height: 0; justify-content: center; align-items: start; gap: 14px 16px; padding-top: 4px;
@@ -101,6 +105,7 @@
 
 @media (max-width: 860px) {
   .bill-layout { grid-template-columns: minmax(0, 1fr); grid-template-areas: "receipt" "actions" "settle"; grid-template-rows: auto; }
+  .order-modal-card .bill-settle { border-left: 0; border-top: 1px solid var(--line); }
 }
 @media (pointer: coarse) {
   .payment-method, .payment-row .fill-rest-btn { min-height: 44px !important; }

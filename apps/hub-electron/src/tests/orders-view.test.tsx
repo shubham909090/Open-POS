@@ -23,22 +23,32 @@ describe("hub orders view layout", () => {
     expect(screen.queryByPlaceholderText("Search dish")).toBeNull();
   });
 
-  it("opens the catalog for a new order and allows hiding and reopening it", async () => {
+  it("shows dishes only after searching or explicitly opening a category", async () => {
     const { OrdersView, useHubStore } = await importOrdersView();
     useHubStore.setState({ selectedTableId: "table-t1", orderPanel: "new", menuSearch: "", drafts: {} });
 
     const { baseElement } = render(<OrdersView bootstrap={bootstrap()} setNotice={vi.fn()} requestManagerApproval={vi.fn()} />);
 
-    expect(baseElement.querySelector(".order-modal-layout.menu-open")).not.toBeNull();
+    expect(baseElement.querySelector(".order-modal-layout.menu-closed")).not.toBeNull();
     expect(screen.getByPlaceholderText("Search dish")).not.toBeNull();
+    expect(screen.queryByText("Imported Whisky")).toBeNull();
+    expect(screen.getByRole("button", { name: "Alcohol" }).getAttribute("aria-pressed")).toBe("false");
+
+    fireEvent.click(screen.getByRole("button", { name: "Alcohol" }));
+    expect(baseElement.querySelector(".order-modal-layout.menu-open")).not.toBeNull();
+    expect(screen.getByText("Imported Whisky")).not.toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Alcohol" }));
+    expect(screen.queryByText("Imported Whisky")).toBeNull();
+    fireEvent.change(screen.getByPlaceholderText("Search dish"), { target: { value: "whisky" } });
     expect(screen.getByText("Imported Whisky")).not.toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "Hide menu" }));
 
     expect(baseElement.querySelector(".order-modal-layout.menu-closed")).not.toBeNull();
-    expect(screen.queryByPlaceholderText("Search dish")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Open menu" }));
     expect(screen.getByPlaceholderText("Search dish")).not.toBeNull();
+    expect(screen.queryByText("Imported Whisky")).toBeNull();
+    expect((screen.getByPlaceholderText("Search dish") as HTMLInputElement).value).toBe("");
   });
 
   it("shows a live table timer in hours and minutes", async () => {

@@ -19,6 +19,29 @@ describe("hub table workspace send actions", () => {
     billPrintersMock.mockReset();
   });
 
+  it("removes a whole unsent line without submitting the order", async () => {
+    const { TableWorkspace, useHubStore } = await importWorkspace();
+    seedDraft(useHubStore);
+    renderWorkspace(TableWorkspace);
+    fireEvent.click(await screen.findByRole("button", { name: /^Remove / }));
+    expect(Object.values(useHubStore.getState().drafts["table-t1"] ?? {})).toHaveLength(0);
+    expect(screen.queryByRole("button", { name: /^Remove / })).toBeNull();
+    expect(submitOrderMock).not.toHaveBeenCalled();
+  });
+
+  it("marks a whole sent line removed locally and keeps cancellation safeguards", async () => {
+    const { TableWorkspace, useHubStore } = await importWorkspace();
+    tableOrderMock.mockResolvedValue(tableOrder(2));
+    useHubStore.setState({ selectedTableId: "table-t1", orderPanel: "sent", drafts: {} });
+    const { container } = renderWorkspace(TableWorkspace);
+    fireEvent.click(await screen.findByRole("button", { name: "Remove bhaji" }));
+    expect(container.querySelector(".line-row.removed .qty-cluster b")?.textContent).toBe("0");
+    expect(screen.getByText("Running table must keep at least one item. Use Cancel order instead.")).not.toBeNull();
+    expect(updateOrderStateMock).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Increase bhaji" }));
+    expect(container.querySelector(".line-row.removed")).toBeNull();
+  });
+
   it("shows KOT and Print and KOT buttons and sends the selected print mode", async () => {
     const { TableWorkspace, useHubStore } = await importWorkspace();
     submitOrderMock.mockResolvedValue({ orderId: "order-1", kotIds: ["kot-1"], printJobIds: [] });
