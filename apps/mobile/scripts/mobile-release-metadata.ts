@@ -38,7 +38,7 @@ export function validateMobileReleaseMetadata(
   return expected;
 }
 
-export function validateMobileApkIdentity(badging: string, signature: string, expected: MobileReleaseMetadata): void {
+export function validateMobileApkIdentity(badging: string, signature: string, expected: MobileReleaseMetadata, manifest: string): void {
   const identity = /package: name='([^']+)' versionCode='([^']+)' versionName='([^']+)'/.exec(badging);
   if (!identity || identity[1] !== expected.appId || identity[2] !== String(expected.versionCode) || identity[3] !== expected.versionName) {
     throw new Error("Built APK package/versionName/versionCode does not match the mobile release");
@@ -46,5 +46,10 @@ export function validateMobileApkIdentity(badging: string, signature: string, ex
   const certificate = /Signer #1 certificate SHA-256 digest:\s*([a-f\d]+)/i.exec(signature)?.[1]?.toLowerCase();
   if (certificate !== MOBILE_SIGNING_CERT_SHA256 || !/Number of signers:\s*1\b/.test(signature)) {
     throw new Error("Built APK signing certificate differs from installed stable/nightly apps; refusing an incompatible update");
+  }
+  if (!/E: manifest\b/.test(manifest) || !/E: application\b/.test(manifest)) throw new Error("Built APK manifest could not be validated");
+  for (const flag of ["testOnly", "debuggable"]) {
+    const value = new RegExp(`A: android:${flag}\\([^)]*\\)=\\(type 0x12\\)(0x[a-f\\d]+)`, "i").exec(manifest)?.[1];
+    if (value && Number.parseInt(value, 16) !== 0) throw new Error(`Built APK is ${flag}; refusing a non-release APK`);
   }
 }

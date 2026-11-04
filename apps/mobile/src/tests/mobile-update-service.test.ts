@@ -29,7 +29,7 @@ vi.mock("expo-file-system/legacy", () => ({
   }
 }));
 
-import { downloadMobileApk, openMobileInstaller, openMobileInstallPermission } from "../lib/mobile-update-service";
+import { checkMobileUpdate, downloadMobileApk, openMobileInstaller, openMobileInstallPermission } from "../lib/mobile-update-service";
 import type { MobileUpdate } from "../lib/mobile-update-release";
 
 const update: MobileUpdate = {
@@ -39,6 +39,7 @@ const update: MobileUpdate = {
 };
 
 beforeEach(() => {
+  vi.unstubAllGlobals();
   vi.clearAllMocks();
   mocks.file.exists = true;
   mocks.file.size = update.apk.sizeBytes;
@@ -50,6 +51,29 @@ beforeEach(() => {
 });
 
 describe("mobile APK download and Android handoff", () => {
+  it("finds stable updates beyond a full page of nightlies", async () => {
+    const jsonResponse = (data: unknown) => ({ ok: true, status: 200, text: async () => JSON.stringify(data) });
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(jsonResponse(Array.from({ length: 100 }, () => ({ prerelease: true }))))
+      .mockResolvedValueOnce(jsonResponse([{
+        tag_name: update.tag, draft: false, prerelease: false,
+        assets: [update.apk, update.metadata].map(asset => ({ name: asset.name, browser_download_url: asset.url, size: asset.sizeBytes }))
+      }]))
+      .mockResolvedValueOnce(jsonResponse({ appId: "com.gauravpos.mobile", versionName: update.versionName, versionCode: update.versionCode,
+        apkFileName: update.apk.name, sizeBytes: update.apk.sizeBytes, sha256: update.sha256 }));
+    vi.stubGlobal("fetch", fetch);
+    expect(await checkMobileUpdate(new AbortController().signal)).toMatchObject({ versionName: "0.1.15", versionCode: 15 });
+    expect(fetch.mock.calls[1]?.[0]).toContain("page=2");
+  });
+
+  it("reports an incomplete release check instead of falsely saying up to date", async () => {
+    const fetch = vi.fn().mockResolvedValue({ ok: true, status: 200,
+      text: async () => JSON.stringify(Array.from({ length: 100 }, () => ({ prerelease: true }))) });
+    vi.stubGlobal("fetch", fetch);
+    await expect(checkMobileUpdate(new AbortController().signal)).rejects.toThrow("Could not finish checking");
+    expect(fetch).toHaveBeenCalledTimes(5);
+  });
+
   it("downloads to app cache with progress, then verifies before opening the system installer", async () => {
     mocks.download.mockImplementation(async () => {
       mocks.progress?.({ totalBytesWritten: update.apk.sizeBytes / 2 });
@@ -61,6 +85,7 @@ describe("mobile APK download and Android handoff", () => {
     const uri = await downloadMobileApk(update, signal, progress, verifying);
     expect(progress).toHaveBeenCalledWith(0.5);
     expect(verifying).toHaveBeenCalledOnce();
+    expect(mocks.cancelDownload).toHaveBeenCalledOnce();
     expect(mocks.startActivity).not.toHaveBeenCalled();
     await openMobileInstaller(update, uri, signal);
     expect(mocks.hash).toHaveBeenCalledWith(expect.objectContaining({ exists: true, size: update.apk.sizeBytes }), signal);
@@ -75,6 +100,13 @@ describe("mobile APK download and Android handoff", () => {
     await expect(openMobileInstaller(update, "file:///cache/update.apk", new AbortController().signal)).rejects.toThrow("incomplete");
     expect(mocks.hash).not.toHaveBeenCalled();
     expect(mocks.startActivity).not.toHaveBeenCalled();
+  });
+
+  it("releases the native progress listener after a failed download", async () => {
+    mocks.download.mockRejectedValue(new Error("Network unavailable"));
+    await expect(downloadMobileApk(update, new AbortController().signal, vi.fn(), vi.fn())).rejects.toThrow("Network unavailable");
+    expect(mocks.cancelDownload).toHaveBeenCalledOnce();
+    expect(mocks.deleteFile).toHaveBeenLastCalledWith("file:///cache/mobile-update/update.apk", { idempotent: true });
   });
 
   it("blocks modified cached APKs on every installer retry", async () => {

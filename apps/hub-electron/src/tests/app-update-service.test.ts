@@ -13,6 +13,8 @@ import { AppUpdateService, type OnlineAppUpdater } from "../update/app-update-se
 import { PACKAGED_SQLITE_NATIVE_PATH, sha256, type OnlineUpdateMetadata, type UpdatePackageManifest } from "../update/update-package.js";
 
 describe("AppUpdateService", () => {
+  // Creating the first real database/order fixture took 13 seconds on Windows
+  // CI; allow cold-run setup time while keeping the active-order assertion.
   it("blocks one-click online update while running orders exist", async () => {
     const fixture = createFixture();
     const onlineUpdater = createOnlineUpdater();
@@ -31,7 +33,7 @@ describe("AppUpdateService", () => {
     expect(onlineUpdater.downloadUpdate).not.toHaveBeenCalled();
 
     fixture.close();
-  });
+  }, 30_000);
 
   it("creates a pre-update backup before installing a one-click online update", async () => {
     const fixture = createFixture();

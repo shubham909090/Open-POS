@@ -159,7 +159,8 @@ function verifyApk(apkPath: string, env: NodeJS.ProcessEnv, expected: ReturnType
   const apksigner = join(toolsRoot, process.platform === "win32" ? "apksigner.bat" : "apksigner");
   const signature = capture(apksigner, ["verify", "--verbose", "--print-certs", apkPath], env);
   const badging = capture(join(toolsRoot, process.platform === "win32" ? "aapt.exe" : "aapt"), ["dump", "badging", apkPath], env);
-  validateMobileApkIdentity(badging, signature, expected);
+  const manifest = capture(join(toolsRoot, process.platform === "win32" ? "aapt.exe" : "aapt"), ["dump", "xmltree", apkPath, "AndroidManifest.xml"], env);
+  validateMobileApkIdentity(badging, signature, expected, manifest);
   run(join(toolsRoot, process.platform === "win32" ? "zipalign.exe" : "zipalign"), ["-c", "-P", "16", "4", apkPath], { cwd: repoRoot, env });
 }
 

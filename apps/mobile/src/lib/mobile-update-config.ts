@@ -1,6 +1,8 @@
 export const mobileUpdateConfig = {
   appId: "com.gauravpos.mobile",
-  releasesUrl: "https://api.github.com/repos/shubham909090/Open-POS/releases?per_page=30",
+  releasesUrl: "https://api.github.com/repos/shubham909090/Open-POS/releases?per_page=100",
+  releasePageSize: 100,
+  maxReleasePages: 5,
   repositoryPath: "/shubham909090/Open-POS/releases/download/",
   metadataFileName: "mobile-update-metadata.json",
   maxApkBytes: 200 * 1024 * 1024,

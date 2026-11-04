@@ -9,11 +9,11 @@ Use this when preparing files for the restaurant.
 After a clean release, the Hub release folder should contain only these Hub assets:
 
 ```text
-apps/hub-electron/release/Gaurav POS Hub Setup 0.1.24.exe
-apps/hub-electron/release/Gaurav POS Hub Setup 0.1.24.exe.blockmap
+apps/hub-electron/release/Gaurav POS Hub Setup 0.1.25.exe
+apps/hub-electron/release/Gaurav POS Hub Setup 0.1.25.exe.blockmap
 apps/hub-electron/release/latest.yml
 apps/hub-electron/release/hub-update-metadata.json
-apps/hub-electron/release/Gaurav POS Hub-0.1.24.gpos-update.zip
+apps/hub-electron/release/Gaurav POS Hub-0.1.25.gpos-update.zip
 ```
 
 Use the `.exe` for first-time install or manual reinstall.
@@ -58,7 +58,7 @@ Fresh means:
 - clean the release folder so only the current Hub release assets remain
 - start a fresh EAS Android build with `--no-wait` when Android is requested
 
-Do not ship a same-version update package over the previous installed app. The app update cache and rollback baseline are version-keyed, so a real update should move from something like `0.1.20` to `0.1.24`.
+Do not ship a same-version update package over the previous installed app. The app update cache and rollback baseline are version-keyed, so a real update should move from something like `0.1.20` to `0.1.25`.
 
 ## One-Command Release Helpers
 
@@ -85,7 +85,7 @@ That command:
 Optional flags:
 
 ```bash
-pnpm release:hub:fresh -- --version 0.1.24
+pnpm release:hub:fresh -- --version 0.1.25
 pnpm release:hub:fresh -- --publish
 pnpm release:hub:fresh -- --skip-tests
 ```
@@ -103,9 +103,10 @@ That command:
 - reuses repo-local `.agent/tools/jdk-17` and `.agent/android-sdk`
 - installs the repo-local JDK/Android SDK only if missing
 - runs mobile typecheck
-- deletes and recreates `apps/mobile/release-local`
+- preserves older APKs and rejects an existing output with the same version
 - builds a signed preview APK locally
-- verifies the APK signature
+- verifies the APK signature, release certificate, package identity, version and 16 KB alignment
+- writes `mobile-update-metadata.json` for the mobile update button
 
 Optional flags:
 
@@ -169,18 +170,18 @@ After the Hub release assets are created and validated, publish them to GitHub R
 Tag format:
 
 ```text
-hub-v0.1.24
+hub-v0.1.25
 ```
 
 Required release assets:
 
 ```text
-Gaurav POS Hub Setup 0.1.24.exe
-Gaurav POS Hub Setup 0.1.24.exe.blockmap
+Gaurav POS Hub Setup 0.1.25.exe
+Gaurav POS Hub Setup 0.1.25.exe.blockmap
 latest.yml
 hub-update-metadata.json
-Gaurav POS Hub-0.1.24.gpos-update.zip
-Gaurav POS Mobile-0.1.12.apk
+Gaurav POS Hub-0.1.25.gpos-update.zip
+Gaurav-POS-Mobile-0.1.15.apk
 ```
 
 `latest.yml`, the `.exe`, and the `.exe.blockmap` are what Electron updater uses for one-click **Update app** installs.
@@ -214,9 +215,11 @@ The helper refuses to publish if:
 - package validation fails
 - SQLite native binary is not Windows x64 `PE32+`
 - installer does not contain the same SQLite native binary hash
-- if `apps/mobile/release-local/Gaurav POS Mobile-<mobile-version>.apk` exists, it is included in the same GitHub release
+- if `apps/mobile/release-local/Gaurav-POS-Mobile-<mobile-version>.apk` exists, it is included in the same GitHub release
 
 The release must be published, not draft, and not marked prerelease. Otherwise brother's Hub will ignore it.
+
+The installed Hub 0.1.23/0.1.24 still contains the old broken launch code. Install the verified 0.1.25 installer manually once, preserving its existing database. The fixed Update app flow applies to subsequent updates from 0.1.25. Android 0.1.13/0.1.14 similarly needs one manual installation of 0.1.15 before its new update button is available.
 
 Brother update flow after this:
 
@@ -296,11 +299,11 @@ After the build, remove stale files so nobody chooses the wrong artifact.
 Keep only:
 
 ```text
-Gaurav POS Hub Setup 0.1.24.exe
-Gaurav POS Hub Setup 0.1.24.exe.blockmap
+Gaurav POS Hub Setup 0.1.25.exe
+Gaurav POS Hub Setup 0.1.25.exe.blockmap
 latest.yml
 hub-update-metadata.json
-Gaurav POS Hub-0.1.24.gpos-update.zip
+Gaurav POS Hub-0.1.25.gpos-update.zip
 ```
 
 Delete old files such as:
@@ -318,11 +321,11 @@ On macOS/Linux:
 
 ```bash
 find apps/hub-electron/release -mindepth 1 -maxdepth 1 \
-  ! -name "Gaurav POS Hub Setup 0.1.24.exe" \
-  ! -name "Gaurav POS Hub Setup 0.1.24.exe.blockmap" \
+  ! -name "Gaurav POS Hub Setup 0.1.25.exe" \
+  ! -name "Gaurav POS Hub Setup 0.1.25.exe.blockmap" \
   ! -name "latest.yml" \
   ! -name "hub-update-metadata.json" \
-  ! -name "Gaurav POS Hub-0.1.24.gpos-update.zip" \
+  ! -name "Gaurav POS Hub-0.1.25.gpos-update.zip" \
   -exec rm -rf {} +
 ```
 
@@ -330,11 +333,11 @@ On Windows PowerShell:
 
 ```powershell
 Get-ChildItem apps/hub-electron/release | Where-Object {
-  $_.Name -ne "Gaurav POS Hub Setup 0.1.24.exe" -and
-  $_.Name -ne "Gaurav POS Hub Setup 0.1.24.exe.blockmap" -and
+  $_.Name -ne "Gaurav POS Hub Setup 0.1.25.exe" -and
+  $_.Name -ne "Gaurav POS Hub Setup 0.1.25.exe.blockmap" -and
   $_.Name -ne "latest.yml" -and
   $_.Name -ne "hub-update-metadata.json" -and
-  $_.Name -ne "Gaurav POS Hub-0.1.24.gpos-update.zip"
+  $_.Name -ne "Gaurav POS Hub-0.1.25.gpos-update.zip"
 } | Remove-Item -Recurse -Force
 ```
 
@@ -345,7 +348,7 @@ Update the file names when the app version changes.
 From `apps/hub-electron`, validate the update package:
 
 ```bash
-pnpm exec tsx -e "import { validateUpdatePackage } from './src/update/update-package.ts'; const r = validateUpdatePackage('./release/Gaurav POS Hub-0.1.24.gpos-update.zip', 0); console.log(r.manifest)"
+pnpm exec tsx -e "import { validateUpdatePackage } from './src/update/update-package.ts'; const r = validateUpdatePackage('./release/Gaurav POS Hub-0.1.25.gpos-update.zip', 0); console.log(r.manifest)"
 ```
 
 Expected important fields:
@@ -371,21 +374,21 @@ Also record hashes:
 
 ```bash
 shasum -a 256 \
-  "release/Gaurav POS Hub Setup 0.1.24.exe" \
-  "release/Gaurav POS Hub Setup 0.1.24.exe.blockmap" \
+  "release/Gaurav POS Hub Setup 0.1.25.exe" \
+  "release/Gaurav POS Hub Setup 0.1.25.exe.blockmap" \
   "release/latest.yml" \
   "release/hub-update-metadata.json" \
-  "release/Gaurav POS Hub-0.1.24.gpos-update.zip"
+  "release/Gaurav POS Hub-0.1.25.gpos-update.zip"
 ```
 
 On Windows PowerShell:
 
 ```powershell
-Get-FileHash "release/Gaurav POS Hub Setup 0.1.24.exe" -Algorithm SHA256
-Get-FileHash "release/Gaurav POS Hub Setup 0.1.24.exe.blockmap" -Algorithm SHA256
+Get-FileHash "release/Gaurav POS Hub Setup 0.1.25.exe" -Algorithm SHA256
+Get-FileHash "release/Gaurav POS Hub Setup 0.1.25.exe.blockmap" -Algorithm SHA256
 Get-FileHash "release/latest.yml" -Algorithm SHA256
 Get-FileHash "release/hub-update-metadata.json" -Algorithm SHA256
-Get-FileHash "release/Gaurav POS Hub-0.1.24.gpos-update.zip" -Algorithm SHA256
+Get-FileHash "release/Gaurav POS Hub-0.1.25.gpos-update.zip" -Algorithm SHA256
 ```
 
 ## Build Android Expo APK
@@ -408,7 +411,6 @@ export ANDROID_HOME="$(pwd)/.agent/android-sdk"
 export ANDROID_SDK_ROOT="$ANDROID_HOME"
 export PATH="$JAVA_HOME/bin:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH"
 
-rm -rf apps/mobile/release-local
 mkdir -p apps/mobile/release-local
 
 cd apps/mobile
@@ -417,25 +419,25 @@ pnpm dlx eas-cli@18.11.0 build \
   --profile preview \
   --local \
   --non-interactive \
-  --output "release-local/Gaurav POS Mobile-0.1.12.apk"
+  --output "release-local/Gaurav-POS-Mobile-0.1.15.apk"
 ```
 
-The local APK is then picked up by `pnpm release:github` and attached to the same Hub GitHub release.
+Prefer the local release helper above: it also validates identity and creates required mobile metadata. The APK and metadata are then picked up by `pnpm release:github` and attached to the same Hub GitHub release.
 
 ## What To Send
 
 For a brand-new Hub machine:
 
 ```text
-Gaurav POS Hub Setup 0.1.24.exe
-Gaurav POS Mobile-0.1.12.apk
+Gaurav POS Hub Setup 0.1.25.exe
+Gaurav-POS-Mobile-0.1.15.apk
 ```
 
 For a Hub update:
 
 ```text
 Use Hub -> Advanced -> App Updates -> Update app
-Gaurav POS Mobile-0.1.12.apk, only if the mobile app changed
+Gaurav-POS-Mobile-0.1.15.apk, only if the mobile app changed
 ```
 
 ## Restaurant Install Flow

@@ -40,7 +40,14 @@ async function requestJson(url: string, signal: AbortSignal, maxCharacters?: num
 export async function checkMobileUpdate(signal: AbortSignal): Promise<MobileUpdate | null> {
   if (!mobileUpdatesSupported) throw new Error("Updates are available in the installed Android app.");
   if (!Number.isSafeInteger(installedMobileVersion.versionCode) || installedMobileVersion.versionCode <= 0) throw new Error("The installed app build could not be identified.");
-  const releases = await requestJson(config.releasesUrl, signal);
+  const releases: unknown[] = [];
+  for (let page = 1; page <= config.maxReleasePages; page++) {
+    const batch = await requestJson(`${config.releasesUrl}&page=${page}`, signal);
+    if (!Array.isArray(batch)) throw new Error("The update server returned an invalid release list.");
+    releases.push(...batch);
+    if (batch.length < config.releasePageSize) break;
+    if (page === config.maxReleasePages) throw new Error("Could not finish checking the release history. Please try again later.");
+  }
   const candidate = selectMobileRelease(releases, installedMobileVersion.versionName);
   if (!candidate) return null;
   const metadata = await requestJson(candidate.metadata.url, signal, config.maxMetadataBytes);
@@ -73,15 +80,19 @@ export async function downloadMobileApk(
   assertNotCancelled(signal);
   await FileSystem.deleteAsync(uri, { idempotent: true });
   let tooLarge = false;
+  let cancellation: Promise<void> | undefined;
   const task = FileSystem.createDownloadResumable(update.apk.url, uri, {}, progress => {
     if (progress.totalBytesWritten > update.apk.sizeBytes) {
       tooLarge = true;
-      void task.cancelAsync().catch(() => {});
+      void cancel();
       return;
     }
     if (!signal.aborted) onProgress(Math.min(1, Math.max(0, progress.totalBytesWritten / update.apk.sizeBytes)));
   });
-  const cancel = () => { void task.cancelAsync().catch(() => {}); };
+  function cancel(): Promise<void> {
+    cancellation ??= task.cancelAsync().catch(() => {});
+    return cancellation;
+  }
   signal.addEventListener("abort", cancel, { once: true });
   const timeout = setTimeout(cancel, config.downloadTimeoutMs);
   try {
@@ -100,6 +111,9 @@ export async function downloadMobileApk(
   } finally {
     clearTimeout(timeout);
     signal.removeEventListener("abort", cancel);
+    // SDK 55 retains the progress subscription after downloadAsync completes.
+    // cancelAsync removes it, even if the finished native task no longer exists.
+    await cancel();
   }
 }
 
