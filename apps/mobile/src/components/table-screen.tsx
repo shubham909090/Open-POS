@@ -7,6 +7,8 @@ import type { HubBootstrap } from "../lib/hub-client";
 import { groupTablesByFloor, type TableOrder } from "../lib/table-flow";
 import { palette, styles } from "../styles/app-styles";
 import { EmptyState } from "./app-shell";
+import { tableElapsed } from "../lib/table-presentation";
+import { formatRupees } from "../lib/mobile-format";
 import { Pressable } from "./pressable";
 
 const TABLE_ORDER_KEY = "gaurav-pos:table-order";
@@ -74,13 +76,13 @@ function TablePicker({
     <View style={styles.tableSection} onLayout={(event) => setGridWidth(event.nativeEvent.layout.width)}>
       <View style={[styles.cardHeader, fontScale >= 1.3 && styles.tableHeaderStack]}>
         <View style={styles.flexText}>
-          <Text style={styles.tableCount}>{availableCount} free · {activeTables.length - availableCount} in service</Text>
+          <Text style={styles.tableCount}>{availableCount} free · {activeTables.length - availableCount} active</Text>
         </View>
         {loading ? <ActivityIndicator color={palette.green} /> : null}
         {activeTables.length > 1 ? <TableOrderToggle order={tableOrder} onChange={onTableOrderChange} /> : null}
       </View>
       {activeTables.length === 0 ? (
-        <EmptyState title="No tables yet" text="Add floors and tables on the hub setup screen." />
+        <EmptyState title="No tables yet" text="Add tables on the hub." />
       ) : (
         <View style={styles.floorTableStack}>
           {floorGroups.map((group) => (
@@ -88,7 +90,6 @@ function TablePicker({
               {floorGroups.length > 1 ? (
                 <View style={styles.floorTableHeader}>
                   <Text style={styles.subhead}>{group.floorName}</Text>
-                  <Text style={styles.smallMuted}>{group.tables.length}</Text>
                 </View>
               ) : null}
               <View style={styles.tableGrid}>
@@ -116,9 +117,11 @@ function TableTile({
   onSelectTable: (tableId: string) => void;
 }) {
   const state = getTableDisplayState(table);
+  const elapsed = tableElapsed(table);
+  const amount = state !== "free" && typeof table.current_order_total_paise === "number" ? table.current_order_total_paise : null;
   return (
     <Pressable
-      accessibilityLabel={`Table ${table.name}, ${tableDisplayLabel(state)}`}
+      accessibilityLabel={`Table ${table.name}, ${state === "bill_printed" ? "Billed" : tableDisplayLabel(state)}`}
       accessibilityState={{ selected }}
       style={[
         styles.tableTile,
@@ -131,8 +134,12 @@ function TableTile({
     >
       <Text style={styles.tableName} numberOfLines={1}>{table.name}</Text>
       <Text style={[styles.tableStatus, state !== "free" && styles.tableStatusBusy, state === "bill_printed" && styles.tableStatusBilled]}>
-        {tableDisplayLabel(state)}
+        {state === "bill_printed" ? "Billed" : tableDisplayLabel(state)}
       </Text>
+      <View style={styles.tableMetrics}>
+        {elapsed ? <Text style={styles.tableElapsed}>{elapsed}</Text> : null}
+        {amount !== null ? <Text style={styles.tableAmount}>₹{formatRupees(amount)}</Text> : null}
+      </View>
     </Pressable>
   );
 }

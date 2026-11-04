@@ -44,9 +44,9 @@ function KitchenScreen({
       ) : null}
 
       {units.length === 0 ? (
-        <EmptyState title="No kitchen screen enabled" text="Enable Kitchen screen on the hub for the counters that should appear here." />
+        <EmptyState title="No kitchen screen enabled" text="Enable a kitchen screen on the hub." />
       ) : tickets.length === 0 ? (
-        <EmptyState title="No active tickets" text="New KOTs will appear here as soon as waiters send items." />
+        <EmptyState title="No active tickets" text="New KOTs appear here." />
       ) : (
         <View style={styles.kotList}>
           {tickets.map((ticket) => {
@@ -68,7 +68,7 @@ function KitchenScreen({
                 </View>
                 <View style={styles.kotItems}>
                   {ticket.note ? (
-                    <Text style={styles.smallMuted}>Note: {ticket.note}</Text>
+                    <Text style={styles.smallMuted}>{ticket.note}</Text>
                   ) : null}
                   {ticket.items.map((item, index) => {
                     const change = kitchenItemPresentation(item.quantity_delta, item.note_snapshot);

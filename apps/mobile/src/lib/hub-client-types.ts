@@ -11,6 +11,10 @@ export interface HubBootstrap {
     status: string;
     active?: number | boolean;
     current_order_id: string | null;
+    occupied_at?: string | null;
+    timer_ended_at?: string | null;
+    current_order_total_paise?: number;
+    sent_item_count?: number;
   }>;
   floors: Array<{ id: string; name: string; active?: number | boolean }>;
   productionUnits: Array<{ id: string; name: string; active?: number | boolean; kds_enabled?: number | boolean }>;

@@ -35,9 +35,9 @@ export function PaymentQrModal({
   onClose: () => void;
 }) {
   const { width, fontScale } = useWindowDimensions();
-  const stackActions = width < 380 || fontScale >= 1.3;
+  const stackActions = fontScale >= 1.6;
   const reducedMotion = useReducedMotion();
-  const imageSize = Math.max(150, Math.min(320, width - 100));
+  const imageSize = Math.max(150, Math.min(320, width - 64));
   const {
     qr,
     loading,
@@ -92,7 +92,7 @@ export function PaymentQrModal({
         </View>
         <KeyboardAvoidingView
           style={{ flex: 1 }}
-          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
         >
           <ScrollView
             ref={scrollRef}
@@ -102,7 +102,6 @@ export function PaymentQrModal({
             <View style={s.column}>
               {change ? (
                 <View style={s.form}>
-                  <Text style={s.kicker}>Master PIN required</Text>
                   <Text style={s.formTitle}>
                     {change.kind === "remove"
                       ? "Remove payment QR?"
@@ -112,8 +111,8 @@ export function PaymentQrModal({
                   </Text>
                   <Text style={s.formCopy}>
                     {change.kind === "remove"
-                      ? "This removes the shared QR from new bills and staff screens."
-                      : "This QR is shared by all bill printers and staff. It never appears on kitchen tickets."}
+                      ? "Removes the QR from new bills and staff devices."
+                      : "Applies to bills and staff devices."}
                   </Text>
                   {change.kind !== "remove" ? (
                     <>
@@ -182,7 +181,7 @@ export function PaymentQrModal({
                         ? "Saving…"
                         : change.kind === "remove"
                           ? "Remove QR"
-                          : "Save payment QR"}
+                          : "Save QR"}
                     </Text>
                   </Pressable>
                   <Pressable
@@ -196,13 +195,6 @@ export function PaymentQrModal({
                 </View>
               ) : (
                 <>
-                  <View style={s.intro}>
-                    <Text style={s.kicker}>UPI payments</Text>
-                    <Text style={s.title}>Scan to pay</Text>
-                    <Text style={s.subtitle}>
-                      Show this code to your customer.
-                    </Text>
-                  </View>
                   {notice ? (
                     <View style={[s.alert, s.success]}>
                       <Text
@@ -230,7 +222,7 @@ export function PaymentQrModal({
                   {loading ? (
                     <View style={s.empty}>
                       <ActivityIndicator size="large" color={palette.green} />
-                      <Text style={s.subtitle}>Loading the current QR…</Text>
+                      <Text style={s.subtitle}>Loading…</Text>
                     </View>
                   ) : qr ? (
                     <>
@@ -252,16 +244,8 @@ export function PaymentQrModal({
                             {qr.upiId}
                           </Text>
                         </View>
-                        <View style={s.upiBadge}>
-                          <Text style={s.upiBadgeText}>
-                            Pay with any UPI app
-                          </Text>
-                        </View>
                       </View>
-                      <Text style={s.note}>
-                        Confirm receipt in the receiving payment app before
-                        marking the bill paid.
-                      </Text>
+                      <Text style={s.note}>Confirm payment in your UPI app.</Text>
                       <View style={[s.toolbar, stackActions && s.toolbarStack]}>
                         {Platform.OS === "android" ? (
                           <Pressable
@@ -279,7 +263,7 @@ export function PaymentQrModal({
                               color={palette.ink}
                               strokeWidth={1.7}
                             />
-                            <Text style={s.actionText}>Download PNG</Text>
+                            <Text style={s.actionText}>Download</Text>
                           </Pressable>
                         ) : null}
                         <Pressable
@@ -304,8 +288,8 @@ export function PaymentQrModal({
                             {busy
                               ? "Preparing…"
                               : Platform.OS === "android"
-                                ? "Share QR"
-                                : "Save / share QR image"}
+                                ? "Share"
+                                : "Share"}
                           </Text>
                         </Pressable>
                       </View>
@@ -322,8 +306,8 @@ export function PaymentQrModal({
                       <Text style={s.emptyTitle}>No payment QR yet</Text>
                       <Text style={s.subtitle}>
                         {canManage
-                          ? "Upload your Google Pay, PhonePe or other UPI QR. One image works across all bills and staff devices."
-                          : "Ask the owner or captain to add the restaurant’s payment QR."}
+                          ? "Upload your UPI QR below."
+                          : "Ask your captain to add a QR."}
                       </Text>
                     </View>
                   ) : null}
@@ -336,16 +320,12 @@ export function PaymentQrModal({
                       >
                         <Text style={s.textButtonText}>
                           {manageOpen
-                            ? "Hide QR settings"
-                            : "Manage payment QR"}{" "}
-                          · Master PIN
+                            ? "Close settings"
+                            : "Manage QR"}
                         </Text>
                       </Pressable>
                       {manageOpen ? (
                         <>
-                          <Text style={s.managementTitle}>
-                            Shared across this restaurant
-                          </Text>
                           <Pressable
                             accessibilityRole="button"
                             style={[s.action, s.primary, !online && s.disabled]}
@@ -385,7 +365,8 @@ export function PaymentQrModal({
                             </View>
                           ) : null}
                           <Text style={s.note}>
-                            PNG or JPEG, up to 2 MB. Set each printer’s QR size in the hub’s Printers settings. Changes apply to new bills; kitchen tickets never include the QR.
+                            Master PIN required · PNG / JPEG, 2 MB max.
+QR size: Hub → Printers.
                           </Text>
                         </>
                       ) : null}

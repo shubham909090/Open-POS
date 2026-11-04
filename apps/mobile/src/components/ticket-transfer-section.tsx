@@ -69,16 +69,16 @@ function TicketTransferSection({
 
   return (
     <>
-      <CollapsibleSection title="Move table or items" subtitle="Transfer to another table" expanded={expanded} onToggle={onToggle}>
+      <CollapsibleSection title="Move table or items"  expanded={expanded} onToggle={onToggle}>
         {shiftTargets.length === 0 ? (
-          <Text style={styles.smallMuted}>No other active table is available for transfer.</Text>
+          <Text style={styles.smallMuted}>No available table.</Text>
         ) : (
           <>
             <View style={styles.shiftActionCard}>
               <View style={styles.sectionHeaderRow}>
                 <View style={styles.flexText}>
-                  <Text style={styles.actionTitle}>Full table transfer</Text>
-                  <Text style={styles.actionMeta}>{selectedFullShiftTarget ? `${selectedFullShiftTarget.name} · ${selectedFullShiftTarget.floor_name}` : "Choose a target table from all floors."}</Text>
+                  <Text style={styles.actionTitle}>Whole table</Text>
+                  <Text style={styles.actionMeta}>{selectedFullShiftTarget ? `${selectedFullShiftTarget.name} · ${selectedFullShiftTarget.floor_name}` : "Choose a table."}</Text>
                 </View>
               </View>
               <View style={styles.sendButtonRow}>

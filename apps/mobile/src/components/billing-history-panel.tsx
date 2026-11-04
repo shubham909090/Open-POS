@@ -40,6 +40,7 @@ function BillingHistoryPanel({
   const [customerName, setCustomerName] = useState("");
   const [masterPin, setMasterPin] = useState("");
   const [saveFailed, setSaveFailed] = useState(false);
+  const [totalsOpen, setTotalsOpen] = useState(false);
   const [editPayments, setEditPayments] = useState<Array<{ method: PaymentMethod; amount: string; reference?: string }>>([]);
   const searchedMenu = search.trim()
     ? menuItems.filter((item) => item.name.toLowerCase().includes(search.trim().toLowerCase())).slice(0, 8)
@@ -129,13 +130,12 @@ function BillingHistoryPanel({
 
   return (
     <View style={[styles.panel, styles.historyScreenPanel]}>
-      <View style={styles.sectionHeaderRow}>
-        <View style={styles.flexText}>
-          <Text style={styles.sectionTitle}>{history.label}</Text>
-        </View>
+      <View style={styles.cardHeader}>
+        <Text style={styles.muted}>{history.label}</Text>
+        <Pressable accessibilityState={{ expanded: totalsOpen }} style={styles.openItemLaunchButton} onPress={() => setTotalsOpen((open) => !open)}><Text style={styles.secondaryButtonText}>Totals {totalsOpen ? "−" : "+"}</Text></Pressable>
       </View>
 
-      {history.metrics.length ? (
+      {totalsOpen && history.metrics.length ? (
         <View style={styles.summaryGrid}>
           {history.metrics.map((metric) => (
             <SummaryBox
@@ -168,11 +168,11 @@ function BillingHistoryPanel({
       <View style={styles.historyBox}>
         {history.bills.length === 0 ? (
           <View style={styles.historyEmpty}>
-            <EmptyState title="No bills found" text="Pick another day or settle the first bill." compact />
+            <EmptyState title="No bills found" text="Choose another day." compact />
           </View>
         ) : (
           history.bills.map((historyBill) => {
-            const previewItems = historyBill.items?.length ? historyBill.items.slice(0, 6) : [];
+            const previewItems = historyBill.items?.length ? historyBill.items.slice(0, 2) : [];
             return (
               <View key={historyBill.billId} style={styles.historyRow}>
                 <View style={styles.flexText}>
@@ -184,7 +184,7 @@ function BillingHistoryPanel({
                     <Text style={[styles.historyStatusTag, !historyBill.isNc && historyStatusTagStyle(historyBill.status)]}>{historyBill.isNc ? "NC" : historyStatusLabel(historyBill.status)}</Text>
                     {historyBill.modified ? <Text style={styles.historyModifiedTag}>Modified</Text> : null}
                   </View>
-                  {historyBill.customerName ? <Text style={styles.historyMeta}>Name: {historyBill.customerName}</Text> : null}
+                  {historyBill.customerName ? <Text style={styles.historyMeta}>{historyBill.customerName}</Text> : null}
                   <Text style={styles.historyMeta}>Table {historyBill.tableName} · paid Rs {formatRupees(historyBill.paidPaise)}</Text>
                   <View style={styles.historyItemLines}>
                     {previewItems.length ? (
@@ -194,8 +194,7 @@ function BillingHistoryPanel({
                     )}
                   </View>
                   <Text style={styles.smallMuted}>
-                    Subtotal Rs {formatRupees(historyBill.subtotalPaise ?? Math.max(0, historyBill.totalPaise - (historyBill.taxPaise ?? 0)))} · tax Rs {formatRupees(historyBill.taxPaise ?? 0)}
-                    {historyBill.settledAt ? ` · ${formatPosDateTime(historyBill.settledAt)}` : ""}
+                    {historyBill.items && historyBill.items.length > 2 ? `+${historyBill.items.length - 2} more · ` : ""}{historyBill.settledAt ? formatPosDateTime(historyBill.settledAt) : ""}
                   </Text>
                 </View>
                 <View style={styles.historyActionStack}>
@@ -279,7 +278,7 @@ function BillingHistoryPanel({
                 <View style={styles.billingStack}>
                   <Text style={styles.inputLabel}>Collected payments</Text>
                   <Text style={styles.smallMuted}>
-                    Match the edited total to the amount actually collected. Existing references are kept.
+                    Match the amount collected.
                   </Text>
                   {editPayments.map((payment, index) => (
                     <View key={index} style={styles.historyPaymentRow}>
@@ -319,9 +318,9 @@ function BillingHistoryPanel({
                     {paymentsMatch ? `Payments match · Rs ${formatRupees(paymentTotal)}` : `Payments Rs ${formatRupees(paymentTotal)} · edited total Rs ${formatRupees(editTotal)}`}
                   </Text>
                 </View>
-              ) : <Text style={styles.smallMuted}>This is a non-chargeable bill; no collected payments are recorded.</Text>}
+              ) : <Text style={styles.smallMuted}>Non-chargeable · no payment.</Text>}
               <TextInput accessibilityLabel="Master PIN" style={styles.input} value={masterPin} onChangeText={(value) => { setMasterPin(value); setSaveFailed(false); }} secureTextEntry keyboardType="number-pad" placeholder="Master PIN" placeholderTextColor={palette.muted} />
-              {saveFailed ? <Text style={styles.dangerText} accessibilityLiveRegion="polite">{actionMessage || "The bill was not saved. Check your Master PIN and try again."}</Text> : null}
+              {saveFailed ? <Text style={styles.dangerText} accessibilityLiveRegion="polite">{actionMessage || "Not saved. Check your Master PIN."}</Text> : null}
               <View style={styles.historyEditActionRow}>
                 <Pressable style={[styles.secondaryButton, styles.historyEditActionButton, !canSaveEdit && styles.buttonDisabled]} disabled={!canSaveEdit} onPress={() => void saveHistoryEdit("save_print")}>
                   <Text style={styles.secondaryButtonText}>{sending ? "Saving..." : "Save + Print"}</Text>

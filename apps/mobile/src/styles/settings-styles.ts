@@ -16,8 +16,8 @@ export const settingsStyles = StyleSheet.create({
   brandMarkDefault: { width: "100%", height: "100%" },
   section: {
     gap: 12,
-    paddingTop: 20,
-    paddingBottom: 4,
+    paddingTop: 24,
+    paddingBottom: 16,
     borderTopWidth: 1,
     borderTopColor: palette.line
   },
@@ -25,8 +25,8 @@ export const settingsStyles = StyleSheet.create({
   brandEditorRow: { flexDirection: "row", alignItems: "center", gap: 16 },
   brandEditorActions: { flex: 1, minWidth: 0, alignItems: "flex-start", gap: 2 },
   smallButton: {
-    minHeight: 40,
-    borderRadius: 8,
+    minHeight: 48,
+    borderRadius: 6,
     borderWidth: 1,
     borderColor: palette.line,
     backgroundColor: palette.paper,
@@ -35,10 +35,10 @@ export const settingsStyles = StyleSheet.create({
     justifyContent: "center"
   },
   smallButtonText: { color: palette.ink, fontWeight: "600", fontSize: 14 },
-  textButton: { minHeight: 40, justifyContent: "center", paddingHorizontal: 2 },
+  textButton: { minHeight: 48, justifyContent: "center", paddingHorizontal: 2 },
   textButtonDanger: { color: palette.red, fontWeight: "600", fontSize: 14 },
   approvalBlock: { gap: 10 },
-  successText: { color: palette.greenBold, fontSize: 13, lineHeight: 19 },
+  successText: { color: palette.success, fontSize: 13, lineHeight: 19 },
   updateStatusRow: { flexDirection: "row", alignItems: "center", gap: 10 },
   updateHeadline: { flex: 1, color: palette.ink, fontSize: 15, lineHeight: 21, fontWeight: "500" },
   progressTrack: { height: 6, borderRadius: 3, backgroundColor: palette.lineSoft, overflow: "hidden" },

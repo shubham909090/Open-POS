@@ -8,6 +8,7 @@ import { palette, styles } from "../styles/app-styles";
 import { settingsStyles as s } from "../styles/settings-styles";
 import { BrandMark, DEFAULT_BRAND_NAME } from "./brand-mark";
 import { Pressable } from "./pressable";
+import { Button } from "./ui-primitives";
 
 export function SettingsSection({ title, meta, children }: { title: string; meta?: string; children: React.ReactNode }) {
   return (
@@ -64,9 +65,9 @@ export function BrandingSettings({
   };
 
   return (
-    <SettingsSection title="Restaurant" meta="Name and logo for every device and printed bill.">
+    <SettingsSection title="Restaurant">
       <View style={s.brandEditorRow}>
-        <BrandMark branding={branding} previewUri={previewLogo} size={72} />
+        <BrandMark branding={branding} previewUri={previewLogo} size={56} />
         <View style={s.brandEditorActions}>
           <Pressable style={[s.smallButton, (!online || busy) && styles.buttonDisabled]} disabled={!online || busy} onPress={async () => {
             const picked = await onPickLogo();
@@ -79,7 +80,7 @@ export function BrandingSettings({
               <Text style={s.textButtonDanger}>Remove logo</Text>
             </Pressable>
           ) : (
-            <Text style={styles.smallMuted}>PNG or JPEG, up to 2 MB.</Text>
+            <Text style={styles.smallMuted}>PNG / JPEG · 2 MB max</Text>
           )}
         </View>
       </View>
@@ -116,14 +117,12 @@ export function BrandingSettings({
             <Pressable style={[styles.secondaryButton, styles.sendButton]} onPress={reset} disabled={busy}>
               <Text style={styles.secondaryButtonText}>Discard</Text>
             </Pressable>
-            <Pressable style={[styles.primaryButton, styles.sendButton, (busy || !pin.trim() || remoteChanged) && styles.buttonDisabled]} disabled={busy || !pin.trim() || remoteChanged} onPress={() => void submit()}>
-              <Text style={styles.primaryButtonText}>{busy ? "Saving…" : logo === null && name.trim() === savedName.trim() ? "Remove logo" : "Save branding"}</Text>
-            </Pressable>
+            <Button label={busy ? "Saving…" : logo === null && name.trim() === savedName.trim() ? "Remove logo" : "Save"} style={styles.sendButton} disabled={busy || !pin.trim() || remoteChanged} onPress={() => void submit()} />
           </View>
         </View>
       ) : null}
-      {!online ? <Text style={styles.smallMuted}>Connect to the hub to change branding.</Text> : null}
-      {remoteChanged ? <Text style={styles.dangerText} accessibilityLiveRegion="polite">Branding changed on another device. Discard your edits to load the latest version.</Text> : null}
+      {!online ? <Text style={styles.smallMuted}>Connect to edit.</Text> : null}
+      {remoteChanged ? <Text style={styles.dangerText} accessibilityLiveRegion="polite">Changed on another device. Discard to reload.</Text> : null}
       {error ? <Text style={styles.dangerText} accessibilityLiveRegion="polite">{error}</Text> : null}
       {notice && !dirty ? <Text style={s.successText} accessibilityLiveRegion="polite">{notice}</Text> : null}
     </SettingsSection>
@@ -137,24 +136,24 @@ export function MobileUpdatePanel({ update }: { update: MobileUpdateState }) {
   const working = status === "checking" || status === "downloading" || status === "verifying" || status === "installing";
   const percent = Math.round(progress * 100);
   const headline = !supported
-    ? "Updates work in the installed Android app."
-    : status === "checking" ? "Checking for updates…"
-    : status === "up_to_date" ? "No newer official version is available."
-    : status === "available" ? `Version ${availableVersion} is ready to download.`
+    ? "Android app required."
+    : status === "checking" ? "Checking…"
+    : status === "up_to_date" ? "No update available."
+    : status === "available" ? `Version ${availableVersion} available`
     : status === "downloading" ? `Downloading version ${availableVersion} · ${percent}%`
-    : status === "verifying" ? "Checking the download…"
-    : status === "ready" ? `Version ${availableVersion} is downloaded and verified.`
-    : status === "installing" ? "Opening the Android installer…"
-    : status === "installer_opened" ? "Confirm the install in Android's prompt."
-    : status === "error" ? error || "The update could not finish."
-    : "Check the official release for a newer version.";
+    : status === "verifying" ? "Verifying…"
+    : status === "ready" ? `Version ${availableVersion} ready`
+    : status === "installing" ? "Opening installer…"
+    : status === "installer_opened" ? "Confirm installation in Android."
+    : status === "error" ? error || "Update failed."
+    : "";
 
   return (
-    <SettingsSection title="App update" meta={`Installed version ${currentVersion || "unknown"}`}>
-      <View style={s.updateStatusRow}>
+    <SettingsSection title="App update" meta={`Version ${currentVersion || "unknown"}`}>
+      {headline ? <View style={s.updateStatusRow}>
         {working ? <ActivityIndicator size="small" color={palette.green} /> : null}
         <Text style={[s.updateHeadline, status === "error" && styles.dangerText]} accessibilityLiveRegion="polite">{headline}</Text>
-      </View>
+      </View> : null}
       {status === "downloading" ? (
         <View style={s.progressTrack} accessibilityRole="progressbar" accessibilityValue={{ min: 0, max: 100, now: percent }}>
           <View style={[s.progressFill, { width: `${percent}%` }]} />
@@ -162,7 +161,7 @@ export function MobileUpdatePanel({ update }: { update: MobileUpdateState }) {
       ) : null}
       {status === "available" || status === "ready" || status === "installer_opened" || (status === "error" && availableVersion) ? (
         <Text style={styles.smallMuted}>
-          Android asks you to confirm before installing. Pairing, the hub address and saved drafts stay on this phone.
+          Pairing and saved drafts are kept.
         </Text>
       ) : null}
       {supported ? <UpdateActions update={update} /> : null}

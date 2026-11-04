@@ -1,6 +1,6 @@
 import { Platform } from "react-native";
 
-import { androidStatusBarTopInset, palette, tabularFigures } from "./app-style-tokens";
+import { palette, tabularFigures } from "./app-style-tokens";
 
 export const billingOverlayStyles = {
   billingPanel: {
@@ -14,27 +14,14 @@ export const billingOverlayStyles = {
     flexWrap: "wrap",
     gap: 8
   },
-  summaryBox: {
-    minWidth: 140,
-    flex: 1,
-    borderRadius: 10,
-    backgroundColor: palette.white,
-    padding: 12,
-    gap: 3
-  },
-  summaryValue: { color: palette.ink, fontWeight: "600", fontSize: 18, fontVariant: tabularFigures },
+  summaryBox: { minWidth: 100, flex: 1, paddingVertical: 8, gap: 4 },
+  summaryValue: { color: palette.ink, fontWeight: "600", fontSize: 16, fontVariant: tabularFigures },
   billTotals: { gap: 4, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: palette.lineSoft },
   billAmountRow: { flexDirection: "row", alignItems: "baseline", justifyContent: "space-between", gap: 12 },
   billAdjustmentToggle: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12, borderBottomWidth: 1, borderBottomColor: palette.lineSoft },
   // History is a full screen, so it sits directly on the page instead of inside a panel.
   historyScreenPanel: { gap: 14, borderWidth: 0, backgroundColor: "transparent", padding: 0 },
-  historyBox: {
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: palette.line,
-    backgroundColor: palette.white,
-    overflow: "hidden"
-  },
+  historyBox: { backgroundColor: palette.paper },
   historyEmpty: { padding: 14 },
   historyDayChips: {
     gap: 8,
@@ -66,7 +53,7 @@ export const billingOverlayStyles = {
     paddingHorizontal: 8,
     paddingVertical: 2
   },
-  historyStatusPaid: { borderColor: palette.greenLine, backgroundColor: palette.greenSoft, color: palette.greenBold },
+  historyStatusPaid: { borderColor: palette.greenLine, backgroundColor: palette.successSoft, color: palette.success },
   historyStatusPending: { borderColor: palette.amberLine, backgroundColor: palette.amberSoft, color: palette.amberBold },
   historyStatusVoid: { borderColor: palette.redLine, backgroundColor: palette.redSoft, color: palette.red },
   // Neutral: blue is reserved for "bill printed" table state.
@@ -86,27 +73,16 @@ export const billingOverlayStyles = {
   historyPaymentRow: { gap: 8, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: palette.lineSoft },
   historyItemLines: { gap: 2, paddingVertical: 2 },
   historyPrintButton: {
-    minHeight: 44,
+    minHeight: 48,
     paddingHorizontal: 12
   },
   itemNoteInput: {
     marginTop: 8,
-    minHeight: 44,
+    minHeight: 48,
     fontSize: 13,
     flexBasis: "100%"
   },
-  itemNoteButton: {
-    alignSelf: "flex-start",
-    marginTop: 8,
-    minHeight: 44,
-    justifyContent: "center",
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: palette.line,
-    backgroundColor: palette.wash,
-    paddingHorizontal: 10,
-    paddingVertical: 6
-  },
+  itemNoteButton: { alignSelf: "flex-start", minHeight: 48, justifyContent: "center", paddingHorizontal: 0 },
   itemNoteButtonText: {
     color: palette.muted,
     fontSize: 12,
@@ -117,11 +93,9 @@ export const billingOverlayStyles = {
   historyEditActionButton: { flexGrow: 1, minWidth: 132 },
   historyEditLine: {
     minHeight: 52,
-    borderRadius: 8,
-    borderWidth: 1,
+    borderBottomWidth: 1,
     borderColor: palette.line,
-    backgroundColor: palette.white,
-    padding: 9,
+    paddingVertical: 8,
     flexDirection: "row",
     alignItems: "center",
     gap: 8
@@ -129,12 +103,12 @@ export const billingOverlayStyles = {
   historyVariantActions: { gap: 8, alignItems: "center" },
   segmentedRow: {
     flexDirection: "row",
-    borderRadius: 10,
+    borderRadius: 6,
     borderWidth: 1,
     borderColor: palette.line,
     overflow: "hidden"
   },
-  segmentButton: { flex: 1, minHeight: 44, alignItems: "center", justifyContent: "center", backgroundColor: palette.paper },
+  segmentButton: { flex: 1, minHeight: 48, alignItems: "center", justifyContent: "center", backgroundColor: palette.paper },
   segmentButtonActive: { backgroundColor: palette.greenSoft },
   segmentText: { color: palette.ink, fontWeight: "600" },
   segmentTextActive: { color: palette.greenBold },
@@ -151,16 +125,17 @@ export const billingOverlayStyles = {
   },
   quickPayButton: {
     minHeight: 50,
-    minWidth: 112,
-    flexGrow: 1,
-    borderRadius: 8,
+    minWidth: 64,
+    flex: 1,
+    borderRadius: 6,
     borderWidth: 1,
     borderColor: palette.line,
     backgroundColor: palette.paper,
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 10
+    paddingHorizontal: 8
   },
+  quickPaySelected: { borderColor: palette.green, backgroundColor: palette.greenSoft },
   quickPayText: { color: palette.greenBold, fontWeight: "600", fontSize: 14 },
   popupBackdrop: {
     flex: 1,
@@ -169,9 +144,12 @@ export const billingOverlayStyles = {
     justifyContent: "center"
   },
   popupCard: {
-    maxHeight: "86%",
+    maxHeight: "90%",
+    width: "100%",
+    maxWidth: 520,
+    alignSelf: "center",
     flexGrow: 0,
-    borderRadius: 16,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: palette.line,
     backgroundColor: palette.paper,
@@ -180,8 +158,8 @@ export const billingOverlayStyles = {
   },
   popupScroll: { maxHeight: 460 },
   dangerButton: {
-    minHeight: 44,
-    borderRadius: 8,
+    minHeight: 48,
+    borderRadius: 6,
     backgroundColor: palette.red,
     alignItems: "center",
     justifyContent: "center",
@@ -196,10 +174,10 @@ export const billingOverlayStyles = {
     position: "absolute",
     left: 16,
     right: 16,
-    bottom: Platform.OS === "android" ? 14 : 24,
+    bottom: 76,
     minHeight: 66,
     borderRadius: 12,
-    backgroundColor: palette.ink,
+    backgroundColor: palette.green,
     paddingHorizontal: 16,
     paddingVertical: 12,
     flexDirection: "row",
@@ -226,8 +204,8 @@ export const billingOverlayStyles = {
   draftBarTitle: { color: palette.inverseText, fontWeight: "600", fontSize: 15 },
   draftBarMeta: { color: palette.inverseMuted, fontSize: 12, fontWeight: "500", marginTop: 2 },
   draftBarButton: {
-    minHeight: 44,
-    borderRadius: 8,
+    minHeight: 48,
+    borderRadius: 6,
     backgroundColor: palette.white,
     alignItems: "center",
     justifyContent: "center",
@@ -236,7 +214,7 @@ export const billingOverlayStyles = {
   draftBarButtonText: { color: palette.ink, fontWeight: "600", fontSize: 15 },
   empty: {
     minHeight: 120,
-    borderRadius: 8,
+    borderRadius: 6,
     borderWidth: 0,
     borderColor: palette.line,
     backgroundColor: palette.wash,
@@ -247,7 +225,7 @@ export const billingOverlayStyles = {
   },
   emptyCompact: { minHeight: 0, alignItems: "flex-start", backgroundColor: "transparent", padding: 0, gap: 2 },
   emptyTitle: { color: palette.ink, fontWeight: "600", fontSize: 15 },
-  scannerShell: { flex: 1, backgroundColor: palette.scanner, paddingTop: androidStatusBarTopInset },
+  scannerShell: { flex: 1, backgroundColor: palette.scanner },
   scannerHeader: {
     padding: 16,
     backgroundColor: palette.paper,
@@ -258,32 +236,14 @@ export const billingOverlayStyles = {
   },
   camera: { flex: 1 },
   scannerGuide: { flex: 1, alignItems: "center", justifyContent: "center", gap: 24, paddingHorizontal: 28 },
-  scannerFrame: { width: "85%", maxWidth: 300, aspectRatio: 1, borderWidth: 2, borderColor: "rgba(255,255,255,0.9)", borderRadius: 16 },
-  scannerHint: { color: palette.inverseText, fontSize: 14, lineHeight: 21, textAlign: "center", backgroundColor: "rgba(0,0,0,0.5)", paddingHorizontal: 14, paddingVertical: 10, borderRadius: 8 },
-  collapsibleWrap: {
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: palette.line,
-    backgroundColor: palette.paper,
-    overflow: "hidden" as const
-  },
-  collapsibleHeader: {
-    minHeight: 52,
-    flexDirection: "row" as const,
-    alignItems: "center" as const,
-    justifyContent: "space-between" as const,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    backgroundColor: palette.paper,
-    gap: 10
-  },
-  collapsibleHeaderExpanded: {
-    borderBottomWidth: 1,
-    borderBottomColor: palette.line
-  },
-  collapsibleTitle: { color: palette.ink, fontSize: 15, fontWeight: "500" },
-  collapsibleChevron: { color: palette.muted, fontSize: 16, fontWeight: "600" },
-  collapsibleBody: { padding: 14, gap: 10 },
+  scannerFrame: { width: "85%", maxWidth: 300, aspectRatio: 1, borderWidth: 2, borderColor: "rgba(255,255,255,0.9)", borderRadius: 12 },
+  scannerHint: { color: palette.inverseText, fontSize: 14, lineHeight: 21, textAlign: "center", backgroundColor: "rgba(0,0,0,0.5)", paddingHorizontal: 14, paddingVertical: 10, borderRadius: 6 },
+  collapsibleWrap: { backgroundColor: palette.paper, borderRadius: 0, borderBottomWidth: 1, borderColor: palette.line },
+  collapsibleHeader: { minHeight: 56, flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 12, gap: 12 },
+  collapsibleHeaderExpanded: { borderBottomWidth: 0 },
+  collapsibleTitle: { color: palette.ink, fontSize: 15, fontWeight: "600" },
+  collapsibleChevron: { color: palette.muted, fontSize: 20, fontWeight: "400" },
+  collapsibleBody: { paddingHorizontal: 16, paddingBottom: 16, gap: 12 },
   kotStartButton: {
     backgroundColor: palette.amberSoft,
     borderWidth: 1,

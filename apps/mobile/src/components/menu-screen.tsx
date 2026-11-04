@@ -2,7 +2,7 @@ import { FormModal } from "./form-modal";
 import { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Alert, ScrollView, SectionList, Text, TextInput, View } from "react-native";
 import { Pressable } from "./pressable";
-import { Coffee, Ellipsis, Search, Utensils, Wine, X } from "lucide-react-native";
+import { Plus, Search, X } from "lucide-react-native";
 import { formatPosDateTime, getTableDisplayState, searchMenuItems, tableDisplayLabel, type OrderItemInput, type SaleGroupKind } from "@gaurav-pos/shared";
 
 import type { CurrentDaySummary, DailyReportDetail, DailyReportRow, HubBootstrap, HubOrder, KdsTicket } from "../lib/hub-client";
@@ -65,12 +65,7 @@ function MenuScreen({
   ].filter((section) => section.data.length > 0);
   const header = (
     <>
-      <View style={styles.cardHeader}>
-        <View style={styles.flexText}>
-          <Text style={styles.muted}>{selectedTableName ? `Add dishes to ${selectedTableName}` : "Choose a table first"}</Text>
-        </View>
-        {hasNewItems ? <Text style={styles.totalText}>New · Rs {formatRupees(draftTotal)}</Text> : null}
-      </View>
+      <View style={styles.menuSearchRow}>
       <View style={styles.menuSearch}>
         <Search size={18} strokeWidth={1.7} color={palette.muted} />
         <TextInput
@@ -85,6 +80,8 @@ function MenuScreen({
         />
         {searchValue ? <Pressable accessibilityLabel="Clear dish search" style={styles.searchClear} onPress={() => onSearchChange("")}><X size={16} color={palette.muted} strokeWidth={1.7} /></Pressable> : null}
       </View>
+      <Pressable accessibilityLabel="Add open item" style={styles.iconButton} disabled={!selectedTableName} onPress={() => { setOpenItemGroupId(defaultSaleGroupId); setOpenItemUnit("default"); setOpenItemError(null); setOpenItemVisible(true); }}><Plus size={20} color={palette.ink} /></Pressable>
+      </View>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always" contentContainerStyle={styles.filterChips}>
         <Pressable accessibilityState={{ selected: selectedSaleGroup === null }} style={[styles.filterChip, selectedSaleGroup === null && styles.filterChipActive]} onPress={() => onSaleGroupChange(null)}>
           <Text style={[styles.filterChipText, selectedSaleGroup === null && styles.filterChipTextActive]}>All</Text>
@@ -95,21 +92,7 @@ function MenuScreen({
           </Pressable>
         ))}
       </ScrollView>
-      <View style={styles.openItemLaunchRow}>
-        <Pressable
-          accessibilityLabel="Add open item"
-          style={[styles.openItemLaunchButton, !selectedTableName && styles.buttonDisabled]}
-          disabled={!selectedTableName}
-          onPress={() => {
-            setOpenItemGroupId(defaultSaleGroupId);
-            setOpenItemUnit("default");
-            setOpenItemError(null);
-            setOpenItemVisible(true);
-          }}
-        >
-          <Text style={styles.secondaryButtonText}>+ Item not on the menu</Text>
-        </Pressable>
-      </View>
+
     </>
   );
   const closeOpenItem = () => {
@@ -140,7 +123,7 @@ function MenuScreen({
           <View style={styles.sectionHeaderRow}>
             <View style={styles.flexText}>
               <Text style={styles.sectionTitle}>Open item</Text>
-              <Text style={styles.muted}>Add an item to {selectedTableName}</Text>
+              <Text style={styles.muted}>Table {selectedTableName}</Text>
             </View>
             <Pressable style={styles.secondaryButton} onPress={closeOpenItem}>
               <Text style={styles.secondaryButtonText}>Close</Text>
@@ -154,7 +137,7 @@ function MenuScreen({
                 style={styles.input}
                 value={openItemName}
                 onChangeText={(value) => setOpenItemName(value.slice(0, 160))}
-                placeholder="Open food or bar item"
+                placeholder="Item name"
                 placeholderTextColor={palette.muted}
                 autoCapitalize="words"
                 maxLength={160}
@@ -213,6 +196,7 @@ function MenuScreen({
     return (
       <>
         <View style={[styles.panel, styles.menuPanel, styles.virtualMenuPanel]}>
+          <View style={styles.menuToolbar}>{header}</View>
           <SectionList
           sections={selectedTableName ? sections : []}
           keyExtractor={(item) => item.id}
@@ -225,12 +209,11 @@ function MenuScreen({
             />
           )}
           renderSectionHeader={() => null}
-          ListHeaderComponent={header}
           ListEmptyComponent={
             !selectedTableName ? (
-              <EmptyState title="No table selected" text="Tap a table, then add dishes here." />
+              <EmptyState title="No table selected" text="Choose a table to add dishes." />
             ) : (
-              <EmptyState title="No dishes found" text="Check spelling, clear filters, or add dishes on the hub." />
+              <EmptyState title="No dishes found" text="Try a different search." />
             )
           }
           stickySectionHeadersEnabled={false}
@@ -249,9 +232,9 @@ function MenuScreen({
       <View style={[styles.panel, styles.menuPanel]}>
         {header}
       {!selectedTableName ? (
-        <EmptyState title="No table selected" text="Tap a table, then add dishes here." />
+        <EmptyState title="No table selected" text="Choose a table to add dishes." />
       ) : sections.length === 0 ? (
-        <EmptyState title="No dishes found" text="Check spelling, clear filters, or add dishes on the hub." />
+        <EmptyState title="No dishes found" text="Try a different search." />
       ) : (
         sections.map((section) => (
           <MenuListSection
@@ -315,25 +298,16 @@ function MenuItemRow({
 }) {
   const variants = menuItem.variants?.filter((variant) => Boolean(variant.active)) ?? [];
   const activeVariants = variants.length || menuItem.sale_group_kind === "alcohol" ? variants : [{ id: "", label: "Regular", kind: "default", price_paise: menuItem.price_paise }];
-  const CategoryIcon = menuItem.sale_group_kind === "alcohol" ? Wine : menuItem.sale_group_kind === "beverage" ? Coffee : menuItem.sale_group_kind === "food" ? Utensils : Ellipsis;
   const hasMultipleVariants = activeVariants.length > 1;
   return (
-    <View style={[styles.menuItem, draftQuantity > 0 && styles.menuItemSelected, styles.menuItemInline, draftSelectionLabel && styles.menuItemWithSelection, hasMultipleVariants && styles.menuItemVariantRow]}>
-      {draftQuantity > 0 ? (
-        <View style={styles.draftMenuBadge} accessibilityLabel={`${draftQuantity} selected`}>
-          <Text style={styles.draftMenuBadgeText}>{draftQuantity}x</Text>
-        </View>
-      ) : null}
-      <View style={[styles.menuIdentity, draftQuantity > 0 && styles.menuIdentityWithBadge]}>
-        <View style={[styles.menuCategoryIcon, { backgroundColor: palette.wash }]} importantForAccessibility="no-hide-descendants">
-          <CategoryIcon size={18} color={palette.muted} strokeWidth={1.7} />
-        </View>
+    <View style={[styles.menuItem, draftQuantity > 0 && styles.menuItemSelected, styles.menuItemInline, hasMultipleVariants && draftSelectionLabel && styles.menuItemWithSelection, hasMultipleVariants && styles.menuItemStacked]}>
+      <View style={[styles.menuIdentity, hasMultipleVariants && styles.menuIdentityFull]}>
+        {draftQuantity > 0 ? <Text accessibilityLabel={`${draftQuantity} selected`} style={styles.menuSelectedQuantity}>{draftQuantity}×</Text> : null}
         <View style={styles.menuText}>
-          <Text style={styles.menuName} numberOfLines={2}>{menuItem.name}</Text>
-          <Text style={styles.muted} numberOfLines={1}>{menuItem.sale_group_name ?? menuItem.production_unit_name ?? "Menu"}</Text>
+          <Text style={styles.menuName}>{menuItem.name}</Text>
         </View>
       </View>
-      <View style={hasMultipleVariants ? styles.variantStripBlock : styles.menuPriceBlock}>
+      <View style={hasMultipleVariants ? styles.variantStack : styles.menuPriceBlock}>
         {activeVariants.length === 0 ? (
           <Text style={styles.muted}>Unavailable</Text>
         ) : activeVariants.length === 1 ? (
@@ -347,7 +321,7 @@ function MenuItemRow({
           <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always" contentContainerStyle={styles.variantWrap}>
             {activeVariants.map((variant) => (
               <Pressable key={variant.id || menuItem.id} accessibilityLabel={`Add ${menuItem.name}, ${variant.label}, Rs ${formatRupees(variant.price_paise)}`} style={styles.variantChip} onPress={() => onAddItem(menuItem.id, variant.id || undefined)}>
-                <Text style={styles.variantPrice} numberOfLines={1}>{formatMobileMenuActionLabel({ kind: variant.kind, label: variant.label, pricePaise: variant.price_paise })}</Text>
+                <Text style={styles.filterChipText}>{variant.label}</Text><Text style={styles.variantPrice}>₹{formatRupees(variant.price_paise)}</Text>
               </Pressable>
             ))}
           </ScrollView>

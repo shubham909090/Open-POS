@@ -12,7 +12,6 @@ export function Pressable({ style, disabled, accessibilityState, android_ripple,
       style={(state) => [
         feedback.control,
         typeof style === "function" ? style(state) : style,
-        disabled && feedback.disabled,
         state.pressed && !disabled && feedback.pressed,
       ]}
     />
@@ -20,7 +19,6 @@ export function Pressable({ style, disabled, accessibilityState, android_ripple,
 }
 
 const feedback = StyleSheet.create({
-  control: { minHeight: 44, overflow: "hidden" },
-  disabled: { opacity: 0.45 },
+  control: { minHeight: 48, overflow: "hidden" },
   pressed: { opacity: 0.7 },
 });
