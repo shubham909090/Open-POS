@@ -111,6 +111,9 @@ async function testCommandDialog(prefix) {
   await capture(`${prefix}-command-dialog`);
   await page.keyboard.press('Escape');
   await dialog.waitFor({ state: 'hidden' });
+  // Radix restores focus in its deferred unmount cleanup, after DOM removal.
+  // Wait for the actual result without moving focus on the application's behalf.
+  await page.waitForFunction(element => document.activeElement === element, await opener.elementHandle(), { timeout: 3000 });
   assert.ok(await opener.evaluate(element => element === document.activeElement), 'Escape did not restore command opener focus');
   report.keyboardChecks.push({ zoom: prefix, commandShortcut: true, tabStayedInDialog: true, escapeClosedDialog: true, openerFocusRestored: true });
 }
