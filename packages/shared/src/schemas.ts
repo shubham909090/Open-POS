@@ -5,3 +5,4 @@ export * from "./schemas/order.js";
 export * from "./schemas/payment-qr.js";
 export * from "./schemas/reports.js";
 export * from "./schemas/settings.js";
+export * from "./schemas/restaurant-branding.js";

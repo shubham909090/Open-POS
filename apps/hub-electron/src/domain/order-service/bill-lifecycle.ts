@@ -51,7 +51,7 @@ export type BillLifecycleContext = {
   ) => void;
   getBillById: (billId: string) => BillRow | undefined;
   resolveBillPrinter: (slot: BillPrinterSlot) => BillPrinterTarget;
-  buildBillTicket: (input: { bill: BillRow; tableName: string; createdAt: string }) => BillTicket;
+  buildBillTicket: (input: { bill: BillRow; tableName: string; printerSlot?: BillPrinterSlot; createdAt: string }) => BillTicket;
   enqueuePrintJob: (input: {
     targetType: "BILL";
     targetId: string;
@@ -118,7 +118,7 @@ export function generateBill(ctx: BillLifecycleContext, orderId: string, printer
       targetId: billId,
       productionUnitId: null,
       ...ctx.resolveBillPrinter(printerSlot),
-      payload: renderBillTicketForPrint(ctx.buildBillTicket({ bill, tableName: table.name, createdAt: bill.created_at }))
+      payload: renderBillTicketForPrint(ctx.buildBillTicket({ bill, tableName: table.name, createdAt: bill.created_at, printerSlot }))
     });
     ctx.orm.update(bills).set({ printCount: sql`${bills.printCount} + 1` }).where(eq(bills.id, billId)).run();
 

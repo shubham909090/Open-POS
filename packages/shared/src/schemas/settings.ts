@@ -32,7 +32,9 @@ export const updateReceiptPrinterSchema = z.object({
 });
 
 export const billPrinterProfileSchema = updateReceiptPrinterSchema.extend({
-  label: z.string().trim().min(1).max(80).default("Bill printer")
+  label: z.string().trim().min(1).max(80).default("Bill printer"),
+  paymentQrSizeMm: z.number().int().min(20).max(45).optional(),
+  paperWidthMm: z.union([z.literal(45), z.literal(50), z.literal(58), z.literal(80)]).nullable().optional()
 });
 
 export const updateBillPrintersSchema = z.object({

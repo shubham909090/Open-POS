@@ -1,4 +1,6 @@
+import { billPrinterLineWidthChars } from "@gaurav-pos/shared";
 import type { BillPrinterSlot, PrintLayoutSettingsInput, PrinterOutputMode } from "@gaurav-pos/shared";
+import { readPaymentQr } from "./payment-qr-settings.js";
 import type { BillPrinterProfile } from "./types.js";
 
 export type SettingReader = (key: string) => string | undefined;
@@ -22,8 +24,11 @@ export function readBillPrinterProfile(readSetting: SettingReader, slot: BillPri
   const printerHost = host || null;
   const printerName = name || null;
   const printerPort = port ? Number(port) : null;
+  const paperWidthMm = readSetting(`${prefix}_paper_width_mm`);
   return {
     label,
+    paperWidthMm: paperWidthMm === "45" ? 45 : paperWidthMm === "50" ? 50 : paperWidthMm === "58" ? 58 : paperWidthMm === "80" ? 80 : null,
+    paymentQrSizeMm: Number(readSetting(`${prefix}_payment_qr_size_mm`)) || readPaymentQr(readSetting)?.sizeMm || 32,
     printerMode,
     printerHost,
     printerPort,
@@ -34,7 +39,7 @@ export function readBillPrinterProfile(readSetting: SettingReader, slot: BillPri
 
 export function billPrinterSettingValues(
   slot: BillPrinterSlot,
-  input: { label?: string; printerMode?: "system" | "network"; printerName?: string | null; printerHost?: string; printerPort?: number }
+  input: { label?: string; printerMode?: "system" | "network"; printerName?: string | null; printerHost?: string; printerPort?: number; paymentQrSizeMm?: number; paperWidthMm?: number | null }
 ): Array<readonly [string, string]> {
   const prefix = billPrinterSettingPrefix(slot);
   return [
@@ -42,8 +47,15 @@ export function billPrinterSettingValues(
     [`${prefix}_mode`, input.printerMode ?? "system"],
     [`${prefix}_name`, input.printerName ?? ""],
     [`${prefix}_host`, input.printerHost ?? ""],
-    [`${prefix}_port`, String(input.printerPort ?? 9100)]
+    [`${prefix}_port`, String(input.printerPort ?? 9100)],
+    ...(input.paymentQrSizeMm === undefined ? [] : [[`${prefix}_payment_qr_size_mm`, String(input.paymentQrSizeMm)] as const]),
+    ...(input.paperWidthMm === undefined ? [] : [[`${prefix}_paper_width_mm`, input.paperWidthMm === null ? "" : String(input.paperWidthMm)] as const])
   ];
+}
+
+export function billPrinterReceiptLayout(layout: PrintLayoutSettingsInput, profile: BillPrinterProfile): PrintLayoutSettingsInput {
+  if (!profile.paperWidthMm) return layout;
+  return { ...layout, lineWidthChars: billPrinterLineWidthChars(profile.paperWidthMm, layout.lineWidthChars) };
 }
 
 export function printLayoutKey(scope: PrintLayoutSettingsInput["scope"], productionUnitId?: string): string {

@@ -13,6 +13,7 @@ import { buildTestBillPrintPayload, buildTestKotPrintPayload } from "./print-tes
 import type { PrintJobInput } from "./print-job-records.js";
 import {
   billPrinterSettingValues,
+  billPrinterReceiptLayout,
   parsePrinterOutputMode,
   readBillPrinterProfile
 } from "./printer-settings.js";
@@ -24,7 +25,8 @@ export type PrintSettingsActionContext = {
   readSetting: (key: string) => string | undefined;
   writeSetting: (key: string, value: string) => void;
   getPrintLayout: (scope: PrintLayoutSettingsInput["scope"], productionUnitId?: string) => PrintLayoutSettingsInput;
-  getPaymentQr?: () => import("../tickets.js").BillTicket["paymentQr"];
+  getPaymentQr?: (slot?: BillPrinterSlot) => import("../tickets.js").BillTicket["paymentQr"];
+  getRestaurantBranding?: () => import("@gaurav-pos/shared").RestaurantBranding;
   enqueuePrintJob: (input: PrintJobInput) => string;
   appendEvent: (type: string, aggregateType: string, aggregateId: string, payload: unknown) => DomainEvent;
 };
@@ -122,13 +124,14 @@ export function updatePrinterOutputMode(ctx: PrintSettingsActionContext, mode: P
 }
 
 export function enqueueTestBillPrint(ctx: PrintSettingsActionContext, requestedBy: string, printerSlot: BillPrinterSlot = "default"): { printJobId: string } {
-  const template = ctx.getPrintLayout("receipt");
+  const profile = getBillPrinterProfile(ctx, printerSlot);
+  const template = billPrinterReceiptLayout(ctx.getPrintLayout("receipt"), profile);
   const printJobId = ctx.enqueuePrintJob({
     targetType: "BILL",
     targetId: "test-bill",
     productionUnitId: null,
     ...resolveBillPrinter(ctx, printerSlot),
-    payload: buildTestBillPrintPayload(template, ctx.getPaymentQr?.())
+    payload: buildTestBillPrintPayload(template, ctx.getPaymentQr?.(printerSlot), ctx.getRestaurantBranding?.(), profile.paperWidthMm)
   });
   ctx.appendEvent("print_job.test_bill_queued", "print_job", printJobId, { requestedBy, printJobId });
   return { printJobId };
@@ -153,7 +156,7 @@ export function enqueueTestKotPrint(ctx: PrintSettingsActionContext, requestedBy
 function updateBillPrinterProfile(
   ctx: PrintSettingsActionContext,
   slot: BillPrinterSlot,
-  input: { label?: string; printerMode?: "system" | "network"; printerName?: string | null; printerHost?: string; printerPort?: number }
+  input: { label?: string; printerMode?: "system" | "network"; printerName?: string | null; printerHost?: string; printerPort?: number; paymentQrSizeMm?: number; paperWidthMm?: number | null }
 ): void {
   for (const [key, value] of billPrinterSettingValues(slot, input)) {
     ctx.writeSetting(key, value);

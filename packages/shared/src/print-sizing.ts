@@ -15,3 +15,12 @@ export function printFontPoints(size: LegacyPrintTextSize, level?: number): numb
   const value = printSizeLevel(size, level);
   return value <= 2 ? 9 + value : 11 + (value - 2) * 0.375;
 }
+
+/** Physical bill-printer overrides leave existing shared receipt widths intact. */
+export function billPrinterLineWidthChars(paperWidthMm: number | null | undefined, legacyLineWidthChars: number): number {
+  if (paperWidthMm === 45) return 25;
+  if (paperWidthMm === 50) return 28;
+  if (paperWidthMm === 58) return 32;
+  if (paperWidthMm === 80) return legacyLineWidthChars === 48 ? 48 : 42;
+  return legacyLineWidthChars;
+}

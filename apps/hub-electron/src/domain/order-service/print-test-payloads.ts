@@ -3,9 +3,11 @@ import type { PrintLayoutSettingsInput } from "@gaurav-pos/shared";
 import { renderBillTicketForPrint, renderKotTicketForPrint } from "../tickets.js";
 import type { UnitRow } from "./types.js";
 
-export function buildTestBillPrintPayload(template: PrintLayoutSettingsInput, paymentQr?: import("../tickets.js").BillTicket["paymentQr"]): string {
+export function buildTestBillPrintPayload(template: PrintLayoutSettingsInput, paymentQr?: import("../tickets.js").BillTicket["paymentQr"], branding?: import("@gaurav-pos/shared").RestaurantBranding, paperWidthMm?: number | null): string {
   return renderBillTicketForPrint({
     paymentQr,
+    paperWidthMm: paperWidthMm ?? undefined,
+    restaurantLogo: branding?.logoImageDataUrl ? { imageDataUrl: branding.logoImageDataUrl } : null,
     tableName: "TEST",
     billId: "TEST-BILL",
     items: [{ name: "Test item", quantity: 1, unitPricePaise: 100, lineTotalPaise: 100 }],
@@ -14,7 +16,7 @@ export function buildTestBillPrintPayload(template: PrintLayoutSettingsInput, pa
     totalPaise: 100,
     finalTotalPaise: 100,
     createdAt: new Date().toISOString(),
-    restaurantName: template.restaurantName,
+    restaurantName: branding?.restaurantName || template.restaurantName,
     restaurantAddress: template.restaurantAddress,
     taxRegistrationText: template.taxRegistrationText,
     lineWidthChars: template.lineWidthChars,

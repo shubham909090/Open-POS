@@ -1,4 +1,7 @@
 import {
+  RESTAURANT_LOGO_MAX_DATA_URL_LENGTH,
+  updateRestaurantBrandingSchema,
+  removeRestaurantLogoSchema,
   hubConnectionSettingsSchema,
   managerPinSchema,
   managerPinUnlockSchema,
@@ -31,6 +34,25 @@ function isLocalRequest(request: LocalRequest): boolean {
 
 export function registerSettingsRoutes({ app, input, auth }: HubRouteContext): void {
   const { adminOnly, captainOrAdmin } = auth;
+
+  app.get("/settings/restaurant-branding", { preHandler: auth.anyRole }, async (_request, reply) => {
+    reply.header("cache-control", "no-store");
+    return { branding: input.orderService.getRestaurantBranding() };
+  });
+  app.put("/settings/restaurant-branding", { preHandler: captainOrAdmin, bodyLimit: RESTAURANT_LOGO_MAX_DATA_URL_LENGTH + 2048 }, async (request) => {
+    const parsed = updateRestaurantBrandingSchema.safeParse(request.body);
+    if (!parsed.success) throw new DomainError(parsed.error.issues[0]?.message ?? "Invalid restaurant branding", 400);
+    const result = await input.orderService.updateRestaurantBranding(parsed.data, auth.getSession(request).name);
+    input.eventBus.publish({ type: "restaurant_branding.updated" });
+    return result;
+  });
+  app.delete("/settings/restaurant-branding", { preHandler: captainOrAdmin }, async (request) => {
+    const parsed = removeRestaurantLogoSchema.safeParse(request.body ?? {});
+    if (!parsed.success) throw new DomainError(parsed.error.issues[0]?.message ?? "Invalid logo approval", 400);
+    const result = await input.orderService.removeRestaurantLogo(parsed.data, auth.getSession(request).name);
+    input.eventBus.publish({ type: "restaurant_branding.updated" });
+    return result;
+  });
 
   app.get("/settings/payment-qr", { preHandler: auth.anyRole }, async (_request, reply) => {
     reply.header("cache-control", "no-store");
