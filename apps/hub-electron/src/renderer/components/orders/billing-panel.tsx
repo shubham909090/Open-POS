@@ -42,6 +42,8 @@ export function BillingPanel({
   requestManagerApproval: ManagerApprovalRequest;
 }) {
   const queryClient = useQueryClient();
+  const reprintTrigger = useRef<HTMLButtonElement>(null);
+  const ncTrigger = useRef<HTMLButtonElement>(null);
   const [discountType, setDiscountType] = useState<"amount" | "percent">("amount");
   const [discount, setDiscount] = useState("0");
   const [tip, setTip] = useState("0");
@@ -293,7 +295,7 @@ export function BillingPanel({
         {existingPaid > 0 ? <Metric label="Balance" value={formatInr(Math.max(0, finalTotal - existingPaid))} /> : null}
       </div>
       {bill.customer_name ? <p className="text-sm text-muted">Name: {bill.customer_name}</p> : null}
-      {bill.revision_number ? <p className="text-sm text-muted">Bill revision {bill.revision_number}{bill.is_nc ? ` · NC: ${bill.nc_reason ?? ""}` : ""}</p> : null}
+      {bill.revision_number && (bill.revision_number > 1 || bill.is_nc) ? <p className="bill-version-note">Revision {bill.revision_number}{bill.is_nc ? ` · NC: ${bill.nc_reason ?? ""}` : ""}</p> : null}
       {adjustmentControls}
       <section className="bill-payment-section">
         <div className="mini-title">
@@ -344,6 +346,7 @@ export function BillingPanel({
       {!revisionEditing ? <div className="reprint-action-row">
         <button
           type="button"
+          ref={reprintTrigger}
           className="secondary-button reprint-bill-button"
           disabled={!canRequestReprint}
           onClick={() => { void requestReprint(); }}
@@ -364,6 +367,7 @@ export function BillingPanel({
       />
       {!revisionEditing ? <button
         type="button"
+        ref={ncTrigger}
         className="danger-link"
         disabled={markNc.isPending}
         onClick={async () => {
@@ -389,6 +393,7 @@ export function BillingPanel({
       <BillPrinterChooser
         open={Boolean(pendingReprintApproval)}
         title="Reprint bill where?"
+        returnFocusRef={reprintTrigger}
         busy={reprintBill.isPending}
         onClose={() => setPendingReprintApproval(null)}
         onChoose={(printerSlot) => {
@@ -401,6 +406,7 @@ export function BillingPanel({
       <BillPrinterChooser
         open={Boolean(pendingNcApproval)}
         title="Print NC bill where?"
+        returnFocusRef={ncTrigger}
         busy={markNc.isPending}
         onClose={() => setPendingNcApproval(null)}
         onChoose={(printerSlot) => {

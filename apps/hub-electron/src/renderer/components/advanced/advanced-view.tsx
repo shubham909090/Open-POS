@@ -390,7 +390,7 @@ export function AdvancedView({
                 {bootstrap.printJobs.map((job) => (
                   <article key={job.id} className="record-row print-job-row">
                     <div className="print-job-description">
-                      <strong>{job.target_type} {job.printer_name ? <small>· {job.printer_name}</small> : null}</strong>
+                      <strong>{job.target_type}{job.bill_number != null ? ` #${job.bill_number}` : job.ticket_sequence != null ? ` #${job.ticket_sequence}` : ""}{job.table_name ? ` · ${job.table_name}` : ""} {job.printer_name ? <small>· {job.printer_name}</small> : null}</strong>
                       <span>{formatPosDateTime(job.created_at)} · {job.attempts} attempt{job.attempts === 1 ? "" : "s"}</span>
                       {job.last_error ? <span className="print-job-error">{job.last_error}</span> : null}
                     </div>

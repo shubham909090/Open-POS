@@ -366,10 +366,10 @@ export function TableWorkspace({
           <button type="button" aria-pressed={orderPanel === "bill"} className={orderPanel === "bill" ? "active" : ""} onClick={() => setOrderPanel("bill")}>Bill</button>
         </div>
         <div className="ticket-header-actions">
-          <div className="ticket-total" aria-live="polite">
-            <span>{orderPanel === "bill" ? "Sent total" : draft.length > 0 ? "Table + draft" : "Table total"}</span>
-            <strong>{formatInr(orderPanel === "bill" ? sentTotal : draftTotal + sentTotal)}</strong>
-          </div>
+          {orderPanel !== "bill" ? <div className="ticket-total" aria-live="polite">
+            <span>{draft.length > 0 ? "Table + draft" : "Table total"}</span>
+            <strong>{formatInr(draftTotal + sentTotal)}</strong>
+          </div> : null}
           {onClose ? (
             <button type="button" className="quiet-button" onClick={onClose}>
               Close

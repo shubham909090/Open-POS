@@ -75,6 +75,10 @@
   overflow-wrap: anywhere;
 }
 
+.line-metadata { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
+.line-metadata .line-punch::before { content: "·"; margin-right: 8px; color: var(--line-strong); }
+.line-metadata > .line-note-field[open] { flex-basis: 100%; }
+
 .line-punch {
   @apply text-xs font-medium leading-5 text-muted;
   overflow-wrap: anywhere;

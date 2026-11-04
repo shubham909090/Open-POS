@@ -88,3 +88,14 @@
 .kot-card li.kot-note {
   @apply list-none;
 }
+
+.kot-ticket-kind { display: grid; gap: 2px; text-align: right; }
+.kot-ticket-kind strong { font-size: 12px; font-weight: 600; }
+.kot-card .kot-change-row { display: grid; grid-template-columns: minmax(86px, auto) minmax(0, 1fr); align-items: start; gap: 12px; }
+.kot-item-change { font-size: 12px; font-weight: 600; white-space: nowrap; }
+.kot-card.cancellation { border-color: var(--danger-line); background: var(--danger-soft); }
+.kot-card.cancellation .kot-ticket-kind, .kot-card.cancellation .kot-ticket-kind strong, .kot-change-row.removal .kot-item-change { color: var(--danger); }
+.kot-card.acknowledge-only footer { grid-template-columns: minmax(0, 1fr); }
+.kot-acknowledge-button { border: 1px solid var(--line-strong); background: var(--panel); color: var(--ink); }
+.kot-card.cancellation .kot-acknowledge-button { border-color: var(--danger-line); color: var(--danger); }
+.kot-acknowledge-button:hover:not(:disabled) { background: var(--wash); }

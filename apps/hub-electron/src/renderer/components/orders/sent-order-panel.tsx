@@ -166,8 +166,8 @@ export function SentOrderPanel({
         </section>
       ) : null}
       <LineItems
-        emptyTitle="Nothing sent yet"
-        emptyText="Use the search above to add items to this table."
+        emptyTitle="No sent items"
+        emptyText=""
         rows={orderStateItems.map((item) => ({
           id: item.key,
           title: item.name,

@@ -77,10 +77,11 @@
 
 /* Keep the settlement decision visible while the bill's supporting fields scroll. */
 .ticket-body > .billing-panel { display: flex; flex: 1 0 auto; flex-direction: column; padding-bottom: 0; }
-.ticket-body .bill-metrics { gap: 20px; padding: 0 0 12px; border-bottom: 1px solid var(--line); }
+.ticket-body .bill-metrics { gap: 20px; padding: 0 0 8px; border-bottom: 1px solid var(--line); }
 .ticket-body .bill-metrics > * { border: 0; border-radius: 0; background: transparent; padding: 0; box-shadow: none; }
 .ticket-body .bill-adjustments, .ticket-body .bill-payment-section, .ticket-body .change-helper { border: 0; border-radius: 0; padding: 12px 0; background: transparent; }
 .ticket-body .bill-payment-section { border-block: 1px solid var(--line); }
+.ticket-body .bill-adjustments { padding-block: 8px; }
 .bill-subtotal { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding-block: 4px 12px; border-bottom: 1px solid var(--line); color: var(--muted); font-size: 13px; }
 .bill-subtotal strong { color: var(--ink); font-variant-numeric: tabular-nums; }
 .bill-name-field { max-width: 440px; }
@@ -97,3 +98,5 @@
 .bill-settle-bar strong { font-size: 20px; font-weight: 650; font-variant-numeric: tabular-nums; }
 .bill-settle-bar .punch-button { min-height: var(--control-height); min-width: 230px; }
 @media (max-width: 720px) { .bill-settle-bar { margin-inline: -12px; padding-inline: 12px; } .bill-settle-bar .punch-button { flex: 1; min-width: 180px; } }
+
+.bill-version-note { margin: 0; color: var(--muted); font-size: 12px; }

@@ -4,6 +4,9 @@ export interface PrintJob {
   id: string;
   target_type: string;
   target_id: string;
+  table_name?: string | null;
+  bill_number?: number | null;
+  ticket_sequence?: number | null;
   printer_name?: string | null;
   status: string;
   attempts: number;

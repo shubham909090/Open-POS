@@ -1,3 +1,5 @@
+import type { KotType } from "@gaurav-pos/shared";
+
 export type BillAdjustmentPayload = {
   discountType?: "amount" | "percent";
   discountValue?: number;
@@ -69,6 +71,7 @@ export interface TableOrder {
 }
 
 export interface KdsTicket {
+  type?: KotType;
   id: string;
   sequence: number;
   table_name: string;

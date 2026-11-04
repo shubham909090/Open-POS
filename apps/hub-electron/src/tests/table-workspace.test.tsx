@@ -74,7 +74,8 @@ describe("hub table workspace send actions", () => {
     useHubStore.setState({ orderPanel: "bill" });
     const { container } = renderWorkspace(TableWorkspace);
     await screen.findByText(/unsent items are not included in this bill/);
-    expect(container.querySelector('.ticket-total')?.textContent).toBe('Sent total₹300.00');
+    expect(container.querySelector('.ticket-total')).toBeNull();
+    expect(screen.getByText('Sent items subtotal').nextElementSibling?.textContent).toBe('₹300.00');
     expect(screen.queryByText("Table + draft")).toBeNull();
   });
 

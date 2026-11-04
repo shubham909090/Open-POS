@@ -3,6 +3,20 @@ import { stripPrintStyleMarkers } from "../domain/tickets.js";
 import { createTestHub } from "./helpers.js";
 
 describe("OrderService billing and bill printing", () => {
+  it("identifies bills and kitchen tickets in the print queue without exposing receipt payloads", () => {
+    const { database, orderService } = createTestHub();
+    try {
+      const order = orderService.submitOrder({ tableId: "table-t1", captainId: "waiter-1", pax: 1, orderType: "dine_in", items: [{ menuItemId: "item-dal-fry", quantity: 1 }] });
+      const bill = orderService.generateBill(order.orderId);
+      const jobs = orderService.listPrintJobs() as Array<Record<string, unknown>>;
+      expect(jobs.find((job) => job.target_id === bill.billId)).toMatchObject({ target_type: "BILL", table_name: "T1", bill_number: 1, ticket_sequence: null });
+      expect(jobs.find((job) => job.target_type === "KOT")).toMatchObject({ table_name: "T1", ticket_sequence: 1, bill_number: null });
+      expect(jobs.every((job) => !("payload" in job))).toBe(true);
+    } finally {
+      database.close();
+    }
+  });
+
   it("prints itemized dish lines on the customer bill", () => {
     const { database, orderService } = createTestHub();
 

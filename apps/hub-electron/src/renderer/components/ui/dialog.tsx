@@ -1,6 +1,6 @@
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { X } from "lucide-react";
-import { useEffect, useRef, type KeyboardEventHandler, type ReactNode } from "react";
+import { useEffect, useRef, type KeyboardEventHandler, type ReactNode, type RefObject } from "react";
 import { cn } from "../../lib/utils.js";
 import { Button } from "./button.js";
 
@@ -13,6 +13,7 @@ export function Dialog({
   size = "default",
   onKeyDown,
   onCloseAutoFocus,
+  returnFocusRef,
   className,
 }: {
   open: boolean;
@@ -23,6 +24,8 @@ export function Dialog({
   size?: "default" | "wide";
   onKeyDown?: KeyboardEventHandler<HTMLDivElement>;
   onCloseAutoFocus?: (event: Event) => void;
+  /** Explicit origin for chained dialogs whose previous dialog unmounts during the handoff. */
+  returnFocusRef?: RefObject<HTMLElement | null>;
   className?: string;
 }) {
   // Most POS dialogs are opened by an action rather than a Radix Trigger.
@@ -53,7 +56,7 @@ export function Dialog({
           onKeyDown={onKeyDown}
           onCloseAutoFocus={(event) => {
             onCloseAutoFocus?.(event);
-            const target = returnFocus.current;
+            const target = returnFocusRef?.current ?? returnFocus.current;
             if (!event.defaultPrevented && target?.isConnected && !target.closest("[hidden]")) {
               event.preventDefault();
               target.focus({ preventScroll: true });

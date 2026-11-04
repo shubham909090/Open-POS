@@ -98,10 +98,15 @@ export function getOrderReadModel(db: SqliteDatabase, orderId: string): unknown 
 export function listPrintJobReadModels(db: SqliteDatabase, limit: number): unknown[] {
   return db
     .prepare(
-      `SELECT id, target_type, target_id, production_unit_id, printer_host, printer_port, printer_name,
-        status, attempts, last_error, created_at, updated_at
-       FROM print_jobs
-       ORDER BY created_at DESC
+      `SELECT p.id, p.target_type, p.target_id, p.production_unit_id, p.printer_host, p.printer_port, p.printer_name,
+        p.status, p.attempts, p.last_error, p.created_at, p.updated_at,
+        t.name AS table_name, b.bill_number, k.sequence AS ticket_sequence
+       FROM print_jobs p
+       LEFT JOIN bills b ON p.target_type = 'BILL' AND p.target_id = b.id
+       LEFT JOIN kots k ON p.target_type IN ('KOT', 'BOT') AND p.target_id = k.id
+       LEFT JOIN orders o ON o.id = COALESCE(b.order_id, k.order_id)
+       LEFT JOIN restaurant_tables t ON t.id = o.table_id
+       ORDER BY p.created_at DESC
        LIMIT ?`
     )
     .all(limit);
