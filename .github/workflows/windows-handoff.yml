@@ -1,0 +1,37 @@
+name: Windows Electron Handoff
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [codex/windows-update-handoff-fix]
+
+permissions:
+  contents: read
+
+jobs:
+  handoff:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Probe real Electron child process startup
+        shell: pwsh
+        run: |
+          $electron = node -e "process.stdout.write(require('./apps/hub-electron/node_modules/electron'))"
+          $probe = Resolve-Path apps/hub-electron/scripts/probe-windows-handoff.cjs
+          $output = Join-Path $env:RUNNER_TEMP handoff-probe
+          $process = Start-Process $electron -ArgumentList @($probe, $output) -PassThru
+          if (-not $process.WaitForExit(90000)) { $process.Kill(); throw 'Electron probe timed out' }
+          Get-Content (Join-Path $output result.json)
+          if ($process.ExitCode -ne 0) { throw 'Electron probe failed' }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-handoff
+          path: ${{ runner.temp }}/handoff-probe/*
