@@ -1,10 +1,12 @@
-import { copyFileSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { copyFileSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { currentDbSchemaVersion } from "../src/db/schema-version.js";
 import { readAppMetadata } from "../src/app-metadata.js";
 import { ONLINE_UPDATE_METADATA, validateOnlineUpdateMetadata, validateUpdatePackage } from "../src/update/update-package.js";
+import { MOBILE_UPDATE_METADATA_FILE, validateMobileReleaseMetadata } from "../../mobile/scripts/mobile-release-metadata.js";
 
 const owner = "shubham909090";
 const repo = "Open-POS";
@@ -31,11 +33,28 @@ const mobilePackagePath = join(root, "..", "mobile", "package.json");
 const mobileVersion = existsSync(mobilePackagePath)
   ? (JSON.parse(readFileSync(mobilePackagePath, "utf8")).version as string)
   : null;
-const mobileApkName = mobileVersion ? `Gaurav POS Mobile-${mobileVersion}.apk` : null;
-const mobileApkPath = mobileApkName ? join(root, "..", "mobile", "release-local", mobileApkName) : null;
+const mobileReleaseDir = join(root, "..", "mobile", "release-local");
+const mobileApkName = mobileVersion ? `Gaurav-POS-Mobile-${mobileVersion}.apk` : null;
+const mobileApkPath = mobileApkName ? join(mobileReleaseDir, mobileApkName) : null;
+const mobileMetadataPath = join(mobileReleaseDir, MOBILE_UPDATE_METADATA_FILE);
+const includeMobile = Boolean(mobileApkPath && existsSync(mobileApkPath));
 copyFileSync(installerPath, updaterInstallerPath);
 copyFileSync(installerBlockmapPath, updaterInstallerBlockmapPath);
-const releaseAssets = [updaterInstallerPath, updaterInstallerBlockmapPath, latestYmlPath, onlineMetadataPath, packagePath, ...(mobileApkPath && existsSync(mobileApkPath) ? [mobileApkPath] : [])];
+const releaseAssets = [updaterInstallerPath, updaterInstallerBlockmapPath, latestYmlPath, onlineMetadataPath, packagePath];
+if (includeMobile && mobileApkPath && mobileApkName && mobileVersion) {
+  if (!existsSync(mobileMetadataPath)) throw new Error(`Missing ${MOBILE_UPDATE_METADATA_FILE}; create a validated mobile build first`);
+  const appConfig = JSON.parse(readFileSync(join(root, "..", "mobile", "app.json"), "utf8"));
+  if (appConfig.expo?.version !== mobileVersion) throw new Error("Mobile package.json and app.json versions differ");
+  validateMobileReleaseMetadata(JSON.parse(readFileSync(mobileMetadataPath, "utf8")), {
+    versionName: mobileVersion,
+    versionCode: appConfig.expo?.android?.versionCode,
+    apkFileName: mobileApkName
+  }, readFileSync(mobileApkPath));
+  releaseAssets.push(mobileApkPath, mobileMetadataPath);
+}
+const checksumPath = join(uploadAliasDir, "SHA256SUMS");
+writeFileSync(checksumPath, `${releaseAssets.map((path) => `${createHash("sha256").update(readFileSync(path)).digest("hex")}  ${basename(path)}`).join("\n")}\n`);
+releaseAssets.push(checksumPath);
 const dryRun = process.argv.includes("--dry-run");
 const clobber = process.argv.includes("--clobber");
 
@@ -69,7 +88,8 @@ const notes = [
   "- latest.yml (Electron updater channel metadata)",
   `- ${ONLINE_UPDATE_METADATA} (Hub DB compatibility metadata)`,
   `- ${packageName} (fallback DB-safe update package)`,
-  ...(mobileApkName && mobileApkPath && existsSync(mobileApkPath) ? [`- ${mobileApkName} (Android APK)`] : []),
+  ...(includeMobile ? [`- ${mobileApkName} (Android APK)`, `- ${MOBILE_UPDATE_METADATA_FILE} (mobile version, install size and SHA256)`] : []),
+  "- SHA256SUMS (checksums for every release artifact)",
   "",
   "Update safety:",
   "- Hub online updater creates a pre-update DB backup before install",
@@ -77,7 +97,7 @@ const notes = [
   "- SQLite native binary validated as Windows x64 PE32+",
   "- Installer inspected for matching SQLite native binary",
   "- Hub creates pre-update DB backup before opening installer",
-  ...(mobileApkName && mobileApkPath && existsSync(mobileApkPath) ? ["- Android APK built with EAS preview profile"] : [])
+  ...(includeMobile ? ["- Android package/version/signing continuity and 16 KB alignment validated by the local APK release builder", "- Mobile metadata validated against this APK and current app version before upload"] : [])
 ].join("\n");
 
 console.log(`Ready to publish ${owner}/${repo} ${tag}`);

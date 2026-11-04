@@ -20,6 +20,13 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Validate Windows smoke script syntax
+        shell: pwsh
+        run: |
+          $parseErrors = $null
+          $tokens = $null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path apps/hub-electron/scripts/test-windows-update.ps1), [ref]$tokens, [ref]$parseErrors) | Out-Null
+          if ($parseErrors.Count -gt 0) { $parseErrors | Format-List; throw 'Windows smoke script has syntax errors' }
       - name: Fresh native Windows release
         shell: pwsh
         run: |
@@ -44,3 +51,5 @@ jobs:
             ${{ runner.temp }}/gpos-update-smoke/*.log
             ${{ runner.temp }}/gpos-update-smoke/*.json
             ${{ runner.temp }}/gpos-update-smoke/*.png
+            ${{ runner.temp }}/gpos-update-smoke/updates/*.log
+            ${{ runner.temp }}/gpos-update-smoke/updates/handoff-*/*.log

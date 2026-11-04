@@ -2,7 +2,7 @@
   "expo": {
     "name": "Gaurav POS Mobile",
     "slug": "gaurav-pos-mobile",
-    "version": "0.1.14",
+    "version": "0.1.15",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "assetBundlePatterns": [
@@ -20,11 +20,16 @@
     ],
     "android": {
       "package": "com.gauravpos.mobile",
-      "versionCode": 14,
+      "versionCode": 15,
       "permissions": [
         "android.permission.CAMERA",
-        "android.permission.RECORD_AUDIO"
-      ]
+        "android.permission.RECORD_AUDIO",
+        "android.permission.REQUEST_INSTALL_PACKAGES"
+      ],
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/brand-mark.png",
+        "backgroundColor": "#f3f8f7"
+      }
     },
     "web": {
       "bundler": "metro"
@@ -33,6 +38,7 @@
       "eas": {
         "projectId": "253e6cd4-439c-4f52-bff4-f3a03e298621"
       }
-    }
+    },
+    "icon": "./assets/brand-mark.png"
   }
 }

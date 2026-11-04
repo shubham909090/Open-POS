@@ -465,3 +465,25 @@ Open Hub -> App Updates -> Rollback -> recovery script restores DB backup -> pre
 - Do not use a package if SQLite validation fails.
 - Do not install an older app over a newer DB without using rollback.
 - Do not update during service while orders are open.
+
+## Mobile update metadata and upgrade gate
+
+The local Android release builder now writes `Gaurav-POS-Mobile-<version>.apk`
+and `mobile-update-metadata.json` into `apps/mobile/release-local/`. It preserves
+older APKs; an existing output for the same version must be deliberately archived
+before rebuilding. The metadata contains the actual mobile `appId`, `versionName`,
+`versionCode`, `apkFileName`, SHA256 and byte size. Mobile versions are independent
+of the Hub tag version.
+
+Before writing metadata the builder verifies APK signatures, confirms the package
+ID and built version/code with Android `aapt`, checks the signing certificate
+against the key used by existing stable/nightly installs, and checks 16 KB ZIP
+page alignment. The GitHub publisher validates metadata against the APK bytes
+and current mobile app configuration, uploads both, and includes every artifact
+in `SHA256SUMS`.
+
+These checks do not replace install testing. Before an official release, verify a
+clean install and in-place Android upgrades from the last stable and nightly APKs,
+retaining device pairing and drafts. An older app cannot acquire its first update
+button until the new APK is installed once. Android package-installer approval is
+still required. Do not uninstall an existing installation as an update workaround.

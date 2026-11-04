@@ -1,6 +1,6 @@
 {
   "name": "@gaurav-pos/hub-electron",
-  "version": "0.1.24",
+  "version": "0.1.25",
   "description": "Offline-first restaurant POS hub for Windows.",
   "author": "Gaurav POS",
   "private": true,
@@ -117,6 +117,7 @@
       "**/7zip-bin/**"
     ],
     "win": {
+      "icon": "resources/brand-mark.png",
       "files": [
         {
           "from": "node_modules/@img/sharp-win32-x64",
