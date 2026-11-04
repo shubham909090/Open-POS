@@ -1,11 +1,11 @@
 .panel,
 .sub-panel {
-  @apply rounded-lg border border-line bg-panel;
+  min-width: 0; background: var(--panel); border: 0; border-radius: var(--surface-radius);
 }
 
 .panel,
 .sub-panel {
-  @apply p-4;
+  padding: 24px;
 }
 
 .panel-title,
@@ -22,7 +22,7 @@
 .pane-title h2,
 .section-title,
 .action-title {
-  @apply m-0 text-base font-bold leading-6 text-ink;
+  @apply m-0 text-base font-semibold leading-6 text-ink;
 }
 
 .item-summary-panel > .mini-title {
@@ -38,7 +38,7 @@
 }
 
 .catalog-status-filter button.active {
-  @apply bg-ink text-white;
+  background: var(--accent-soft); color: var(--accent-dark);
 }
 
 .panel-title span,
@@ -80,7 +80,7 @@
 
 .hub-connection-form {
   @apply items-start;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .hub-connection-actions {
@@ -88,10 +88,6 @@
   grid-column: 1 / -1;
 }
 
-.layout-editor {
-  @apply grid gap-4;
-  grid-template-columns: minmax(0, 1fr) minmax(320px, 520px);
-}
 
 .three-col,
 .adjust-grid,
@@ -104,7 +100,6 @@
 .report-detail-grid,
 .quick-pay,
 .quick-pay-grid,
-.printer-test-actions,
 .utility-actions,
 .reset-options,
 .action-strip,
@@ -113,7 +108,6 @@
 .send-button-row,
 .kot-actions,
 .shift-grid,
-.table-list,
 .menu-grid,
 .kot-grid,
 .stock-metrics,
@@ -126,7 +120,6 @@
 .action-strip,
 .form-actions,
 .modal-actions,
-.printer-test-actions,
 .utility-actions,
 .topbar-actions,
 .row-actions,
@@ -140,10 +133,6 @@
   @apply justify-end;
 }
 
-.printer-test-actions {
-  @apply grid gap-2;
-  grid-template-columns: minmax(0, 1fr);
-}
 
 .floor-table-list,
 .floor-group,
@@ -172,7 +161,7 @@
 .subhead,
 .input-label,
 .mini-label {
-  @apply m-0 text-xs font-bold uppercase text-muted;
+  @apply m-0 text-xs font-medium text-muted;
 }
 
 .ticket-toolbar,
@@ -196,7 +185,7 @@
 .segment-row,
 .alcohol-tabs,
 .segmented-row {
-  @apply flex flex-wrap gap-1 rounded-lg border border-line bg-wash p-1;
+  display: flex; flex-wrap: wrap; gap: 4px; padding: 4px; background: var(--wash); border-radius: var(--control-radius);
 }
 
 .menu-filter-row button,
@@ -210,5 +199,5 @@
 .segment-row button.active,
 .alcohol-tabs button.active,
 .segmented-row button.active {
-  @apply bg-ink text-white;
+  background: var(--accent-soft); color: var(--accent-dark);
 }

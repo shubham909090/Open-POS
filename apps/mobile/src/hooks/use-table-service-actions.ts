@@ -1,4 +1,4 @@
-import type { Dispatch, SetStateAction } from "react";
+import { useRef, type Dispatch, type SetStateAction } from "react";
 import { Alert } from "react-native";
 import type { OrderItemInput } from "@gaurav-pos/shared";
 
@@ -6,6 +6,7 @@ import type { HubBootstrap, HubClient, HubOrder, RequestOptions } from "../lib/h
 import { approvalPayload, normalisePax } from "../lib/mobile-format";
 import type { ConnectionState, MobileOrderStateItem, OrderStateSaveMode, PaymentMethod, PrintMode, ViewMode } from "../lib/mobile-types";
 import { buildBillRevisionItems, buildDraftOrderSummary } from "../lib/order-command-builders";
+import { orderMatchesTable } from "../lib/table-selection";
 
 type TableServiceActionsInput = {
   client: HubClient;
@@ -24,11 +25,13 @@ type TableServiceActionsInput = {
   loadTableOrder: (tableId: string) => Promise<void>;
   chooseBillPrinter: (title: string) => Promise<RequestOptions["printerSlot"] | null>;
   selectedTableId: string | null;
+  selectedTableName: string | null;
+  isCurrentSelection: () => boolean;
   sentItems: HubOrder["items"];
   sending: boolean;
   setMessage: Dispatch<SetStateAction<string>>;
   setMode: Dispatch<SetStateAction<ViewMode>>;
-  setSelectedTableId: Dispatch<SetStateAction<string | null>>;
+  setSelectedTableId: (tableId: string | null) => void;
   setSending: Dispatch<SetStateAction<boolean>>;
 };
 
@@ -49,6 +52,8 @@ export function useTableServiceActions({
   loadTableOrder,
   chooseBillPrinter,
   selectedTableId,
+  selectedTableName,
+  isCurrentSelection,
   sentItems,
   sending,
   setMessage,
@@ -56,21 +61,28 @@ export function useTableServiceActions({
   setSelectedTableId,
   setSending,
 }: TableServiceActionsInput) {
+  const submitInFlight = useRef(false);
+  function canUseSelectedOrder() {
+    if (isCurrentSelection() && orderMatchesTable(currentOrder, selectedTableId)) return true;
+    setMessage("Reload this table before continuing.");
+    return false;
+  }
   function orderSummary() {
     return buildDraftOrderSummary(items, menuItems);
   }
 
   function confirmSendKot(printMode: PrintMode): Promise<boolean> {
     return new Promise((resolve) => {
-      Alert.alert(printMode === "kot" ? "Save KOT?" : "Print and KOT?", orderSummary(), [
+      Alert.alert(printMode === "kot" ? "Save KOT?" : "Print and KOT?", `Table ${selectedTableName}\n\n${orderSummary()}`, [
         { text: "Review", style: "cancel", onPress: () => resolve(false) },
         { text: printMode === "kot" ? "KOT" : "Print and KOT", onPress: () => resolve(true) }
-      ]);
+      ], { cancelable: true, onDismiss: () => resolve(false) });
     });
   }
 
   async function submitOrder(printMode: PrintMode) {
-    if (sending) return;
+    if (sending || submitInFlight.current) return;
+    if (!isCurrentSelection()) return;
     if (!selectedTableId) {
       setMessage("Choose a table first.");
       setMode("tables");
@@ -83,13 +95,14 @@ export function useTableServiceActions({
     }
     if (connection !== "online") {
       await persistDraft();
-      Alert.alert("Draft saved", "Reconnect to the hub to send these items.");
+      setMessage("Draft saved on this phone. Reconnect to the hub to send these items.");
       return;
     }
-    if (!(await confirmSendKot(printMode))) return;
-
+    submitInFlight.current = true;
     try {
       setSending(true);
+      if (!(await confirmSendKot(printMode))) return;
+      if (!isCurrentSelection()) return;
       const input = {
         tableId: selectedTableId,
         pax: normalisePax(pax),
@@ -108,11 +121,13 @@ export function useTableServiceActions({
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not send order.");
     } finally {
+      submitInFlight.current = false;
       setSending(false);
     }
   }
 
   async function shiftTable(toTableId: string) {
+    if (!canUseSelectedOrder()) return;
     if (!selectedTableId) {
       setMessage("Choose a running table before shifting.");
       return;
@@ -141,6 +156,7 @@ export function useTableServiceActions({
   }
 
   async function shiftItem(orderItemId: string, quantity: number, toTableId: string) {
+    if (!canUseSelectedOrder()) return;
     if (!selectedTableId) {
       setMessage("Choose a running table before shifting an item.");
       return;
@@ -168,6 +184,7 @@ export function useTableServiceActions({
   }
 
   async function generateBillForSelectedTable(customerName?: string) {
+    if (!canUseSelectedOrder()) return;
     if (!currentOrder?.order || !selectedTableId) {
       setMessage("Send items first, then generate the bill.");
       return;
@@ -176,6 +193,7 @@ export function useTableServiceActions({
       setSending(true);
       const printerSlot = await chooseBillPrinter("Print bill where?");
       if (!printerSlot) return;
+      if (!canUseSelectedOrder()) return;
       const trimmedCustomerName = customerName?.trim() || undefined;
       const scope = { orderId: currentOrder.order.id, printerSlot, customerName: trimmedCustomerName };
       await client.generateBill(currentOrder.order.id, { idempotencyKey: operationKey("mobile-bill-generate", scope), printerSlot, customerName: trimmedCustomerName });
@@ -194,6 +212,7 @@ export function useTableServiceActions({
     stateItems: MobileOrderStateItem[],
     managerApproval?: { pin: string; reason: string }
   ) {
+    if (!canUseSelectedOrder()) return;
     if (!currentOrder?.order || !selectedTableId) {
       setMessage("Choose a running or billed table first.");
       return;
@@ -219,6 +238,7 @@ export function useTableServiceActions({
   }
 
   async function reprintSelectedBill(pin: string, reason: string) {
+    if (!canUseSelectedOrder()) return;
     if (!currentOrder?.bill) {
       setMessage("Generate the bill before reprinting.");
       return;
@@ -227,6 +247,7 @@ export function useTableServiceActions({
       setSending(true);
       const printerSlot = await chooseBillPrinter("Reprint bill where?");
       if (!printerSlot) return;
+      if (!canUseSelectedOrder()) return;
       const payload = approvalPayload(pin, reason, deviceName);
       const scope = { billId: currentOrder.bill.id, payload, printerSlot };
       await client.reprintBill(currentOrder.bill.id, payload, { idempotencyKey: operationKey("mobile-bill-reprint", scope), printerSlot });
@@ -240,6 +261,7 @@ export function useTableServiceActions({
   }
 
   async function markSelectedBillNc(pin: string, reason: string) {
+    if (!canUseSelectedOrder()) return;
     if (!currentOrder?.bill || !selectedTableId) {
       setMessage("Generate the bill before marking NC.");
       return;
@@ -248,6 +270,7 @@ export function useTableServiceActions({
       setSending(true);
       const printerSlot = await chooseBillPrinter("Print NC bill where?");
       if (!printerSlot) return;
+      if (!canUseSelectedOrder()) return;
       const payload = approvalPayload(pin, reason, deviceName);
       const scope = { billId: currentOrder.bill.id, payload, printerSlot };
       await client.markBillNc(currentOrder.bill.id, payload, { idempotencyKey: operationKey("mobile-bill-nc", scope), printerSlot });
@@ -268,6 +291,7 @@ export function useTableServiceActions({
     tipPaise: number;
     payments: Array<{ method: PaymentMethod; amountPaise: number; reference?: string }>;
   }) {
+    if (!canUseSelectedOrder()) return;
     if (!currentOrder?.bill || !selectedTableId) {
       setMessage("Generate the bill before taking payment.");
       return;
@@ -288,6 +312,7 @@ export function useTableServiceActions({
   }
 
   async function reviseSelectedBill(pin: string, reason: string) {
+    if (!canUseSelectedOrder()) return;
     if (!currentOrder?.bill || !selectedTableId) {
       setMessage("Generate the bill before revising.");
       return;

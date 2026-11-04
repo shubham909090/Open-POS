@@ -6,8 +6,6 @@ import {
   ScrollView,
   StatusBar,
   Text,
-  UIManager,
-  useWindowDimensions,
   View
 } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
@@ -15,6 +13,8 @@ import type { SaleGroupKind } from "@gaurav-pos/shared";
 import { HubClient, type CurrentDaySummary, type DailyReportDetail, type DailyReportRow, type HubBootstrap, type HubOrder, type KdsTicket } from "./lib/hub-client";
 import { getMobileServiceViewModel } from "./lib/mobile-app-view-model";
 import { palette, styles } from "./styles/app-styles";
+import { Button } from "./components/ui-primitives";
+import { formatRupees } from "./lib/mobile-format";
 import { AppHeader, ConnectionBanner, DraftBar, ModeTabs, OnboardingScreen } from "./components/app-shell";
 import { PairingScannerModal } from "./components/pairing-scanner-modal";
 import { PaymentQrModal } from "./components/payment-qr-modal";
@@ -29,19 +29,17 @@ import { useMobileHubRefresh } from "./hooks/use-mobile-hub-refresh";
 import { useOperationKeys } from "./hooks/use-operation-keys";
 import { useOrderDraft } from "./hooks/use-order-draft";
 import { useTableServiceActions } from "./hooks/use-table-service-actions";
+import { useMobileUpdate } from "./hooks/use-mobile-update";
+import { useRestaurantBranding } from "./hooks/use-restaurant-branding";
+import { useTableOrderPreference } from "./components/table-screen";
+import { BrandingSettings, MobileUpdatePanel } from "./components/settings-panels";
 import {
   nextConnectionAfterDevicePairing,
   shouldShowMobileOnboarding
 } from "./lib/connection-health";
-
-if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
+import { orderMatchesTable } from "./lib/table-selection";
 
 export default function App() {
-  const { width } = useWindowDimensions();
-  const isWide = width >= 780;
-
   const [initializing, setInitializing] = useState(true);
   const [hubUrl, setHubUrlState] = useState("http://192.168.1.10:3737");
   const [deviceToken, setDeviceTokenState] = useState("");
@@ -86,7 +84,7 @@ export default function App() {
     },
   });
   const [bootstrap, setBootstrap] = useState<HubBootstrap | null>(null);
-  const [currentOrder, setCurrentOrder] = useState<HubOrder | null>(null);
+  const [loadedOrder, setCurrentOrder] = useState<HubOrder | null>(null);
   const [currentSummary, setCurrentSummary] = useState<CurrentDaySummary | null>(null);
   const [dailyReports, setDailyReports] = useState<DailyReportRow[]>([]);
   const [selectedHistoryDayId, setSelectedHistoryDayId] = useState<string | null>(null);
@@ -106,6 +104,9 @@ export default function App() {
     setPax,
     items,
     savingDraft,
+    draftLoading,
+    isCurrentSelection,
+    loadTableOrder,
     selectTable,
     persistDraft,
     addItem,
@@ -115,11 +116,12 @@ export default function App() {
     clearSelectedTableDraft,
   } = useOrderDraft({
     connection,
-    loadTableOrder,
+    client,
     setCurrentOrder,
     setMode,
     setMessage,
   });
+  const currentOrder = isCurrentSelection() && orderMatchesTable(loadedOrder, selectedTableId) ? loadedOrder : null;
   const { refresh } = useMobileHubRefresh({
     client,
     initializing,
@@ -153,6 +155,9 @@ export default function App() {
     setKdsTickets,
   });
 
+  const { tableOrder, setTableOrder } = useTableOrderPreference();
+  const mobileUpdate = useMobileUpdate();
+  const restaurantBranding = useRestaurantBranding({ client, hubUrl, online: Boolean(deviceToken) && connection === "online", deviceName });
   const { chooseBillPrinter } = useBillPrinterChooser({ client, setMessage });
   const {
     printHistoryBill,
@@ -208,7 +213,7 @@ export default function App() {
   const historyMode = mode === "history" && canBill;
   const isKitchenDevice = deviceRole === "kitchen";
   const shouldShowOnboarding = shouldShowMobileOnboarding({ setupOpen, deviceToken, connection });
-  const useVirtualMenu = mode === "menu" && !isWide;
+  const useVirtualMenu = mode === "menu";
   const license = bootstrap?.setup?.license;
   const licenseBlocked = license?.status === "locked" || license?.status === "missing";
   const licenseWarning = license?.status === "warning";
@@ -239,6 +244,8 @@ export default function App() {
     loadTableOrder,
     chooseBillPrinter,
     selectedTableId,
+    selectedTableName: selectedTable?.name ?? null,
+    isCurrentSelection,
     sentItems,
     sending,
     setMessage,
@@ -255,40 +262,38 @@ export default function App() {
     if (shouldShowOnboarding) setPaymentQrOpen(false);
   }, [shouldShowOnboarding]);
 
-  async function loadTableOrder(tableId: string) {
-    try {
-      setCurrentOrder(await client.tableOrder(tableId));
-    } catch (error) {
-      setCurrentOrder(null);
-      setMessage(error instanceof Error ? error.message : "Could not load table order.");
-    }
-  }
-
-  if (initializing) {
+  if (initializing || (deviceToken && !bootstrap && connection === "checking")) {
     return (
       <SafeAreaProvider>
         <SafeAreaView style={styles.safe}>
           <View style={styles.loadingShell}>
             <ActivityIndicator size="large" color={palette.green} />
-            <Text style={styles.loadingText}>Opening POS app...</Text>
+            <Text style={styles.loadingText}>{initializing ? "Opening POS app…" : "Connecting to your hub…"}</Text>
           </View>
         </SafeAreaView>
       </SafeAreaProvider>
     );
   }
 
-  const workArea = (
-    <View style={[styles.workArea, isWide && !historyMode && styles.workAreaWide, useVirtualMenu && styles.workAreaMenuOnly]}>
-      {!historyMode && (mode === "tables" || isWide) && (
+  const workArea = draftLoading && mode !== "tables" ? (
+    <View style={styles.loadingShell} accessibilityRole="progressbar">
+      <ActivityIndicator color={palette.green} />
+      <Text style={styles.muted}>Loading this table…</Text>
+    </View>
+  ) : (
+    <View style={[styles.workArea, useVirtualMenu && styles.workAreaMenuOnly]}>
+      {!historyMode && mode === "tables" && (
         <TablePicker
           activeTables={activeTables}
           floors={bootstrap?.floors ?? []}
           selectedTableId={selectedTableId}
           loading={loading}
+          tableOrder={tableOrder}
+          onTableOrderChange={setTableOrder}
           onSelectTable={(tableId) => void selectTable(tableId)}
         />
       )}
-      {!historyMode && (mode === "menu" || isWide) && (
+      {!historyMode && mode === "menu" && (
         <MenuScreen
           selectedTableName={selectedTable?.name ?? null}
           visibleMenu={visibleMenu}
@@ -296,6 +301,7 @@ export default function App() {
           selectedSaleGroup={activeMenuGroup}
           hasSearch={hasMenuSearch}
           draftTotal={draftTotal}
+          hasNewItems={hasNewItems}
           draftQuantitiesByMenuItemId={draftQuantitiesByMenuItemId}
           draftSelectionLabelsByMenuItemId={draftSelectionLabelsByMenuItemId}
           searchValue={menuSearch}
@@ -308,7 +314,7 @@ export default function App() {
           onAddOpenItem={addOpenItem}
         />
       )}
-      {!historyMode && (mode === "ticket" || isWide) && (
+      {!historyMode && mode === "ticket" && (
         <TicketScreen
           selectedTableName={selectedTable?.name ?? null}
           deviceName={deviceName}
@@ -318,6 +324,7 @@ export default function App() {
           menuItems={bootstrap?.menuItems ?? []}
           tables={activeTables}
           floors={bootstrap?.floors ?? []}
+          tableOrder={tableOrder}
           selectedTableId={selectedTableId}
           draftTotal={draftTotal}
           tableTotal={tableTotal}
@@ -346,6 +353,7 @@ export default function App() {
       )}
       {historyMode ? (
         <BillingHistoryPanel
+          actionMessage={message}
           currentSummary={currentSummary}
           dailyReports={dailyReports}
           selectedHistoryDayId={selectedHistoryDayId}
@@ -353,7 +361,7 @@ export default function App() {
           menuItems={bootstrap?.menuItems ?? []}
           sending={sending}
           onHistoryPrint={(billId) => void printHistoryBill(billId)}
-          onHistoryEdit={(billId, historyItems, customerName, masterPin, saveMode) => editHistoryBill(billId, historyItems, customerName, masterPin, saveMode)}
+          onHistoryEdit={(billId, historyItems, customerName, masterPin, saveMode, payments) => editHistoryBill(billId, historyItems, customerName, masterPin, saveMode, payments)}
           onSelectHistoryDay={(posDayId) => void selectHistoryDay(posDayId)}
         />
       ) : null}
@@ -377,7 +385,6 @@ export default function App() {
 
   const serviceContent = licenseBlocked ? licenseBlockContent : isKitchenDevice ? (
     <>
-      <ConnectionBanner message={message} savingDraft={false} />
       <KitchenScreen
         units={activeKdsUnits}
         selectedUnitId={kitchenUnitId}
@@ -390,8 +397,6 @@ export default function App() {
     </>
   ) : (
     <>
-      <ConnectionBanner message={licenseWarning ? license.message : message} savingDraft={savingDraft} />
-      <ModeTabs mode={mode} onModeChange={setMode} newItemCount={items.reduce((total, item) => total + item.quantity, 0)} showHistory={canBill} />
       {workArea}
     </>
   );
@@ -400,20 +405,51 @@ export default function App() {
     <SafeAreaProvider>
       <SafeAreaView style={styles.safe}>
         <StatusBar barStyle="dark-content" backgroundColor={palette.wash} />
-        <KeyboardAvoidingView style={styles.keyboardShell} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+        <KeyboardAvoidingView style={styles.keyboardShell} behavior={Platform.OS === "ios" ? "padding" : "height"}>
           <AppHeader
+            branding={restaurantBranding.branding}
             connection={connection}
-            title={isKitchenDevice ? "Kitchen Screen" : selectedTable ? `Table ${selectedTable.name}` : canBill ? "Captain POS" : "Waiter"}
-            subtitle={isKitchenDevice ? deviceName || "Kitchen device" : selectedTable ? "Add dishes or review sent items" : "Pick a table to start"}
+            title={shouldShowOnboarding ? (setupOpen ? "Settings" : !deviceToken ? "Connect this phone" : "Hub offline") : isKitchenDevice ? "Kitchen" : historyMode ? "History" : mode === "tables" ? "Tables" : selectedTable ? `Table ${selectedTable.name}` : mode === "menu" ? "Menu" : "Check"}
+
             onSetupPress={() => openSetup(hubUrl, deviceToken)}
             onPaymentQrPress={deviceToken && !shouldShowOnboarding ? () => setPaymentQrOpen(true) : undefined}
+            setupVisible={shouldShowOnboarding}
+            onBackPress={deviceToken && connection === "online" ? () => setSetupOpen(false) : undefined}
           />
+
+
+
+          {!shouldShowOnboarding && !licenseBlocked && (message || savingDraft || licenseWarning) ? (
+            <View style={styles.serviceFeedback}>
+              <ConnectionBanner message={licenseWarning ? license.message : message} savingDraft={!isKitchenDevice && savingDraft} onDismiss={licenseWarning ? undefined : () => setMessage("")} />
+            </View>
+          ) : null}
 
           {shouldShowOnboarding ? (
             <OnboardingScreen
               connection={connection}
               formRevision={formRevision}
               hubUrl={hubUrlDraft}
+              savedHubUrl={hubUrl}
+              deviceName={deviceName}
+              deviceRole={deviceRole}
+              branding={restaurantBranding.branding}
+              extraSections={
+                <>
+                  {deviceToken && canBill ? (
+                    <BrandingSettings
+                      branding={restaurantBranding.branding}
+                      online={connection === "online"}
+                      busy={restaurantBranding.busy}
+                      error={restaurantBranding.error}
+                      notice={restaurantBranding.notice}
+                      onPickLogo={restaurantBranding.pickLogo}
+                      onSave={restaurantBranding.save}
+                    />
+                  ) : null}
+                  <MobileUpdatePanel update={mobileUpdate} />
+                </>
+              }
               deviceToken={deviceTokenDraft}
               pairingCode={pairingCode}
               pairingPayload={pairingPayload}
@@ -439,7 +475,7 @@ export default function App() {
                   </View>
                 </View>
               ) : (
-                <ScrollView style={styles.screen} contentContainerStyle={styles.screenContent} keyboardShouldPersistTaps="always">
+                <ScrollView key={`${mode}:${selectedTableId ?? ""}:${selectedHistoryDayId ?? ""}`} style={styles.screen} contentContainerStyle={[styles.screenContent, hasNewItems && mode !== "ticket" && !isKitchenDevice && styles.screenContentWithDraft]} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
                   {serviceContent}
                 </ScrollView>
               )}
@@ -452,6 +488,21 @@ export default function App() {
               ) : null}
             </>
           )}
+          {!shouldShowOnboarding && !isKitchenDevice && !licenseBlocked && hasNewItems && mode === "ticket" ? (
+            <View style={styles.serviceActionBar}>
+              <View style={styles.serviceActionTotal}>
+                <Text style={styles.muted}>{items.reduce((total, item) => total + item.quantity, 0)} new</Text>
+                <Text style={styles.totalText}>Rs {formatRupees(draftTotal)}</Text>
+              </View>
+              <View style={styles.sendButtonRow}>
+                <Button label="Print + KOT" tone="secondary" disabled={sending} style={{ flex: 1 }} onPress={() => void submitOrder("kot_print")} />
+                <Button label={sending ? "Sending…" : connection === "online" ? "Send KOT" : "Save draft"} disabled={sending} style={{ flex: 1 }} onPress={() => void submitOrder("kot")} />
+              </View>
+            </View>
+          ) : null}
+          {!shouldShowOnboarding && !isKitchenDevice && !licenseBlocked ? (
+            <ModeTabs mode={mode} onModeChange={setMode} newItemCount={items.reduce((total, item) => total + item.quantity, 0)} showHistory={canBill} />
+          ) : null}
         </KeyboardAvoidingView>
 
         <PairingScannerModal

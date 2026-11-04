@@ -4,7 +4,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { bitmapEscpos, qrBitmap, renderTicketPdf, textBitmap, ticketPaperDots } from "./ticket-raster.js";
+import { bitmapEscpos, logoBitmap, qrBitmap, renderTicketPdf, textBitmap, ticketPaperDots } from "./ticket-raster.js";
 import { parsePrintStyleLine, PRINT_PAPER_MARKER, stripPrintStyleMarkers } from "../domain/tickets.js";
 
 export interface PrinterAdapter {
@@ -34,6 +34,7 @@ export function renderEscposPayload(payload: string): Buffer {
   for (const line of lines) {
     const parsed = parsePrintStyleLine(line);
     if (parsed?.paperWidthChars) continue;
+    if (parsed?.logoImageDataUrl) { chunks.push(bitmapEscpos(logoBitmap(parsed, paperDots))); continue; }
     if (parsed?.qrImageDataUrl) { chunks.push(bitmapEscpos(qrBitmap(parsed, paperDots))); continue; }
     if (parsed?.sizeLevel !== undefined) { chunks.push(bitmapEscpos(textBitmap(parsed, paperDots))); continue; }
     const text = parsed?.text ?? line;
@@ -65,10 +66,12 @@ export function buildWindowsSystemPrintCommand(file: string, printerName: string
       "$marker = [char]30;",
       "$lineMarker = [char]29 + 'line:';",
       "$plainMarker = [char]31;",
+      "$logoMarker = [char]29 + 'logo:';",
       "$qrMarker = [char]29 + 'qr:';",
       "$paperMarker = [char]29 + 'paper:';",
       "function Parse-TicketLine($line) {",
       "  if ($line.StartsWith($paperMarker)) { return @{ IsPaper = $true; WidthChars = [int]$line.Substring($paperMarker.Length) } }",
+      "  if ($line.StartsWith($logoMarker)) { $logo = $line.Substring($logoMarker.Length); $bar = $logo.IndexOf(':data:'); if ($bar -lt 0) { throw 'Invalid logo print payload' }; $png = $logo.Substring($bar + 1); return @{ LogoBase64 = $png.Substring($png.IndexOf(',') + 1); LogoWidthMm = [Math]::Max(16, [Math]::Min(45, [double]$logo.Substring(0, $bar))) } }",
       "  if ($line.StartsWith($qrMarker)) { $qr = $line.Substring($qrMarker.Length); $qrBar = $qr.IndexOf(':data:'); $mm = if ($qrBar -ge 0) { [double]$qr.Substring(0, $qrBar) } else { 32 }; $png = if ($qrBar -ge 0) { $qr.Substring($qrBar + 1) } else { $qr }; return @{ QrBase64 = $png.Substring($png.IndexOf(',') + 1); QrSizeMm = [Math]::Max(20, [Math]::Min(45, $mm)) } }",
       "  if ($line.StartsWith($lineMarker)) {",
       "    $payload = $line.Substring($lineMarker.Length);",
@@ -99,6 +102,13 @@ export function buildWindowsSystemPrintCommand(file: string, printerName: string
       "    $parsed = Parse-TicketLine $lines[$script:index];",
       "    if ($parsed.IsPaper) { $dots = if ($parsed.WidthChars -le 25) { 320 } elseif ($parsed.WidthChars -le 28) { 360 } elseif ($parsed.WidthChars -le 32) { 384 } elseif ($parsed.WidthChars -le 48) { 576 } else { 832 }; $script:paperWidth = $dots * 100 / 203; $script:index += 1; continue }",
       "    $contentWidth = if ($null -ne $script:paperWidth) { [Math]::Min($eventArgs.MarginBounds.Width, $script:paperWidth) } else { $eventArgs.MarginBounds.Width };",
+      "    if ($parsed.LogoBase64) {",
+      "      $stream = [System.IO.MemoryStream]::new([Convert]::FromBase64String($parsed.LogoBase64)); $image = [System.Drawing.Image]::FromStream($stream);",
+      "      $width = [Math]::Min($contentWidth - 8, $parsed.LogoWidthMm * 100 / 25.4); $scale = [Math]::Min($width / $image.Width, (20 * 100 / 25.4) / $image.Height); $width = $image.Width * $scale; $height = $image.Height * $scale;",
+      "      if (($y + $height) -ge $eventArgs.MarginBounds.Bottom -and $y -gt 0) { $image.Dispose(); $stream.Dispose(); break }",
+      "      $eventArgs.Graphics.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic; $eventArgs.Graphics.DrawImage($image, [single](($contentWidth - $width) / 2), [single]$y, [single]$width, [single]$height);",
+      "      $image.Dispose(); $stream.Dispose(); $y += $height; $script:index += 1; continue;",
+      "    }",
       "    if ($parsed.QrBase64) {",
       "      $stream = [System.IO.MemoryStream]::new([Convert]::FromBase64String($parsed.QrBase64));",
       "      $image = [System.Drawing.Image]::FromStream($stream);",
@@ -119,9 +129,9 @@ export function buildWindowsSystemPrintCommand(file: string, printerName: string
       "    $font = [System.Drawing.Font]::new('Consolas', $fontSize, $fontStyle);",
       "    $lineHeight = [Math]::Ceiling($font.GetHeight($eventArgs.Graphics)) + 1;",
       "    if (($y + $lineHeight) -ge $eventArgs.MarginBounds.Bottom) { break }",
-      "    if ($parsed.IsLine) { $eventArgs.Graphics.DrawLine([System.Drawing.Pens]::Black, 0, $y + [Math]::Floor($lineHeight / 2), $eventArgs.MarginBounds.Width, $y + [Math]::Floor($lineHeight / 2)); $y += $lineHeight; $script:index += 1; continue }",
+      "    if ($parsed.IsLine) { $eventArgs.Graphics.DrawLine([System.Drawing.Pens]::Black, 0, $y + [Math]::Floor($lineHeight / 2), $contentWidth, $y + [Math]::Floor($lineHeight / 2)); $y += $lineHeight; $script:index += 1; continue }",
       "    $measure = $eventArgs.Graphics.MeasureString($parsed.Text, $font);",
-      "    $x = if ($parsed.Align -eq 'center') { [Math]::Max(0, ($eventArgs.MarginBounds.Width - $measure.Width) / 2) } elseif ($parsed.Align -eq 'right') { [Math]::Max(0, $eventArgs.MarginBounds.Width - $measure.Width) } else { 0 };",
+      "    $x = if ($parsed.Align -eq 'center') { [Math]::Max(0, ($contentWidth - $measure.Width) / 2) } elseif ($parsed.Align -eq 'right') { [Math]::Max(0, $eventArgs.MarginBounds.Width - $measure.Width) } else { 0 };",
       "    if ($null -eq $parsed.Level) { $eventArgs.Graphics.DrawString($parsed.Text, $font, $brush, $x, $y); $font.Dispose(); $y += $lineHeight; $script:index += 1; continue }",
       "    $wrappedHeight = [Math]::Max($lineHeight, $eventArgs.Graphics.MeasureString($parsed.Text, $font, [int]$contentWidth).Height);",
       "    if (($y + $wrappedHeight) -ge $eventArgs.MarginBounds.Bottom -and $y -gt 0) { $font.Dispose(); break }",

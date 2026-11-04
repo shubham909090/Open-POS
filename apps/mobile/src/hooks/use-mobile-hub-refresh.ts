@@ -1,12 +1,26 @@
-import { useEffect, useRef, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
+import {
+  useEffect,
+  useRef,
+  type Dispatch,
+  type MutableRefObject,
+  type SetStateAction,
+} from "react";
 import { Alert } from "react-native";
 
 import { getDeviceToken, getHubUrl } from "../lib/draft-store";
-import type { CurrentDaySummary, DailyReportDetail, DailyReportRow, HubBootstrap, HubClient, HubOrder, KdsTicket } from "../lib/hub-client";
+import type {
+  CurrentDaySummary,
+  DailyReportDetail,
+  DailyReportRow,
+  HubBootstrap,
+  HubClient,
+  HubOrder,
+  KdsTicket,
+} from "../lib/hub-client";
 import {
   MOBILE_REALTIME_REFRESH_DEBOUNCE_MS,
   MOBILE_REFRESH_INTERVAL_MS,
-  nextConnectionAfterRefresh
+  nextConnectionAfterRefresh,
 } from "../lib/connection-health";
 import { getKitchenRefreshTarget } from "../lib/kitchen-refresh-target";
 import type { ConnectionState } from "../lib/mobile-types";
@@ -78,11 +92,24 @@ export function useMobileHubRefresh({
 }: UseMobileHubRefreshInput) {
   const refreshInFlightRef = useRef(false);
   const refreshQueuedRef = useRef(false);
+  const connectionMessageRef = useRef("Checking hub connection...");
+  const currentClient = useRef(client);
+  currentClient.current = client;
+  const latestRefresh = useRef(refresh);
+  latestRefresh.current = refresh;
+
+  function showConnectionMessage(message: string) {
+    connectionMessageRef.current = message;
+    setMessage(message);
+  }
 
   useEffect(() => {
     let alive = true;
     async function hydrate() {
-      const [savedHubUrl, savedToken] = await Promise.all([getHubUrl(), getDeviceToken()]);
+      const [savedHubUrl, savedToken] = await Promise.all([
+        getHubUrl(),
+        getDeviceToken(),
+      ]);
       if (!alive) return;
       setHubUrlState(savedHubUrl);
       setDeviceTokenState(savedToken);
@@ -98,9 +125,18 @@ export function useMobileHubRefresh({
   useEffect(() => {
     if (initializing) return;
     void refresh();
-    const interval = setInterval(() => void refresh(false), MOBILE_REFRESH_INTERVAL_MS);
+    const interval = setInterval(
+      () => void refresh(false),
+      MOBILE_REFRESH_INTERVAL_MS,
+    );
     return () => clearInterval(interval);
-  }, [client, initializing, kitchenUnitId, selectedHistoryDayId, selectedTableId]);
+  }, [
+    client,
+    initializing,
+    kitchenUnitId,
+    selectedHistoryDayId,
+    selectedTableId,
+  ]);
 
   useEffect(() => {
     if (initializing || !deviceToken) return;
@@ -109,14 +145,21 @@ export function useMobileHubRefresh({
       if (refreshTimer) return;
       refreshTimer = setTimeout(() => {
         refreshTimer = null;
-        void refresh(false);
+        void latestRefresh.current(false);
       }, MOBILE_REALTIME_REFRESH_DEBOUNCE_MS);
     });
     return () => {
       if (refreshTimer) clearTimeout(refreshTimer);
       unsubscribe();
     };
-  }, [client, deviceToken, initializing, kitchenUnitId, selectedHistoryDayId, selectedTableId]);
+  }, [
+    client,
+    deviceToken,
+    initializing,
+    kitchenUnitId,
+    selectedHistoryDayId,
+    selectedTableId,
+  ]);
 
   async function refresh(showSpinner = true) {
     if (refreshInFlightRef.current) {
@@ -130,30 +173,39 @@ export function useMobileHubRefresh({
       refreshInFlightRef.current = false;
       if (refreshQueuedRef.current) {
         refreshQueuedRef.current = false;
-        void refresh(false);
+        void latestRefresh.current(false);
       }
     }
   }
 
   async function runRefresh(showSpinner = true) {
+    if (currentClient.current !== client) return;
     if (showSpinner) setLoading(true);
     if (showSpinner && !bootstrap) setConnection("checking");
     try {
       if (!deviceToken) {
         const isOnline = await client.health();
-        setConnection(isOnline ? "checking" : "offline");
-        if (isOnline) return;
-        setMessage("Hub is not reachable. Check Wi-Fi and hub address. Drafts stay on this phone.");
+        if (currentClient.current !== client) return;
+        setConnection(isOnline ? "online" : "offline");
+        showConnectionMessage(
+          isOnline
+            ? "Hub connected. Pair this phone to start service."
+            : "Hub is not reachable. Check Wi-Fi and hub address. Drafts stay on this phone.",
+        );
         return;
       }
 
-      const [nextBootstrap, session] = await Promise.all([client.bootstrap(), client.me()]);
+      const [nextBootstrap, session] = await Promise.all([
+        client.bootstrap(),
+        client.me(),
+      ]);
+      if (currentClient.current !== client) return;
       const healthy = nextConnectionAfterRefresh({
         success: true,
         previous: connection,
         failures: connectionFailuresRef.current,
         hasBootstrap: Boolean(bootstrap),
-        showSpinner
+        showSpinner,
       });
       connectionFailuresRef.current = healthy.failures;
       setConnection(healthy.connection);
@@ -161,8 +213,10 @@ export function useMobileHubRefresh({
       setDeviceNameState(session.name);
       setDeviceRoleState(session.role);
       if (session.role === "kitchen") {
-        const { kdsEnabled, kitchenUnits, nextUnitId } = getKitchenRefreshTarget(nextBootstrap, kitchenUnitId);
+        const { kdsEnabled, kitchenUnits, nextUnitId } =
+          getKitchenRefreshTarget(nextBootstrap, kitchenUnitId);
         const nextTickets = nextUnitId ? await client.kds(nextUnitId) : [];
+        if (currentClient.current !== client) return;
         chimeForNewKdsTickets(nextUnitId, nextTickets);
         setKitchenUnitId(nextUnitId);
         setCurrentSummary(null);
@@ -172,22 +226,29 @@ export function useMobileHubRefresh({
         setKdsTickets(nextTickets);
         setMessage(
           nextUnitId
-            ? `Kitchen screen connected for ${kitchenUnits.find((unit) => unit.id === nextUnitId)?.name ?? "selected counter"}.`
+            ? ""
             : kdsEnabled
               ? "No enabled kitchen screen is available. Enable KDS on the hub setup screen."
-              : "KDS is off. Turn on Kitchen Display on the hub setup screen."
+              : "KDS is off. Turn on Kitchen Display on the hub setup screen.",
         );
         return;
       }
       if (session.role === "admin" || session.role === "captain") {
         try {
-          const [summary, reports] = await Promise.all([client.currentBusinessDaySummary(), client.dailyReports()]);
+          const [summary, reports] = await Promise.all([
+            client.currentBusinessDaySummary(),
+            client.dailyReports(),
+          ]);
+          if (currentClient.current !== client) return;
           setCurrentSummary(summary);
           setDailyReports(reports);
           if (selectedHistoryDayId) {
             try {
-              setSelectedHistoryDetail(await client.dailyReport(selectedHistoryDayId));
+              const detail = await client.dailyReport(selectedHistoryDayId);
+              if (currentClient.current !== client) return;
+              setSelectedHistoryDetail(detail);
             } catch {
+              if (currentClient.current !== client) return;
               setSelectedHistoryDayId(null);
               setSelectedHistoryDetail(null);
             }
@@ -195,6 +256,7 @@ export function useMobileHubRefresh({
             setSelectedHistoryDetail(null);
           }
         } catch {
+          if (currentClient.current !== client) return;
           setCurrentSummary(null);
           setDailyReports([]);
           setSelectedHistoryDetail(null);
@@ -205,25 +267,32 @@ export function useMobileHubRefresh({
         setSelectedHistoryDetail(null);
       }
       await checkReadyNotifications();
-      setMessage(`Connected. Business day ${nextBootstrap.currentBusinessDay.business_date} is active.`);
+      if (currentClient.current !== client) return;
+      // A background poll must not erase an action error (for example, an incorrect PIN).
+      const connectionMessage = connectionMessageRef.current;
+      setMessage((current) => current === connectionMessage ? "" : current);
+      connectionMessageRef.current = "";
       if (selectedTableId) await loadTableOrder(selectedTableId);
     } catch (error) {
+      if (currentClient.current !== client) return;
       const next = nextConnectionAfterRefresh({
         success: false,
         previous: connection,
         failures: connectionFailuresRef.current,
         hasBootstrap: Boolean(bootstrap),
-        showSpinner
+        showSpinner,
       });
       connectionFailuresRef.current = next.failures;
       setConnection(next.connection);
-      setMessage(
+      showConnectionMessage(
         next.shouldShowOfflineMessage
-          ? error instanceof Error ? error.message : "Could not reach the hub."
-          : "Connection hiccup. Keeping latest hub data while the phone reconnects."
+          ? error instanceof Error
+            ? error.message
+            : "Could not reach the hub."
+          : "Connection hiccup. Keeping latest hub data while the phone reconnects.",
       );
     } finally {
-      if (showSpinner) setLoading(false);
+      if (showSpinner && currentClient.current === client) setLoading(false);
     }
   }
 
@@ -231,11 +300,16 @@ export function useMobileHubRefresh({
     if (!deviceToken) return;
     try {
       const ready = await client.readyNotifications();
-      for (const notification of ready) {
-        const itemText = notification.items.map((item) => `${item.quantity} x ${item.name}`).join(", ");
-        notifyChime();
-        Alert.alert("Order ready", `${notification.productionUnitName} says Table ${notification.tableName} is ready.\n${itemText}`);
-      }
+      if (currentClient.current !== client) return;
+      if (ready.length === 0) return;
+      notifyChime();
+      Alert.alert(
+        ready.length === 1 ? "Order ready" : `${ready.length} orders ready`,
+        ready.map((notification) => {
+          const items = notification.items.map((item) => `${item.quantity} x ${item.name}`).join(", ");
+          return `Table ${notification.tableName} · ${notification.productionUnitName}\n${items}`;
+        }).join("\n\n"),
+      );
     } catch {
       // Non-captain devices or older hubs may not expose ready alerts; the main refresh still works.
     }

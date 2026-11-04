@@ -24,7 +24,7 @@ describe("HubConnectionCard cloud backup switch", () => {
         cloudBackupEnabled: false
       }
     });
-    fireEvent.click(screen.getByRole("button", { name: /Hub Connection And Security/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Hub connection and security/ }));
 
     expect(screen.getByText("Cloud Backup Off · License checks and app updates stay active")).toBeTruthy();
     expect(screen.getByText("Create Master PIN first to change Cloud Backup.")).toBeTruthy();
@@ -49,7 +49,7 @@ describe("HubConnectionCard cloud backup switch", () => {
       },
       { requestManagerApproval, onSaved }
     );
-    fireEvent.click(screen.getByRole("button", { name: /Hub Connection And Security/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Hub connection and security/ }));
 
     fireEvent.click(screen.getByRole("button", { name: /Turn On Cloud Backup/ }));
 

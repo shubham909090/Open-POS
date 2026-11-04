@@ -47,7 +47,8 @@ export function AlcoholStoragePanel({
           ) : <span />}
           <Button
             type="button"
-            variant="danger"
+            variant="secondary"
+            className="stock-reset-button"
             disabled={busy || !rows.some((row) => row.sealed_large_count !== 0 || row.open_large_ml !== 0 || row.sealed_small_count !== 0)}
             onClick={async () => {
               const approval = await requestManagerApproval({

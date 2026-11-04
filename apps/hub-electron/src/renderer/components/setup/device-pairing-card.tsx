@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { QrCode } from "lucide-react";
 import { formatPosDateTime } from "@gaurav-pos/shared";
@@ -12,6 +12,7 @@ import {
 } from "../../hub-api.js";
 import { SetupCard } from "./setup-card.js";
 import { EmptyState } from "../ui/empty-state.js";
+import { ConfirmationDialog } from "../ui/confirmation-dialog.js";
 
 const roleOptions: Array<{
   role: Role;
@@ -23,19 +24,19 @@ const roleOptions: Array<{
     role: "captain",
     title: "Captain",
     description: "Senior service phone",
-    permissions: "orders, billing, payments, table transfers",
+    permissions: "Orders, billing, transfers and payment QR",
   },
   {
     role: "waiter",
     title: "Waiter",
     description: "Order-taking phone",
-    permissions: "tables, menu, KOT submit",
+    permissions: "Tables, menu, KOT and payment QR display",
   },
   {
     role: "kitchen",
     title: "Kitchen",
     description: "Kitchen display screen",
-    permissions: "enabled KDS counters and ticket status",
+    permissions: "Kitchen tickets and payment QR display",
   },
 ];
 
@@ -56,14 +57,20 @@ export function DevicePairingCard({
   const [role, setRole] = useState<Role>("waiter");
   const [pairing, setPairing] = useState<PairingCodeResult | null>(null);
   const [deviceSearch, setDeviceSearch] = useState("");
+  const [revoking, setRevoking] = useState<LocalDevice | null>(null);
+  const createButton = useRef<HTMLButtonElement>(null);
+  const restoreCreateFocus = useRef(false);
 
   const activeDevices = devices.filter(
-    (device) => device.id !== "device-local-admin" && device.status !== "revoked",
+    (device) =>
+      device.id !== "device-local-admin" && device.status !== "revoked",
   );
   const visibleDevices = activeDevices.filter((device) => {
     const needle = deviceSearch.trim().toLowerCase();
     if (!needle) return true;
-    return [device.name, device.role, device.status].some((part) => part.toLowerCase().includes(needle));
+    return [device.name, device.role, device.status].some((part) =>
+      part.toLowerCase().includes(needle),
+    );
   });
 
   const createPairing = useMutation({
@@ -76,7 +83,11 @@ export function DevicePairingCard({
             : "This creates a one-time QR code that lets a phone join this hub.",
         defaultReason: `Pair ${deviceName.trim() || `${role} device`}`,
         confirmLabel: "Create QR",
-      });
+      }).catch(() => null);
+      if (!managerApproval) {
+        restoreCreateFocus.current = true;
+        return null;
+      }
       return hubApi.createPairingCode({
         deviceName: deviceName.trim() || `${role} device`,
         role,
@@ -85,6 +96,7 @@ export function DevicePairingCard({
       });
     },
     onSuccess: async (result) => {
+      if (!result) return;
       setPairing(result);
       setNotice({
         tone: "good",
@@ -95,9 +107,16 @@ export function DevicePairingCard({
     onError: (error) => setNotice({ tone: "bad", text: messageOf(error) }),
   });
 
+  useEffect(() => {
+    if (createPairing.isPending || !restoreCreateFocus.current) return;
+    restoreCreateFocus.current = false;
+    createButton.current?.focus();
+  }, [createPairing.isPending]);
+
   const revoke = useMutation({
     mutationFn: hubApi.revokeDevice,
     onSuccess: async () => {
+      setRevoking(null);
       setNotice({ tone: "good", text: "Device revoked." });
       await onChanged();
     },
@@ -106,21 +125,22 @@ export function DevicePairingCard({
 
   return (
     <SetupCard
-      title="Pair Phones And Devices"
+      title="Pair phones and devices"
       done={activeDevices.length > 0}
       icon={<QrCode size={20} />}
       summary={`${activeDevices.length} paired devices`}
     >
-      <p className="pairing-copy">
-        Create a QR for each phone or kitchen screen. Open the Android app,
-        choose pair by QR, and scan this code.
-      </p>
-      <div className="role-card-grid">
+      <div
+        className="role-card-grid"
+        role="group"
+        aria-label="Staff device role"
+      >
         {roleOptions.map((option) => (
           <button
             key={option.role}
             type="button"
             className={`role-card ${role === option.role ? "active" : ""}`}
+            aria-pressed={role === option.role}
             onClick={() => setRole(option.role)}
           >
             <strong>{option.title}</strong>
@@ -130,10 +150,10 @@ export function DevicePairingCard({
         ))}
       </div>
       <form
-        className="pairing-form"
+        className="pairing-form pairing-create-form"
         onSubmit={(event) => {
           event.preventDefault();
-          createPairing.mutate();
+          if (!createPairing.isPending) createPairing.mutate();
         }}
       >
         <label>
@@ -141,23 +161,10 @@ export function DevicePairingCard({
           <input
             value={deviceName}
             onChange={(event) => setDeviceName(event.target.value)}
-            placeholder="Waiter phone 1"
+            placeholder={`${roleOptions.find((option) => option.role === role)?.title} phone 1`}
           />
         </label>
-        <label>
-          Role
-          <select
-            value={role}
-            onChange={(event) => setRole(event.target.value as Role)}
-          >
-            {roleOptions.map((option) => (
-              <option key={option.role} value={option.role}>
-                {option.title}
-              </option>
-            ))}
-          </select>
-        </label>
-        <button type="submit" disabled={createPairing.isPending}>
+        <button ref={createButton} type="submit" disabled={createPairing.isPending}>
           {createPairing.isPending ? "Creating..." : "Create QR code"}
         </button>
       </form>
@@ -170,13 +177,11 @@ export function DevicePairingCard({
               <span>Expires {formatPosDateTime(pairing.expiresAt)}</span>
             </div>
           </div>
-          <div className="pairing-payload-panel">
-            <div>
-              <strong>Manual pairing payload</strong>
-              <span>Use only if QR scanning is unavailable.</span>
-            </div>
-            <textarea readOnly value={pairing.pairingPayloadText} />
-          </div>
+          <details className="pairing-payload-panel">
+            <summary>Pair without scanning</summary>
+            <span>Use this payload only if QR scanning is unavailable.</span>
+            <textarea aria-label="Manual pairing payload" readOnly value={pairing.pairingPayloadText} />
+          </details>
         </section>
       ) : null}
       <div className="record-list">
@@ -185,7 +190,12 @@ export function DevicePairingCard({
         ) : null}
         {activeDevices.length > 12 ? (
           <div className="setup-search-row">
-            <input value={deviceSearch} onChange={(event) => setDeviceSearch(event.target.value)} placeholder="Search paired devices" />
+            <input
+              value={deviceSearch}
+              aria-label="Search paired devices"
+              onChange={(event) => setDeviceSearch(event.target.value)}
+              placeholder="Search paired devices"
+            />
           </div>
         ) : null}
         {!loading && activeDevices.length === 0 ? (
@@ -207,8 +217,8 @@ export function DevicePairingCard({
             </div>
             <button
               type="button"
-              className="danger-button"
-              onClick={() => revoke.mutate(device.id)}
+              className="secondary-button pairing-revoke-button"
+              onClick={() => setRevoking(device)}
               disabled={revoke.isPending}
             >
               Revoke
@@ -216,6 +226,20 @@ export function DevicePairingCard({
           </article>
         ))}
       </div>
+      <ConfirmationDialog
+        open={Boolean(revoking)}
+        title={`Revoke ${revoking?.name ?? "device"}?`}
+        message="This phone will lose access to the hub. To use it again, create a new pairing code."
+        confirmLabel={revoke.isPending ? "Revoking…" : "Revoke device"}
+        danger
+        busy={revoke.isPending}
+        onCancel={() => {
+          if (!revoke.isPending) setRevoking(null);
+        }}
+        onConfirm={() => {
+          if (revoking && !revoke.isPending) revoke.mutate(revoking.id);
+        }}
+      />
     </SetupCard>
   );
 }

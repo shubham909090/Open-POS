@@ -17,8 +17,18 @@
 }
 
 .alcohol-form .three-col {
-  @apply rounded-lg border border-line bg-wash p-3;
+  @apply border-0 border-t border-line bg-transparent pt-3;
 }
+
+.alcohol-create-details > summary { margin: 0; cursor: pointer; }
+.alcohol-create-details > summary::-webkit-details-marker { display: none; }
+.alcohol-create-details > summary::after {
+  content: "+";
+  @apply ml-2 text-lg font-normal text-muted;
+}
+.alcohol-create-details[open] > summary::after { content: "−"; transform: none; }
+.alcohol-create-details[open] > .alcohol-form { @apply mt-4; }
+.alcohol-create-details > .alcohol-import-details { @apply mt-4; }
 
 .alcohol-catalog-row {
   grid-template-columns: minmax(220px, 1fr) minmax(240px, auto);
@@ -63,7 +73,8 @@
 }
 
 .alcohol-catalog-table .variant-price-list span {
-  @apply rounded-full border border-line bg-wash px-2 py-1 text-xs font-black text-ink;
+  @apply px-2 py-1 text-xs font-medium text-ink;
+  font-variant-numeric: tabular-nums;
 }
 
 .alcohol-catalog-table .action-cell {
@@ -110,15 +121,21 @@
 }
 
 .stock-metrics span {
-  @apply grid gap-1 rounded-md border border-line bg-wash px-3 py-2 text-xs font-bold uppercase text-muted;
+  @apply grid gap-1 border-0 border-l border-line px-4 py-2 text-xs font-medium text-muted;
 }
 
 .stock-metrics b {
-  @apply text-lg font-black normal-case text-ink;
+  @apply text-xl font-semibold normal-case text-ink;
+  font-variant-numeric: tabular-nums;
 }
 
+.alcohol-loading { @apply grid min-h-36 place-content-center text-sm text-muted; }
+.alcohol-error { @apply items-center justify-between; }
+.alcohol-tabs { @apply w-fit; }
+.stock-reset-button { @apply border-danger/20 text-danger hover:bg-danger-soft hover:text-danger; }
+
 .stock-adjust-form {
-  @apply items-end rounded-lg border border-line bg-panel p-3;
+  @apply items-end border-0 border-t border-line py-4;
   grid-template-columns: minmax(150px, 190px) repeat(3, minmax(140px, 1fr)) minmax(120px, auto);
 }
 
@@ -132,4 +149,13 @@
   .alcohol-catalog-row {
     grid-template-columns: minmax(0, 1fr);
   }
+}
+.alcohol-board { min-width: 0; grid-template-columns: minmax(0, 1fr); }
+.alcohol-layout { @apply grid min-w-0 gap-3; }
+.alcohol-layout > .panel { @apply grid content-start gap-3; }
+.alcohol-catalog-wrap .plain-state { @apply m-0 px-3 py-4; }
+
+@media (max-width: 720px) {
+  .alcohol-board .alcohol-form, .alcohol-board .three-col { grid-template-columns: minmax(0, 1fr); }
+  .alcohol-board .panel-title { flex-wrap: wrap; }
 }

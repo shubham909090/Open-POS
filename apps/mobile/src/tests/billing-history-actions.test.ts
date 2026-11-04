@@ -3,7 +3,7 @@ import { useBillingHistoryActions } from "../hooks/use-billing-history-actions";
 import type { HubClient } from "../lib/hub-client";
 
 describe("billing history actions", () => {
-  it("saves history bill edits without asking for a printer when save-only is requested", async () => {
+  it("preserves explicit split payments and references when saving a paid history bill without printing", async () => {
     const historyEditBill = vi.fn().mockResolvedValue({ billId: "bill-1", revisionNumber: 2, totalPaise: 36_000, printJobIds: [], modified: true });
     const client = { historyEditBill, dailyReport: vi.fn() } as unknown as HubClient;
     const chooseBillPrinter = vi.fn();
@@ -27,7 +27,8 @@ describe("billing history actions", () => {
       setMessage,
     });
 
-    const saved = await actions.editHistoryBill("bill-1", [{ menuItemId: "item-dal-fry", quantity: 2 }], "  Sharma Family  ", "9876", "save");
+    const payments = [{ method: "cash" as const, amountPaise: 10_000 }, { method: "upi" as const, amountPaise: 26_000, reference: "upi-original" }];
+    const saved = await actions.editHistoryBill("bill-1", [{ menuItemId: "item-dal-fry", quantity: 2 }], "  Sharma Family  ", "9876", "save", payments);
 
     expect(saved).toBe(true);
     expect(chooseBillPrinter).not.toHaveBeenCalled();
@@ -37,7 +38,8 @@ describe("billing history actions", () => {
         saveMode: "save",
         customerName: "Sharma Family",
         masterApproval: { pin: "9876", reason: "Owner history edit", approvedBy: "Owner Phone" },
-        items: [{ menuItemId: "item-dal-fry", quantity: 2 }]
+        items: [{ menuItemId: "item-dal-fry", quantity: 2 }],
+        payments,
       },
       { idempotencyKey: "mobile-history-edit-key" }
     );

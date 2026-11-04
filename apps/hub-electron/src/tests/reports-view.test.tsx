@@ -31,6 +31,16 @@ describe("reports history payment edit", () => {
     fireEvent.click(button);
     expect(trigger).toHaveBeenCalledWith({ fileName: expect.stringMatching(/^item-summary-.*\.csv$/), blob: expect.any(Blob) });
   });
+  it("shows a recoverable request error instead of leaving a report in its loading state", async () => {
+    currentBusinessDaySummaryMock.mockRejectedValueOnce(new Error("Hub connection interrupted")).mockResolvedValue(summary());
+    const { ReportsView } = await importReportsView();
+    renderReportsView(ReportsView);
+    expect(await screen.findByRole("alert")).toHaveProperty("textContent", expect.stringContaining("Hub connection interrupted"));
+    expect(screen.queryByText("Loading today’s report…")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(await screen.findByText("Download item summary")).not.toBeNull();
+    expect(screen.queryByText("Hub connection interrupted")).toBeNull();
+  });
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
@@ -120,7 +130,7 @@ describe("reports history payment edit", () => {
     rangeReportMock.mockResolvedValue(rangeSummary(false));
     renderReportsView(ReportsView);
 
-    fireEvent.click(await screen.findByRole("tab", { name: "Monthly / Range" }));
+    fireEvent.click(await screen.findByRole("tab", { name: "Date range" }));
 
     expect(await screen.findByText("Finalized business days only")).toBeTruthy();
     expect(await screen.findByText("Some selected dates have no finalized report.")).toBeTruthy();
@@ -150,7 +160,7 @@ describe("reports history payment edit", () => {
     const { ReportsView } = await importReportsView();
     renderReportsView(ReportsView);
 
-    fireEvent.click(await screen.findByRole("tab", { name: "Monthly / Range" }));
+    fireEvent.click(await screen.findByRole("tab", { name: "Date range" }));
 
     const csvButton = await screen.findByRole("button", { name: "Download CSV" });
     const tallyButton = await screen.findByRole("button", { name: "Download Tally" });
@@ -174,7 +184,7 @@ describe("reports history payment edit", () => {
     const { ReportsView } = await importReportsView();
     renderReportsView(ReportsView);
 
-    fireEvent.click(await screen.findByRole("tab", { name: "Monthly / Range" }));
+    fireEvent.click(await screen.findByRole("tab", { name: "Date range" }));
     fireEvent.click(await screen.findByText("Tally ledger settings"));
     fireEvent.change(await screen.findByLabelText("Cash ledger"), { target: { value: "Main Cash" } });
     fireEvent.click(screen.getByRole("button", { name: "Save Tally settings" }));
@@ -192,7 +202,7 @@ describe("reports history payment edit", () => {
     const { ReportsView } = await importReportsView();
     renderReportsView(ReportsView);
 
-    fireEvent.click(await screen.findByRole("tab", { name: "Monthly / Range" }));
+    fireEvent.click(await screen.findByRole("tab", { name: "Date range" }));
     const csvButton = await screen.findByRole("button", { name: "Download CSV" });
     const tallyButton = await screen.findByRole("button", { name: "Download Tally" });
 
@@ -220,7 +230,7 @@ describe("reports history payment edit", () => {
     const { ReportsView } = await importReportsView();
     renderReportsView(ReportsView, { requestManagerApproval });
 
-    fireEvent.click(await screen.findByRole("tab", { name: "Modified Bills" }));
+    fireEvent.click(await screen.findByRole("tab", { name: "Modified bills" }));
     fireEvent.click(await screen.findByRole("button", { name: "Open audit" }));
 
     await waitFor(() => expect(modifiedBillsMock).toHaveBeenCalledWith({
@@ -229,8 +239,6 @@ describe("reports history payment edit", () => {
       masterApproval: approval
     }));
     expect(screen.getByText("#7")).toBeTruthy();
-    expect(screen.getByText("bill-1")).toBeTruthy();
-    expect(screen.getByText("order-1")).toBeTruthy();
     expect(screen.getByText("Local Admin")).toBeTruthy();
     expect(screen.getAllByText("+₹180.00").length).toBeGreaterThan(0);
 
@@ -263,7 +271,7 @@ describe("reports history payment edit", () => {
     const { ReportsView } = await importReportsView();
     renderReportsView(ReportsView, { requestManagerApproval });
 
-    fireEvent.click(await screen.findByRole("tab", { name: "Modified Bills" }));
+    fireEvent.click(await screen.findByRole("tab", { name: "Modified bills" }));
     fireEvent.click(await screen.findByRole("button", { name: "Open audit" }));
     expect(await screen.findByText("#7")).toBeTruthy();
 
@@ -289,7 +297,7 @@ describe("reports history payment edit", () => {
     const { ReportsView } = await importReportsView();
     renderReportsView(ReportsView, { requestManagerApproval });
 
-    fireEvent.click(await screen.findByRole("tab", { name: "Modified Bills" }));
+    fireEvent.click(await screen.findByRole("tab", { name: "Modified bills" }));
     expect(await screen.findByText("Loading business day")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Open audit" })).toBeNull();
     expect(modifiedBillsMock).not.toHaveBeenCalled();
@@ -317,14 +325,14 @@ describe("reports history payment edit", () => {
     const { ReportsView } = await importReportsView();
     renderReportsView(ReportsView, { requestManagerApproval });
 
-    fireEvent.click(await screen.findByRole("tab", { name: "Modified Bills" }));
+    fireEvent.click(await screen.findByRole("tab", { name: "Modified bills" }));
     fireEvent.click(await screen.findByRole("button", { name: "Open audit" }));
     expect(await screen.findByText("Local Admin")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("tab", { name: "Daily" }));
     expect(screen.queryByText("Local Admin")).toBeNull();
 
-    fireEvent.click(screen.getByRole("tab", { name: "Modified Bills" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Modified bills" }));
     fireEvent.click(await screen.findByRole("button", { name: "Open audit" }));
     await waitFor(() => expect(modifiedBillsMock).toHaveBeenCalledTimes(2));
     expect(screen.queryByText("Local Admin")).toBeNull();

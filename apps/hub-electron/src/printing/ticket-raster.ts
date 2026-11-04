@@ -34,6 +34,23 @@ export function qrBitmap(line: ParsedPrintStyleLine, paperDots: number): TicketB
   return { width: paperDots, height: side, data };
 }
 
+export function logoBitmap(line: ParsedPrintStyleLine, paperDots: number): TicketBitmap {
+  const png = PNG.sync.read(Buffer.from(line.logoImageDataUrl!.split(",")[1]!, "base64"), { checkCRC: true });
+  const width = Math.min(paperDots - 16, Math.round((line.logoWidthMm ?? 32) * 203 / 25.4));
+  const scale = Math.min(width / png.width, 160 / png.height);
+  const imageWidth = Math.max(1, Math.round(png.width * scale));
+  const height = Math.max(1, Math.round(png.height * scale));
+  const data = new Uint8Array(paperDots * height * 4).fill(255);
+  const left = Math.floor((paperDots - imageWidth) / 2);
+  for (let y = 0; y < height; y++) for (let x = 0; x < imageWidth; x++) {
+    const source = (Math.min(png.height - 1, Math.floor(y / scale)) * png.width + Math.min(png.width - 1, Math.floor(x / scale))) * 4;
+    const target = (y * paperDots + x + left) * 4;
+    const alpha = png.data[source + 3]! / 255;
+    for (let channel = 0; channel < 3; channel++) data[target + channel] = Math.round(png.data[source + channel]! * alpha + 255 * (1 - alpha));
+  }
+  return { width: paperDots, height, data };
+}
+
 export function textBitmap(line: ParsedPrintStyleLine, paperDots: number): TicketBitmap {
   const scale = line.sizeLevel === undefined ? line.size === "large" ? 2 : line.size === "small" ? 0.75 : 1 : printSizeScale(line.sizeLevel);
   const fontSize = 20 * scale;
@@ -81,7 +98,7 @@ export function renderTicketPdf(payload: string): { data: Buffer; widthMm: numbe
     const parsed = parsePrintStyleLine(text);
     if (parsed?.paperWidthChars) return [];
     const line = parsed ?? { text, plainText: text, size: "normal" as const, bold: false, align: "left" as const };
-    return [line.qrImageDataUrl ? qrBitmap(line, width) : textBitmap(line, width)];
+    return [line.logoImageDataUrl ? logoBitmap(line, width) : line.qrImageDataUrl ? qrBitmap(line, width) : textBitmap(line, width)];
   });
   const height = Math.max(1, rows.reduce((sum, row) => sum + row.height, 0));
   const rgb = Buffer.alloc(width * height * 3, 255);

@@ -12,7 +12,7 @@ export function Segmented<T extends string>({
   className?: string;
 }) {
   return (
-    <div className={cn("inline-flex rounded-md border border-line bg-wash p-1", className)}>
+    <div className={cn("ui-segmented", className)}>
       {options.map((opt) => (
         <button
           key={opt.value}
@@ -20,10 +20,10 @@ export function Segmented<T extends string>({
           aria-pressed={value === opt.value}
           onClick={() => onChange(opt.value)}
           className={cn(
-            "rounded px-3 py-1.5 text-sm font-semibold transition-colors",
+            "ui-segmented-item",
             value === opt.value
-              ? "active bg-panel text-ink shadow-sm"
-              : "text-muted hover:text-ink"
+              ? "active"
+              : ""
           )}
         >
           {opt.label}

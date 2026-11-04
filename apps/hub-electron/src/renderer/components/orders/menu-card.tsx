@@ -2,6 +2,7 @@ import { formatCompactInr } from "@gaurav-pos/shared";
 import { Beer, Coffee, Package, Utensils, Wine } from "lucide-react";
 import type { MenuItem } from "../../hub-api.js";
 import { EmptyState } from "../ui/empty-state.js";
+import type { PointerEvent } from "react";
 
 type MenuActionVariant = {
   id?: string;
@@ -17,7 +18,8 @@ export function MenuResultSection({
   selectedTableId,
   onAdd,
   activeItemId,
-  onActiveItemIndexChange,
+  onItemPointerMove,
+  setItemElement,
   emptyText
 }: {
   title: string;
@@ -25,7 +27,8 @@ export function MenuResultSection({
   selectedTableId: string;
   onAdd: (tableId: string, item: MenuItem, variantId?: string) => void;
   activeItemId?: string;
-  onActiveItemIndexChange?: (index: number) => void;
+  onItemPointerMove?: (index: number, event: PointerEvent<HTMLElement>) => void;
+  setItemElement?: (index: number, element: HTMLElement | null) => void;
   emptyText?: string;
 }) {
   return (
@@ -36,9 +39,10 @@ export function MenuResultSection({
           {items.map((item, index) => (
             <MenuCard
               key={item.id}
+              rowRef={(element) => setItemElement?.(index, element)}
               active={activeItemId === item.id}
               item={item}
-              onActive={() => onActiveItemIndexChange?.(index)}
+              onActive={(event) => onItemPointerMove?.(index, event)}
               onAdd={(variantId) => onAdd(selectedTableId, item, variantId)}
             />
           ))}
@@ -54,20 +58,20 @@ export function MenuCard({
   item,
   active = false,
   onActive,
+  rowRef,
   onAdd
 }: {
   item: MenuItem;
   active?: boolean;
-  onActive?: () => void;
+  onActive?: (event: PointerEvent<HTMLElement>) => void;
+  rowRef?: (element: HTMLElement | null) => void;
   onAdd: (variantId?: string) => void;
 }) {
   const variants = getMenuActionVariants(item);
   return (
-    <article className={`menu-card compact-menu-card category-${item.sale_group_kind ?? "other"}${active ? " keyboard-active" : ""}`} onMouseEnter={onActive}>
-      <CategoryBadge kind={item.sale_group_kind} />
+    <article ref={rowRef} className={`menu-card compact-menu-card category-${item.sale_group_kind ?? "other"}${active ? " keyboard-active" : ""}`} onPointerMove={onActive}>
       <div className="menu-card-main">
         <strong>{item.name}</strong>
-        <span>{item.sale_group_name ?? item.production_unit_name ?? "Menu item"}</span>
       </div>
       <footer>
         <MenuItemActionGroup itemName={item.name} variants={variants} onAdd={onAdd} />

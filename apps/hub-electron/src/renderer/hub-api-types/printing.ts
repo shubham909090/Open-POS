@@ -4,6 +4,9 @@ export interface PrintJob {
   id: string;
   target_type: string;
   target_id: string;
+  table_name?: string | null;
+  bill_number?: number | null;
+  ticket_sequence?: number | null;
   printer_name?: string | null;
   status: string;
   attempts: number;
@@ -28,6 +31,10 @@ export type BillPrinterSlot = "default" | "alternate";
 
 export interface BillPrinterProfile {
   label: string;
+  /** Physical roll override; null means the bill layout's paper width applies. */
+  paperWidthMm: 45 | 50 | 58 | 80 | null;
+  /** Payment QR size for this printer, already resolved from the legacy shared size. */
+  paymentQrSizeMm: number;
   printerMode: "system" | "network";
   printerHost: string | null;
   printerPort: number | null;

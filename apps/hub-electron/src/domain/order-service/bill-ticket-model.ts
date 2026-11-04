@@ -28,6 +28,8 @@ export function buildBillTicket(input: {
   orderItems: OrderItemRow[];
   receiptLayout: PrintLayoutSettingsInput;
   paymentQr?: BillTicket["paymentQr"];
+  paperWidthMm?: number | null;
+  restaurantBranding?: import("@gaurav-pos/shared").RestaurantBranding;
   discountPaise?: number;
   tipPaise?: number;
   finalTotalPaise?: number;
@@ -61,6 +63,9 @@ export function buildBillTicket(input: {
     revisionNumber: input.bill.revision_number,
     ncReason: input.ncReason ?? input.bill.nc_reason,
     ...billPrintLayout(input.receiptLayout),
+    restaurantName: input.restaurantBranding?.restaurantName || input.receiptLayout.restaurantName,
+    restaurantLogo: input.restaurantBranding?.logoImageDataUrl ? { imageDataUrl: input.restaurantBranding.logoImageDataUrl } : null,
+    paperWidthMm: input.paperWidthMm ?? undefined,
     paymentQr: input.paymentQr
   };
 }

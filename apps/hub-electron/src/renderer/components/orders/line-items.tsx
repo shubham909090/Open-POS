@@ -38,8 +38,21 @@ export function LineItems({
               {row.saleGroupKind ? <CategoryBadge kind={row.saleGroupKind} className="line-category-icon" /> : null}
               <div className="line-title-copy">
                 <strong>{row.title}</strong>
-                <span>{row.saleGroupName ? `${row.saleGroupName} · ${row.meta}` : row.meta}</span>
-                {row.punch ? <small className="line-punch">{row.punch}</small> : null}
+                <div className="line-metadata">
+                  <span>{row.meta}</span>
+                  {row.punch ? <small className="line-punch">{row.punch}</small> : null}
+                  {row.onNoteChange ? (
+                    <details className="line-note-field" open={Boolean(row.note?.trim())}>
+                      <summary>{row.note?.trim() ? "Edit item note" : "Add item note"}</summary>
+                      <input
+                        value={row.note ?? ""}
+                        onChange={(event) => row.onNoteChange?.(event.target.value)}
+                        maxLength={500}
+                        placeholder="Kitchen/bar note"
+                      />
+                    </details>
+                  ) : null}
+                </div>
               </div>
             </div>
           </div>
@@ -57,17 +70,7 @@ export function LineItems({
               </button>
             ) : null}
           </div>
-          {row.onNoteChange ? (
-            <details className="line-note-field" open={Boolean(row.note?.trim())}>
-              <summary>{row.note?.trim() ? "Edit item note" : "Add item note"}</summary>
-              <input
-                value={row.note ?? ""}
-                onChange={(event) => row.onNoteChange?.(event.target.value)}
-                maxLength={500}
-                placeholder="Kitchen/bar note"
-              />
-            </details>
-          ) : row.note ? (
+          {!row.onNoteChange && row.note ? (
             <p className="line-note-text">{row.note}</p>
           ) : null}
           {row.action ? <div className="line-row-action">{row.action}</div> : null}

@@ -1,0 +1,6 @@
+.update-progress-backdrop { position: fixed; inset: 0; z-index: var(--layer-critical); background: color-mix(in srgb, var(--ink) 40%, transparent); }
+.update-progress-content { position: fixed; top: 50%; left: 50%; z-index: var(--layer-critical); transform: translate(-50%, -50%); display: grid; justify-items: center; gap: 16px; width: min(280px, calc(100vw - 40px)); padding: 32px; background: var(--panel); color: var(--ink); border-radius: var(--dialog-radius); box-shadow: var(--shadow-lg); outline: none; }
+.update-progress-content h2 { margin: 0; font-size: 16px; font-weight: 600; }
+.update-progress-spinner { color: var(--accent); animation: update-progress-spin 900ms linear infinite; }
+@keyframes update-progress-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .update-progress-spinner { animation: none; } }

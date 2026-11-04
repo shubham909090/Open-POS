@@ -1,7 +1,7 @@
 import AdmZip from "adm-zip";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { createRequire } from "node:module";
@@ -15,7 +15,11 @@ export const UPDATE_ARCH = "x64";
 export const PACKAGED_SQLITE_NATIVE_PATH = "win-unpacked/resources/app.asar.unpacked/node_modules/better-sqlite3/build/Release/better_sqlite3.node";
 const INSTALLER_SQLITE_NATIVE_SUFFIX = "resources/app.asar.unpacked/node_modules/better-sqlite3/build/Release/better_sqlite3.node";
 const require = createRequire(import.meta.url);
-const { path7za } = require("7zip-bin") as { path7za?: string };
+const physicalFs: typeof import("node:fs") = require(process.versions.electron ? "original-fs" : "node:fs");
+const { path7za: bundled7zipPath } = require("7zip-bin") as { path7za?: string };
+// spawnSync cannot execute an ASAR virtual path. The builder unpacks 7zip-bin;
+// invoke that physical executable instead of the require-resolved archive path.
+const path7za = bundled7zipPath?.replace(/([\\/])app\.asar([\\/])/, "$1app.asar.unpacked$2");
 
 const safeVersionSchema = z.string().trim().regex(/^[0-9A-Za-z.-]+$/);
 const safeInstallerFileNameSchema = z
@@ -162,7 +166,9 @@ export function validateInstallerContainsSQLiteNative(installerBytes: Buffer, ex
     if (sha256(embeddedNative) !== expectedSha256) throw new Error("Installer SQLite native binary does not match manifest");
     validateWindowsX64NativeModule(embeddedNative);
   } finally {
-    rmSync(root, { recursive: true, force: true });
+    // Electron treats extracted app.asar files as virtual directories. Remove
+    // the physical installer tree without traversing those read-only archives.
+    physicalFs.rmSync(root, { recursive: true, force: true });
   }
 }
 
@@ -178,7 +184,7 @@ function extractArchive(archivePath: string, destination: string): void {
     windowsHide: true
   });
   if (result.status !== 0) {
-    const detail = (result.stderr || result.stdout || "").trim();
+    const detail = (result.error?.message || result.stderr || result.stdout || "").trim();
     throw new Error(`Could not inspect installer contents${detail ? `: ${detail}` : ""}`);
   }
 }

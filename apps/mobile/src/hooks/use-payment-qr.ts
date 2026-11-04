@@ -3,11 +3,33 @@ import { AppState } from "react-native";
 import { Directory, File, Paths } from "expo-file-system";
 import * as ImagePicker from "expo-image-picker";
 import * as Sharing from "expo-sharing";
-import { PAYMENT_QR_MAX_IMAGE_BYTES, type PaymentQr } from "@gaurav-pos/shared";
+import { feedbackTiming, PAYMENT_QR_MAX_IMAGE_BYTES, type PaymentQr } from "@gaurav-pos/shared";
 
 import type { HubClient } from "../lib/hub-client";
 
-export type PaymentQrChange = ({ kind: "upload" | "resize"; imageDataUrl: string; sizeMm: number } | { kind: "remove" }) & { expectedUpdatedAt: string | null };
+export type PaymentQrChange = ({ kind: "upload"; imageDataUrl: string } | { kind: "remove" }) & { expectedUpdatedAt: string | null };
+
+/** Opens the photo library and returns a PNG/JPEG data URL, or null when the user cancels. */
+export async function pickImageDataUrl(maxBytes: number, label: string): Promise<string | null> {
+  const selected = await ImagePicker.launchImageLibraryAsync({
+    mediaTypes: ["images"],
+    allowsEditing: false,
+    allowsMultipleSelection: false,
+    base64: true,
+    quality: 1
+  });
+  if (selected.canceled) return null;
+  const image = selected.assets[0];
+  if (!image) throw new Error(`Choose a PNG or JPEG ${label} image.`);
+  const file = new File(image.uri);
+  const mimeType = image.mimeType ?? file.type;
+  if (mimeType !== "image/png" && mimeType !== "image/jpeg") throw new Error(`Choose a PNG or JPEG image of the ${label}.`);
+  const sizeLabel = `${Math.round(maxBytes / 1024 / 1024)} MB`;
+  if ((image.fileSize ?? file.size) > maxBytes) throw new Error(`Choose a ${label} image smaller than ${sizeLabel}.`);
+  const base64 = image.base64 ?? await file.base64();
+  if (base64.length > Math.ceil(maxBytes / 3) * 4) throw new Error(`Choose a ${label} image smaller than ${sizeLabel}.`);
+  return `data:${mimeType};base64,${base64}`;
+}
 
 export function usePaymentQr({ client, online, deviceName }: {
   client: HubClient;
@@ -18,12 +40,20 @@ export function usePaymentQr({ client, online, deviceName }: {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [loadError, setLoadError] = useState("");
   const [notice, setNotice] = useState("");
   const [change, setChange] = useState<PaymentQrChange | null>(null);
   const mounted = useRef(true);
   const request = useRef<AbortController | null>(null);
   const sequence = useRef(0);
   const actionBusy = useRef(false);
+  const exportRetry = useRef<boolean | null>(null);
+
+  useEffect(() => {
+    if (!notice) return;
+    const timer = setTimeout(() => setNotice((current) => current === notice ? "" : current), feedbackTiming.successNoticeMs);
+    return () => clearTimeout(timer);
+  }, [notice]);
 
   useEffect(() => {
     mounted.current = true;
@@ -40,7 +70,7 @@ export function usePaymentQr({ client, online, deviceName }: {
     if (!online || AppState.currentState === "background") {
       setQr(null);
       setLoading(false);
-      setError("Connect to the hub to load the current payment QR.");
+      setLoadError("Connect to the hub to load the current payment QR.");
       return;
     }
     const controller = new AbortController();
@@ -49,17 +79,17 @@ export function usePaymentQr({ client, online, deviceName }: {
     if (clear) {
       setQr(null);
       setLoading(true);
-      setError("");
+      setLoadError("");
     }
     try {
       const result = await client.paymentQr(controller.signal);
       if (!mounted.current || version !== sequence.current) return;
       setQr(result.qr);
-      setError("");
+      setLoadError("");
     } catch (failure) {
       if (!mounted.current || version !== sequence.current) return;
       setQr(null);
-      setError(controller.signal.aborted ? "The hub took too long to respond. Try again." : failure instanceof Error ? failure.message : "Could not load the payment QR.");
+      setLoadError(controller.signal.aborted ? "The hub took too long to respond. Try again." : failure instanceof Error ? failure.message : "Could not load the payment QR.");
     } finally {
       clearTimeout(timeout);
       if (mounted.current && version === sequence.current) setLoading(false);
@@ -95,24 +125,11 @@ export function usePaymentQr({ client, online, deviceName }: {
     if (actionBusy.current) return;
     setError("");
     setNotice("");
+    exportRetry.current = null;
     try {
-      const selected = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ["images"],
-        allowsEditing: false,
-        allowsMultipleSelection: false,
-        base64: true,
-        quality: 1
-      });
-      if (!mounted.current || selected.canceled) return;
-      const image = selected.assets[0];
-      if (!image) throw new Error("Choose a PNG or JPEG QR image.");
-      const file = new File(image.uri);
-      const mimeType = image.mimeType ?? file.type;
-      if (mimeType !== "image/png" && mimeType !== "image/jpeg") throw new Error("Choose a PNG or JPEG image of the payment QR.");
-      if ((image.fileSize ?? file.size) > PAYMENT_QR_MAX_IMAGE_BYTES) throw new Error("Choose a QR image smaller than 2 MB.");
-      const base64 = image.base64 ?? await file.base64();
-      if (base64.length > Math.ceil(PAYMENT_QR_MAX_IMAGE_BYTES / 3) * 4) throw new Error("Choose a QR image smaller than 2 MB.");
-      setChange({ kind: "upload", imageDataUrl: `data:${mimeType};base64,${base64}`, sizeMm: qr?.sizeMm ?? 32, expectedUpdatedAt: qr?.updatedAt ?? null });
+      const imageDataUrl = await pickImageDataUrl(PAYMENT_QR_MAX_IMAGE_BYTES, "payment QR");
+      if (!mounted.current || !imageDataUrl) return;
+      setChange({ kind: "upload", imageDataUrl, expectedUpdatedAt: qr?.updatedAt ?? null });
     } catch (failure) {
       if (mounted.current) setError(failure instanceof Error ? failure.message : "Could not open the photo picker.");
     }
@@ -128,25 +145,27 @@ export function usePaymentQr({ client, online, deviceName }: {
     setBusy(true);
     setError("");
     setNotice("");
+    exportRetry.current = null;
     request.current?.abort();
     sequence.current += 1;
     setLoading(false);
     const approval = { masterApproval: {
       pin,
-      reason: change.kind === "remove" ? "Remove shared payment QR" : change.kind === "resize" ? "Change payment QR print size" : "Update shared payment QR",
+      reason: change.kind === "remove" ? "Remove shared payment QR" : "Update shared payment QR",
       approvedBy: deviceName || "Master PIN holder"
     } };
     try {
       const result = change.kind === "remove"
         ? await client.removePaymentQr(approval, change.expectedUpdatedAt)
-        : await client.updatePaymentQr(change.imageDataUrl, approval, change.sizeMm, change.expectedUpdatedAt);
+        : await client.updatePaymentQr(change.imageDataUrl, approval, undefined, change.expectedUpdatedAt);
       if (!mounted.current) return;
       sequence.current += 1;
       request.current?.abort();
       setQr(result.qr);
       setLoading(false);
+      setLoadError("");
       setChange(null);
-      setNotice(result.qr ? "Payment QR updated for all bill printers and staff." : "Payment QR removed from bills and staff devices.");
+      setNotice(result.qr ? "Payment QR updated." : "Payment QR removed.");
     } catch (failure) {
       if (mounted.current) setError(failure instanceof Error ? failure.message : "Could not update the payment QR.");
     } finally {
@@ -161,6 +180,8 @@ export function usePaymentQr({ client, online, deviceName }: {
     setBusy(true);
     setError("");
     setNotice("");
+    exportRetry.current = null;
+    let destinationVerified = false;
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 10_000);
     try {
@@ -169,14 +190,16 @@ export function usePaymentQr({ client, online, deviceName }: {
       clearTimeout(timeout);
       if (!mounted.current) return;
       setQr(latest.qr);
+      setLoadError("");
       if (!latest.qr) throw new Error("The payment QR has been removed. Ask the owner to upload one.");
+      destinationVerified = true;
       const fileName = `payment-qr-${Date.parse(latest.qr.updatedAt)}.png`;
       const imageBase64 = latest.qr.imageDataUrl.replace(/^data:image\/png;base64,/, "");
       if (download) {
         const directory = await Directory.pickDirectoryAsync();
         const file = directory.createFile(fileName, "image/png");
         file.write(imageBase64, { encoding: "base64" });
-        if (mounted.current) setNotice("Payment QR image saved to your selected folder.");
+        if (mounted.current) setNotice("QR saved.");
         return;
       }
       if (!await Sharing.isAvailableAsync()) throw new Error("Saving and sharing images is unavailable on this device.");
@@ -187,8 +210,13 @@ export function usePaymentQr({ client, online, deviceName }: {
       if (mounted.current) {
         const message = failure instanceof Error ? failure.message : "Could not save the payment QR.";
         if (!/cancel/i.test(message)) {
-          setQr(null);
-          setError(message);
+          if (destinationVerified) {
+            exportRetry.current = download;
+            setError(download ? "Couldn't save the QR. Try again." : "Couldn't share the QR. Try again.");
+          } else {
+            setQr(null);
+            setLoadError(message);
+          }
         }
       }
     } finally {
@@ -198,5 +226,7 @@ export function usePaymentQr({ client, online, deviceName }: {
     }
   }
 
-  return { qr, loading, busy, error, notice, change, setChange, refresh, pickImage, saveChange, exportImage };
+  const editChange = (next: PaymentQrChange | null) => { exportRetry.current = null; setError(""); setChange(next); };
+  const retry = () => exportRetry.current === null ? refresh(true) : exportImage(exportRetry.current);
+  return { qr, loading, busy, error: error || loadError, notice, change, setChange: editChange, refresh, retry, pickImage, saveChange, exportImage };
 }

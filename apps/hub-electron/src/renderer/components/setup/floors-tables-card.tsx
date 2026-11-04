@@ -6,6 +6,8 @@ import { EditableRecordList } from "./editable-record-list.js";
 import { FloorEditForm } from "./floor-edit-form.js";
 import { SetupCard } from "./setup-card.js";
 import { TableEditForm } from "./table-edit-form.js";
+import { sortTables } from "../../lib/table-order.js";
+import { useHubStore } from "../../store.js";
 
 type SaveCallback = () => Promise<void>;
 
@@ -42,6 +44,8 @@ export function FloorsTablesCard({
   invalidate: SaveCallback;
   setNotice: NoticeSetter;
 }) {
+  const tableOrderMode = useHubStore((state) => state.tableOrderMode);
+  const setTableOrderMode = useHubStore((state) => state.setTableOrderMode);
   const orderedFloors = bootstrap.floors;
   const floorIndexById = new Map(orderedFloors.map((floor, index) => [floor.id, index]));
   const tablesByFloor = new Map<string, Bootstrap["tables"]>();
@@ -52,7 +56,7 @@ export function FloorsTablesCard({
   }
 
   const tableIndexKey = (tableId: string, floorId: string) => {
-    const floorTables = tablesByFloor.get(floorId) ?? [];
+    const floorTables = sortTables(tablesByFloor.get(floorId) ?? [], "custom");
     const index = floorTables.findIndex((table) => table.id === tableId);
     return { floorTables, index };
   };
@@ -95,26 +99,13 @@ export function FloorsTablesCard({
 
   return (
     <SetupCard
-      title="Floors And Tables"
+      title="Floors & tables"
       done={bootstrap.tables.some((table) => table.active)}
       icon={<Users size={20} />}
       summary={`${bootstrap.tables.filter((table) => table.active).length} active tables`}
     >
-      <form
-        className="flex flex-wrap items-end gap-3"
-        onSubmit={(event) => {
-          event.preventDefault();
-          onCreateFloor();
-        }}
-      >
-        <label>
-          Floor name
-          <input value={floorName} onChange={(event) => setFloorName(event.target.value)} placeholder="Main hall" />
-        </label>
-        <button disabled={!floorName.trim() || createFloorPending} type="submit">
-          Add floor
-        </button>
-      </form>
+      <div className="catalog-create-actions">
+        <details className="create-disclosure"><summary>Add table</summary>
       <form
         className="flex flex-wrap items-end gap-3"
         onSubmit={(event) => {
@@ -140,35 +131,93 @@ export function FloorsTablesCard({
           Add table
         </button>
       </form>
-      <EditableRecordList
-        setNotice={setNotice}
-        rows={bootstrap.tables.map((table) => {
-          const { floorTables, index } = tableIndexKey(table.id, table.floor_id);
-          return {
-            id: table.id,
-            title: table.name,
-            meta: `${table.floor_name} · position ${index + 1} · ${table.active ? table.status : "disabled"}`,
-            active: table.active,
-            onMoveUp: () => moveTable(table.id, table.floor_id, -1),
-            onMoveDown: () => moveTable(table.id, table.floor_id, 1),
-            moveUpDisabled: index <= 0,
-            moveDownDisabled: index < 0 || index >= floorTables.length - 1,
-            onToggle: () => hubApi.updateTable(table.id, { active: !table.active }).then(invalidate),
-            onDelete: () => hubApi.deleteTable(table.id).then(invalidate),
-            editForm: (close: () => void) => (
-              <TableEditForm
-                table={table}
-                floors={activeFloors}
-                onSaved={async () => {
-                  close();
-                  await invalidate();
-                }}
-                setNotice={setNotice}
-              />
-            ),
-          };
-        })}
-      />
+        </details>
+        <details className="create-disclosure"><summary>Add floor</summary>
+      <form
+        className="flex flex-wrap items-end gap-3"
+        onSubmit={(event) => {
+          event.preventDefault();
+          onCreateFloor();
+        }}
+      >
+        <label>
+          Floor name
+          <input value={floorName} onChange={(event) => setFloorName(event.target.value)} placeholder="Main hall" />
+        </label>
+        <button disabled={!floorName.trim() || createFloorPending} type="submit">
+          Add floor
+        </button>
+      </form>
+        </details>
+      </div>
+      <div className="table-order-bar">
+        <div>
+          <h3 id="table-order-label">Table order</h3>
+
+        </div>
+        <div className="segmented-row" role="radiogroup" aria-labelledby="table-order-label">
+          {(["name", "custom"] as const).map((mode) => (
+            <button
+              key={mode}
+              type="button"
+              role="radio"
+              aria-checked={tableOrderMode === mode}
+              className={tableOrderMode === mode ? "active" : ""}
+              onClick={() => setTableOrderMode(mode)}
+            >
+              {mode === "name" ? "Name" : "Custom order"}
+            </button>
+          ))}
+        </div>
+      </div>
+      {orderedFloors.map((floor) => {
+        const floorTables = tablesByFloor.get(floor.id) ?? [];
+        if (!floorTables.length) return null;
+        const shownTables = sortTables(floorTables, tableOrderMode);
+        return (
+          <section className="floor-record-group" key={floor.id} aria-label={`${floor.name} tables`}>
+            <header>
+              <h3>{floor.name}</h3>
+              <span>{floorTables.length} {floorTables.length === 1 ? "table" : "tables"}</span>
+            </header>
+            <EditableRecordList
+              setNotice={setNotice}
+              rows={shownTables.map((table, index) => ({
+                id: table.id,
+                title: table.name,
+                meta: `${tableOrderMode === "custom" ? `Position ${index + 1} · ` : ""}${table.active ? tableStatusLabel(table.status) : "Disabled"}`,
+                active: table.active,
+                ...(tableOrderMode === "custom"
+                  ? {
+                      onMoveUp: () => moveTable(table.id, table.floor_id, -1),
+                      onMoveDown: () => moveTable(table.id, table.floor_id, 1),
+                      moveUpDisabled: index <= 0,
+                      moveDownDisabled: index >= shownTables.length - 1,
+                    }
+                  : {}),
+                onToggle: () => hubApi.updateTable(table.id, { active: !table.active }).then(invalidate),
+                onDelete: () => hubApi.deleteTable(table.id).then(invalidate),
+                editForm: (close: () => void) => (
+                  <TableEditForm
+                    table={table}
+                    floors={activeFloors}
+                    onSaved={async () => {
+                      close();
+                      await invalidate();
+                    }}
+                    setNotice={setNotice}
+                  />
+                ),
+              }))}
+            />
+          </section>
+        );
+      })}
+      <section className="floor-record-group" aria-label="Floors">
+        <header>
+          <h3>Floors</h3>
+          <span>Floors always use the positions below</span>
+        </header>
       <EditableRecordList
         setNotice={setNotice}
         rows={orderedFloors.map((floor) => {
@@ -197,6 +246,14 @@ export function FloorsTablesCard({
           };
         })}
       />
+      </section>
     </SetupCard>
   );
+}
+
+function tableStatusLabel(status: string): string {
+  if (status === "occupied") return "Running";
+  if (status === "billed") return "Billed";
+  if (status === "free") return "Free";
+  return status;
 }

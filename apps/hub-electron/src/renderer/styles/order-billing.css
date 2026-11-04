@@ -1,12 +1,11 @@
 .bill-adjustments,
 .bill-payment-section,
 .change-helper {
-  @apply grid gap-3 rounded-lg border border-line bg-white p-3;
+  @apply grid gap-3 border-0 border-t border-line bg-transparent py-4;
 }
 
 .bill-adjustments {
-  @apply bg-accent-soft;
-  border-color: rgb(47 125 116 / 0.4);
+  @apply bg-panel;
 }
 
 .bill-adjustments .adjust-grid,
@@ -28,8 +27,13 @@
 }
 
 .change-helper-row strong {
-  @apply inline-flex min-h-10 items-center justify-center rounded-md border border-line bg-white px-3 text-sm font-black text-ink shadow-sm;
+  @apply inline-flex min-h-10 items-center justify-center rounded-md border border-line bg-white px-3 text-sm font-semibold text-ink;
 }
+
+.change-helper-row strong,
+.bill-adjustments input,
+.bill-payment-section input,
+.bill-payment-section strong { font-variant-numeric: tabular-nums; }
 
 .reprint-action-row {
   @apply grid gap-2;
@@ -41,21 +45,19 @@
 
 .reprint-bill-button kbd,
 .punch-button kbd {
-  @apply rounded border border-line bg-wash px-2 py-1 text-xs font-black text-muted;
+  @apply rounded border border-line bg-wash px-2 py-1 text-xs font-semibold text-muted;
 }
 
 .change-helper.good {
-  @apply border-emerald-200 bg-emerald-50 text-emerald-800;
+  border-color: var(--success); color: var(--success);
 }
 
 .change-helper.good .change-helper-row strong {
-  @apply border-emerald-200 bg-white text-emerald-800;
+  border-color: var(--success); color: var(--success);
 }
 
 .change-helper.bad {
-  border-color: rgb(185 28 28 / 0.3);
-  background: rgb(254 242 242);
-  color: #b91c1c;
+  border-color: var(--danger-line); color: var(--danger);
 }
 
 @media (max-width: 720px) {
@@ -67,3 +69,34 @@
     @apply justify-start;
   }
 }
+
+/* Unit picker (Rs / %) stays narrow; the amount field takes the remaining width. */
+.split-input {
+  grid-template-columns: minmax(76px, max-content) minmax(0, 1fr);
+}
+
+/* Keep the settlement decision visible while the bill's supporting fields scroll. */
+.ticket-body > .billing-panel { display: flex; flex: 1 0 auto; flex-direction: column; padding-bottom: 0; }
+.ticket-body .bill-metrics { gap: 20px; padding: 0 0 8px; border-bottom: 1px solid var(--line); }
+.ticket-body .bill-metrics > * { border: 0; border-radius: 0; background: transparent; padding: 0; box-shadow: none; }
+.ticket-body .bill-adjustments, .ticket-body .bill-payment-section, .ticket-body .change-helper { border: 0; border-radius: 0; padding: 12px 0; background: transparent; }
+.ticket-body .bill-payment-section { border-block: 1px solid var(--line); }
+.ticket-body .bill-adjustments { padding-block: 8px; }
+.bill-subtotal { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding-block: 4px 12px; border-bottom: 1px solid var(--line); color: var(--muted); font-size: 13px; }
+.bill-subtotal strong { color: var(--ink); font-variant-numeric: tabular-nums; }
+.bill-name-field { max-width: 440px; }
+.ticket-body > .bill-draft-note { margin: 0 0 12px; padding: 8px 12px; border-left: 2px solid var(--warning); background: var(--warning-soft); color: var(--warning); font-size: 12px; }
+.ticket-body .quick-pay button { min-height: 36px; font-weight: 500; }
+.ticket-body .reprint-action-row { justify-items: start; }
+.ticket-body .reprint-bill-button { width: auto; gap: 16px; }
+.ticket-body .billing-panel > .danger-link { align-self: start; width: auto; border: 1px solid var(--line); background: var(--panel); color: var(--danger); }
+.ticket-body .billing-panel > .danger-link:hover:not(:disabled) { border-color: var(--danger); background: var(--danger-soft); }
+.ticket-body .billing-panel > .revision-trigger { align-self: start; }
+.bill-settle-bar { position: sticky; bottom: 0; z-index: 2; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 16px; margin: auto -20px 0; padding: 12px 20px 14px; border-top: 1px solid var(--line); background: var(--panel); }
+.bill-settle-bar > div { display: grid; gap: 2px; text-align: right; }
+.bill-settle-bar > div span { font-size: 12px; color: var(--muted); }
+.bill-settle-bar strong { font-size: 20px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.bill-settle-bar .punch-button { min-height: var(--control-height); min-width: 230px; }
+@media (max-width: 720px) { .bill-settle-bar { margin-inline: -12px; padding-inline: 12px; } .bill-settle-bar .punch-button { flex: 1; min-width: 180px; } }
+
+.bill-version-note { margin: 0; color: var(--muted); font-size: 12px; }

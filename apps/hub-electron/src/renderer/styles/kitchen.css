@@ -11,13 +11,13 @@
 }
 
 .kot-grid {
-  @apply gap-4;
-  grid-template-columns: repeat(auto-fill, minmax(360px, 460px));
+  @apply grid gap-4;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr));
   align-items: start;
 }
 
 .kot-card {
-  @apply grid content-start gap-4 rounded-lg border-line bg-white p-4;
+  @apply grid content-start gap-4 rounded-lg border border-line bg-panel p-4;
 }
 
 .kot-card header,
@@ -30,23 +30,23 @@
 }
 
 .kot-card header strong {
-  @apply text-base font-black text-ink;
+  @apply text-base font-semibold text-ink;
 }
 
 .kot-card header span {
-  @apply rounded-full border border-line bg-wash px-2.5 py-1 text-xs font-black uppercase text-muted;
+  @apply text-xs font-medium capitalize text-muted;
 }
 
 .kot-card ul {
-  @apply m-0 grid list-none gap-2 rounded-none border-0 bg-transparent p-0;
+  @apply m-0 grid list-none gap-0 rounded-none border-0 bg-transparent p-0;
 }
 
 .kot-card li {
-  @apply rounded-md border border-line bg-wash px-3 py-3 text-base font-semibold leading-6 text-ink;
+  @apply border-0 border-b border-line bg-transparent px-0 py-3 text-base font-medium leading-6 text-ink;
 }
 
 .kot-card li:last-child {
-  @apply border-b border-line;
+  @apply border-b-0;
 }
 
 .kot-card footer {
@@ -55,24 +55,31 @@
 }
 
 .kot-status-button {
-  @apply min-h-12 w-full text-base capitalize;
+  min-height: var(--control-height); width: 100%; padding-inline: 8px; font-size: 13px; font-weight: 500; border: 1px solid;
 }
 
 .kot-status-button.preparing {
-  @apply border-warning bg-warning-soft text-warning hover:bg-warning hover:text-white;
+  @apply border-warning/40 bg-warning-soft text-warning hover:border-warning hover:bg-warning hover:text-white;
 }
 
 .kot-status-button.ready {
-  @apply border-accent bg-accent-soft text-accent-dark hover:bg-accent hover:text-white;
+  @apply border-success/40 bg-success-soft text-success hover:border-success hover:bg-success hover:text-white;
 }
 
 .kot-status-button.served {
-  @apply border-line bg-panel text-ink hover:bg-wash;
+  @apply border-line-strong bg-panel text-ink hover:bg-wash;
 }
 
 .kot-note {
-  @apply rounded-md border border-accent bg-accent-soft px-2 py-1 font-black text-accent-dark;
+  @apply font-medium text-muted;
 }
+
+.kitchen-queue-summary { @apply mt-1 block text-sm font-normal text-muted; }
+.kitchen-station-picker { @apply flex flex-wrap items-center gap-2; }
+.kitchen-station-picker label { @apply text-xs font-medium text-muted; }
+.kot-load-state { @apply grid min-h-40 place-content-center gap-3 text-center text-sm text-muted; }
+.kitchen-error { @apply flex flex-wrap items-center justify-between gap-3 rounded-lg border border-danger/20 bg-danger-soft px-4 py-3 text-sm text-danger; }
+.kitchen-error button { @apply min-h-8 border border-danger/20 bg-panel px-3 text-xs text-danger hover:bg-danger-soft; }
 
 .kot-card small.kot-note {
   @apply mt-1 block w-fit text-xs leading-4;
@@ -81,3 +88,16 @@
 .kot-card li.kot-note {
   @apply list-none;
 }
+
+.kot-ticket-kind { display: grid; gap: 2px; text-align: right; }
+.kot-ticket-kind strong { font-size: 12px; font-weight: 600; }
+.kot-card .kot-change-row { display: grid; grid-template-columns: minmax(86px, auto) minmax(0, 1fr); align-items: start; gap: 12px; }
+.kot-item-change { font-size: 12px; font-weight: 600; white-space: nowrap; }
+.kot-card.cancellation { border-color: var(--danger-line); background: var(--danger-soft); }
+.kot-card.cancellation .kot-ticket-kind, .kot-card.cancellation .kot-ticket-kind strong, .kot-change-row.removal .kot-item-change { color: var(--danger); }
+.kot-card.acknowledge-only footer { grid-template-columns: minmax(0, 1fr); }
+.kot-acknowledge-button { border: 1px solid var(--line-strong); background: var(--panel); color: var(--ink); }
+.kot-card.cancellation .kot-acknowledge-button { border-color: var(--danger-line); color: var(--danger); }
+.kot-acknowledge-button:hover:not(:disabled) { background: var(--wash); }
+.kot-status-button.kot-next-action { border-color: var(--accent); background: var(--accent); color: var(--panel); font-weight: 600; }
+.kot-status-button.kot-next-action:hover:not(:disabled) { border-color: var(--accent-dark); background: var(--accent-dark); }

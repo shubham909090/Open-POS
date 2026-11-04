@@ -1,5 +1,5 @@
 .state-editor {
-  @apply grid gap-3 rounded-lg border border-line bg-wash p-3;
+  @apply grid gap-4 border-0 bg-transparent p-0;
 }
 
 .state-editor-head {
@@ -11,19 +11,20 @@
 }
 
 .state-editor-total small {
-  @apply text-xs font-black uppercase tracking-normal text-muted;
+  @apply text-xs font-semibold tracking-normal text-muted;
 }
 
 .state-editor-total strong {
-  @apply text-xl font-black leading-6 text-ink;
+  @apply text-xl font-semibold leading-6 text-ink;
 }
 
 .state-editor-status {
-  @apply inline-flex min-h-8 items-center rounded-full border border-accent bg-accent-soft px-3 text-xs font-black uppercase text-accent-dark;
+  @apply inline-flex items-center text-xs font-medium text-muted;
+  font-variant-numeric: tabular-nums;
 }
 
 .state-editor-warning {
-  @apply m-0 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-900;
+  @apply m-0 rounded-md border border-warning-line bg-warning-soft px-3 py-2 text-xs font-medium text-warning;
 }
 
 .state-editor-actions {
@@ -39,11 +40,11 @@
 }
 
 .state-search-field span {
-  @apply text-xs font-black uppercase tracking-normal text-muted;
+  @apply text-xs font-semibold tracking-normal text-muted;
 }
 
 .state-search-field input {
-  @apply h-10 w-full max-w-md;
+  height: var(--control-height); width: 100%; max-width: none;
 }
 
 .state-search-results {
@@ -56,7 +57,7 @@
 
 .state-search-row.compact-menu-card {
   @apply items-center;
-  grid-template-columns: auto minmax(0, 1fr) minmax(128px, max-content);
+  grid-template-columns: minmax(0, 1fr) minmax(128px, max-content);
 }
 
 .state-search-row.compact-menu-card footer {

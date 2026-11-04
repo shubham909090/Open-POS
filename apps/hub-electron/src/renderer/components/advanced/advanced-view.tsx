@@ -4,9 +4,14 @@ import { CloudDownload, Printer } from "lucide-react";
 import { formatPosDateTime } from "@gaurav-pos/shared";
 import { hubApi, type Bootstrap } from "../../hub-api.js";
 import { type NoticeSetter, messageOf } from "../../lib/format.js";
-import type { ManagerApproval, ManagerApprovalRequest } from "../../hooks/use-manager-approval.js";
+import type {
+  ManagerApproval,
+  ManagerApprovalRequest,
+} from "../../hooks/use-manager-approval.js";
 import { AppUpdatePanel } from "./app-update-panel.js";
 import { SaleGroupRow } from "./sale-group-row.js";
+import { SettingsWorkspace } from "../setup/settings-workspace.js";
+import { advancedSections } from "../setup/settings-sections.js";
 
 export { AppUpdatePanel } from "./app-update-panel.js";
 
@@ -106,7 +111,9 @@ export function AdvancedView({
       await queryClient.invalidateQueries({ queryKey: ["bootstrap"] });
       setNotice({
         tone: "good",
-        text: masterPinConfigured ? "Master PIN changed." : "Master PIN created.",
+        text: masterPinConfigured
+          ? "Master PIN changed."
+          : "Master PIN created.",
       });
     },
     onError: (error) => setNotice({ tone: "bad", text: messageOf(error) }),
@@ -128,250 +135,329 @@ export function AdvancedView({
   });
 
   return (
-    <div className="advanced-layout">
-      <section className="panel">
-        <div className="panel-title">
-          <h2>Manager approval</h2>
-        </div>
-        <form
-          className="manager-pin-form"
-          onSubmit={(event) => event.preventDefault()}
-        >
-          <input className="sr-only" name="username" tabIndex={-1} autoComplete="username" value="manager" readOnly aria-hidden="true" />
-          <label>
-            New manager PIN
-            <input
-              value={newPin}
-              onChange={(event) => setNewPin(event.target.value)}
-              type="password"
-              autoComplete="new-password"
-            />
-          </label>
-          <button
-            type="button"
-            disabled={newPin.length < 4 || savePin.isPending}
-            onClick={async () => {
-              const approval = await requestManagerApproval({
-                title: "Change Manager PIN",
-                defaultReason: "Manager PIN changed",
-                message:
-                  "After this is saved, setup will lock and must be unlocked with the new PIN.",
-                confirmLabel: savePin.isPending ? "Saving..." : "Save new PIN",
-                danger: true,
-              }).catch(() => null);
-              if (approval) savePin.mutate(approval.pin);
-            }}
-          >
-            Save PIN
-          </button>
-        </form>
-        <form
-          className="manager-pin-form"
-          onSubmit={(event) => {
-            event.preventDefault();
-            if ((!masterPinConfigured || currentMasterPin.length >= 4) && newMasterPin.length >= 4 && newMasterPin === confirmMasterPin) saveMasterPin.mutate();
-          }}
-        >
-          <input className="sr-only" name="username" tabIndex={-1} autoComplete="username" value="owner" readOnly aria-hidden="true" />
-          {masterPinConfigured ? (
-            <label>
-              Current Master PIN
-              <input
-                value={currentMasterPin}
-                onChange={(event) => setCurrentMasterPin(event.target.value)}
-                type="password"
-                autoComplete="current-password"
-                placeholder="Current owner PIN"
-              />
-            </label>
-          ) : null}
-          <label>
-            {masterPinConfigured ? "New Master PIN" : "Master PIN"}
-            <input
-              value={newMasterPin}
-              onChange={(event) => setNewMasterPin(event.target.value)}
-              type="password"
-              autoComplete="new-password"
-              placeholder="Owner-only PIN"
-            />
-          </label>
-          <label>
-            Confirm Master PIN
-            <input
-              value={confirmMasterPin}
-              onChange={(event) => setConfirmMasterPin(event.target.value)}
-              type="password"
-              autoComplete="new-password"
-            />
-          </label>
-          <button
-            type="submit"
-            disabled={(masterPinConfigured && currentMasterPin.length < 4) || newMasterPin.length < 4 || newMasterPin !== confirmMasterPin || saveMasterPin.isPending}
-          >
-            {saveMasterPin.isPending ? "Saving..." : masterPinConfigured ? "Change Master PIN" : "Create Master PIN"}
-          </button>
-          <p className="soft-note">
-            Used for old bill edits and sensitive liquor stock corrections. Changing it requires the current Master PIN.
-          </p>
-        </form>
-      </section>
-
-      <section className="panel">
-        <div className="panel-title">
-          <h2>Sale & Tax Categories</h2>
-        </div>
-        <div className="record-list">
-          {bootstrap.saleGroups.map((group) => (
-            <SaleGroupRow
-              key={group.id}
-              group={group}
-              setNotice={setNotice}
-              onSaved={() =>
-                queryClient.invalidateQueries({ queryKey: ["bootstrap"] })
-              }
-            />
-          ))}
-        </div>
-      </section>
-
-      <section className="panel">
-        <div className="panel-title">
-          <h2>Support tools</h2>
-        </div>
-        <div className="support-tool-actions utility-actions">
-          <button
-            type="button"
-            className="utility-action"
-            onClick={() => {
-              if (!syncBusy && cloudBackupEnabled) pullCloud.mutate();
-            }}
-            disabled={syncBusy || !cloudBackupEnabled}
-          >
-            <CloudDownload size={18} /> {pullCloud.isPending ? "Syncing..." : "Get cloud updates"}
-          </button>
-          <button
-            type="button"
-            className="utility-action"
-            onClick={() => {
-              if (!syncBusy && cloudBackupEnabled) requeueSync.mutate();
-            }}
-            disabled={syncBusy || !cloudBackupEnabled}
-          >
-            {requeueSync.isPending ? "Retrying..." : "Retry failed sync"}
-          </button>
-          <button
-            type="button"
-            className="utility-action"
-            onClick={() => prints.mutate()}
-            disabled={prints.isPending}
-          >
-            <Printer size={18} /> Run print queue
-          </button>
-        </div>
-        {!cloudBackupEnabled ? <p className="soft-note">Cloud Backup is off. License checks and app updates still run.</p> : null}
-        {bootstrap.syncStatus.commandFailures?.length ? (
-          <div className="record-list compact-list">
-            <p className="soft-note">
-              These cloud setup updates failed on this hub. Fix the setup in the
-              cloud portal, send a new update, then mark the old warning
-              resolved.
-            </p>
-            {bootstrap.syncStatus.commandFailures.map((failure) => (
-              <article key={failure.commandId} className="record-row">
+    <SettingsWorkspace
+      title="Administration"
+      storageKey="hub-advanced-section"
+      sections={advancedSections}
+      renderSection={(section) => (
+        <>
+          {section === "security" ? (
+            <section className="panel">
+              <div className="panel-title">
                 <div>
-                  <strong>{failure.type}</strong>
+                  <h2>Approval PINs</h2>
                   <span>
-                    {failure.error} ·{" "}
-                    {formatPosDateTime(failure.failedAt)}
+                    Manager approvals cover daily service. The Master PIN
+                    protects owner-only changes.
                   </span>
+                </div>
+              </div>
+              <form
+                className="manager-pin-form"
+                onSubmit={(event) => event.preventDefault()}
+              >
+                <input
+                  className="sr-only"
+                  name="username"
+                  tabIndex={-1}
+                  autoComplete="username"
+                  value="manager"
+                  readOnly
+                  aria-hidden="true"
+                />
+                <label>
+                  New manager PIN
+                  <input
+                    value={newPin}
+                    onChange={(event) => setNewPin(event.target.value)}
+                    type="password"
+                    autoComplete="new-password"
+                    aria-describedby="manager-pin-help"
+                  />
+                  <small id="manager-pin-help" className="field-help">Use at least 4 characters.</small>
+                </label>
+                <button
+                  type="button"
+                  disabled={newPin.length < 4 || savePin.isPending}
+                  onClick={async () => {
+                    const approval = await requestManagerApproval({
+                      title: "Change Manager PIN",
+                      defaultReason: "Manager PIN changed",
+                      message:
+                        "After this is saved, setup will lock and must be unlocked with the new PIN.",
+                      confirmLabel: savePin.isPending
+                        ? "Saving..."
+                        : "Save new PIN",
+                      danger: true,
+                    }).catch(() => null);
+                    if (approval) savePin.mutate(approval.pin);
+                  }}
+                >
+                  {savePin.isPending ? "Saving…" : "Save PIN"}
+                </button>
+              </form>
+              <form
+                className="manager-pin-form master-pin-form"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  if (
+                    !saveMasterPin.isPending &&
+                    (!masterPinConfigured || currentMasterPin.length >= 4) &&
+                    newMasterPin.length >= 4 &&
+                    newMasterPin === confirmMasterPin
+                  )
+                    saveMasterPin.mutate();
+                }}
+              >
+                <input
+                  className="sr-only"
+                  name="username"
+                  tabIndex={-1}
+                  autoComplete="username"
+                  value="owner"
+                  readOnly
+                  aria-hidden="true"
+                />
+                {masterPinConfigured ? (
+                  <label className="current-master-pin-field">
+                    Current Master PIN
+                    <input
+                      value={currentMasterPin}
+                      onChange={(event) =>
+                        setCurrentMasterPin(event.target.value)
+                      }
+                      type="password"
+                      autoComplete="current-password"
+                      placeholder="Current owner PIN"
+                    />
+                  </label>
+                ) : null}
+                <label>
+                  {masterPinConfigured ? "New Master PIN" : "Master PIN"}
+                  <input
+                    value={newMasterPin}
+                    onChange={(event) => setNewMasterPin(event.target.value)}
+                    type="password"
+                    autoComplete="new-password"
+                    placeholder="Owner-only PIN"
+                    aria-describedby="master-pin-help"
+                  />
+                  <small id="master-pin-help" className="field-help">Use at least 4 characters.</small>
+                </label>
+                <label>
+                  Confirm Master PIN
+                  <input
+                    value={confirmMasterPin}
+                    onChange={(event) =>
+                      setConfirmMasterPin(event.target.value)
+                    }
+                    type="password"
+                    autoComplete="new-password"
+                    aria-invalid={Boolean(confirmMasterPin && newMasterPin !== confirmMasterPin)}
+                    aria-describedby={confirmMasterPin && newMasterPin !== confirmMasterPin ? "master-pin-mismatch" : undefined}
+                  />
+                  {confirmMasterPin && newMasterPin !== confirmMasterPin ? <small id="master-pin-mismatch" className="field-error" role="status">The PINs do not match.</small> : null}
+                </label>
+                <button
+                  type="submit"
+                  disabled={
+                    (masterPinConfigured && currentMasterPin.length < 4) ||
+                    newMasterPin.length < 4 ||
+                    newMasterPin !== confirmMasterPin ||
+                    saveMasterPin.isPending
+                  }
+                >
+                  {saveMasterPin.isPending
+                    ? "Saving..."
+                    : masterPinConfigured
+                      ? "Change Master PIN"
+                      : "Create Master PIN"}
+                </button>
+
+              </form>
+            </section>
+          ) : null}
+
+          {section === "tax" ? (
+            <section className="panel">
+              <div className="panel-title">
+                <h2>Sale & tax categories</h2>
+              </div>
+              <div className="record-list">
+                {bootstrap.saleGroups.map((group) => (
+                  <SaleGroupRow
+                    key={group.id}
+                    group={group}
+                    setNotice={setNotice}
+                    onSaved={() =>
+                      queryClient.invalidateQueries({ queryKey: ["bootstrap"] })
+                    }
+                  />
+                ))}
+              </div>
+            </section>
+          ) : null}
+
+          {section === "support" ? (
+            <section className="panel">
+              <div className="panel-title">
+                <h2>Support tools</h2>
+              </div>
+              <div className="support-tool-actions utility-actions">
+                <button
+                  type="button"
+                  className="utility-action"
+                  onClick={() => {
+                    if (!syncBusy && cloudBackupEnabled) pullCloud.mutate();
+                  }}
+                  disabled={syncBusy || !cloudBackupEnabled}
+                >
+                  <CloudDownload size={18} />{" "}
+                  {pullCloud.isPending ? "Syncing..." : "Get cloud updates"}
+                </button>
+                <button
+                  type="button"
+                  className="utility-action"
+                  onClick={() => {
+                    if (!syncBusy && cloudBackupEnabled) requeueSync.mutate();
+                  }}
+                  disabled={syncBusy || !cloudBackupEnabled}
+                >
+                  {requeueSync.isPending ? "Retrying..." : "Retry failed sync"}
+                </button>
+              </div>
+              {!cloudBackupEnabled ? (
+                <p className="soft-note">
+                  Cloud Backup is off. License checks and app updates still run.
+                </p>
+              ) : null}
+              {bootstrap.syncStatus.commandFailures?.length ? (
+                <div className="record-list compact-list">
+                  <p className="soft-note">
+                    These cloud setup updates failed on this hub. Fix the setup
+                    in the cloud portal, send a new update, then mark the old
+                    warning resolved.
+                  </p>
+                  {bootstrap.syncStatus.commandFailures.map((failure) => (
+                    <article key={failure.commandId} className="record-row">
+                      <div>
+                        <strong>{failure.type}</strong>
+                        <span>
+                          {failure.error} ·{" "}
+                          {formatPosDateTime(failure.failedAt)}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          resolveCommandFailure.mutate(failure.commandId)
+                        }
+                        disabled={resolveCommandFailure.isPending}
+                      >
+                        Mark resolved
+                      </button>
+                    </article>
+                  ))}
+                </div>
+              ) : null}
+            </section>
+          ) : null}
+
+          {section === "print-queue" ? (
+            <section className="panel">
+              <div className="panel-title">
+                <div>
+                  <h2>Recent print jobs</h2>
+                  <span>Check output status and process waiting jobs.</span>
                 </div>
                 <button
                   type="button"
-                  onClick={() =>
-                    resolveCommandFailure.mutate(failure.commandId)
-                  }
-                  disabled={resolveCommandFailure.isPending}
+                  className="secondary-button"
+                  onClick={() => prints.mutate()}
+                  disabled={prints.isPending}
                 >
-                  Mark resolved
+                  <Printer size={15} />
+                  {prints.isPending ? "Processing…" : "Run print queue"}
                 </button>
-              </article>
-            ))}
-          </div>
-        ) : null}
-      </section>
-
-      <section className="panel">
-        <div className="panel-title">
-          <h2>Recent print jobs</h2>
-        </div>
-        <div className="record-list">
-          {bootstrap.printJobs.map((job) => (
-            <article key={job.id} className="record-row">
-              <div>
-                <strong>{job.target_type}</strong>
-                <span>
-                  {job.status} · attempts {job.attempts}
-                  {job.last_error ? ` · ${job.last_error}` : ""}
-                </span>
               </div>
-            </article>
-          ))}
-        </div>
-      </section>
+              {bootstrap.printJobs.length === 0 ? (
+                <p className="soft-note">
+                  No print jobs yet. Send a test from Printers & receipts to
+                  check the connection.
+                </p>
+              ) : null}
+              <div className="record-list print-job-list">
+                {bootstrap.printJobs.map((job) => (
+                  <article key={job.id} className="record-row print-job-row">
+                    <div className="print-job-description">
+                      <strong>{job.target_type}{job.bill_number != null ? ` #${job.bill_number}` : job.ticket_sequence != null ? ` #${job.ticket_sequence}` : ""}{job.table_name ? ` · ${job.table_name}` : ""} {job.printer_name ? <small>· {job.printer_name}</small> : null}</strong>
+                      <span>{formatPosDateTime(job.created_at)} · {job.attempts} attempt{job.attempts === 1 ? "" : "s"}</span>
+                      {job.last_error ? <span className="print-job-error">{job.last_error}</span> : null}
+                    </div>
+                    <span className={`record-status ${job.status === "failed" ? "warning" : job.status === "printed" ? "active" : "disabled"}`}>{job.status}</span>
+                  </article>
+                ))}
+              </div>
+            </section>
+          ) : null}
 
-      <AppUpdatePanel
-        setNotice={setNotice}
-      />
+          {section === "updates" ? (
+            <AppUpdatePanel setNotice={setNotice} />
+          ) : null}
 
-      <section className="panel danger-zone">
-        <div className="panel-title">
-          <h2>Danger zone</h2>
-          <span>Reset this hub PC</span>
-        </div>
-        <p className="warning-text">
-          Full reset removes the local restaurant database from this PC. Use
-          this only when you want to start setup from zero.
-        </p>
-        <div className="reset-options">
-          <label>
-            Type RESET HUB
-            <input
-              value={resetPhrase}
-              onChange={(event) => setResetPhrase(event.target.value)}
-              placeholder="RESET HUB"
-            />
-          </label>
-          <label className="checkbox-row">
-            <input
-              type="checkbox"
-              checked={resetBackups}
-              onChange={(event) => setResetBackups(event.target.checked)}
-            />
-            Also delete local backup files
-          </label>
-          <button
-            type="button"
-            className="danger-button"
-            disabled={resetPhrase !== "RESET HUB" || fullReset.isPending}
-            onClick={async () => {
-              const approval = await requestManagerApproval({
-                title: "Full reset hub",
-                defaultReason: "Full reset hub",
-                message: resetBackups
-                  ? "This will delete local data and local backup files, then restart the hub."
-                  : "This will delete local data, keep backup files, then restart the hub.",
-                confirmLabel: fullReset.isPending
-                  ? "Resetting..."
-                  : "Reset hub",
-                danger: true,
-              }).catch(() => null);
-              if (approval) fullReset.mutate(approval);
-            }}
-          >
-            Reset hub
-          </button>
-        </div>
-      </section>
-    </div>
+          {section === "reset" ? (
+            <section className="panel danger-zone">
+              <div className="panel-title">
+                <h2>Danger zone</h2>
+                <span>Reset this hub PC</span>
+              </div>
+              <p className="warning-text">
+                Full reset removes the local restaurant database from this PC.
+                Use this only when you want to start setup from zero.
+              </p>
+              <div className="reset-options">
+                <label>
+                  Type RESET HUB
+                  <input
+                    value={resetPhrase}
+                    onChange={(event) => setResetPhrase(event.target.value)}
+                    placeholder="RESET HUB"
+                  />
+                </label>
+                <label className="checkbox-row">
+                  <input
+                    type="checkbox"
+                    checked={resetBackups}
+                    onChange={(event) => setResetBackups(event.target.checked)}
+                  />
+                  Also delete local backup files
+                </label>
+                <button
+                  type="button"
+                  className="danger-button"
+                  disabled={resetPhrase !== "RESET HUB" || fullReset.isPending}
+                  onClick={async () => {
+                    const approval = await requestManagerApproval({
+                      title: "Full reset hub",
+                      defaultReason: "Full reset hub",
+                      message: resetBackups
+                        ? "This will delete local data and local backup files, then restart the hub."
+                        : "This will delete local data, keep backup files, then restart the hub.",
+                      confirmLabel: fullReset.isPending
+                        ? "Resetting..."
+                        : "Reset hub",
+                      danger: true,
+                    }).catch(() => null);
+                    if (approval) fullReset.mutate(approval);
+                  }}
+                >
+                  Reset hub
+                </button>
+              </div>
+            </section>
+          ) : null}
+        </>
+      )}
+    />
   );
 }

@@ -1,3 +1,4 @@
+import type { KotType } from "@gaurav-pos/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { MutableRefObject } from "react";
 import { useEffect, useMemo, useRef } from "react";
@@ -87,8 +88,14 @@ export function KitchenView({
     <div className="kitchen-layout">
       <section className="panel">
         <div className="panel-title">
-          <h2>Kitchen screen</h2>
+          <div>
+            <h2>Kitchen queue</h2>
+            <span className="kitchen-queue-summary">{visibleTickets.length} active ticket{visibleTickets.length === 1 ? "" : "s"}</span>
+          </div>
+          <div className="kitchen-station-picker">
+          <label htmlFor="kitchen-station">Station</label>
           <select
+            id="kitchen-station"
             value={unitId}
             onChange={(event) => setSelectedKdsUnitId(event.target.value)}
             disabled={!kdsEnabled || activeUnits.length === 0}
@@ -100,6 +107,7 @@ export function KitchenView({
               </option>
             ))}
           </select>
+          </div>
         </div>
         {!kdsEnabled ? (
           <EmptyState
@@ -113,30 +121,49 @@ export function KitchenView({
             description="Add a kitchen or counter in Setup."
           />
         ) : null}
+        {kdsEnabled && unitId && tickets.isLoading ? (
+          <div className="kot-load-state" role="status">Loading kitchen tickets…</div>
+        ) : null}
+        {kdsEnabled && unitId && tickets.isError ? (
+          <div className="kitchen-error" role="alert">
+            <span>{messageOf(tickets.error)}</span>
+            <button type="button" disabled={tickets.isFetching} onClick={() => void tickets.refetch()}>{tickets.isFetching ? "Retrying…" : "Retry"}</button>
+          </div>
+        ) : null}
+        {kdsEnabled && unitId && !tickets.isLoading && !tickets.isError && visibleTickets.length === 0 ? (
+          <EmptyState title="All caught up" description="New kitchen tickets will appear here as orders are sent." />
+        ) : null}
         <div className="kot-grid">
-          {visibleTickets.map((ticket) => (
-            <article key={ticket.id} className="kot-card">
+          {visibleTickets.map((ticket) => {
+            const cancellation = ticket.type === "cancelled" || ticket.type === "partial_cancel" || (ticket.items.some((item) => item.quantity_delta < 0) && ticket.items.every((item) => item.quantity_delta <= 0));
+            const acknowledgeOnly = cancellation || ticket.items.every((item) => item.quantity_delta === 0);
+            const kind = ticket.type ? ticketLabels[ticket.type] : cancellation ? "Items cancelled" : "Kitchen ticket";
+            const primaryStatus = ticket.status === "ready" ? "served" : "ready";
+            return <article key={ticket.id} className={`kot-card${cancellation ? " cancellation" : ""}${acknowledgeOnly ? " acknowledge-only" : ""}`}>
+
               <header>
                 <strong>
                   #{ticket.sequence} · {ticket.table_name}
                 </strong>
-                <span>{ticket.status}</span>
+                <div className="kot-ticket-kind"><strong>{kind}</strong><span>{acknowledgeOnly && ticket.status !== "served" ? "Needs acknowledgment" : ticket.status}</span></div>
               </header>
               <ul>
                 {ticket.note ? <li className="kot-note">Note: {ticket.note}</li> : null}
                 {ticket.items.map((item, index) => (
-                  <li key={`${item.name_snapshot}-${index}`}>
-                    {item.quantity_delta === 0 ? item.name_snapshot : `${item.quantity_delta} x ${item.name_snapshot}`}
-                    {item.note_snapshot ? <small className="kot-note">Note: {item.note_snapshot}</small> : null}
+                  <li key={`${item.name_snapshot}-${index}`} className={`kot-change-row${item.quantity_delta < 0 ? " removal" : ""}`}>
+                    <span className="kot-item-change">{item.quantity_delta < 0 ? `Remove ${Math.abs(item.quantity_delta)} ×` : item.quantity_delta === 0 ? item.note_snapshot ? "Note updated" : "Note cleared" : `Add ${item.quantity_delta} ×`}</span>
+                    <div><span>{item.name_snapshot}</span>{item.note_snapshot ? <small className="kot-note">{item.note_snapshot}</small> : null}</div>
                   </li>
                 ))}
               </ul>
               <footer>
-                {["preparing", "ready", "served"].map((status) => (
+                {acknowledgeOnly ? <button type="button" className="kot-acknowledge-button" aria-label={`Acknowledge ticket ${ticket.sequence}${cancellation ? " cancellation" : " changes"}`} disabled={ticket.status === "served" || statusMutation.isPending} onClick={() => statusMutation.mutate({ id: ticket.id, status: "served" })}>{statusMutation.isPending && statusMutation.variables?.id === ticket.id ? "Saving…" : "Acknowledge"}</button> : ["preparing", "ready", "served"].map((status) => (
                   <button
                     key={status}
                     type="button"
-                    className={`kot-status-button ${status}`}
+                    className={`kot-status-button ${status}${status === primaryStatus ? " kot-next-action" : ""}`}
+                    aria-label={`Mark ticket ${ticket.sequence} ${status}`}
+                    aria-pressed={ticket.status === status}
                     disabled={
                       ticket.status === status || statusMutation.isPending
                     }
@@ -144,12 +171,12 @@ export function KitchenView({
                       statusMutation.mutate({ id: ticket.id, status })
                     }
                   >
-                    {status}
+                    {statusMutation.isPending && statusMutation.variables?.id === ticket.id && statusMutation.variables.status === status ? "Saving…" : status === "preparing" ? "Start" : status === "ready" ? "Ready" : "Served"}
                   </button>
                 ))}
               </footer>
-            </article>
-          ))}
+            </article>;
+          })}
         </div>
       </section>
     </div>
@@ -184,3 +211,8 @@ function playKitchenChime(audioContextRef: MutableRefObject<AudioContext | null>
     // Browsers may block audio until a user gesture; the next kitchen interaction can unlock it.
   }
 }
+
+const ticketLabels: Record<KotType, string> = {
+  new: "New order", modified: "Modified order", partial_cancel: "Items cancelled",
+  cancelled: "Order cancelled", table_shifted: "Table moved", reprint: "Reprint",
+};

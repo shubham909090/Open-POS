@@ -8,7 +8,7 @@ function describeBillPrinter(profile: { printerMode: "system" | "network"; print
   return profile.printerName || "Not configured";
 }
 
-export function useBillPrinterChooser({ client, setMessage }: { client: HubClient; setMessage: (value: string) => void }) {
+export function useBillPrinterChooser({ client, setMessage }: { client: Pick<HubClient, "billPrinters">; setMessage: (value: string) => void }) {
   async function chooseBillPrinter(title: string): Promise<BillPrinterSlot | null> {
     try {
       const printers = await client.billPrinters();
@@ -17,6 +17,8 @@ export function useBillPrinterChooser({ client, setMessage }: { client: HubClien
         Alert.alert("Bill printer missing", "No bill printer is configured in Hub Setup.");
         return null;
       }
+      if (printers.default.configured && !printers.alternate.configured) return "default";
+      if (!printers.default.configured && printers.alternate.configured) return "alternate";
       return await new Promise<BillPrinterSlot | null>((resolve) => {
         const buttons = [
           ...(printers.default.configured
@@ -27,7 +29,7 @@ export function useBillPrinterChooser({ client, setMessage }: { client: HubClien
             : []),
           { text: "Cancel", style: "cancel" as const, onPress: () => resolve(null) }
         ];
-        Alert.alert(title, printers.default.configured && printers.alternate.configured ? "Choose where to print this bill." : "Only one bill printer is configured.", buttons);
+        Alert.alert(title, "Choose where to print this bill.", buttons, { cancelable: true, onDismiss: () => resolve(null) });
       });
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not load bill printers.");

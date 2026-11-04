@@ -13,7 +13,7 @@ export function Tooltip({ content, children, side = "top" }: { content: string; 
         <TooltipPrimitive.Content
           side={side}
           sideOffset={6}
-          className="z-50 rounded-md bg-ink px-2.5 py-1.5 text-xs font-medium text-white shadow-lg animate-in fade-in-0 zoom-in-95"
+          className="ui-tooltip"
         >
           {content}
           <TooltipPrimitive.Arrow className="fill-ink" />

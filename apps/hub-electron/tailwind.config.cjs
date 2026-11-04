@@ -1,33 +1,44 @@
+// Preserve semantic CSS colors while allowing Tailwind opacity modifiers.
+const semanticColor = (name) => ({ opacityValue }) => opacityValue === undefined
+  ? `var(--${name})`
+  : `color-mix(in srgb, var(--${name}) calc(${opacityValue} * 100%), transparent)`;
+
 /** @type {import('tailwindcss').Config} */
 module.exports = {
   content: ["./index.html", "./src/renderer/**/*.{ts,tsx}"],
   theme: {
     extend: {
       colors: {
-        ink: "var(--ink)",
-        muted: "var(--muted)",
-        paper: "var(--paper)",
-        panel: "var(--panel)",
-        wash: "var(--wash)",
-        line: "var(--line)",
-        "line-strong": "var(--line-strong)",
-        accent: "var(--accent)",
-        "accent-dark": "var(--accent-dark)",
-        "accent-soft": "var(--accent-soft)",
-        danger: "var(--danger)",
-        "danger-soft": "var(--danger-soft)",
-        warning: "var(--warning)",
-        "warning-soft": "var(--warning-soft)",
-        blue: "var(--blue)",
-        "blue-soft": "var(--blue-soft)",
-        sidebar: "var(--sidebar)",
+        ink: semanticColor("ink"),
+        muted: semanticColor("muted"),
+        paper: semanticColor("paper"),
+        panel: semanticColor("panel"),
+        wash: semanticColor("wash"),
+        line: semanticColor("line"),
+        "line-strong": semanticColor("line-strong"),
+        accent: semanticColor("accent"),
+        "accent-dark": semanticColor("accent-dark"),
+        "accent-soft": semanticColor("accent-soft"),
+        "accent-line": semanticColor("accent-line"),
+        success: semanticColor("success"),
+        "success-soft": semanticColor("success-soft"),
+        danger: semanticColor("danger"),
+        "danger-soft": semanticColor("danger-soft"),
+        "danger-line": semanticColor("danger-line"),
+        warning: semanticColor("warning"),
+        "warning-soft": semanticColor("warning-soft"),
+        "warning-line": semanticColor("warning-line"),
+        blue: semanticColor("blue"),
+        "blue-soft": semanticColor("blue-soft"),
+        "blue-line": semanticColor("blue-line"),
+        sidebar: semanticColor("sidebar"),
       },
       borderRadius: {
-        DEFAULT: "var(--radius)",
+        DEFAULT: semanticColor("radius"),
       },
       boxShadow: {
-        pos: "var(--shadow)",
-        "pos-lg": "var(--shadow-lg)",
+        pos: semanticColor("shadow"),
+        "pos-lg": semanticColor("shadow-lg"),
       },
     },
   },

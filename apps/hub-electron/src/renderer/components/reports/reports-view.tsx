@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { formatInr, formatPosDateTime } from "@gaurav-pos/shared";
 import { hubApi, type RangeReportDetail } from "../../hub-api.js";
 import type { ManagerApprovalRequest } from "../../hooks/use-manager-approval.js";
-import { alcoholMovementSourceLabel, alcoholMovementDeltaText } from "../../lib/format.js";
+import { alcoholMovementSourceLabel, alcoholMovementDeltaText, messageOf } from "../../lib/format.js";
 import { EmptyState } from "../ui/empty-state.js";
 import { Metric } from "../ui/metric.js";
 import { BackupPanel } from "./backup-panel.js";
@@ -37,6 +37,7 @@ export function ReportsView({ requestManagerApproval }: { requestManagerApproval
   const alcoholStockMovements = useQuery({
     queryKey: ["alcoholStockMovements"],
     queryFn: hubApi.alcoholStockMovements,
+    enabled: reportTab === "daily",
   });
   const bootstrap = useQuery({
     queryKey: ["bootstrap"],
@@ -55,7 +56,7 @@ export function ReportsView({ requestManagerApproval }: { requestManagerApproval
   const dailyReportDetail = useQuery({
     queryKey: ["dailyReport", expandedReportId],
     queryFn: () => hubApi.dailyReport(expandedReportId ?? ""),
-    enabled: Boolean(expandedReportId),
+    enabled: reportTab === "daily" && Boolean(expandedReportId),
   });
   const summary = currentSummary.data;
   const currentBusinessDate = summary?.businessDay.business_date;
@@ -65,6 +66,7 @@ export function ReportsView({ requestManagerApproval }: { requestManagerApproval
   const defaultRangeTo = latestClosedDate ?? previousBusinessDate(currentBusinessDate ?? new Date().toISOString().slice(0, 10));
   const defaultRangeFrom = monthStart(defaultRangeTo);
   const maxRangeDate = defaultRangeTo;
+  const invalidRange = !rangeFrom || !rangeTo || rangeFrom > rangeTo || rangeTo > maxRangeDate;
   useEffect(() => {
     if (rangeTouched) return;
     setRangeFrom(defaultRangeFrom);
@@ -103,7 +105,6 @@ export function ReportsView({ requestManagerApproval }: { requestManagerApproval
     <div className="reports-layout">
       <section className="panel reports-wide">
         <div className="panel-title">
-          <h2>Reports</h2>
           <div className="report-tabs" role="tablist" aria-label="Report views" onKeyDown={handleReportTabKeyDown}>
             <button
               id="report-tab-daily"
@@ -127,7 +128,7 @@ export function ReportsView({ requestManagerApproval }: { requestManagerApproval
               className={reportTab === "range" ? "active" : ""}
               onClick={() => selectReportTab("range")}
             >
-              Monthly / Range
+              Date range
             </button>
             <button
               id="report-tab-modified"
@@ -139,7 +140,7 @@ export function ReportsView({ requestManagerApproval }: { requestManagerApproval
               className={reportTab === "modified" ? "active" : ""}
               onClick={() => selectReportTab("modified")}
             >
-              Modified Bills
+              Modified bills
             </button>
             <button
               id="report-tab-backups"
@@ -188,12 +189,8 @@ export function ReportsView({ requestManagerApproval }: { requestManagerApproval
             </div>
             <ReportDetailPanels summary={summary} />
           </>
-        ) : (
-          <EmptyState
-            title="Report loading"
-            description="The hub creates business days automatically at 6:00 AM IST."
-          />
-        )}
+        ) : currentSummary.isPending ? <div className="report-load-state" role="status">Loading today’s report…</div> : null}
+        {currentSummary.isError ? <ReportQueryError error={currentSummary.error} busy={currentSummary.isFetching} onRetry={() => void currentSummary.refetch()} /> : null}
       </section>
 
       <section className="panel">
@@ -202,13 +199,15 @@ export function ReportsView({ requestManagerApproval }: { requestManagerApproval
           <span>{closedReports.length} saved</span>
         </div>
         <div className="report-table-wrap">
+          {dailyReports.isError ? <ReportQueryError error={dailyReports.error} busy={dailyReports.isFetching} onRetry={() => void dailyReports.refetch()} /> : null}
+          {dailyReports.isPending ? <div className="report-load-state" role="status">Loading closed day reports…</div> : null}
           <table className="data-table closed-report-table">
             <thead>
               <tr>
                 <th>Business day</th>
-                <th>Bills</th>
-                <th>Sales</th>
-                <th>Payments</th>
+                <th className="numeric-cell">Bills</th>
+                <th className="numeric-cell">Sales</th>
+                <th className="numeric-cell">Payments</th>
                 <th>Finalized</th>
                 <th aria-label="Actions" />
               </tr>
@@ -218,9 +217,9 @@ export function ReportsView({ requestManagerApproval }: { requestManagerApproval
                 <Fragment key={report.pos_day_id}>
                   <tr>
                     <td className="strong-cell">{report.business_date}</td>
-                    <td>{report.bill_count}</td>
-                    <td>{formatInr(report.final_sales_paise)}</td>
-                    <td>{formatInr(report.total_payments_paise)}</td>
+                    <td className="numeric-cell">{report.bill_count}</td>
+                    <td className="numeric-cell">{formatInr(report.final_sales_paise)}</td>
+                    <td className="numeric-cell">{formatInr(report.total_payments_paise)}</td>
                     <td>{formatPosDateTime(report.finalized_at)}</td>
                     <td className="action-cell">
                       <button
@@ -239,9 +238,8 @@ export function ReportsView({ requestManagerApproval }: { requestManagerApproval
                           <p className="plain-state">Loading report...</p>
                         ) : dailyReportDetail.data ? (
                           <ReportDetailPanels summary={dailyReportDetail.data} />
-                        ) : (
-                          <p className="warning-text">Report detail could not load.</p>
-                        )}
+                        ) : null}
+                        {dailyReportDetail.isError ? <ReportQueryError error={dailyReportDetail.error} busy={dailyReportDetail.isFetching} onRetry={() => void dailyReportDetail.refetch()} /> : null}
                       </td>
                     </tr>
                   ) : null}
@@ -249,7 +247,7 @@ export function ReportsView({ requestManagerApproval }: { requestManagerApproval
               ))}
             </tbody>
           </table>
-          {!dailyReports.data?.length ? (
+          {!dailyReports.isPending && !dailyReports.isError && !closedReports.length ? (
             <EmptyState
               title="No finalized reports yet"
               description="Reports finalize automatically after the 6 AM boundary once that day's tables are settled or cancelled."
@@ -275,23 +273,25 @@ export function ReportsView({ requestManagerApproval }: { requestManagerApproval
             className="range-report-controls"
             onSubmit={(event) => {
               event.preventDefault();
+              if (invalidRange || rangeReport.isFetching) return;
               setRangeTouched(true);
               setRangeRequest({ from: rangeFrom, to: rangeTo, includeBills: false });
             }}
           >
             <label>
               From
-              <input type="date" value={rangeFrom} max={maxRangeDate} onChange={(event) => { setRangeTouched(true); setRangeFrom(event.target.value); }} />
+              <input type="date" required value={rangeFrom} max={rangeTo || maxRangeDate} onChange={(event) => { setRangeTouched(true); setRangeFrom(event.target.value); }} />
             </label>
             <label>
               To
-              <input type="date" value={rangeTo} max={maxRangeDate} onChange={(event) => { setRangeTouched(true); setRangeTo(event.target.value); }} />
+              <input type="date" required value={rangeTo} min={rangeFrom} max={maxRangeDate} onChange={(event) => { setRangeTouched(true); setRangeTo(event.target.value); }} />
             </label>
-            <button type="submit" className="secondary-button" disabled={rangeReport.isFetching}>
+            <button type="submit" className="secondary-button" disabled={rangeReport.isFetching || invalidRange}>
               {rangeReport.isFetching ? "Loading..." : "Apply"}
             </button>
           </form>
-          {rangeReport.error ? <p className="warning-text">{rangeReport.error instanceof Error ? rangeReport.error.message : "Range report could not load."}</p> : null}
+          {rangeFrom && rangeTo && rangeFrom > rangeTo ? <p className="field-error" role="status">The end date must be on or after the start date.</p> : null}
+          {rangeReport.isError ? <ReportQueryError error={rangeReport.error} busy={rangeReport.isFetching} onRetry={() => void rangeReport.refetch()} /> : null}
           {rangeReport.data ? (
             <RangeReportSummary
               report={rangeReport.data}
@@ -303,7 +303,7 @@ export function ReportsView({ requestManagerApproval }: { requestManagerApproval
               onLoadBills={() => setRangeRequest((current) => ({ ...current, includeBills: true }))}
             />
           ) : rangeReport.isLoading ? (
-            <EmptyState title="Range report loading" description="The hub is reading finalized daily report snapshots." />
+            <div className="report-load-state" role="status">Loading the selected date range…</div>
           ) : null}
         </section>
       ) : null}
@@ -318,16 +318,18 @@ export function ReportsView({ requestManagerApproval }: { requestManagerApproval
         ) : (
           <section id="report-panel-modified" role="tabpanel" aria-labelledby="report-tab-modified" className="panel reports-wide modified-bills-panel">
             <div className="panel-title">
-              <h2>Modified Bills</h2>
+              <h2>Modified bills</h2>
               <span>Loading business day</span>
             </div>
-            <EmptyState title="Report loading" description="The hub is loading the active business day before audit search." />
+            {currentSummary.isError ? <ReportQueryError error={currentSummary.error} busy={currentSummary.isFetching} onRetry={() => void currentSummary.refetch()} /> : <div className="report-load-state" role="status">Loading the active business day…</div>}
           </section>
         )
       ) : null}
 
       {reportTab === "backups" ? (
         <div id="report-panel-backups" role="tabpanel" aria-labelledby="report-tab-backups" className="reports-tab-panel">
+          {backups.isError ? <ReportQueryError error={backups.error} busy={backups.isFetching} onRetry={() => void backups.refetch()} /> : null}
+          {pendingRestore.isError ? <ReportQueryError error={pendingRestore.error} busy={pendingRestore.isFetching} onRetry={() => void pendingRestore.refetch()} /> : null}
           <BackupPanel
             backups={backups.data ?? []}
             loading={backups.isLoading}
@@ -347,15 +349,17 @@ export function ReportsView({ requestManagerApproval }: { requestManagerApproval
           <span>{stockMovements.length} recent</span>
         </div>
         <div className="report-table-wrap">
+          {alcoholStockMovements.isError ? <ReportQueryError error={alcoholStockMovements.error} busy={alcoholStockMovements.isFetching} onRetry={() => void alcoholStockMovements.refetch()} /> : null}
+          {alcoholStockMovements.isPending ? <div className="report-load-state" role="status">Loading stock movements…</div> : null}
           <table className="data-table stock-movement-table">
             <thead>
               <tr>
                 <th>Item</th>
                 <th>Source</th>
                 <th>Movement</th>
-                <th>Large</th>
-                <th>Open ml</th>
-                <th>Small</th>
+                <th className="numeric-cell">Large</th>
+                <th className="numeric-cell">Open ml</th>
+                <th className="numeric-cell">Small</th>
                 <th>Time</th>
               </tr>
             </thead>
@@ -365,15 +369,15 @@ export function ReportsView({ requestManagerApproval }: { requestManagerApproval
                   <td className="strong-cell">{movement.item_name}</td>
                   <td>{alcoholMovementSourceLabel(movement.source_type)}</td>
                   <td>{alcoholMovementDeltaText(movement)}</td>
-                  <td>{movement.balance_sealed_large}</td>
-                  <td>{movement.balance_open_large_ml}</td>
-                  <td>{movement.balance_sealed_small}</td>
+                  <td className="numeric-cell">{movement.balance_sealed_large}</td>
+                  <td className="numeric-cell">{movement.balance_open_large_ml}</td>
+                  <td className="numeric-cell">{movement.balance_sealed_small}</td>
                   <td>{formatPosDateTime(movement.created_at)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
-          {!alcoholStockMovements.data?.length ? (
+          {!alcoholStockMovements.isPending && !alcoholStockMovements.isError && !stockMovements.length ? (
             <EmptyState
               title="No alcohol stock history yet"
               description="Stock sales, settlements, manual edits, and negative-stock events will appear here."
@@ -387,6 +391,15 @@ export function ReportsView({ requestManagerApproval }: { requestManagerApproval
         </div>
       </section>
       ) : null}
+    </div>
+  );
+}
+
+function ReportQueryError({ error, busy, onRetry }: { error: unknown; busy: boolean; onRetry: () => void }) {
+  return (
+    <div className="report-error" role="alert">
+      <span>{messageOf(error)}</span>
+      <button type="button" disabled={busy} onClick={onRetry}>{busy ? "Retrying…" : "Retry"}</button>
     </div>
   );
 }
@@ -437,12 +450,12 @@ function RangeReportSummary({
             <thead>
               <tr>
                 <th>Business day</th>
-                <th>Bills</th>
-                <th>Sales</th>
-                <th>Cash</th>
-                <th>UPI</th>
-                <th>Card</th>
-                <th>Online</th>
+                <th className="numeric-cell">Bills</th>
+                <th className="numeric-cell">Sales</th>
+                <th className="numeric-cell">Cash</th>
+                <th className="numeric-cell">UPI</th>
+                <th className="numeric-cell">Card</th>
+                <th className="numeric-cell">Online</th>
                 <th>Finalized</th>
               </tr>
             </thead>
@@ -450,12 +463,12 @@ function RangeReportSummary({
               {report.availableDays.map((day) => (
                 <tr key={day.pos_day_id}>
                   <td className="strong-cell">{day.business_date}</td>
-                  <td>{day.bill_count}</td>
-                  <td>{formatInr(day.final_sales_paise)}</td>
-                  <td>{formatInr(day.cash_payments_paise)}</td>
-                  <td>{formatInr(day.upi_payments_paise)}</td>
-                  <td>{formatInr(day.card_payments_paise)}</td>
-                  <td>{formatInr(day.online_payments_paise)}</td>
+                  <td className="numeric-cell">{day.bill_count}</td>
+                  <td className="numeric-cell">{formatInr(day.final_sales_paise)}</td>
+                  <td className="numeric-cell">{formatInr(day.cash_payments_paise)}</td>
+                  <td className="numeric-cell">{formatInr(day.upi_payments_paise)}</td>
+                  <td className="numeric-cell">{formatInr(day.card_payments_paise)}</td>
+                  <td className="numeric-cell">{formatInr(day.online_payments_paise)}</td>
                   <td>{formatPosDateTime(day.finalized_at)}</td>
                 </tr>
               ))}

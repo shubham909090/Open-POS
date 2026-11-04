@@ -4,6 +4,7 @@ export type QueryKey = readonly unknown[];
 export function getRealtimeInvalidationKeys(event: RealtimeEvent): QueryKey[] {
   const type = String(event.type ?? "");
   if (type === "payment_qr.updated") return [["payment-qr"]];
+  if (type === "restaurant_branding.updated") return [["restaurant-branding"]];
   if (type === "order.submitted" || type === "order.cancelled" || type === "order_items.cancelled" || type === "order_state.updated") {
     return [["bootstrap"], ["tableOrder"], ["kds"], ["currentBusinessDaySummary"], ["alcohol"]];
   }

@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { MenuItem } from "./hub-api.js";
+import { readTableOrderMode, writeTableOrderMode, type TableOrderMode } from "./lib/table-order.js";
 
 export type HubView = "setup" | "orders" | "alcohol" | "kitchen" | "reports" | "advanced";
 export type OrderPanel = "new" | "sent" | "bill";
@@ -28,6 +29,10 @@ interface HubUiState {
   recentMenuItemIds: string[];
   selectedKdsUnitId: string | null;
   drafts: Record<string, Record<string, DraftItem>>;
+  updating: boolean;
+  setUpdating: (updating: boolean) => void;
+  tableOrderMode: TableOrderMode;
+  setTableOrderMode: (mode: TableOrderMode) => void;
   setView: (view: HubView) => void;
   selectTable: (tableId: string) => void;
   clearSelectedTable: () => void;
@@ -49,6 +54,13 @@ export const useHubStore = create<HubUiState>((set) => ({
   recentMenuItemIds: [],
   selectedKdsUnitId: null,
   drafts: {},
+  updating: false,
+  setUpdating: (updating) => set({ updating }),
+  tableOrderMode: readTableOrderMode(),
+  setTableOrderMode: (tableOrderMode) => {
+    writeTableOrderMode(tableOrderMode);
+    set({ tableOrderMode });
+  },
   setView: (view) => set({ view }),
   selectTable: (tableId) => set({ selectedTableId: tableId, orderPanel: "new" }),
   clearSelectedTable: () => set({ selectedTableId: null, orderPanel: "new" }),
@@ -57,6 +69,7 @@ export const useHubStore = create<HubUiState>((set) => ({
   setSelectedKdsUnitId: (selectedKdsUnitId) => set({ selectedKdsUnitId }),
   addDraftItem: (tableId, item, variantId) =>
     set((state) => {
+      if (state.updating) return state;
       const tableDraft = state.drafts[tableId] ?? {};
       const variant = item.variants?.find((entry) => entry.id === variantId && Boolean(entry.active)) ?? item.variants?.find((entry) => Boolean(entry.active));
       if (!variant && item.sale_group_kind === "alcohol") return state;
@@ -78,6 +91,7 @@ export const useHubStore = create<HubUiState>((set) => ({
               saleGroupName: item.sale_group_name,
               saleGroupKind: item.sale_group_kind,
               pricePaise: variant?.price_paise ?? item.price_paise,
+              note: current?.note,
               quantity: (current?.quantity ?? 0) + 1
             }
           }
@@ -86,6 +100,7 @@ export const useHubStore = create<HubUiState>((set) => ({
     }),
   addOpenDraftItem: (tableId, item) =>
     set((state) => {
+      if (state.updating) return state;
       const tableDraft = state.drafts[tableId] ?? {};
       const id = `open-${Date.now()}-${Math.random().toString(36).slice(2)}`;
       return {
@@ -111,6 +126,7 @@ export const useHubStore = create<HubUiState>((set) => ({
     }),
   changeDraftQty: (tableId, menuItemId, delta) =>
     set((state) => {
+      if (state.updating) return state;
       const tableDraft = state.drafts[tableId] ?? {};
       const current = tableDraft[menuItemId];
       if (!current) return state;
@@ -122,6 +138,7 @@ export const useHubStore = create<HubUiState>((set) => ({
     }),
   setDraftItemNote: (tableId, lineKey, note) =>
     set((state) => {
+      if (state.updating) return state;
       const tableDraft = state.drafts[tableId] ?? {};
       const current = tableDraft[lineKey];
       if (!current) return state;

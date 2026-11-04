@@ -1,30 +1,15 @@
-.menu-card,
-.kot-card,
-.line-row,
-.report-row,
-.stock-row,
-.compact-row,
-.report-detail-card,
-.summary-box,
-.saved-settings-card,
-.payment-summary-grid span,
-.setup-subdetails,
-.csv-import-box,
-.csv-import-result,
-.revision-box,
-.action-section,
-.transfer-panel,
-.manager-box,
-.history-row,
-.bill-totals,
-.split-summary,
-.total-strip {
-  @apply min-w-0 rounded-lg border border-line bg-white p-3;
+/* Records use dividers; independently actionable kitchen tickets retain a surface. */
+.menu-card, .line-row, .report-row, .stock-row, .compact-row, .history-row {
+  min-width: 0; padding: 12px 0; border: 0; border-bottom: 1px solid var(--line); background: transparent; border-radius: 0;
 }
-
+.report-detail-card, .summary-box, .saved-settings-card, .payment-summary-grid span,
+.setup-subdetails, .csv-import-box, .csv-import-result, .revision-box, .action-section,
+.transfer-panel, .manager-box, .bill-totals, .split-summary, .total-strip {
+  min-width: 0; padding: 12px 0; border: 0; background: transparent; border-radius: 0;
+}
 .danger-zone,
 .cancel-panel {
-  @apply border-danger bg-danger-soft;
+  border-top: 1px solid var(--danger-line); padding-top: 16px;
 }
 
 .saved-settings-card {
@@ -36,7 +21,7 @@
 }
 
 .saved-settings-card strong {
-  @apply truncate text-base font-black text-ink;
+  @apply truncate text-base font-semibold text-ink;
 }
 
 .saved-settings-card span {
@@ -84,11 +69,16 @@
 
 .line-title-copy {
   @apply grid min-w-0 gap-1;
+  flex: 1;
 }
 
 .line-title-copy strong {
   overflow-wrap: anywhere;
 }
+
+.line-metadata { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
+.line-metadata .line-punch::before { content: "·"; margin-right: 8px; color: var(--line-strong); }
+.line-metadata > .line-note-field[open] { flex-basis: 100%; }
 
 .line-punch {
   @apply text-xs font-medium leading-5 text-muted;
@@ -96,7 +86,7 @@
 }
 
 .line-category-icon {
-  @apply h-8 w-8;
+  display: none;
 }
 
 .line-main strong,
@@ -110,14 +100,14 @@
 }
 
 .line-amount {
-  @apply justify-self-end whitespace-nowrap text-base font-black text-ink;
+  @apply justify-self-end whitespace-nowrap text-base font-semibold text-ink;
   grid-area: amount;
 }
 
 .qty-cluster {
   @apply grid items-center justify-end gap-2;
   grid-area: qty;
-  grid-template-columns: 40px minmax(48px, auto) 40px;
+  grid-template-columns: 36px minmax(36px, auto) 36px;
 }
 
 .qty-cluster.qty-readonly {
@@ -125,11 +115,11 @@
 }
 
 .qty-cluster button {
-  @apply h-10 min-h-10 w-10 rounded-md p-0 text-lg font-black;
+  min-height: var(--control-height); height: var(--control-height); width: var(--control-height); padding: 0; border: 1px solid var(--line-strong); background: var(--panel); color: var(--ink); font-size: 16px;
 }
 
 .qty-cluster b {
-  @apply min-w-12 whitespace-nowrap text-center text-base font-black leading-10 text-ink;
+  min-width: 36px; text-align: center; font-size: 14px; line-height: 36px; font-variant-numeric: tabular-nums;
 }
 
 .line-row-action {
@@ -140,5 +130,5 @@
 .menu-category-icon,
 .draft-bar-badge,
 .step-circle {
-  @apply grid h-9 w-9 shrink-0 place-items-center rounded-md bg-accent-soft text-sm font-black text-accent-dark;
+  @apply grid h-9 w-9 shrink-0 place-items-center rounded-md bg-accent-soft text-sm font-semibold text-accent-dark;
 }

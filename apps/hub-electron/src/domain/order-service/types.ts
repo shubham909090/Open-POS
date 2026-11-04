@@ -7,6 +7,8 @@ import type {
 } from "@gaurav-pos/shared";
 
 export type BillPrinterProfile = {
+  paymentQrSizeMm?: number;
+  paperWidthMm?: 45 | 50 | 58 | 80 | null;
   label: string;
   printerMode: "system" | "network";
   printerHost: string | null;

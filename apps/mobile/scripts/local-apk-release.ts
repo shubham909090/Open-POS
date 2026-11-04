@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
+import { createMobileReleaseMetadata, MOBILE_UPDATE_METADATA_FILE, validateMobileApkIdentity } from "./mobile-release-metadata.js";
 
 const mobileRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = resolve(mobileRoot, "..", "..");
@@ -32,7 +33,7 @@ const oldVersion = appJson.expo.version;
 const nextVersion = explicitVersion ?? bumpPatch(oldVersion);
 const nextVersionCode = explicitVersionCode ? Number(explicitVersionCode) : Number(appJson.expo.android?.versionCode ?? 0) + 1;
 
-if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(nextVersion)) {
+if (!/^\d+\.\d+\.\d+$/.test(nextVersion)) {
   throw new Error(`Invalid version: ${nextVersion}`);
 }
 if (!Number.isInteger(nextVersionCode) || nextVersionCode <= 0) {
@@ -52,10 +53,10 @@ if (!skipTypecheck) {
 }
 
 const releaseDir = join(mobileRoot, "release-local");
-const apkName = `Gaurav POS Mobile-${nextVersion}.apk`;
+const apkName = `Gaurav-POS-Mobile-${nextVersion}.apk`;
 const apkPath = join(releaseDir, apkName);
-rmSync(releaseDir, { recursive: true, force: true });
 mkdirSync(releaseDir, { recursive: true });
+if (existsSync(apkPath)) throw new Error(`APK already exists: ${apkPath}. Choose a new version or intentionally archive the existing build first.`);
 
 run(
   "pnpm",
@@ -64,13 +65,16 @@ run(
 );
 
 if (!existsSync(apkPath)) throw new Error(`APK missing after build: ${apkPath}`);
-verifyApk(apkPath, env);
+const mobileMetadata = createMobileReleaseMetadata({ versionName: nextVersion, versionCode: nextVersionCode, apkFileName: apkName }, readFileSync(apkPath));
+verifyApk(apkPath, env, mobileMetadata);
+writeJson(join(releaseDir, MOBILE_UPDATE_METADATA_FILE), mobileMetadata);
 
 console.log("");
 console.log("Fresh Android APK created:");
 console.log(`- ${apkPath}`);
 console.log(`- version: ${nextVersion}`);
 console.log(`- versionCode: ${nextVersionCode}`);
+console.log(`- ${join(releaseDir, MOBILE_UPDATE_METADATA_FILE)}`);
 console.log("");
 console.log("SHA-256:");
 console.log(`${sha256(readFileSync(apkPath))}  ${apkName}`);
@@ -150,9 +154,20 @@ function installAndroidCommandLineTools(androidHome: string): void {
   run("cp", ["-R", `${join(temp, "cmdline-tools")}/.`, destination], { cwd: repoRoot });
 }
 
-function verifyApk(apkPath: string, env: NodeJS.ProcessEnv): void {
-  const apksigner = join(env.ANDROID_HOME!, "build-tools", "36.0.0", process.platform === "win32" ? "apksigner.bat" : "apksigner");
-  run(apksigner, ["verify", "--verbose", apkPath], { cwd: repoRoot, env });
+function verifyApk(apkPath: string, env: NodeJS.ProcessEnv, expected: ReturnType<typeof createMobileReleaseMetadata>): void {
+  const toolsRoot = join(env.ANDROID_HOME!, "build-tools", "36.0.0");
+  const apksigner = join(toolsRoot, process.platform === "win32" ? "apksigner.bat" : "apksigner");
+  const signature = capture(apksigner, ["verify", "--verbose", "--print-certs", apkPath], env);
+  const badging = capture(join(toolsRoot, process.platform === "win32" ? "aapt.exe" : "aapt"), ["dump", "badging", apkPath], env);
+  const manifest = capture(join(toolsRoot, process.platform === "win32" ? "aapt.exe" : "aapt"), ["dump", "xmltree", apkPath, "AndroidManifest.xml"], env);
+  validateMobileApkIdentity(badging, signature, expected, manifest);
+  run(join(toolsRoot, process.platform === "win32" ? "zipalign.exe" : "zipalign"), ["-c", "-P", "16", "4", apkPath], { cwd: repoRoot, env });
+}
+
+function capture(command: string, args: string[], env: NodeJS.ProcessEnv): string {
+  const result = spawnSync(command, args, { cwd: repoRoot, env, encoding: "utf8", shell: process.platform === "win32" });
+  if (result.status !== 0) throw new Error(`${command} failed: ${result.stderr}`);
+  return result.stdout;
 }
 
 function sha256(bytes: Buffer): string {

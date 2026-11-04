@@ -1,4 +1,9 @@
+import { billPrinterReceiptLayout } from "./order-service/printer-settings.js";
+import { readRestaurantBranding, prepareRestaurantLogo, RESTAURANT_BRANDING_SETTING_KEY } from "./order-service/restaurant-branding.js";
 import {
+  type RestaurantBranding,
+  type UpdateRestaurantBrandingInput,
+  type RemoveRestaurantLogoInput,
   type AdjustAlcoholStockInput,
   type ResetAlcoholStockInput,
   type BillAdjustmentInput,
@@ -471,6 +476,27 @@ export class OrderService {
     return getPrintLayoutsModel(this.settingsActionContext());
   }
 
+  getRestaurantBranding(): RestaurantBranding {
+    return readRestaurantBranding((key) => this.getSetting(key));
+  }
+
+  async updateRestaurantBranding(input: UpdateRestaurantBrandingInput, requestedBy: string): Promise<{ branding: RestaurantBranding }> {
+    this.verifyMasterApproval(input.masterApproval, "restaurant_branding.updated", "hub_setting", RESTAURANT_BRANDING_SETTING_KEY, requestedBy);
+    const logo = input.imageDataUrl === undefined ? undefined : input.imageDataUrl === null ? null : await prepareRestaurantLogo(input.imageDataUrl);
+    return this.db.transaction(() => {
+      const current = this.getRestaurantBranding();
+      if (input.expectedUpdatedAt !== undefined && input.expectedUpdatedAt !== current.updatedAt) throw new DomainError("Restaurant branding changed on another device. Reopen settings before saving.", 409);
+      const branding: RestaurantBranding = { restaurantName: input.restaurantName, logoImageDataUrl: logo === undefined ? current.logoImageDataUrl : logo, updatedAt: new Date().toISOString() };
+      this.upsertSetting(RESTAURANT_BRANDING_SETTING_KEY, JSON.stringify(branding));
+      this.appendEvent("restaurant_branding.updated", "hub_setting", RESTAURANT_BRANDING_SETTING_KEY, { requestedBy, configured: !!branding.logoImageDataUrl });
+      return { branding };
+    })();
+  }
+
+  async removeRestaurantLogo(input: RemoveRestaurantLogoInput, requestedBy: string): Promise<{ branding: RestaurantBranding }> {
+    return this.updateRestaurantBranding({ ...input, restaurantName: this.getRestaurantBranding().restaurantName, imageDataUrl: null }, requestedBy);
+  }
+
   getPaymentQr(): PaymentQr | null {
     return readPaymentQr((key) => this.getSetting(key));
   }
@@ -735,6 +761,11 @@ export class OrderService {
     return updateBillPrintersModel(this.printSettingsActionContext(), input);
   }
 
+  private getPaymentQrForPrinter(slot: BillPrinterSlot): PaymentQr | null {
+    const qr = this.getPaymentQr();
+    return qr ? { ...qr, sizeMm: this.getBillPrinterProfile(slot).paymentQrSizeMm ?? qr.sizeMm } : null;
+  }
+
   private getBillPrinterProfile(slot: BillPrinterSlot): BillPrinterProfile {
     return getBillPrinterProfileModel(this.printSettingsActionContext(), slot);
   }
@@ -925,7 +956,8 @@ export class OrderService {
       readSetting: (key) => this.getSetting(key),
       writeSetting: (key, value) => this.upsertSetting(key, value),
       getPrintLayout: (scope, productionUnitId) => this.getPrintLayout(scope, productionUnitId),
-      getPaymentQr: () => this.getPaymentQr(),
+      getPaymentQr: (slot) => this.getPaymentQrForPrinter(slot ?? "default"),
+      getRestaurantBranding: () => this.getRestaurantBranding(),
       enqueuePrintJob: (input) => this.enqueuePrintJob(input),
       appendEvent: (type, aggregateType, aggregateId, payload) => this.appendEvent(type, aggregateType, aggregateId, payload)
     };
@@ -1073,13 +1105,16 @@ export class OrderService {
     tipPaise?: number;
     finalTotalPaise?: number;
     ncReason?: string | null;
+    printerSlot?: BillPrinterSlot;
   }) {
     return buildBillTicketModel({
       db: this.db,
       ...input,
       orderItems: this.getOrderItems(input.bill.order_id),
-      receiptLayout: this.getPrintLayout("receipt"),
-      paymentQr: this.getPaymentQr()
+      receiptLayout: billPrinterReceiptLayout(this.getPrintLayout("receipt"), this.getBillPrinterProfile(input.printerSlot ?? "default")),
+      paperWidthMm: this.getBillPrinterProfile(input.printerSlot ?? "default").paperWidthMm,
+      restaurantBranding: this.getRestaurantBranding(),
+      paymentQr: this.getPaymentQrForPrinter(input.printerSlot ?? "default")
     });
   }
 

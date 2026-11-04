@@ -1,6 +1,6 @@
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { X } from "lucide-react";
-import { type KeyboardEventHandler, type ReactNode } from "react";
+import { useEffect, useRef, type KeyboardEventHandler, type ReactNode, type RefObject } from "react";
 import { cn } from "../../lib/utils.js";
 import { Button } from "./button.js";
 
@@ -11,7 +11,10 @@ export function Dialog({
   children,
   danger = false,
   size = "default",
-  onKeyDown
+  onKeyDown,
+  onCloseAutoFocus,
+  returnFocusRef,
+  className,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -20,24 +23,60 @@ export function Dialog({
   danger?: boolean;
   size?: "default" | "wide";
   onKeyDown?: KeyboardEventHandler<HTMLDivElement>;
+  onCloseAutoFocus?: (event: Event) => void;
+  /** Explicit origin for chained dialogs whose previous dialog unmounts during the handoff. */
+  returnFocusRef?: RefObject<HTMLElement | null>;
+  className?: string;
 }) {
+  // Most POS dialogs are opened by an action rather than a Radix Trigger.
+  // Preserve that exact action so keyboard users can continue where they were.
+  const returnFocus = useRef<HTMLElement | null>(document.activeElement instanceof HTMLElement ? document.activeElement : null);
+  const content = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (open) return;
+    const rememberFocus = () => {
+      const activeElement = document.activeElement;
+      if (activeElement instanceof HTMLElement && activeElement !== document.body && !content.current?.contains(activeElement)) returnFocus.current = activeElement;
+    };
+    document.addEventListener("focusin", rememberFocus);
+    return () => document.removeEventListener("focusin", rememberFocus);
+  }, [open]);
   return (
     <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
       <DialogPrimitive.Portal>
-        <DialogPrimitive.Overlay className="fixed inset-0 z-40 bg-ink/55 backdrop-blur-sm" />
+        <DialogPrimitive.Overlay className="dialog-overlay" />
         <DialogPrimitive.Content
+          ref={content}
           className={cn(
-            "fixed left-1/2 top-1/2 z-50 grid max-h-[86vh] -translate-x-1/2 -translate-y-1/2 gap-4 overflow-auto rounded-lg border bg-panel p-5 shadow-2xl outline-none",
-            size === "wide" ? "w-[min(980px,calc(100vw-32px))]" : "w-[min(560px,calc(100vw-32px))]",
-            danger ? "border-danger/30" : "border-line"
+            "dialog-surface",
+            size === "wide" && "dialog-wide",
+            danger && "dialog-danger",
+            className,
           )}
           onKeyDown={onKeyDown}
+          onCloseAutoFocus={(event) => {
+            onCloseAutoFocus?.(event);
+            const target = returnFocusRef?.current ?? returnFocus.current;
+            if (!event.defaultPrevented && target?.isConnected && !target.closest("[hidden]")) {
+              event.preventDefault();
+              target.focus({ preventScroll: true });
+            }
+          }}
         >
-          <div className="flex items-center justify-between gap-4">
-            <DialogPrimitive.Title className="text-lg font-semibold text-ink">{title}</DialogPrimitive.Title>
-            <DialogPrimitive.Description className="sr-only">{title}</DialogPrimitive.Description>
+          <div className="dialog-heading">
+            <DialogPrimitive.Title className="dialog-title">
+              {title}
+            </DialogPrimitive.Title>
+            <DialogPrimitive.Description className="sr-only">
+              {title}
+            </DialogPrimitive.Description>
             <DialogPrimitive.Close asChild>
-              <Button type="button" variant="ghost" size="icon" aria-label="Close">
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                aria-label="Close"
+              >
                 <X size={18} />
               </Button>
             </DialogPrimitive.Close>

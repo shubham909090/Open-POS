@@ -19,6 +19,17 @@ describe("mobile table flow helpers", () => {
     ]);
   });
 
+  it("sorts tables naturally by name by default and keeps hub positions in custom order", () => {
+    const tables = [
+      { id: "a", name: "T10", floor_id: "f-1" },
+      { id: "b", name: "T2", floor_id: "f-1" },
+      { id: "c", name: "t1", floor_id: "f-1" }
+    ];
+    const floors = [{ id: "f-1", name: "Main" }];
+    expect(groupTablesByFloor(tables, floors)[0]?.tables.map((table) => table.name)).toEqual(["t1", "T2", "T10"]);
+    expect(groupTablesByFloor(tables, floors, "custom")[0]?.tables.map((table) => table.name)).toEqual(["T10", "T2", "t1"]);
+  });
+
   it("keeps transfer quantities between one and available quantity", () => {
     expect(clampTransferQuantity("999", 3)).toBe(3);
     expect(clampTransferQuantity("0", 3)).toBe(1);

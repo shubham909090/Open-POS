@@ -84,12 +84,13 @@ export function AlcoholItemsPanel({
 
       <section className="panel">
         <div className="panel-title">
-          <h2>Alcohol Catalog</h2>
+          <h2>Alcohol catalog</h2>
           <span>{filteredCatalogItems.length} {status} items</span>
         </div>
         <div className="setup-search-row">
           <input
             value={catalogSearch}
+            aria-label="Search alcohol catalog"
             onChange={(event) => setCatalogSearch(event.target.value)}
             placeholder="Search liquor, cocktails, variants, or counter"
           />

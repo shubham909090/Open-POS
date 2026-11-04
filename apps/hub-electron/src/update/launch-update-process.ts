@@ -36,6 +36,7 @@ export async function launchUpdateProcess(
     windowsVerbatimArguments: separateConsole
   });
   let launchError: Error | undefined;
+  const closed = new Promise<void>((resolve) => { child.once("close", () => resolve()); });
   child.on("error", (error) => { launchError = error; });
   try {
     await new Promise<void>((resolve, reject) => {
@@ -64,6 +65,7 @@ export async function launchUpdateProcess(
       appendFileSync(handoff.startupLogPath, `${new Date().toISOString()} ${String(error)}\n`);
     }
     child.kill();
+    await closed;
     throw new Error(`Could not start the update. Hub has been kept open. ${error instanceof Error ? error.message : String(error)}${handoff ? ` See ${handoff.startupLogPath}` : ""}`);
   } finally {
     if (log !== undefined) closeSync(log);

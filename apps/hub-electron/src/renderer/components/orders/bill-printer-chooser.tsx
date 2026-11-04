@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Printer } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useMemo, useState, type KeyboardEvent, type RefObject } from "react";
 import { hubApi, type BillPrinterProfile, type BillPrinterSlot } from "../../hub-api.js";
 import { Dialog } from "../ui/dialog.js";
 
@@ -22,13 +22,15 @@ export function BillPrinterChooser({
   title,
   busy,
   onClose,
-  onChoose
+  onChoose,
+  returnFocusRef
 }: {
   open: boolean;
   title: string;
   busy?: boolean;
   onClose: () => void;
   onChoose: (slot: BillPrinterSlot) => void;
+  returnFocusRef?: RefObject<HTMLElement | null>;
 }) {
   const billPrinters = useQuery({ queryKey: ["bill-printers"], queryFn: hubApi.billPrinters, enabled: open });
   const profiles = billPrinters.data;
@@ -70,20 +72,17 @@ export function BillPrinterChooser({
   }, [activeSlot, busy, enabledOptions, onChoose]);
 
   return (
-    <Dialog open={open} onOpenChange={(next) => { if (!next) onClose(); }} title={title} onKeyDown={handleKeyDown}>
+    <Dialog open={open} onOpenChange={(next) => { if (!next) onClose(); }} title={title} onKeyDown={handleKeyDown} returnFocusRef={returnFocusRef}>
       <div className="printer-choice-panel">
-        <div className="printer-choice-intro">
-          <strong>Select bill printer</strong>
-          <span>Choose where this bill print should go.</span>
-        </div>
-        {billPrinters.isLoading ? <p className="plain-state">Loading bill printers...</p> : null}
+        {billPrinters.isLoading ? <p className="plain-state" role="status">Loading bill printers…</p> : null}
+        {billPrinters.isError ? <div className="printer-choice-note" role="alert"><p>Bill printers could not load. Try again before printing.</p><button type="button" className="secondary-button compact" onClick={() => void billPrinters.refetch()} disabled={billPrinters.isFetching}>{billPrinters.isFetching ? "Retrying…" : "Retry"}</button></div> : null}
         <div className="printer-choice-list">
           {options.map(({ slot, profile }) => (
             <button
               key={slot}
               type="button"
               className={`printer-choice-button ${slot}${activeSlot === slot && profile.configured ? " active" : ""}`}
-              aria-selected={activeSlot === slot && profile.configured}
+              aria-pressed={activeSlot === slot && profile.configured}
               disabled={busy || !profile.configured}
               onMouseEnter={() => {
                 if (profile.configured) setActiveSlot(slot);
@@ -104,6 +103,7 @@ export function BillPrinterChooser({
                 <span>{slotLabel(slot)}</span>
                 <strong>{profile.label}</strong>
                 <small>{profile.printerMode === "system" ? "PC printer" : "LAN printer"} · {printerTarget(profile)}</small>
+                <small>{profile.paperWidthMm ? `${profile.paperWidthMm} mm roll` : "Bill layout roll width"} · Payment QR {profile.paymentQrSizeMm} mm</small>
               </span>
               <b>{profile.configured ? "Select" : "Not set"}</b>
             </button>

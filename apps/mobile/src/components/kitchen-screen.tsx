@@ -1,14 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Alert, LayoutAnimation, Pressable, ScrollView, SectionList, Text, TextInput, View } from "react-native";
-import { formatPosDateTime, getTableDisplayState, searchMenuItems, tableDisplayLabel, type OrderItemInput, type SaleGroupKind } from "@gaurav-pos/shared";
-
-import type { CurrentDaySummary, DailyReportDetail, DailyReportRow, HubBootstrap, HubOrder, KdsTicket } from "../lib/hub-client";
-import { mobileDraftOrderStateSignature, mobileSavedOrderStateSignature } from "../lib/order-state";
-import { formatMobileMenuActionLabel } from "../lib/menu-actions";
-import { amountInputToPaise, categoryToneFor, findMenuVariant, formatRupees, paiseToRupeeInput } from "../lib/mobile-format";
-import type { ConnectionState, MobileOrderStateItem, OrderStateSaveMode, PaymentMethod, PrintMode } from "../lib/mobile-types";
+import { ActivityIndicator, ScrollView, Text, View } from "react-native";
+import { Pressable } from "./pressable";
+import type { HubBootstrap, KdsTicket } from "../lib/hub-client";
 import { palette, styles } from "../styles/app-styles";
-import { CollapsibleSection, EmptyState, LabeledMoneyInput, SummaryBox, UncontrolledInput } from "./app-shell";
+import { EmptyState } from "./app-shell";
+import { kitchenItemPresentation, kitchenTicketNeedsAcknowledgment, kitchenTicketPresentation } from "./kitchen-ticket-presentation";
 
 function KitchenScreen({
   units,
@@ -35,7 +30,7 @@ function KitchenScreen({
           <Text style={styles.sectionTitle}>{selectedUnit?.name ?? "Kitchen"}</Text>
           <Text style={styles.muted}>{tickets.length} active ticket{tickets.length === 1 ? "" : "s"}</Text>
         </View>
-        {loading ? <ActivityIndicator /> : null}
+        {loading ? <ActivityIndicator color={palette.green} /> : null}
       </View>
 
       {units.length > 1 ? (
@@ -49,42 +44,55 @@ function KitchenScreen({
       ) : null}
 
       {units.length === 0 ? (
-        <EmptyState title="No kitchen screen enabled" text="Enable Kitchen screen on the hub for the counters that should appear here." />
+        <EmptyState title="No kitchen screen enabled" text="Enable a kitchen screen on the hub." />
       ) : tickets.length === 0 ? (
-        <EmptyState title="No active tickets" text="New KOTs will appear here as soon as waiters send items." />
+        <EmptyState title="No active tickets" text="New KOTs appear here." />
       ) : (
         <View style={styles.kotList}>
           {tickets.map((ticket) => {
+            const ticketKind = kitchenTicketPresentation(ticket.type);
+            const acknowledgeOnly = kitchenTicketNeedsAcknowledgment(ticket.type, ticket.items);
             const kotCardStatus = ticket.status === "ready" ? styles.kotCardReady
               : ticket.status === "preparing" ? styles.kotCardPreparing
               : ticket.status === "served" ? styles.kotCardServed
               : undefined;
             return (
-              <View key={ticket.id} style={[styles.kotCard, kotCardStatus]}>
+              <View key={ticket.id} style={[styles.kotCard, kotCardStatus, ticketKind.cancellation && styles.kotCardCancellation]}>
                 <View style={styles.kotHeader}>
                   <View style={styles.flexText}>
                     <Text style={styles.kotTable}>Table {ticket.table_name}</Text>
-                    <Text style={styles.muted}>KOT #{ticket.sequence}</Text>
+                    <Text style={[styles.kotType, ticketKind.cancellation && styles.kotRemovalText]}>KOT #{ticket.sequence} · {ticketKind.label}</Text>
                   </View>
                   <View style={[styles.kotStatusPill, ticket.status === "ready" && styles.kotStatusReady]}>
-                    <Text style={[styles.kotStatusText, ticket.status === "ready" && styles.kotStatusTextReady]}>{ticket.status.toUpperCase()}</Text>
+                    <Text style={[styles.kotStatusText, ticket.status === "ready" && styles.kotStatusTextReady]}>{acknowledgeOnly ? ticket.status === "served" ? "Acknowledged" : "Needs acknowledgment" : ticket.status.charAt(0).toUpperCase() + ticket.status.slice(1)}</Text>
                   </View>
                 </View>
                 <View style={styles.kotItems}>
                   {ticket.note ? (
-                    <Text style={styles.smallMuted}>Note: {ticket.note}</Text>
+                    <Text style={styles.smallMuted}>{ticket.note}</Text>
                   ) : null}
-                  {ticket.items.map((item, index) => (
+                  {ticket.items.map((item, index) => {
+                    const change = kitchenItemPresentation(item.quantity_delta, item.note_snapshot);
+                    return (
                     <View key={`${ticket.id}-${index}`} style={styles.kotItemRow}>
-                      <Text style={styles.kotQty}>{item.quantity_delta === 0 ? "" : `${Math.abs(item.quantity_delta)}x`}</Text>
+                      <View style={styles.kotChangeQuantity}>
+                        <Text style={[styles.kotQty, change.kind === "remove" && styles.kotRemovalText]}>{change.quantity}</Text>
+                        {change.kind !== "add" ? <Text style={[styles.kotChangeAction, change.kind === "remove" && styles.kotRemovalText]}>{change.action}</Text> : null}
+                      </View>
                       <View style={styles.flexText}>
                         <Text style={styles.kotItemName}>{item.name_snapshot}</Text>
                         {item.note_snapshot ? <Text style={styles.smallMuted}>{item.note_snapshot}</Text> : null}
                       </View>
                     </View>
-                  ))}
+                    );
+                  })}
                 </View>
                 <View style={styles.kotActions}>
+                  {acknowledgeOnly ? (
+                    <Pressable accessibilityLabel={`Acknowledge ticket ${ticket.sequence}`} style={[styles.secondaryButton, styles.kotActionButton, (sending || ticket.status === "served") && styles.buttonDisabled]} disabled={sending || ticket.status === "served"} onPress={() => onStatusChange(ticket.id, "served")}>
+                      <Text style={styles.secondaryButtonText}>Acknowledge</Text>
+                    </Pressable>
+                  ) : <>
                   {ticket.status === "queued" ? (
                     <Pressable style={[styles.secondaryButton, styles.kotActionButton, styles.kotStartButton, sending && styles.buttonDisabled]} disabled={sending} onPress={() => onStatusChange(ticket.id, "preparing")}>
                       <Text style={styles.kotStartButtonText}>Start</Text>
@@ -99,6 +107,7 @@ function KitchenScreen({
                       <Text style={styles.primaryButtonText}>Served</Text>
                     </Pressable>
                   )}
+                  </>}
                 </View>
               </View>
             );

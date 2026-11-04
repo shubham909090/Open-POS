@@ -15,7 +15,7 @@ export function EmptyState({
   className?: string;
 }) {
   return (
-    <div className={cn("grid place-items-center gap-2 rounded-lg border border-dashed border-line p-8 text-center", className)}>
+    <div className={cn("empty-state", className)}>
       {icon ? <div className="text-muted">{icon}</div> : null}
       <p className="text-sm font-semibold text-ink">{title}</p>
       {description ? <p className="max-w-xs text-xs text-muted">{description}</p> : null}

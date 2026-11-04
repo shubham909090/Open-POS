@@ -94,7 +94,7 @@ export function SentOrderPanel({
     <div className="ticket-section">
       {data?.order ? (
         <section className="state-editor">
-          <div className="state-editor-head">
+          {hasOrderStateChanges ? <div className="state-editor-head">
             <div className="state-editor-total">
               <small>Edited total</small>
               <strong>{formatInr(editableTotal)}</strong>
@@ -120,7 +120,7 @@ export function SentOrderPanel({
             ) : (
               <span className="state-editor-status">Saved</span>
             )}
-          </div>
+          </div> : null}
           {orderStateGuardMessage ? <p className="state-editor-warning">{orderStateGuardMessage}</p> : null}
           {managerApprovalRequired ? <p className="state-editor-warning">Manager PIN will be required to reduce or remove sent items.</p> : null}
           <div className="state-search">
@@ -140,8 +140,9 @@ export function SentOrderPanel({
                   return (
                     <div
                       key={item.id}
+                      ref={(element) => orderStateKeyboard.setItemElement(index, element)}
                       className={`state-search-row menu-card compact-menu-card category-${item.sale_group_kind ?? "other"}${orderStateKeyboard.activeIndex === index ? " keyboard-active" : ""}`}
-                      onMouseEnter={() => orderStateKeyboard.setActiveIndex(index)}
+                      onPointerMove={(event) => orderStateKeyboard.onPointerMove(index, event)}
                     >
                       <CategoryBadge kind={item.sale_group_kind} className="state-search-icon" />
                       <div className="menu-card-main">
@@ -165,8 +166,8 @@ export function SentOrderPanel({
         </section>
       ) : null}
       <LineItems
-        emptyTitle="Nothing sent yet"
-        emptyText="Use the search above to add items to this table."
+        emptyTitle="No sent items"
+        emptyText=""
         rows={orderStateItems.map((item) => ({
           id: item.key,
           title: item.name,
@@ -222,10 +223,14 @@ export function SentOrderPanel({
                   onChange={(event) => setShiftTargetTableId(event.target.value)}
                 >
                   <option value="">Choose active table</option>
-                  {shiftTargets.map((table) => (
-                    <option key={table.id} value={table.id}>
-                      {table.name}
-                    </option>
+                  {groupTargetsByFloor(shiftTargets).map(([floorName, tables]) => (
+                    <optgroup key={floorName} label={floorName}>
+                      {tables.map((table) => (
+                        <option key={table.id} value={table.id}>
+                          {table.name}{table.status === "free" ? "" : " · running"}
+                        </option>
+                      ))}
+                    </optgroup>
                   ))}
                 </select>
               </label>
@@ -293,4 +298,15 @@ export function SentOrderPanel({
       ) : null}
     </div>
   );
+}
+
+/** Keeps the caller's order; groups consecutive targets under their floor for the native picker. */
+function groupTargetsByFloor(tables: Bootstrap["tables"]): Array<[string, Bootstrap["tables"]]> {
+  const groups: Array<[string, Bootstrap["tables"]]> = [];
+  for (const table of tables) {
+    const last = groups.at(-1);
+    if (last && last[0] === table.floor_name) last[1].push(table);
+    else groups.push([table.floor_name, [table]]);
+  }
+  return groups;
 }

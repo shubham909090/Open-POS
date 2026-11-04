@@ -24,16 +24,16 @@ describe("bill printer chooser", () => {
     renderChooser(BillPrinterChooser, onChoose);
 
     const dialog = await screen.findByRole("dialog", { name: "Print bill where?" });
-    await waitFor(() => expect(screen.getByRole("button", { name: /Default printer/i }).getAttribute("aria-selected")).toBe("true"));
+    await waitFor(() => expect(screen.getByRole("button", { name: /Default printer/i }).getAttribute("aria-pressed")).toBe("true"));
 
     fireEvent.keyDown(dialog, { key: "ArrowDown" });
-    await waitFor(() => expect(screen.getByRole("button", { name: /Alternate printer/i }).getAttribute("aria-selected")).toBe("true"));
+    await waitFor(() => expect(screen.getByRole("button", { name: /Alternate printer/i }).getAttribute("aria-pressed")).toBe("true"));
 
     fireEvent.keyDown(dialog, { key: "Enter" });
     expect(onChoose).toHaveBeenLastCalledWith("alternate");
 
     fireEvent.keyDown(dialog, { key: "ArrowUp" });
-    await waitFor(() => expect(screen.getByRole("button", { name: /Default printer/i }).getAttribute("aria-selected")).toBe("true"));
+    await waitFor(() => expect(screen.getByRole("button", { name: /Default printer/i }).getAttribute("aria-pressed")).toBe("true"));
 
     fireEvent.keyDown(dialog, { key: " " });
     expect(onChoose).toHaveBeenLastCalledWith("default");
@@ -50,10 +50,10 @@ describe("bill printer chooser", () => {
     renderChooser(BillPrinterChooser, onChoose);
 
     const dialog = await screen.findByRole("dialog", { name: "Print bill where?" });
-    await waitFor(() => expect(screen.getByRole("button", { name: /Alternate printer/i }).getAttribute("aria-selected")).toBe("true"));
+    await waitFor(() => expect(screen.getByRole("button", { name: /Alternate printer/i }).getAttribute("aria-pressed")).toBe("true"));
 
     fireEvent.keyDown(dialog, { key: "ArrowUp" });
-    expect(screen.getByRole("button", { name: /Alternate printer/i }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByRole("button", { name: /Alternate printer/i }).getAttribute("aria-pressed")).toBe("true");
 
     fireEvent.keyDown(dialog, { key: "Enter" });
     expect(onChoose).toHaveBeenCalledWith("alternate");

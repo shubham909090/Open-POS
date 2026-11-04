@@ -1,11 +1,12 @@
 import { formatInr, getOrderStateSignature, hasOrderStateReduction, isTransferTargetTable, searchMenuItems } from "@gaurav-pos/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { hubApi, type BillAdjustmentPayload, type BillPrinterSlot, type Bootstrap, type MenuItem } from "../../hub-api.js";
 import { menuItemVariantOptions, messageOf, type NoticeSetter } from "../../lib/format.js";
 import type { ManagerApproval, ManagerApprovalRequest } from "../../hooks/use-manager-approval.js";
 import { useOperationKeys } from "../../hooks/use-operation-keys.js";
 import { useHubStore } from "../../store.js";
+import { sortTablesByFloor } from "../../lib/table-order.js";
 import { EmptyState } from "../ui/empty-state.js";
 import { ConfirmationDialog } from "../ui/confirmation-dialog.js";
 import { BillingPanel } from "./billing-panel.js";
@@ -13,6 +14,7 @@ import { BillPrinterChooser } from "./bill-printer-chooser.js";
 import { NewOrderPanel } from "./new-order-panel.js";
 import type { SaveMode, StateItem } from "./order-workspace-types.js";
 import { SentOrderPanel } from "./sent-order-panel.js";
+import { Notice } from "../ui/notice.js";
 
 export type { SaveMode, StateItem } from "./order-workspace-types.js";
 
@@ -20,9 +22,11 @@ export function TableWorkspace({
   tableId,
   tableName,
   bootstrap,
-  setNotice,
+  setNotice: notifyApp,
   requestManagerApproval,
-  onClose
+  onClose,
+  operationNotice,
+  menuVisible = false,
 }: {
   tableId: string | null;
   tableName: string;
@@ -30,13 +34,34 @@ export function TableWorkspace({
   setNotice: NoticeSetter;
   requestManagerApproval: ManagerApprovalRequest;
   onClose?: () => void;
+  operationNotice?: Parameters<NoticeSetter>[0] | null;
+  menuVisible?: boolean;
 }) {
+  const [localNotice, setLocalNotice] = useState<Parameters<NoticeSetter>[0] | null>(null);
+  const sectionRef = useRef<HTMLElement>(null);
+  const operationTrigger = useRef<HTMLButtonElement | null>(null);
+  const setNotice: NoticeSetter = useCallback((notice) => {
+    setLocalNotice(notice);
+    notifyApp(notice);
+  }, [notifyApp]);
+  const shownNotice = localNotice ?? operationNotice;
+  useEffect(() => { setLocalNotice(null); operationTrigger.current = null; }, [tableId]);
+  useEffect(() => { setLocalNotice(null); }, [operationNotice]);
+  useEffect(() => {
+    if (!shownNotice || shownNotice.tone !== "bad") return;
+    const frame = requestAnimationFrame(() => {
+      const target = operationTrigger.current;
+      if (target?.isConnected && !target.disabled) target.focus({ preventScroll: true });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [shownNotice]);
   const queryClient = useQueryClient();
   const orderPanel = useHubStore((state) => state.orderPanel);
   const setOrderPanel = useHubStore((state) => state.setOrderPanel);
   const selectTable = useHubStore((state) => state.selectTable);
   const drafts = useHubStore((state) => state.drafts);
   const clearDraft = useHubStore((state) => state.clearDraft);
+  const tableOrderMode = useHubStore((state) => state.tableOrderMode);
   const [shiftTargetTableId, setShiftTargetTableId] = useState("");
   const [transferMode, setTransferMode] = useState<"table" | "items">("items");
   const [transferOpen, setTransferOpen] = useState(false);
@@ -85,7 +110,7 @@ export function TableWorkspace({
     sentItems.map((item) => ({ orderItemId: item.id, quantity: item.quantity })),
     orderStateItems.map((item) => ({ orderItemId: item.orderItemId, quantity: item.quantity }))
   );
-  const shiftTargets = bootstrap.tables.filter((table) => table.id !== tableId && isTransferTargetTable(table));
+  const shiftTargets = sortTablesByFloor(bootstrap.tables.filter((table) => table.id !== tableId && isTransferTargetTable(table)), bootstrap.floors, tableOrderMode);
   const selectedShiftTarget = shiftTargets.find((table) => table.id === shiftTargetTableId);
   const draftTotal = draft.reduce((total, item) => total + item.pricePaise * item.quantity, 0);
   const sentTotal = sentItems.reduce((total, item) => total + item.unit_price_paise * item.quantity, 0);
@@ -303,15 +328,48 @@ export function TableWorkspace({
     );
   }
 
+  if (tableOrder.isPending) {
+    return (
+      <section className="ticket-workspace panel" aria-busy="true">
+        <div className="workspace-load-state" role="status">Loading {tableName}…</div>
+      </section>
+    );
+  }
+
+  if (tableOrder.isError && data === undefined) {
+    return (
+      <section className="ticket-workspace panel">
+        <EmptyState
+          title="Table could not load"
+          description={messageOf(tableOrder.error)}
+          action={
+            <button type="button" className="secondary-button" disabled={tableOrder.isFetching} onClick={() => void tableOrder.refetch()}>
+              {tableOrder.isFetching ? "Retrying…" : "Retry"}
+            </button>
+          }
+        />
+      </section>
+    );
+  }
+
   return (
-    <section className="ticket-workspace panel">
+    <section ref={sectionRef} className="ticket-workspace panel" onClickCapture={(event) => {
+      if (!(event.target instanceof Element)) return;
+      const button = event.target.closest("button");
+      if (button instanceof HTMLButtonElement && sectionRef.current?.contains(button)) operationTrigger.current = button;
+    }}>
+      {/* The order modal header already names the table; this row carries the panel switch and running total. */}
       <div className="ticket-header">
-        <div>
-          <span>Selected table</span>
-          <h2>{tableName}</h2>
+        <div className="segmented" role="group" aria-label={`${tableName} order panels`}>
+          <button type="button" aria-pressed={orderPanel === "new"} className={orderPanel === "new" ? "active" : ""} onClick={() => setOrderPanel("new")}>New order</button>
+          <button type="button" aria-pressed={orderPanel === "sent"} className={orderPanel === "sent" ? "active" : ""} onClick={() => setOrderPanel("sent")}>Sent items</button>
+          <button type="button" aria-pressed={orderPanel === "bill"} className={orderPanel === "bill" ? "active" : ""} onClick={() => setOrderPanel("bill")}>Bill</button>
         </div>
         <div className="ticket-header-actions">
-          <div className="total-chip">{formatInr(draftTotal + sentTotal)}</div>
+          {orderPanel !== "bill" ? <div className="ticket-total" aria-live="polite">
+            <span>{draft.length > 0 ? "Table + draft" : "Table total"}</span>
+            <strong>{formatInr(draftTotal + sentTotal)}</strong>
+          </div> : null}
           {onClose ? (
             <button type="button" className="quiet-button" onClick={onClose}>
               Close
@@ -319,14 +377,13 @@ export function TableWorkspace({
           ) : null}
         </div>
       </div>
-      <div className="segmented">
-        <button type="button" className={orderPanel === "new" ? "active" : ""} onClick={() => setOrderPanel("new")}>New order</button>
-        <button type="button" className={orderPanel === "sent" ? "active" : ""} onClick={() => setOrderPanel("sent")}>Sent items</button>
-        <button type="button" className={orderPanel === "bill" ? "active" : ""} onClick={() => setOrderPanel("bill")}>Bill</button>
-      </div>
 
+      <div className="ticket-body">
+        {shownNotice?.tone === "bad" ? <Notice variant="error" className="workspace-operation-error"><span>{shownNotice.text}</span><button type="button" aria-label="Dismiss operation error" className="ui-button-ghost" onClick={() => setLocalNotice({ tone: "good", text: "" })}>Dismiss</button></Notice> : null}
+        {orderPanel === "bill" && draft.length > 0 ? <p className="bill-draft-note" role="status">{draft.reduce((total, item) => total + item.quantity, 0)} unsent items are not included in this bill. Send them from New order first if they should be billed.</p> : null}
       {orderPanel === "new" ? (
         <NewOrderPanel
+          showSearch={!menuVisible}
           tableId={tableId}
           bootstrap={bootstrap}
           draft={draft}
@@ -398,6 +455,7 @@ export function TableWorkspace({
           requestManagerApproval={requestManagerApproval}
         />
       ) : null}
+      </div>
       <BillPrinterChooser
         open={billPrintIntent === "generate"}
         title="Print bill where?"

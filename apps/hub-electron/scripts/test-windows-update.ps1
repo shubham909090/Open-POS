@@ -1,4 +1,8 @@
-param([string]$PreviousVersion = "0.1.19")
+param(
+  [string]$PreviousVersion = "0.1.19",
+  [string]$FixtureVersion = "",
+  [string]$OnlineTargetVersion = ""
+)
 
 $ErrorActionPreference = "Stop"
 $hubRoot = Split-Path $PSScriptRoot -Parent
@@ -63,7 +67,164 @@ function Stop-HubGracefully {
   }
 }
 
+function Test-PackagedHubUpdate {
+  # This is the installed application's authenticated production route. It uses
+  # AppUpdateService's default launcher, with no injected/external handoff helper.
+  # A same-version package exercises install/reopen before a public feed exists;
+  # it does not claim to prove online release discovery or differential download.
+  $packagePath = Join-Path $hubRoot "release/Gaurav POS Hub-$version.gpos-update.zip"
+  if (!(Test-Path $packagePath)) { throw "Candidate update package is missing: $packagePath" }
+  $installHeaders = @{ "x-device-token" = $env:HUB_ADMIN_TOKEN; "x-manager-pin" = "4321" }
+  $body = @{ packagePath = $packagePath } | ConvertTo-Json
+  Invoke-RestMethod "http://127.0.0.1:43737/system/update/register-baseline" -Method Post -Headers $installHeaders -ContentType "application/json" -Body $body | Out-Null
+  $status = Invoke-RestMethod "http://127.0.0.1:43737/system/update/status" -Headers $installHeaders
+  if (!$status.baselineRegistered -or $status.appVersion -ne $version) { throw "Packaged Hub baseline did not register for $version" }
+  if ($status.activeOrderCount -ne 0) { throw "Smoke update unexpectedly has running orders" }
+  $app = Get-Process -Name "Gaurav POS Hub" | Where-Object { $_.MainWindowHandle -ne 0 } | Select-Object -First 1
+  if (!$app) { throw "Installed Hub window process is missing before packaged update" }
+  $oldPid = $app.Id
+  $attemptsBefore = @(Get-ChildItem $env:HUB_UPDATE_DIR -Directory -Filter "handoff-*" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName)
+  $backupsBefore = @(Get-ChildItem $env:HUB_BACKUP_DIR -File -Filter "*.sqlite" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName)
+  $logPath = Join-Path $env:HUB_UPDATE_DIR "install-handoff.log"
+  $logBefore = if (Test-Path $logPath) { [string](Get-Content $logPath -Raw) } else { "" }
+  $requestError = $null
+  try {
+    $response = Invoke-RestMethod "http://127.0.0.1:43737/system/update/install" -Method Post -Headers $installHeaders -ContentType "application/json" -Body $body -TimeoutSec 60
+    if (!$response.installing) { throw "Packaged update API did not report installing" }
+  } catch {
+    # Shutdown can close the HTTP connection after the helper is authorized.
+    # Never accept an HTTP rejection, and require every on-disk/process/result
+    # assertion below before accepting a transport disconnect as successful.
+    if ($_.Exception.Response -or $_.Exception.Message -eq "Packaged update API did not report installing") { throw }
+    $requestError = $_.Exception.Message
+    Write-Warning "Packaged update request ended during shutdown: $requestError"
+  }
+
+  $attempts = @(Get-ChildItem $env:HUB_UPDATE_DIR -Directory -Filter "handoff-*" | Where-Object { $_.FullName -notin $attemptsBefore })
+  if ($attempts.Count -ne 1) { throw "Expected one new packaged helper attempt, found $($attempts.Count)" }
+  $attempt = $attempts[0].FullName
+  if (!(Test-Path (Join-Path $attempt "ready"))) { throw "Packaged helper never acknowledged readiness" }
+  if ((Get-Content (Join-Path $attempt "decision") -Raw) -ne "go") { throw "Packaged helper was not authorized" }
+  if (!(Get-Content (Join-Path $attempt "startup.log") -Raw).Contains("helper ready; shutdown authorized")) { throw "Packaged launcher readiness was not logged" }
+  if (!$app.WaitForExit(120000)) { throw "Packaged update did not close installed Hub PID $oldPid" }
+
+  $statePath = Join-Path $env:HUB_UPDATE_DIR "app-update-state.json"
+  $state = Get-Content $statePath -Raw | ConvertFrom-Json
+  $backupPath = $state.previous.preUpdateBackupPath
+  if (!$backupPath -or $backupPath -in $backupsBefore -or !(Test-Path $backupPath) -or (Get-Item $backupPath).Length -le 0) {
+    throw "Packaged update did not create a new pre-update database backup"
+  }
+  $deadline = (Get-Date).AddSeconds(180)
+  $newLog = ""
+  do {
+    if (Test-Path $logPath) {
+      $allLog = [string](Get-Content $logPath -Raw)
+      if ($allLog.StartsWith($logBefore)) { $newLog = $allLog.Substring($logBefore.Length) }
+    }
+    if ($newLog.Contains("Update installer completed successfully.")) { break }
+    Start-Sleep -Milliseconds 250
+  } while ((Get-Date) -lt $deadline)
+  if (!$newLog.Contains("Update installer completed successfully.")) { throw "Packaged update installer did not complete; see $logPath" }
+  $newLog | Set-Content (Join-Path $root "packaged-update-handoff.log")
+  Wait-ForHub
+  $reopened = Get-Process -Name "Gaurav POS Hub" | Where-Object { $_.MainWindowHandle -ne 0 } | Select-Object -First 1
+  if (!$reopened -or $reopened.Id -eq $oldPid) { throw "Packaged update did not reopen a new Hub process" }
+  if ((Get-HubVersion $appPath) -ne $version) { throw "Packaged update installed the wrong version" }
+  if (!(Get-UninstallerIntegrity $appPath).valid) { throw "Packaged update corrupted the next update's uninstaller" }
+  Invoke-RestMethod "http://127.0.0.1:43737/admin/session/unlock" -Method Post -Headers $installHeaders -ContentType "application/json" -Body '{"pin":"4321"}' | Out-Null
+  $reopenedStatus = Invoke-RestMethod "http://127.0.0.1:43737/system/update/status" -Headers $installHeaders
+  if ($reopenedStatus.appVersion -ne $version -or !$reopenedStatus.baselineRegistered -or $reopenedStatus.pending) { throw "Reopened Hub did not finalize the packaged update" }
+  $result = @{
+    route = "/system/update/install"; launcher = "installed AppUpdateService default"; sameVersionReinstall = $true
+    helperReady = $true; helperAuthorized = $true; preUpdateBackup = Split-Path $backupPath -Leaf
+    previousPid = $oldPid; reopenedPid = $reopened.Id; managerPinPreserved = $true
+    onlineFeedTested = $false; requestDisconnect = $requestError
+  }
+  $result | ConvertTo-Json | Set-Content (Join-Path $root "packaged-update-result.json")
+  return $result
+}
+
+function Test-OnlineHubUpdate {
+  # Observe the real public feed; neither the UI nor production updater receives
+  # a feed override. The internal fixture contains this checkout's patched code.
+  $githubHeaders = @{ Accept = "application/vnd.github+json"; "User-Agent" = "Gaurav-POS-Windows-Smoke" }
+  if ($env:GH_TOKEN) { $githubHeaders.Authorization = "Bearer $env:GH_TOKEN" }
+  $release = Invoke-RestMethod "https://api.github.com/repos/shubham909090/Open-POS/releases/latest" -Headers $githubHeaders
+  if ($release.tag_name -ne "hub-v$OnlineTargetVersion" -or $release.draft -or $release.prerelease) { throw "Actual latest stable feed is not hub-v$OnlineTargetVersion" }
+  $checksums = @($release.assets | Where-Object { $_.name -eq "SHA256SUMS" })
+  if ($checksums.Count -ne 1) { throw "Official target must contain SHA256SUMS" }
+  $checksumPath = Join-Path $root "online-SHA256SUMS.log"
+  Invoke-WebRequest $checksums[0].browser_download_url -OutFile $checksumPath
+  $installerSums = [regex]::Matches((Get-Content $checksumPath -Raw), '(?m)^([a-fA-F0-9]{64})  ([^\r\n]+\.exe)\r?$')
+  if ($installerSums.Count -ne 1) { throw "Expected one official Windows installer checksum" }
+  $expectedHash = $installerSums[0].Groups[1].Value
+  $officialInstaller = $installerSums[0].Groups[2].Value
+  if (@($release.assets | Where-Object { $_.name -eq $officialInstaller }).Count -ne 1) { throw "Checksummed installer is missing from the official target" }
+  @{ target = $OnlineTargetVersion; tag = $release.tag_name; releaseId = $release.id; url = $release.html_url; installer = $officialInstaller; sha256 = $expectedHash } |
+    ConvertTo-Json | Set-Content (Join-Path $root "online-release-target.json")
+
+  $attemptsBefore = @(Get-ChildItem $env:HUB_UPDATE_DIR -Directory -Filter "handoff-*" | Select-Object -ExpandProperty FullName)
+  $backupsBefore = @(Get-ChildItem $env:HUB_BACKUP_DIR -File -Filter "*.sqlite" | Select-Object -ExpandProperty FullName)
+  $logPath = Join-Path $env:HUB_UPDATE_DIR "install-handoff.log"
+  $logBefore = if (Test-Path $logPath) { [string](Get-Content $logPath -Raw) } else { "" }
+  node (Join-Path $PSScriptRoot "test-windows-ui.cjs") $appPath $root $OnlineTargetVersion
+  if ($LASTEXITCODE -ne 0) { throw "Real online Update app button audit failed" }
+  $ui = Get-Content (Join-Path $root "windows-ui-audit.json") -Raw | ConvertFrom-Json
+  if (!$ui.passed -or $ui.onlineButton.route -ne "/system/update/online/install" -or !$ui.onlineButton.oldProcessExited -or $ui.onlineButton.requestedTarget -ne $OnlineTargetVersion) { throw "Online UI click/process-exit evidence is missing" }
+  if (Get-Process -Id $ui.onlineButton.oldPid -ErrorAction SilentlyContinue) { throw "Online update did not exit the fixture process" }
+
+  $attempts = @(Get-ChildItem $env:HUB_UPDATE_DIR -Directory -Filter "handoff-*" | Where-Object { $_.FullName -notin $attemptsBefore })
+  if ($attempts.Count -ne 1) { throw "Expected one new online helper attempt" }
+  $attempt = $attempts[0].FullName
+  if (!(Test-Path (Join-Path $attempt "ready"))) { throw "Online helper never acknowledged readiness" }
+  if ((Get-Content (Join-Path $attempt "decision") -Raw) -ne "go") { throw "Online helper was not authorized" }
+  if (!(Get-Content (Join-Path $attempt "startup.log") -Raw).Contains("helper ready; shutdown authorized")) { throw "Online helper readiness was not logged" }
+  $statePath = Join-Path $env:HUB_UPDATE_DIR "app-update-state.json"
+  $state = Get-Content $statePath -Raw | ConvertFrom-Json
+  $backupPath = $state.previous.preUpdateBackupPath
+  if ($state.previous.version -ne $FixtureVersion -or !$backupPath -or $backupPath -in $backupsBefore -or !(Test-Path $backupPath) -or (Get-Item $backupPath).Length -le 0) { throw "Online update did not create a new fixture database backup" }
+
+  $deadline = (Get-Date).AddSeconds(180)
+  $newLog = ""
+  do {
+    if (Test-Path $logPath) {
+      $allLog = [string](Get-Content $logPath -Raw)
+      if ($allLog.StartsWith($logBefore)) { $newLog = $allLog.Substring($logBefore.Length) }
+    }
+    if ($newLog.Contains("Update installer completed successfully.")) { break }
+    Start-Sleep -Milliseconds 250
+  } while ((Get-Date) -lt $deadline)
+  if (!$newLog.Contains("Update installer completed successfully.")) { throw "Online installer did not complete" }
+  $newLog | Set-Content (Join-Path $root "online-update-handoff.log")
+  Wait-ForHub
+  $reopened = Get-Process -Name "Gaurav POS Hub" | Where-Object { $_.MainWindowHandle -ne 0 } | Select-Object -First 1
+  if (!$reopened -or $reopened.Id -eq $ui.onlineButton.oldPid) { throw "Online update did not reopen a new Hub process" }
+  if ((Get-HubVersion $appPath) -ne $OnlineTargetVersion) { throw "Online update installed the wrong version" }
+  if (!(Get-UninstallerIntegrity $appPath).valid) { throw "Online update corrupted the uninstaller" }
+  $headers = @{ "x-device-token" = $env:HUB_ADMIN_TOKEN }
+  Invoke-RestMethod "http://127.0.0.1:43737/admin/session/unlock" -Method Post -Headers $headers -ContentType "application/json" -Body '{"pin":"4321"}' | Out-Null
+  $status = Invoke-RestMethod "http://127.0.0.1:43737/system/update/status" -Headers $headers
+  if ($status.appVersion -ne $OnlineTargetVersion -or !$status.baselineRegistered -or $status.pending -or $status.current.version -ne $OnlineTargetVersion) { throw "Online target did not finalize its update state" }
+  if (!(Test-Path $status.current.installerPath -PathType Leaf)) { throw "Downloaded online installer cache is missing" }
+  $cachedHash = (Get-FileHash $status.current.installerPath -Algorithm SHA256).Hash
+  if ($cachedHash -ne $expectedHash -or $status.current.manifest.installer.sha256 -ne $expectedHash) { throw "Downloaded installer does not match official SHA256SUMS" }
+  $result = @{
+    route = $ui.onlineButton.route; fixtureVersion = $FixtureVersion; targetVersion = $OnlineTargetVersion
+    internalFixture = $true; historicalPublishedFixtureUpdaterTested = $false; onlineFeedTested = $true
+    helperReady = $true; helperAuthorized = $true; preUpdateBackup = Split-Path $backupPath -Leaf
+    previousPid = $ui.onlineButton.oldPid; reopenedPid = $reopened.Id; managerPinPreserved = $true
+    installerSha256 = $cachedHash; installerMatchesOfficialChecksums = $true; pendingCleared = $true
+  }
+  $result | ConvertTo-Json | Set-Content (Join-Path $root "online-update-result.json")
+  return $result
+}
+
 try {
+  if ([bool]$FixtureVersion -ne [bool]$OnlineTargetVersion) { throw "Supply both FixtureVersion and OnlineTargetVersion or neither" }
+  if ($FixtureVersion) {
+    if ($FixtureVersion -notmatch '^\d+\.\d+\.\d+$' -or $OnlineTargetVersion -notmatch '^\d+\.\d+\.\d+$') { throw "Online test versions must be stable x.y.z versions" }
+    if ([version]$FixtureVersion -ge [version]$OnlineTargetVersion -or $version -ne $FixtureVersion) { throw "Build the older internal fixture before running the online update audit" }
+  }
   gh release download "hub-v$PreviousVersion" --repo shubham909090/Open-POS --pattern "Gaurav-POS-Hub-Setup-$PreviousVersion.exe" --dir $root
   if ($LASTEXITCODE -ne 0) { throw "Previous installer download failed" }
   $previousInstaller = Join-Path $root "Gaurav-POS-Hub-Setup-$PreviousVersion.exe"
@@ -120,11 +281,15 @@ console.log(JSON.stringify(plan));
   $readyDeadline = (Get-Date).AddSeconds(15)
   while (!(Test-Path $plan.handoff.readyPath) -and (Get-Date) -lt $readyDeadline) { Start-Sleep -Milliseconds 100 }
   if (!(Test-Path $plan.handoff.readyPath)) {
-    Set-Content -NoNewline $plan.handoff.decisionPath 'cancel'
+    Set-Content -LiteralPath $plan.handoff.decisionPath -Value 'cancel' -NoNewline
     throw 'Update helper did not become ready'
   }
   if ((Get-HubVersion $appPath) -ne $PreviousVersion) { throw "Installer ran before the old app exited" }
-  Set-Content -NoNewline $plan.handoff.decisionPath 'go'
+  # Name Path/Value explicitly: PowerShell's dynamic -NoNewline parameter can
+  # reverse positional binding and create a file named "go" in the current dir.
+  Set-Content -LiteralPath $plan.handoff.decisionPath -Value 'go' -NoNewline
+  if ([System.IO.File]::ReadAllText($plan.handoff.decisionPath) -ne 'go') { throw 'Smoke helper authorization was not written correctly' }
+  Write-Host "Authorized smoke helper via $($plan.handoff.decisionPath)"
   if (!$oldApp.CloseMainWindow()) { throw "Could not request a graceful Hub shutdown" }
   if (!$oldApp.WaitForExit(120000)) { throw "Old Hub did not exit cleanly" }
   if (!$handoff.WaitForExit(180000)) { throw "Update handoff timed out" }
@@ -144,10 +309,21 @@ console.log(JSON.stringify(plan));
   Start-Process $appPath | Out-Null
   Wait-ForHub
   Invoke-RestMethod "http://127.0.0.1:43737/admin/session/unlock" -Method Post -Headers $headers -ContentType "application/json" -Body '{"pin":"4321"}' | Out-Null
+  $packagedUpdate = Test-PackagedHubUpdate
   Stop-HubGracefully
+  $installedVersion = $version
+  $onlineUpdate = $null
+  if ($OnlineTargetVersion) {
+    $onlineUpdate = Test-OnlineHubUpdate
+    $installedVersion = $OnlineTargetVersion
+    Stop-HubGracefully
+  } else {
+    node (Join-Path $PSScriptRoot "test-windows-ui.cjs") $appPath $root
+    if ($LASTEXITCODE -ne 0) { throw "Packaged Windows UI audit failed" }
+  }
   $selfTest = Start-Process $appPath -ArgumentList "--self-test-sqlite" -PassThru -Wait
   if ($selfTest.ExitCode -ne 0) { throw "Installed SQLite self-test failed" }
-  @{ previousVersion = $PreviousVersion; installedVersion = $version; legacyUninstallerIntegrity = $legacyIntegrity; normalReinstall = "passed"; databasePreserved = $true; sqliteSelfTest = "passed" } |
+  @{ previousVersion = $PreviousVersion; installedVersion = $installedVersion; legacyUninstallerIntegrity = $legacyIntegrity; normalReinstall = "passed"; packagedUpdate = $packagedUpdate; onlineUpdate = $onlineUpdate; databasePreserved = $true; sqliteSelfTest = "passed" } |
     ConvertTo-Json | Set-Content (Join-Path $root "result.json")
 } catch {
   $failure = $_

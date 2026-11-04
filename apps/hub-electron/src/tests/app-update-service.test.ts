@@ -12,7 +12,13 @@ import { OrderService } from "../domain/order-service.js";
 import { AppUpdateService, type OnlineAppUpdater } from "../update/app-update-service.js";
 import { PACKAGED_SQLITE_NATIVE_PATH, sha256, type OnlineUpdateMetadata, type UpdatePackageManifest } from "../update/update-package.js";
 
+// These file-backed cases varied from 0.5 s to 10.3 s on native Windows CI.
+// Keep the extra disk/backup budget local; other tests retain their normal limit.
+const windowsBackupTimeout = process.platform === "win32" ? 30_000 : 5_000;
+
 describe("AppUpdateService", () => {
+  // Creating the first real database/order fixture took 13 seconds on Windows
+  // CI; allow cold-run setup time while keeping the active-order assertion.
   it("blocks one-click online update while running orders exist", async () => {
     const fixture = createFixture();
     const onlineUpdater = createOnlineUpdater();
@@ -31,7 +37,7 @@ describe("AppUpdateService", () => {
     expect(onlineUpdater.downloadUpdate).not.toHaveBeenCalled();
 
     fixture.close();
-  });
+  }, 30_000);
 
   it("creates a pre-update backup before installing a one-click online update", async () => {
     const fixture = createFixture();
@@ -55,40 +61,42 @@ describe("AppUpdateService", () => {
 
   it("keeps rollback state for one-click online updates when a current baseline exists", async () => {
     const fixture = createFixture();
-    const launchInstaller = vi.fn();
-    const onlineUpdater = createOnlineUpdater({ availableVersion: "0.2.0", downloadedInstallerPath: writeInstaller(fixture.root, "0.2.0") });
-    const service = createService(fixture, { onlineUpdater, launchInstaller, platform: "win32" });
-    service.registerBaseline(writePackage(fixture.root, "0.1.0"));
+    try {
+      const launchInstaller = vi.fn();
+      const onlineUpdater = createOnlineUpdater({ availableVersion: "0.2.0", downloadedInstallerPath: writeInstaller(fixture.root, "0.2.0") });
+      const service = createService(fixture, { onlineUpdater, launchInstaller, platform: "win32" });
+      service.registerBaseline(writePackage(fixture.root, "0.1.0"));
 
-    const result = await service.installOnlineUpdate();
+      const result = await service.installOnlineUpdate();
 
-    if (!("installing" in result)) throw new Error("Expected online update install to start");
-    expect(result.recoveryScriptPath).toEqual(expect.stringContaining("Rollback Gaurav POS Update.cmd"));
-    expect(existsSync(result.recoveryScriptPath ?? "")).toBe(true);
-    expect(service.status()).toMatchObject({
-      rollbackAvailable: true,
-      current: { version: "0.1.0" },
-      pending: { version: "0.2.0" },
-      previous: {
-        version: "0.1.0",
-        preUpdateBackupFileName: result.backup.fileName,
-        preUpdateBackupPath: result.backup.path
-      },
-      recoveryScriptPath: result.recoveryScriptPath
-    });
-    expect(service.status().pending?.installerPath).toContain("Gaurav POS Hub Setup 0.2.0.exe");
+      if (!("installing" in result)) throw new Error("Expected online update install to start");
+      expect(result.recoveryScriptPath).toEqual(expect.stringContaining("Rollback Gaurav POS Update.cmd"));
+      expect(existsSync(result.recoveryScriptPath ?? "")).toBe(true);
+      expect(service.status()).toMatchObject({
+        rollbackAvailable: true,
+        current: { version: "0.1.0" },
+        pending: { version: "0.2.0" },
+        previous: {
+          version: "0.1.0",
+          preUpdateBackupFileName: result.backup.fileName,
+          preUpdateBackupPath: result.backup.path
+        },
+        recoveryScriptPath: result.recoveryScriptPath
+      });
+      expect(service.status().pending?.installerPath).toContain("Gaurav POS Hub Setup 0.2.0.exe");
 
-    const restartedService = createService(fixture, { appVersion: "0.2.0", onlineUpdater, launchInstaller: vi.fn(), platform: "win32" });
-    expect(restartedService.status()).toMatchObject({
-      baselineRegistered: true,
-      current: { version: "0.2.0" },
-      rollbackAvailable: true,
-      previous: { version: "0.1.0" }
-    });
-    expect(restartedService.status().pending).toBeUndefined();
-
-    fixture.close();
-  });
+      const restartedService = createService(fixture, { appVersion: "0.2.0", onlineUpdater, launchInstaller: vi.fn(), platform: "win32" });
+      expect(restartedService.status()).toMatchObject({
+        baselineRegistered: true,
+        current: { version: "0.2.0" },
+        rollbackAvailable: true,
+        previous: { version: "0.1.0" }
+      });
+      expect(restartedService.status().pending).toBeUndefined();
+    } finally {
+      fixture.close();
+    }
+  }, windowsBackupTimeout);
 
   it("keeps the app open and reports a failed installer handoff", async () => {
     const fixture = createFixture();
@@ -105,7 +113,7 @@ describe("AppUpdateService", () => {
     } finally {
       fixture.close();
     }
-  });
+  }, windowsBackupTimeout);
 
   it("rejects a one-click online update with incompatible DB metadata before downloading or backing up", async () => {
     const fixture = createFixture();
@@ -309,7 +317,7 @@ describe("AppUpdateService", () => {
   it("schedules rollback restore and launches cached previous installer", async () => {
     const fixture = createFixture();
     const launchInstaller = vi.fn();
-    const service = createService(fixture, { launchInstaller });
+    const service = createService(fixture, { launchInstaller, platform: "win32" });
     service.registerBaseline(writePackage(fixture.root, "0.1.0"));
     await service.installUpdate(writePackage(fixture.root, "0.2.0"));
     const recoveryScriptPath = join(fixture.root, "updates", "Rollback Gaurav POS Update.cmd");
@@ -319,10 +327,12 @@ describe("AppUpdateService", () => {
 
     expect(result.rollingBack).toBe(true);
     expect(existsSync(join(fixture.backupDir, "restore-pending.json"))).toBe(false);
-    expect(launchInstaller).toHaveBeenLastCalledWith({
-      filePath: expect.stringContaining("Rollback Gaurav POS Update.cmd"),
-      args: []
-    });
+    expect(launchInstaller).toHaveBeenLastCalledWith(expect.objectContaining({
+      filePath: "powershell.exe",
+      args: expect.arrayContaining(["-File", expect.stringContaining("Install Gaurav POS Update.ps1")])
+    }));
+    const rollbackPlan = launchInstaller.mock.lastCall?.[0];
+    expect(readFileSync(rollbackPlan.args.at(-1), "utf8")).toContain("Rollback Gaurav POS Update.cmd");
     const rollbackScript = readFileSync(recoveryScriptPath, "utf8");
     expect(rollbackScript).not.toContain("stale-pid-marker");
     expect(decodePowerShellCommands(rollbackScript).some((command) => command.includes("Wait-Process -Id $env:GPOS_PARENT_PID"))).toBe(true);

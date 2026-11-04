@@ -1,4 +1,5 @@
 import type { BillPrinterSlot } from "./mobile-types";
+import type { KotType, PaymentMethod } from "@gaurav-pos/shared";
 
 export interface HubBootstrap {
   currentBusinessDay: { id: string; business_date: string; period_start_at: string; period_end_at: string; status: string };
@@ -10,6 +11,10 @@ export interface HubBootstrap {
     status: string;
     active?: number | boolean;
     current_order_id: string | null;
+    occupied_at?: string | null;
+    timer_ended_at?: string | null;
+    current_order_total_paise?: number;
+    sent_item_count?: number;
   }>;
   floors: Array<{ id: string; name: string; active?: number | boolean }>;
   productionUnits: Array<{ id: string; name: string; active?: number | boolean; kds_enabled?: number | boolean }>;
@@ -142,7 +147,7 @@ export interface CurrentDaySummary {
     finalTotalPaise: number;
     paidPaise: number;
     settledAt: string | null;
-    payments: Array<{ method: string; amountPaise: number; reference: string | null }>;
+    payments: Array<{ method: PaymentMethod; amountPaise: number; reference: string | null }>;
     items?: Array<{
       orderItemId?: string;
       menuItemId?: string | null;
@@ -192,6 +197,7 @@ export interface ReadyNotification {
 export interface KdsTicket {
   id: string;
   sequence: number;
+  type?: KotType;
   table_name: string;
   status: "queued" | "preparing" | "ready" | "served" | "cancelled" | string;
   captain_id: string;

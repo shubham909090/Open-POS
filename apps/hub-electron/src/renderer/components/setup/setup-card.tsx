@@ -1,5 +1,13 @@
-import { type ReactNode, useEffect, useState } from "react";
-import { Badge } from "../ui/badge.js";
+import {
+  createContext,
+  type ReactNode,
+  useContext,
+  useId,
+  useState,
+} from "react";
+
+export const SettingsPageContext = createContext(false);
+export const SettingsPageActiveContext = createContext(true);
 
 export function SetupCard({
   title,
@@ -17,36 +25,46 @@ export function SetupCard({
   defaultOpen?: boolean;
 }) {
   const [open, setOpen] = useState(defaultOpen ?? !done);
-  const [wasDone, setWasDone] = useState(done);
-
-  useEffect(() => {
-    if (done && !wasDone && defaultOpen === undefined) setOpen(false);
-    setWasDone(done);
-  }, [defaultOpen, done, wasDone]);
+  const embedded = useContext(SettingsPageContext);
+  const contentId = useId();
+  if (embedded) return <section className="setup-section" aria-label={title}>{children}</section>;
+  const heading = (
+    <>
+      <div className="setup-heading">
+        <div className="setup-icon">{icon}</div>
+        <div>
+          <span className="setup-title">{title}</span>
+          {summary ? <span className="setup-summary">{summary}</span> : null}
+        </div>
+      </div>
+      <div className="setup-card-meta">
+        {!embedded && children ? (
+          <span className="setup-card-toggle">{open ? "Hide" : "Open"}</span>
+        ) : null}
+      </div>
+    </>
+  );
 
   return (
     <section className={done ? "setup-card done" : "setup-card"}>
-      <button
-        type="button"
-        className="setup-card-header"
-        onClick={() => setOpen((current) => !current)}
-        aria-expanded={open}
-      >
-        <div className="setup-heading">
-          <div className="setup-icon">{icon}</div>
-          <div>
-            <span className="setup-title">{title}</span>
-            {summary ? <span className="setup-summary">{summary}</span> : null}
-          </div>
+      {embedded || !children ? (
+        <div className="setup-card-header static">{heading}</div>
+      ) : (
+        <button
+          type="button"
+          className="setup-card-header"
+          onClick={() => setOpen((current) => !current)}
+          aria-expanded={open}
+          aria-controls={contentId}
+        >
+          {heading}
+        </button>
+      )}
+      {(embedded || open) && children ? (
+        <div id={contentId} className="setup-card-content">
+          {children}
         </div>
-        <div className="setup-card-meta">
-          <Badge className={done ? "setup-status ready" : "setup-status"}>
-            {done ? "Ready" : "Needs setup"}
-          </Badge>
-          <span className="setup-card-toggle">{open ? "Hide" : "Open"}</span>
-        </div>
-      </button>
-      {open && children ? <div className="setup-card-content">{children}</div> : null}
+      ) : null}
     </section>
   );
 }

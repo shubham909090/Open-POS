@@ -2,6 +2,17 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { HubClient, buildRealtimeUrl, getLocalOnlyHubUrlMessage, getPairingFailureAlert, HubHttpError } from "../lib/hub-client";
 
 describe("HubClient", () => {
+  it("releases a stalled hub health check so setup can be retried", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(globalThis, "fetch").mockImplementation((_url, options) => new Promise((_resolve, reject) => {
+      options?.signal?.addEventListener("abort", () => reject(new Error("aborted")));
+    }));
+    const result = new HubClient("http://unreachable.local:3737", "").health();
+    await vi.advanceTimersByTimeAsync(6_000);
+    await expect(result).resolves.toBe(false);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   afterEach(() => {
     vi.useRealTimers();
     vi.restoreAllMocks();

@@ -1,14 +1,15 @@
-import { useState, type Dispatch, type SetStateAction } from "react";
+import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import type { OrderItemInput } from "@gaurav-pos/shared";
 
 import { clearDraft, loadDraft, saveDraft } from "../lib/draft-store";
 import { normalisePax } from "../lib/mobile-format";
 import type { ConnectionState, ViewMode } from "../lib/mobile-types";
-import type { HubOrder } from "../lib/hub-client";
+import type { HubClient, HubOrder } from "../lib/hub-client";
+import { createTableSelection, loadSelectedTableOrder, restoreSelectedDraft } from "../lib/table-selection";
 
 type UseOrderDraftInput = {
   connection: ConnectionState;
-  loadTableOrder: (tableId: string) => Promise<void>;
+  client: HubClient;
   setCurrentOrder: Dispatch<SetStateAction<HubOrder | null>>;
   setMode: Dispatch<SetStateAction<ViewMode>>;
   setMessage: Dispatch<SetStateAction<string>>;
@@ -16,31 +17,73 @@ type UseOrderDraftInput = {
 
 export function useOrderDraft({
   connection,
-  loadTableOrder,
+  client,
   setCurrentOrder,
   setMode,
   setMessage,
 }: UseOrderDraftInput) {
-  const [selectedTableId, setSelectedTableId] = useState<string | null>(null);
+  const [selectedTableId, setSelectedTableIdState] = useState<string | null>(null);
   const [pax, setPax] = useState("2");
   const [items, setItems] = useState<OrderItemInput[]>([]);
   const [savingDraft, setSavingDraft] = useState(false);
+  const [draftLoading, setDraftLoading] = useState(false);
+  const scope = useRef(createTableSelection(client));
+  const hydrating = useRef(false);
+  scope.current.setClient(client);
+  const renderSelection = scope.current.snapshot();
+
+  useEffect(() => {
+    setSelectedTableIdState(null);
+    setItems([]);
+    setPax("2");
+    setCurrentOrder(null);
+    setDraftLoading(false);
+    hydrating.current = false;
+  }, [client]);
+
+  function setSelectedTableId(tableId: string | null) {
+    const selection = scope.current.select(tableId);
+    setSelectedTableIdState(tableId);
+    setItems([]);
+    setPax("2");
+    setCurrentOrder(null);
+    return selection;
+  }
+
+  function isCurrentSelection() {
+    return scope.current.isCurrent(renderSelection) && scope.current.matches(client, selectedTableId) && !hydrating.current;
+  }
+
+  async function loadTableOrder(tableId: string) {
+    await loadSelectedTableOrder(scope.current, client, tableId, setCurrentOrder, setMessage);
+  }
 
   async function selectTable(tableId: string) {
-    setSelectedTableId(tableId);
+    const selection = setSelectedTableId(tableId);
+    hydrating.current = true;
+    setDraftLoading(true);
     setMode("menu");
     setCurrentOrder(null);
-    const draft = await loadDraft(tableId);
-    setItems(draft?.items ?? []);
-    if (draft) {
-      setPax(String(draft.pax));
-      setMessage("Draft restored for this table.");
+    let restored = false;
+    try {
+      restored = await restoreSelectedDraft(scope.current, selection, loadDraft, (draft) => {
+        setItems(draft?.items ?? []);
+        setPax(String(draft?.pax ?? 2));
+        setMessage(draft?.items.length ? "Draft restored for this table." : "");
+      });
+    } catch (error) {
+      if (scope.current.isCurrent(selection)) setMessage(error instanceof Error ? error.message : "Could not restore this table's draft.");
+    } finally {
+      if (scope.current.isCurrent(selection)) {
+        hydrating.current = false;
+        setDraftLoading(false);
+      }
     }
-    if (connection === "online") await loadTableOrder(tableId);
+    if (restored && connection === "online" && scope.current.isCurrent(selection)) await loadTableOrder(tableId);
   }
 
   async function persistDraft(nextItems = items, nextPax = pax) {
-    if (!selectedTableId) return;
+    if (!isCurrentSelection() || !selectedTableId) return;
     setSavingDraft(true);
     await saveDraft({
       tableId: selectedTableId,
@@ -57,6 +100,7 @@ export function useOrderDraft({
       setMode("tables");
       return;
     }
+    if (!isCurrentSelection()) return;
     const current = items.find((item) => item.menuItemId === menuItemId && item.menuItemVariantId === menuItemVariantId);
     const next = current
       ? items.map((item) => (item.menuItemId === menuItemId && item.menuItemVariantId === menuItemVariantId ? { ...item, quantity: item.quantity + 1 } : item))
@@ -76,6 +120,7 @@ export function useOrderDraft({
       setMode("tables");
       return false;
     }
+    if (!isCurrentSelection()) return false;
     const openName = input.openName.trim();
     if (!openName || input.openPricePaise <= 0 || !input.saleGroupId) {
       setMessage("Enter an open item name, price, and group.");
@@ -95,6 +140,7 @@ export function useOrderDraft({
   }
 
   function changeQty(index: number, delta: number) {
+    if (!isCurrentSelection()) return;
     const next = items
       .map((item, itemIndex) => (itemIndex === index ? { ...item, quantity: Math.max(0, item.quantity + delta) } : item))
       .filter((item) => item.quantity > 0);
@@ -103,24 +149,29 @@ export function useOrderDraft({
   }
 
   function changeItemNote(index: number, note: string) {
+    if (!isCurrentSelection()) return;
     const next = items.map((item, itemIndex) => (itemIndex === index ? { ...item, note } : item));
     setItems(next);
     void persistDraft(next);
   }
 
   async function clearSelectedTableDraft() {
-    if (!selectedTableId) return;
+    if (!isCurrentSelection() || !selectedTableId) return;
+    const tableId = selectedTableId;
     await clearDraft(selectedTableId);
-    setItems([]);
+    if (scope.current.isCurrent(renderSelection) && scope.current.matches(client, tableId)) setItems([]);
   }
 
   return {
-    selectedTableId,
+    selectedTableId: scope.current.matches(client, selectedTableId) ? selectedTableId : null,
     setSelectedTableId,
     pax,
     setPax,
-    items,
+    items: isCurrentSelection() ? items : [],
     savingDraft,
+    draftLoading,
+    isCurrentSelection,
+    loadTableOrder,
     selectTable,
     persistDraft,
     addItem,

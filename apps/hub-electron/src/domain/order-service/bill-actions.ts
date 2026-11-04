@@ -141,7 +141,7 @@ export type BillActionContext = {
     now: string
   ) => void;
   resolveBillPrinter: (slot: BillPrinterSlot) => PrintTarget;
-  buildBillTicket: (input: { bill: BillRow; tableName: string; createdAt: string; ncReason?: string | null }) => BillTicket;
+  buildBillTicket: (input: { bill: BillRow; tableName: string; printerSlot?: BillPrinterSlot; createdAt: string; ncReason?: string | null }) => BillTicket;
   enqueuePrintJob: (input: PrintJobInput) => string;
   refreshDailyReportSnapshot: (posDayId: string, now?: string) => void;
   deductAlcoholStockForPaidBill: (billId: string, orderId: string) => void;
@@ -352,7 +352,7 @@ export function editHistoryBill(ctx: BillActionContext, billId: string, input: H
               targetId: billId,
               productionUnitId: null,
               ...ctx.resolveBillPrinter(input.printerSlot ?? "default"),
-              payload: renderBillTicketForPrint(ctx.buildBillTicket({ bill: updatedBill, tableName: table.name, createdAt: updatedBill.created_at }))
+              payload: renderBillTicketForPrint(ctx.buildBillTicket({ bill: updatedBill, tableName: table.name, createdAt: updatedBill.created_at, printerSlot: input.printerSlot }))
             })
           ]
         : [];
@@ -414,6 +414,7 @@ export function markBillNc(ctx: BillActionContext, billId: string, input: MarkNc
       payload: renderBillTicketForPrint(
         ctx.buildBillTicket({
           bill: adjustedBill,
+          printerSlot: input.printerSlot,
           tableName: table.name,
           createdAt: adjustedBill.created_at,
           ncReason: input.managerApproval.reason
@@ -445,6 +446,7 @@ export function printBill(ctx: BillActionContext, billId: string, requestedBy: s
       payload: renderBillTicketForPrint(
         ctx.buildBillTicket({
           bill,
+          printerSlot,
           tableName: table.name,
           createdAt: bill.created_at
         })

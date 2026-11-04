@@ -9,30 +9,35 @@ const sectionStyleKeys = [
   ["restaurantName", "Restaurant name"],
   ["address", "Address"],
   ["header", "Header"],
-  ["title", "Bill / KOT title"],
+  ["title", "Title"],
   ["metadata", "Table / date"],
   ["items", "Item rows"],
   ["totals", "Totals"],
-  ["notes", "KOT general notes"],
+  ["notes", "Order note"],
   ["itemNotes", "Item notes"],
   ["footer", "Footer"],
 ] as const;
 
+const kitchenOnly = new Set<string>(["notes", "itemNotes"]);
+const billOnly = new Set<string>(["restaurantName", "address", "totals"]);
+
 export function PrintLayoutStyleControls({
   draft,
+  scope,
   updateSectionStyle,
 }: {
   draft: PrintLayoutSettings;
+  scope: "receipt" | "unit";
   updateSectionStyle: (key: SectionStyleKey, patch: SectionStylePatch) => void;
 }) {
   return (
     <details className="setup-subdetails print-style-panel">
       <summary>
-        <span>Section font controls</span>
-        <small>Size, bold, and alignment</small>
+        <span>Text size and style</span>
+        <small>Size, bold and alignment for each part of the {scope === "receipt" ? "bill" : "ticket"}</small>
       </summary>
       <div className="print-style-grid">
-        {sectionStyleKeys.map(([key, label]) => {
+        {sectionStyleKeys.filter(([key]) => !(scope === "receipt" ? kitchenOnly : billOnly).has(key)).map(([key, label]) => {
           const style = draft.sectionStyles[key] ?? defaultSectionStyle;
           return (
             <div key={key} className="print-style-row">
@@ -49,7 +54,6 @@ export function PrintLayoutStyleControls({
                     value={printSizeLevel(style.size, style.sizeLevel)}
                     onChange={(event) => updateSectionStyle(key, { sizeLevel: Number(event.target.value) })}
                   />
-                  <small>Smaller <span>Larger</span></small>
                 </label>
                 <label>
                   <span>Align</span>

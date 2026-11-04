@@ -3,7 +3,7 @@ import type { UserRole } from "@gaurav-pos/shared";
 export function isRealtimeEventVisibleForRole(event: unknown, role: UserRole): boolean {
   if (role === "admin" || role === "captain") return true;
   const type = typeof event === "object" && event !== null && "type" in event ? String((event as { type?: unknown }).type ?? "") : "";
-  if (type === "payment_qr.updated") return true;
+  if (type === "payment_qr.updated" || type === "restaurant_branding.updated") return true;
   const kdsChangingEvents = ["order.submitted", "order.cancelled", "order_items.cancelled", "table.shifted", "order_items.shifted", "production_unit.updated", "kds.settings_updated"];
   if (role === "kitchen") {
     if (type === "order_state.updated") return Boolean((event as { result?: { kdsChanged?: unknown } }).result?.kdsChanged);
@@ -34,7 +34,7 @@ export function realtimeEventForRole(event: unknown, role: UserRole): unknown | 
   if (!isRealtimeEventVisibleForRole(event, role)) return null;
   if (event === null || typeof event !== "object" || !("type" in event)) return event;
   const type = String((event as { type?: unknown }).type ?? "");
-  if (type === "payment_qr.updated") return { type };
+  if (type === "payment_qr.updated" || type === "restaurant_branding.updated") return { type };
   if (role === "kitchen" && !type.startsWith("kot.")) return { type, result: { kdsChanged: true } };
   if (role !== "waiter") return event;
   if (type.startsWith("bill.")) return { type, result: { tableStatusChanged: true } };

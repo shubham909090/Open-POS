@@ -1,9 +1,8 @@
-import { CheckCheck, Power } from "lucide-react";
+import { CheckCheck } from "lucide-react";
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { hubApi, type Bootstrap } from "../../hub-api.js";
 import { type NoticeSetter, messageOf } from "../../lib/format.js";
-import { Badge } from "../ui/badge.js";
 import { Button } from "../ui/button.js";
 import { ConfirmationDialog } from "../ui/confirmation-dialog.js";
 
@@ -17,12 +16,15 @@ export function KdsOperationsCard({
   const queryClient = useQueryClient();
   const [confirm, setConfirm] = useState<"serve" | "disable" | null>(null);
   const kdsEnabled = bootstrap.setup?.kdsEnabled ?? true;
-  const activeKdsUnits = bootstrap.productionUnits.filter((unit) => unit.active && unit.kds_enabled !== false && unit.kds_enabled !== 0).length;
+  const activeKdsUnits = bootstrap.productionUnits.filter(
+    (unit) =>
+      unit.active && unit.kds_enabled !== false && unit.kds_enabled !== 0,
+  ).length;
   const visibleKdsUnits = kdsEnabled ? activeKdsUnits : 0;
   const refreshKds = async () => {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ["bootstrap"] }),
-      queryClient.invalidateQueries({ queryKey: ["kds"] })
+      queryClient.invalidateQueries({ queryKey: ["kds"] }),
     ]);
   };
 
@@ -31,7 +33,10 @@ export function KdsOperationsCard({
     onSuccess: async (result) => {
       setConfirm(null);
       await refreshKds();
-      setNotice({ tone: "good", text: `${result.markedServed} KDS tickets marked served.` });
+      setNotice({
+        tone: "good",
+        text: `${result.markedServed} KDS tickets marked served.`,
+      });
     },
     onError: (error) => setNotice({ tone: "bad", text: messageOf(error) }),
   });
@@ -43,7 +48,9 @@ export function KdsOperationsCard({
       await refreshKds();
       setNotice({
         tone: "good",
-        text: result.enabled ? "KDS turned on." : `KDS turned off. ${result.markedServed} tickets marked served.`,
+        text: result.enabled
+          ? "KDS turned on."
+          : `KDS turned off. ${result.markedServed} tickets marked served.`,
       });
     },
     onError: (error) => setNotice({ tone: "bad", text: messageOf(error) }),
@@ -55,22 +62,46 @@ export function KdsOperationsCard({
     <section className="panel">
       <div className="panel-title">
         <div>
-          <h2>Kitchen Display</h2>
-          <span>{visibleKdsUnits} counters visible</span>
+          <h2>Kitchen display</h2>
+          <span>Live preparation queues for your kitchen and counters.</span>
         </div>
-        <Badge variant={kdsEnabled ? "accent" : "warning"}>{kdsEnabled ? "On" : "Off"}</Badge>
       </div>
-      <div className="panel-actions">
-        <Button
+      <div className="settings-info-row">
+        <div>
+          <h3>Enable kitchen display</h3>
+          <p>
+            {visibleKdsUnits} counters visible. Turning this off also marks
+            current display tickets served.
+          </p>
+        </div>
+        <button
           type="button"
-          variant={kdsEnabled ? "warning" : "accent"}
-          onClick={() => (kdsEnabled ? setConfirm("disable") : updateKds.mutate(true))}
+          role="switch"
+          aria-label="Enable kitchen display"
+          aria-checked={kdsEnabled}
+          className="settings-switch"
+          onClick={() =>
+            kdsEnabled ? setConfirm("disable") : updateKds.mutate(true)
+          }
           disabled={busy}
         >
-          <Power size={16} />
-          {kdsEnabled ? "Turn KDS off" : "Turn KDS on"}
-        </Button>
-        <Button type="button" variant="secondary" onClick={() => setConfirm("serve")} disabled={busy}>
+          <span />
+        </button>
+      </div>
+      <div className="settings-info-row">
+        <div>
+          <h3>Clear the preparation queue</h3>
+          <p>
+            Mark queued, preparing and ready display tickets served. Orders and
+            payments stay unchanged.
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant="secondary"
+          onClick={() => setConfirm("serve")}
+          disabled={busy}
+        >
           <CheckCheck size={16} />
           Mark all served
         </Button>

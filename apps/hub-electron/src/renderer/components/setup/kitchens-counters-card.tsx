@@ -27,11 +27,12 @@ export function KitchensCountersCard({
 }) {
   return (
     <SetupCard
-      title="Kitchens And Counters"
+      title="Kitchens and counters"
       done={bootstrap.productionUnits.some((unit) => unit.active)}
       icon={<ChefHat size={20} />}
       summary={`${bootstrap.productionUnits.filter((unit) => unit.active).length} active kitchens/counters`}
     >
+      <details className="create-disclosure"><summary>Add station</summary>
       <form
         className="flex flex-wrap items-end gap-3"
         onSubmit={(event) => {
@@ -47,6 +48,7 @@ export function KitchensCountersCard({
           Add
         </button>
       </form>
+      </details>
       <EditableRecordList
         setNotice={setNotice}
         rows={bootstrap.productionUnits.map((unit) => ({

@@ -13,10 +13,10 @@ export function Metric({
   className?: string;
 }) {
   return (
-    <div className={cn("grid gap-0.5 rounded-lg border border-line bg-panel px-4 py-3", className)}>
-      <span className="text-xs font-medium text-muted">{label}</span>
-      <span className="text-lg font-bold tabular-nums text-ink">{value}</span>
-      {sub ? <span className="text-xs text-muted">{sub}</span> : null}
+    <div className={cn("ui-metric", className)}>
+      <span className="ui-metric-label">{label}</span>
+      <span className="ui-metric-value">{value}</span>
+      {sub ? <span className="ui-metric-sub">{sub}</span> : null}
     </div>
   );
 }

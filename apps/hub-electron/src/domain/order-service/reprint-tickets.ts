@@ -108,7 +108,7 @@ export function enqueueBillReprint(input: {
   billId: string;
   suffix: string;
   printerSlot: BillPrinterSlot;
-  buildBillTicket: (input: { bill: ReprintBillRow; tableName: string; createdAt: string }) => BillTicket;
+  buildBillTicket: (input: { bill: ReprintBillRow; tableName: string; printerSlot?: BillPrinterSlot; createdAt: string }) => BillTicket;
   resolveBillPrinter: (slot: BillPrinterSlot) => PrintTarget;
   enqueuePrintJob: (job: PrintJobInput) => string;
 }): string {
@@ -128,6 +128,7 @@ export function enqueueBillReprint(input: {
   const payload = `${renderBillTicketForPrint(
     buildBillTicket({
       bill,
+      printerSlot,
       tableName: bill.table_name,
       createdAt: bill.created_at
     })

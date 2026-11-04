@@ -2,6 +2,7 @@ import { getTableDisplayState, searchMenuItems, type OrderItemInput, type SaleGr
 
 import type { HubBootstrap, HubOrder } from "./hub-client";
 import { findMenuVariant } from "./mobile-format";
+import { orderMatchesTable } from "./table-selection";
 
 export function getMobileServiceViewModel(input: {
   bootstrap: HubBootstrap | null;
@@ -18,7 +19,8 @@ export function getMobileServiceViewModel(input: {
 
   const selectedTable = tables.find((table) => table.id === input.selectedTableId) ?? null;
   const activeTables = tables.filter((table) => getTableDisplayState(table) !== "disabled");
-  const sentItems = (input.currentOrder?.items ?? []).filter((item) => item.status !== "cancelled" && item.quantity > 0);
+  const selectedOrder = orderMatchesTable(input.currentOrder, input.selectedTableId) ? input.currentOrder : null;
+  const sentItems = (selectedOrder?.items ?? []).filter((item) => item.status !== "cancelled" && item.quantity > 0);
   const sentTotal = sentItems.reduce((total, item) => total + item.unit_price_paise * item.quantity, 0);
   const draftTotal = input.draftItems.reduce((total, item) => {
     const menuItem = menuItems.find((entry) => entry.id === item.menuItemId);
@@ -40,7 +42,7 @@ export function getMobileServiceViewModel(input: {
     hasMenuSearch: input.menuSearch.trim().length > 0,
     saleGroupFilters: getSaleGroupFilters(menuItems),
     activeMenuGroup,
-    visibleMenu: searchMenuItems(menuItems, input.menuSearch, { saleGroupKind: activeMenuGroup ?? undefined }).slice(0, 120),
+    visibleMenu: searchMenuItems(menuItems, input.menuSearch, { saleGroupKind: activeMenuGroup ?? undefined }),
     activeKdsUnits: kdsEnabled ? productionUnits.filter((unit) => unit.active !== false && unit.active !== 0 && unit.kds_enabled !== false && unit.kds_enabled !== 0) : [],
   };
 }
