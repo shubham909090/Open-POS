@@ -206,7 +206,7 @@ export function ModifiedBillsPanel({
                 <tr>
                   <td className="strong-cell">
                     #{row.billNumber}
-                    <small>rev {row.fromRevisionNumber} - {row.toRevisionNumber}</small>
+                    <small>rev {row.fromRevisionNumber} → {row.toRevisionNumber}</small>
                   </td>
                   <td>{row.tableName}</td>
                   <td className="wrap-cell">
@@ -248,53 +248,45 @@ export function ModifiedBillsPanel({
 }
 
 function ModifiedBillAuditDetail({ row }: { row: ModifiedBillAuditRow }) {
-  return (
-    <div className="modified-bill-detail-grid">
-      <section>
-        <div className="mini-title">
-          <strong>Changes</strong>
-          <span>Bill {row.billId} · Order {row.orderId}</span>
-        </div>
-        <p className="audit-subtext">{row.changes.length} tracked changes</p>
-        <div className="modified-change-list">
-          {row.changes.map((change, index) => (
-            <div key={`${change.kind}-${change.label}-${index}`} className="modified-change-row">
-              <strong>{change.label}</strong>
-              <span>{formatChangeValue(change, change.before)}{" -> "}{formatChangeValue(change, change.after)}</span>
-            </div>
-          ))}
-          {!row.changes.length ? <p className="plain-state">Revision saved without visible amount or item change.</p> : null}
-        </div>
-      </section>
-      <SnapshotPanel title="Before" row={row} side="before" />
-      <SnapshotPanel title="After" row={row} side="after" />
-    </div>
-  );
+  const itemIds = [...new Set([...row.before.items, ...row.after.items].map((item) => item.orderItemId))];
+  const paymentKeys = [...new Set([...row.before.payments, ...row.after.payments].map((payment) => `${payment.method}\n${payment.reference ?? ""}`))].sort();
+  const receiptRows = [
+    { label: "Bill name", before: row.before.customerName || "None", after: row.after.customerName || "None" },
+    ...itemIds.map((id) => {
+      const before = row.before.items.find((item) => item.orderItemId === id);
+      const after = row.after.items.find((item) => item.orderItemId === id);
+      const describe = (item: typeof before) => item ? `${item.quantity} × ${item.name} · ${formatInr(item.lineTotalPaise)}` : "—";
+      return { label: after?.name ?? before?.name ?? "Item", before: describe(before), after: describe(after) };
+    }),
+    ...paymentKeys.map((key) => {
+      const [method = "", reference = ""] = key.split("\n");
+      const amount = (side: "before" | "after") => row[side].payments.filter((payment) => payment.method === method && (payment.reference ?? "") === reference).reduce((sum, payment) => sum + payment.amountPaise, 0);
+      return { label: `${paymentLabel(method)}${reference ? ` · ${reference}` : ""}`, before: formatInr(amount("before")), after: formatInr(amount("after")) };
+    }),
+    ...([ ["Subtotal", "subtotalPaise"], ["Tax", "taxPaise"], ["Discount", "discountPaise"], ["Tip", "tipPaise"], ["Final total", "finalTotalPaise"] ] as const).map(([label, key]) => ({ label, before: formatInr(row.before[key]), after: formatInr(row.after[key]) }))
+  ];
+  return <div className="modified-bill-detail">
+    <div className="mini-title"><strong>Changes · revision {row.fromRevisionNumber} → {row.toRevisionNumber}</strong><span>{row.changes.length} tracked changes</span></div>
+    <table className="audit-diff-table">
+      <thead><tr><th>Field</th><th>Before</th><th>After</th></tr></thead>
+      <tbody>{row.changes.map((change, index) => <tr key={`${change.kind}-${index}`}>
+        <th scope="row">{paymentLabel(change.label)}</th>
+        <td>{formatChangeValue(change, change.before)}</td>
+        <td className="changed-value">{formatChangeValue(change, change.after)}</td>
+      </tr>)}</tbody>
+    </table>
+    {!row.changes.length ? <p className="plain-state">Revision saved without visible amount or item change.</p> : null}
+    <details className="audit-full-receipt"><summary>Full receipt comparison</summary>
+      <table className="audit-diff-table"><thead><tr><th>Field</th><th>Before</th><th>After</th></tr></thead>
+        <tbody>{receiptRows.map((entry, index) => <tr key={index}><th scope="row">{entry.label}</th><td>{entry.before}</td><td className={entry.before !== entry.after ? "changed-value" : ""}>{entry.after}</td></tr>)}</tbody>
+      </table>
+    </details>
+    <footer className="audit-identifiers"><span>Bill ID <code>{row.billId}</code></span><span>Order ID <code>{row.orderId}</code></span></footer>
+  </div>;
 }
 
-function SnapshotPanel({ title, row, side }: { title: string; row: ModifiedBillAuditRow; side: "before" | "after" }) {
-  const snapshot = row[side];
-  return (
-    <section className="modified-snapshot-panel">
-      <div className="mini-title">
-        <strong>{title}</strong>
-        <span>{formatInr(snapshot.finalTotalPaise)}</span>
-      </div>
-      <div className="modified-snapshot-lines">
-        <span>Bill name <strong>{snapshot.customerName || "None"}</strong></span>
-        {snapshot.items.map((item) => (
-          <span key={item.orderItemId}>{item.quantity} x {item.name} · {formatInr(item.lineTotalPaise)}</span>
-        ))}
-        {!snapshot.items.length ? <span>No items</span> : null}
-      </div>
-      <div className="modified-payment-lines">
-        {snapshot.payments.map((payment, index) => (
-          <span key={`${payment.method}-${payment.reference ?? ""}-${index}`}>{payment.method}: {formatInr(payment.amountPaise)}</span>
-        ))}
-        {!snapshot.payments.length ? <span>No payments</span> : null}
-      </div>
-    </section>
-  );
+function paymentLabel(value: string): string {
+  return value.replace(/\b(cash|upi|card|online)\b/gi, (method) => method.toLowerCase() === "upi" ? "UPI" : method[0]!.toUpperCase() + method.slice(1).toLowerCase());
 }
 
 function requestFromControls(from: string, to: string, exactSearch: string): ModifiedBillRequest {
@@ -318,5 +310,5 @@ function formatSignedInr(value: number): string {
 function formatChangeValue(change: ModifiedBillAuditChange, value: string): string {
   const numeric = Number(value);
   if (MONEY_CHANGE_KINDS.has(change.kind) && Number.isFinite(numeric)) return formatInr(numeric);
-  return value;
+  return paymentLabel(value);
 }

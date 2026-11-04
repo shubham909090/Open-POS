@@ -53,6 +53,15 @@ function ReportHistoryTable({
                 <tr key={bill.billId}>
                   <td className="strong-cell">
                     #{bill.billNumber ?? bill.billId}
+                    <details className="history-breakup-details"><summary>Breakup</summary>
+                    <div className="history-breakup">
+                      <span>Subtotal {formatInr(bill.subtotalPaise ?? Math.max(0, bill.totalPaise - (bill.taxPaise ?? 0)))}</span>
+                      <span>Tax {formatInr(bill.taxPaise ?? 0)}</span>
+                      <span>Discount {formatInr(bill.discountPaise)}</span>
+                      <span>Tip {formatInr(bill.tipPaise)}</span>
+                      {bill.payments.length ? <span>{bill.payments.map((payment) => payment.method).join(", ")}</span> : null}
+                    </div>
+                    </details>
                     {bill.customerName ? <small className="history-customer-name">{bill.customerName}</small> : null}
                     {bill.modified ? <small className="modified-pill">Modified</small> : bill.revisionNumber ? <small>rev {bill.revisionNumber}</small> : null}
                     {bill.isNc ? <small className="nc-pill">NC</small> : null}
@@ -64,15 +73,7 @@ function ReportHistoryTable({
                   <td className="numeric-cell">
                     <strong>{formatInr(bill.finalTotalPaise)}</strong>
                     {bill.discountPaise > 0 ? <small className="history-discount-text">Discount {formatInr(bill.discountPaise)}</small> : null}
-                    <details className="history-breakup-details"><summary>Breakup</summary>
-                    <div className="history-breakup">
-                      <span>Subtotal {formatInr(bill.subtotalPaise ?? Math.max(0, bill.totalPaise - (bill.taxPaise ?? 0)))}</span>
-                      <span>Tax {formatInr(bill.taxPaise ?? 0)}</span>
-                      <span>Discount {formatInr(bill.discountPaise)}</span>
-                      <span>Tip {formatInr(bill.tipPaise)}</span>
-                      {bill.payments.length ? <span>{bill.payments.map((payment) => payment.method).join(", ")}</span> : null}
-                    </div>
-                    </details>
+
                   </td>
                   <td className="numeric-cell">{formatInr(bill.paidPaise)}</td>
                   <td>{bill.settledAt ? formatPosDateTime(bill.settledAt) : "Not settled"}</td>

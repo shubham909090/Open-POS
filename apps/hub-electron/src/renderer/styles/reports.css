@@ -266,7 +266,7 @@
 }
 
 .data-table td {
-  @apply border-b border-line px-3 py-3 align-top font-normal text-ink;
+  @apply border-b border-line px-3 py-2 align-top font-normal text-ink;
   font-variant-numeric: tabular-nums;
 }
 
@@ -298,7 +298,7 @@
 }
 
 .data-table .action-cell {
-  @apply w-28 whitespace-nowrap text-right;
+  @apply w-36 whitespace-nowrap text-right;
 }
 
 .report-table-detail {
@@ -366,9 +366,9 @@
   @apply inline-flex items-center justify-center gap-2;
 }
 
-.modified-bill-metrics {
-  @apply max-w-xl;
-}
+.reports-layout .modified-bill-metrics { display: flex; flex-wrap: wrap; gap: 24px; max-width: none; }
+.modified-bill-metrics .ui-metric { min-width: max-content; }
+.modified-bill-metrics .ui-metric-value, .modified-bill-metrics .ui-metric-label { white-space: nowrap; }
 
 .modified-bills-table {
   @apply min-w-[960px];
@@ -481,3 +481,24 @@
 }
 
 .data-table .numeric-cell { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* Date range: one metric strip, quiet notices with the action beside the text. */
+.reports-layout .range-report-result .report-metrics { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+.range-report-controls { grid-template-columns: repeat(2, 168px) auto; }
+.range-warning { grid-template-columns: minmax(0, 1fr); gap: 2px; padding: 10px 12px; border: 0; border-left: 3px solid var(--warning); border-radius: 0 var(--control-radius) var(--control-radius) 0; font-size: 12px; }
+.range-warning strong { font-size: 13px; }
+.range-bill-placeholder { grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: 16px; }
+.range-bill-placeholder > strong, .range-bill-placeholder > span { grid-column: 1; }
+.range-bill-placeholder > button { grid-column: 2; grid-row: 1 / span 2; width: auto; }
+@media (max-width: 1180px) { .reports-layout .range-report-result .report-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+
+.modified-bill-detail { display: grid; gap: 12px; padding: 10px 0; }
+.audit-diff-table { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 13px; }
+.audit-diff-table th, .audit-diff-table td { padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
+.audit-diff-table th { font-weight: 500; color: var(--muted); }
+.audit-diff-table thead th { font-size: 11px; background: var(--wash); }
+.audit-diff-table .changed-value { font-weight: 700; color: var(--ink); background: var(--wash); }
+.audit-full-receipt { border: 0; }
+.audit-identifiers { display: flex; flex-wrap: wrap; gap: 6px 24px; color: var(--muted); font-size: 11px; }
+.audit-identifiers code { user-select: all; font-size: 11px; }
+.modified-bills-table .audit-diff-table th:last-child { position: static; }

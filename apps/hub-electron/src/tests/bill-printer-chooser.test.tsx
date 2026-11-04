@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const billPrintersMock = vi.fn();
@@ -80,6 +80,26 @@ describe("bill printer chooser", () => {
     fireEvent.keyDown(alternateButton, { key: " " });
     expect(onChoose).toHaveBeenLastCalledWith("alternate");
   });
+  it("does not let deferred initial focus overwrite an arrow-key printer choice", async () => {
+    const frames: FrameRequestCallback[] = [];
+    vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => { frames.push(callback); return frames.length; });
+    vi.spyOn(window, "cancelAnimationFrame").mockImplementation(() => {});
+    const { BillPrinterChooser } = await importChooser();
+    const onChoose = vi.fn();
+    billPrintersMock.mockResolvedValue({
+      default: { label: "Main", printerMode: "system", printerName: "EPSON", configured: true },
+      alternate: { label: "Second", printerMode: "system", printerName: "SECOND", configured: true }
+    });
+    renderChooser(BillPrinterChooser, onChoose);
+    const dialog = await screen.findByRole("dialog", { name: "Print bill where?" });
+    const alternate = await screen.findByRole("button", { name: /Alternate printer/i });
+    fireEvent.keyDown(dialog, { key: "ArrowDown" });
+    act(() => { frames.forEach((callback) => callback(0)); });
+    expect(document.activeElement).toBe(alternate);
+    fireEvent.keyDown(alternate, { key: "Enter" });
+    expect(onChoose).toHaveBeenLastCalledWith("alternate");
+  });
+
 });
 
 async function importChooser() {

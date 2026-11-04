@@ -2,12 +2,13 @@ import { formatInr } from "@gaurav-pos/shared";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { hubApi, type BillAdjustmentPayload, type BillPrinterSlot, type MenuItem, type TableOrder } from "../../hub-api.js";
+import { isKeyboardScopeActive } from "../../lib/keyboard-scope.js";
 import { messageOf, type NoticeSetter } from "../../lib/format.js";
 import type { ManagerApproval, ManagerApprovalRequest } from "../../hooks/use-manager-approval.js";
 import { useOperationKeys } from "../../hooks/use-operation-keys.js";
 import { EmptyState } from "../ui/empty-state.js";
-import { Metric } from "../ui/metric.js";
 import { BillPrinterChooser } from "./bill-printer-chooser.js";
+import { DiscountTypeControl, PaymentFields } from "./payment-fields.js";
 import { BillRevisionEditor } from "./bill-revision-editor.js";
 
 type SettlePayload = {
@@ -17,13 +18,9 @@ type SettlePayload = {
   payments: Array<{ method: "cash" | "upi" | "card" | "online"; amountPaise: number; reference?: string }>;
 };
 
-function isHotkeyTypingTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false;
-  return Boolean(target.closest("input,select,textarea,button,a,[contenteditable='true'],[role='button']"));
-}
-
 export function BillingPanel({
   tableOrder,
+  tableName,
   menuItems,
   sentTotal,
   generateBill,
@@ -33,6 +30,7 @@ export function BillingPanel({
   requestManagerApproval
 }: {
   tableOrder?: TableOrder | null;
+  tableName?: string;
   menuItems: MenuItem[];
   sentTotal: number;
   generateBill: (adjustments: BillAdjustmentPayload) => void;
@@ -42,6 +40,7 @@ export function BillingPanel({
   requestManagerApproval: ManagerApprovalRequest;
 }) {
   const queryClient = useQueryClient();
+  const paymentScope = useRef<HTMLDivElement>(null);
   const reprintTrigger = useRef<HTMLButtonElement>(null);
   const ncTrigger = useRef<HTMLButtonElement>(null);
   const [discountType, setDiscountType] = useState<"amount" | "percent">("amount");
@@ -68,7 +67,19 @@ export function BillingPanel({
   const newPaid = Object.values(payments).reduce((total, value) => total + Math.round(Number(value || 0) * 100), 0);
   const remaining = Math.max(0, finalTotal - existingPaid - newPaid);
   const overpaid = Math.max(0, existingPaid + newPaid - finalTotal);
-  const changeDuePaise = Math.max(0, Math.round(Number(receivedAmount || 0) * 100) - Math.max(0, finalTotal - existingPaid));
+  const nonCashPaid = [payments.upi, payments.card, payments.online]
+    .reduce((total, value) => total + Math.round(Number(value || 0) * 100), 0);
+  const cashStillRequired = Math.max(0, finalTotal - existingPaid - nonCashPaid);
+  const receivedPaise = Math.round(Number(receivedAmount || 0) * 100);
+  const validReceived = Number.isFinite(receivedPaise) && receivedPaise >= 0;
+  const validTenders = Object.values(payments).every((value) => Number.isFinite(Number(value || 0)) && Number(value || 0) >= 0);
+  const changeDuePaise = validReceived && validTenders && Number.isFinite(cashStillRequired)
+    ? Math.max(0, receivedPaise - cashStillRequired)
+    : null;
+
+  const validPaymentState = validTenders && Number.isFinite(finalTotal) && discountPaise >= 0 && tipPaise >= 0;
+  const paymentStatus = !validPaymentState ? "Enter valid amounts" : overpaid > 0 ? `${formatInr(overpaid)} over` : remaining > 0 ? `${formatInr(remaining)} left` : newPaid > 0 ? "Fully covered" : "";
+  const actionStatus = !validPaymentState ? "check amounts" : overpaid > 0 ? `${formatInr(overpaid)} over` : remaining > 0 ? `${formatInr(remaining)} left` : newPaid > 0 ? "paid" : "enter payment";
 
   const billAdjustments = useCallback(
     (): BillAdjustmentPayload => ({
@@ -122,7 +133,7 @@ export function BillingPanel({
     const payload = { discountType, discountValue: discountType === "percent" ? Number(discount || 0) : discountPaise, tipPaise, payments: rows };
     settle.mutate(payload);
   }
-  const canPunchBill = Boolean(bill && !revisionEditing && !settle.isPending && newPaid > 0 && remaining === 0 && overpaid === 0);
+  const canPunchBill = Boolean(bill && !revisionEditing && !reprintApprovalOpen && !pendingReprintApproval && !pendingNcApproval && !settle.isPending && validPaymentState && newPaid > 0 && remaining === 0 && overpaid === 0);
   const reprintBill = useMutation({
     mutationFn: (input: { approval: ManagerApproval; printerSlot: BillPrinterSlot }) => {
       if (!bill) throw new Error("Generate the bill first.");
@@ -164,24 +175,10 @@ export function BillingPanel({
     },
     onError: (error) => setNotice({ tone: "bad", text: messageOf(error) })
   });
-  function fillFull(method: keyof typeof payments) {
-    setPayments({ cash: "0", upi: "0", card: "0", online: "0", [method]: String(Math.max(0, finalTotal - existingPaid) / 100) });
-  }
-
   function fillRemaining(method: keyof typeof payments) {
     const otherTotal = (Object.entries(payments) as Array<[keyof typeof payments, string]>)
       .filter(([key]) => key !== method)
       .reduce((total, [, value]) => total + Math.round(Number(value || 0) * 100), 0);
-    const rest = Math.max(0, finalTotal - existingPaid - otherTotal);
-    setPayments((current) => ({ ...current, [method]: String(rest / 100) }));
-  }
-
-  function fillRemainingOnFocus(method: keyof typeof payments) {
-    if (Number(payments[method] || 0) > 0) return;
-    const otherTotal = (Object.entries(payments) as Array<[keyof typeof payments, string]>)
-      .filter(([key]) => key !== method)
-      .reduce((total, [, value]) => total + Math.round(Number(value || 0) * 100), 0);
-    if (otherTotal <= 0) return;
     const rest = Math.max(0, finalTotal - existingPaid - otherTotal);
     setPayments((current) => ({ ...current, [method]: String(rest / 100) }));
   }
@@ -193,6 +190,7 @@ export function BillingPanel({
   useEffect(() => {
     if (!canPunchBill) return;
     const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || !isKeyboardScopeActive(paymentScope.current)) return;
       if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
       if (event.key !== "F8") return;
       event.preventDefault();
@@ -201,19 +199,6 @@ export function BillingPanel({
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [canPunchBill, discountType, discountPaise, tipPaise, payments, reference, remaining, overpaid]);
-
-  useEffect(() => {
-    if (!canRequestReprint) return;
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
-      if (event.key !== "Enter") return;
-      if (isHotkeyTypingTarget(event.target)) return;
-      event.preventDefault();
-      void requestReprint();
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [canRequestReprint, requestReprint]);
 
   useEffect(() => {
     if (!bill) return;
@@ -230,166 +215,185 @@ export function BillingPanel({
     return <EmptyState title="No active order" description="Add dishes and send them before generating a bill." />;
   }
 
+  const billLines = (tableOrder.items ?? []).filter((item) => item.status !== "cancelled" && item.quantity > 0);
+  const balancePaise = Math.max(0, finalTotal - existingPaid);
+
   const adjustmentControls = (
-    <section className="bill-adjustments">
-      <div className="mini-title">
-        <strong>Bill adjustments</strong>
-        {discountPaise > 0 || tipPaise > 0 ? <span>{[discountPaise > 0 ? `Discount ${formatInr(discountPaise)}` : "", tipPaise > 0 ? `Tip ${formatInr(tipPaise)}` : ""].filter(Boolean).join(" · ")}</span> : null}
-      </div>
-      <div className="adjust-grid">
-        <label>
-          Discount
-          <span className="split-input">
-            <select value={discountType} onChange={(event) => setDiscountType(event.target.value as "amount" | "percent")}>
-              <option value="amount">Rs</option>
-              <option value="percent">%</option>
-            </select>
-            <input aria-label="Discount amount" value={discount} onChange={(event) => setDiscount(event.target.value)} inputMode="decimal" />
-          </span>
-        </label>
-        <label>
-          Tip
-          <input aria-label="Tip amount" value={tip} onChange={(event) => setTip(event.target.value)} inputMode="decimal" />
-        </label>
-      </div>
+    <section className="bill-adjustments" aria-label="Bill adjustments">
+      <label className="bill-adjust-field">
+        Discount
+        <span className="split-input">
+          <DiscountTypeControl value={discountType} onChange={setDiscountType} />
+          <input aria-label="Discount amount" value={discount} onChange={(event) => setDiscount(event.target.value)} onFocus={(event) => event.currentTarget.select()} inputMode="decimal" />
+        </span>
+      </label>
+      <label className="bill-adjust-field">
+        Tip
+        <input aria-label="Tip amount" value={tip} onChange={(event) => setTip(event.target.value)} onFocus={(event) => event.currentTarget.select()} inputMode="decimal" />
+      </label>
     </section>
   );
 
   const billNameControl = (
     <section className="bill-name-field">
       <label>
-        Name on bill (optional)
+        Name on bill
         <input
           aria-label="Name on bill"
           value={customerName}
           onChange={(event) => setCustomerName(event.target.value.slice(0, 80))}
-          placeholder="Customer name, optional"
+          placeholder="Optional"
         />
       </label>
     </section>
   );
 
+  const receiptLines = (
+    <ul className="bill-receipt-lines" aria-label="Bill items">
+      {billLines.map((item) => (
+        <li key={item.id}>
+          <span className="bill-receipt-qty">{item.quantity}</span>
+          <span className="bill-receipt-name">{item.name_snapshot}</span>
+          <span className="bill-receipt-amount">{formatInr(item.unit_price_paise * item.quantity)}</span>
+        </li>
+      ))}
+    </ul>
+  );
+
   if (!bill) {
     return (
-      <div className="bill-start bill-start-with-adjustments">
-        <div className="bill-subtotal"><span>Sent items subtotal</span><strong>{formatInr(sentTotal)}</strong></div>
-        {billNameControl}
-        {adjustmentControls}
-        <div className="bill-action-bar">
-          <span>Final bill</span>
-          <strong>{formatInr(finalTotal)}</strong>
-          <button type="button" disabled={sentTotal <= 0 || generating} onClick={() => generateBill(billAdjustments())}>
-            {generating ? "Generating..." : "Generate bill"}
-          </button>
-        </div>
+      <div className="bill-start bill-start-with-adjustments bill-layout">
+        <section className="bill-receipt" aria-label="Items to bill">
+          <header className="bill-receipt-head">
+            <strong>{tableName ?? "Table"}</strong>
+            <span>Not billed yet</span>
+          </header>
+          {receiptLines}
+          <div className="bill-receipt-totals">
+            <div className="bill-subtotal"><span>Sent items subtotal</span><strong>{formatInr(sentTotal)}</strong></div>
+            {discountPaise > 0 ? <div><span>Discount</span><span>−{formatInr(discountPaise)}</span></div> : null}
+            {tipPaise > 0 ? <div><span>Tip</span><span>+{formatInr(tipPaise)}</span></div> : null}
+          </div>
+        </section>
+        <section className="bill-settle" aria-label="Prepare bill">
+          {billNameControl}
+          {adjustmentControls}
+          <div className="bill-action-bar">
+            <div className="bill-action-total">
+              <span>Final bill</span>
+              <strong>{formatInr(finalTotal)}</strong>
+            </div>
+            <button type="button" className="action-bill" disabled={sentTotal <= 0 || generating} onClick={() => generateBill(billAdjustments())}>
+              {generating ? "Generating..." : "Generate bill"}
+            </button>
+          </div>
+        </section>
       </div>
     );
   }
 
+
   return (
-    <div className="billing-panel">
-      {!revisionEditing ? <>
-      <div className="bill-metrics">
-        <Metric label="Bill total" value={formatInr(finalTotal)} />
-        {existingPaid > 0 ? <Metric label="Already paid" value={formatInr(existingPaid)} /> : null}
-        {existingPaid > 0 ? <Metric label="Balance" value={formatInr(Math.max(0, finalTotal - existingPaid))} /> : null}
-      </div>
-      {bill.customer_name ? <p className="text-sm text-muted">Name: {bill.customer_name}</p> : null}
-      {bill.revision_number && (bill.revision_number > 1 || bill.is_nc) ? <p className="bill-version-note">Revision {bill.revision_number}{bill.is_nc ? ` · NC: ${bill.nc_reason ?? ""}` : ""}</p> : null}
-      {adjustmentControls}
-      <section className="bill-payment-section">
-        <div className="mini-title">
-          <strong>Payment</strong>
-          <span>{formatInr(remaining)} left</span>
-        </div>
-        <div className="quick-pay">
-          <button type="button" className="secondary-button" onClick={() => fillFull("cash")}>Full cash</button>
-          <button type="button" className="secondary-button" onClick={() => fillFull("upi")}>Full UPI</button>
-          <button type="button" className="secondary-button" onClick={() => fillFull("card")}>Full card</button>
-          <button type="button" className="secondary-button" onClick={() => fillFull("online")}>Full online</button>
-        </div>
-        <div className="payment-grid">
-          {(["cash", "upi", "card", "online"] as const).map((method) => (
-            <label key={method}>
-              {method.toUpperCase()}
-              <span className="payment-input-row">
-                <input value={payments[method]} onFocus={() => fillRemainingOnFocus(method)} onChange={(event) => setPayments((current) => ({ ...current, [method]: event.target.value }))} inputMode="decimal" />
-                <button type="button" className="fill-rest-btn" onClick={() => fillRemaining(method)} disabled={remaining <= 0} aria-label={`Fill remaining into ${method}`}>Rest</button>
-              </span>
-            </label>
-          ))}
-        </div>
-      </section>
-      <section className={`change-helper ${changeDuePaise > 0 ? "good" : ""}`}>
-        <div className="mini-title">
-          <strong>Change</strong>
-          <span>Balance {formatInr(Math.max(0, finalTotal - existingPaid))}</span>
-        </div>
-        <div className="change-helper-row">
-          <label>
-            Received amount
-            <input aria-label="Received amount" value={receivedAmount} onChange={(event) => setReceivedAmount(event.target.value)} inputMode="decimal" placeholder="0" />
-          </label>
-          <strong>{`Return ${formatInr(changeDuePaise)}`}</strong>
-        </div>
-      </section>
-      <label>
-        Payment note
-        <input value={reference} onChange={(event) => setReference(event.target.value)} placeholder="UPI ref, card slip, or captain note" />
-      </label>
-      {paymentEntries.length > 1 ? (
-        <div className="split-summary" aria-label="Split payment breakdown">
-          Split: {paymentEntries.map((entry) => `${entry.method.toUpperCase()} ${formatInr(entry.paise)}`).join(" + ")}
-        </div>
+    <div ref={paymentScope} className={`billing-panel bill-layout${revisionEditing ? " revising" : ""}`}>
+      {!revisionEditing ? (
+        <section className={`bill-receipt${bill.is_nc ? " nc" : ""}`} aria-label="Printed bill">
+          <header className="bill-receipt-head">
+            <strong>{tableName ?? "Bill"}</strong>
+            <span>
+              {bill.revision_number && bill.revision_number > 1 ? `Revision ${bill.revision_number}` : "Bill printed"}
+              {bill.is_nc ? ` · NC${bill.nc_reason ? `: ${bill.nc_reason}` : ""}` : ""}
+            </span>
+            {bill.customer_name ? <span className="bill-receipt-customer">Name: {bill.customer_name}</span> : null}
+          </header>
+          {receiptLines}
+          <div className="bill-receipt-totals">
+            <div><span>Subtotal</span><span>{formatInr(billBaseTotal)}</span></div>
+            {discountPaise > 0 ? <div><span>Discount</span><span>−{formatInr(discountPaise)}</span></div> : null}
+            {tipPaise > 0 ? <div><span>Tip</span><span>+{formatInr(tipPaise)}</span></div> : null}
+            <div className="bill-receipt-grand"><span>Bill total</span><strong>{formatInr(finalTotal)}</strong></div>
+            {existingPaid > 0 ? <div><span>Already paid</span><span>{formatInr(existingPaid)}</span></div> : null}
+            {existingPaid > 0 ? <div className="bill-receipt-balance"><span>Balance</span><strong>{formatInr(balancePaise)}</strong></div> : null}
+          </div>
+        </section>
       ) : null}
-      {overpaid > 0 ? <p className="text-sm text-muted">Payment is {formatInr(overpaid)} more than the balance.</p> : null}
-      {!revisionEditing ? <div className="reprint-action-row">
-        <button
+      {!revisionEditing ? (
+        <section className="bill-settle" aria-label="Take payment">
+          {adjustmentControls}
+          <section className="bill-payment-section" aria-label="Payment">
+            <div className="mini-title">
+              <strong>Payment</strong>
+              <span className={validPaymentState && overpaid === 0 && remaining === 0 && newPaid > 0 ? "settled" : ""}>{paymentStatus}</span>
+            </div>
+            <PaymentFields payments={payments} setPayments={setPayments} fillRemaining={fillRemaining} autoFocus />
+            {paymentEntries.length > 1 ? (
+              <div className="split-summary" aria-label="Split payment breakdown">
+                Split: {paymentEntries.map((entry) => `${entry.method.toUpperCase()} ${formatInr(entry.paise)}`).join(" + ")}
+              </div>
+            ) : null}
+            {overpaid > 0 ? <p className="payment-overpaid">Payment is {formatInr(overpaid)} more than the balance.</p> : null}
+          </section>
+          <section className={`change-helper ${(changeDuePaise ?? 0) > 0 ? "good" : ""}`} aria-label="Change">
+            <label>
+              Cash received
+              <input aria-label="Received amount" aria-invalid={!validReceived} value={receivedAmount} onChange={(event) => setReceivedAmount(event.target.value)} inputMode="decimal" placeholder="0" />
+            </label>
+            <strong>{changeDuePaise === null ? "Return —" : `Return ${formatInr(changeDuePaise)}`}</strong>
+            {changeDuePaise === null ? <span className="change-helper-error">Enter valid amounts to calculate change.</span> : null}
+          </section>
+          <label className="payment-note-field">
+            Payment note
+            <input value={reference} onChange={(event) => setReference(event.target.value)} placeholder="UPI ref, card slip" />
+          </label>
+          <div className="bill-settle-bar">
+            <div><span>Payment entered</span><strong>{validTenders ? formatInr(newPaid) : "—"}</strong></div>
+            <button type="button" className="punch-button" disabled={!canPunchBill} onClick={requestSettle}>
+              <span>{settle.isPending ? "Punching..." : `Punch bill · ${actionStatus}`}</span>
+              <kbd>F8</kbd>
+            </button>
+          </div>
+        </section>
+      ) : null}
+      <div className="bill-receipt-actions">
+        {!revisionEditing ? (
+          <button
+            type="button"
+            ref={reprintTrigger}
+            className="secondary-button reprint-bill-button"
+            disabled={!canRequestReprint}
+            onClick={() => { void requestReprint(); }}
+          >
+            <span>{reprintBill.isPending ? "Queueing..." : "Reprint bill"}</span>
+
+          </button>
+        ) : null}
+        <BillRevisionEditor
+          tableOrder={tableOrder}
+          menuItems={menuItems}
+          existingPaid={existingPaid}
+          onSettled={onSettled}
+          setNotice={setNotice}
+          requestManagerApproval={requestManagerApproval}
+          onEditingChange={setRevisionEditing}
+        />
+        {!revisionEditing ? <button
           type="button"
-          ref={reprintTrigger}
-          className="secondary-button reprint-bill-button"
-          disabled={!canRequestReprint}
-          onClick={() => { void requestReprint(); }}
+          ref={ncTrigger}
+          className="danger-link"
+          disabled={markNc.isPending}
+          onClick={async () => {
+            const approval = await requestManagerApproval({
+              title: "Approve NC bill",
+              defaultReason: "NC bill",
+              message: "NC bills print normally, but their money is excluded from sales totals.",
+              confirmLabel: markNc.isPending ? "Marking..." : "Mark NC bill",
+              danger: true
+            }).catch(() => null);
+            if (approval) setPendingNcApproval(approval);
+          }}
         >
-          <span>{reprintBill.isPending ? "Queueing..." : "Reprint bill"}</span>
-          <kbd>Enter</kbd>
-        </button>
-      </div> : null}
-      </> : null}
-      <BillRevisionEditor
-        tableOrder={tableOrder}
-        menuItems={menuItems}
-        existingPaid={existingPaid}
-        onSettled={onSettled}
-        setNotice={setNotice}
-        requestManagerApproval={requestManagerApproval}
-        onEditingChange={setRevisionEditing}
-      />
-      {!revisionEditing ? <button
-        type="button"
-        ref={ncTrigger}
-        className="danger-link"
-        disabled={markNc.isPending}
-        onClick={async () => {
-          const approval = await requestManagerApproval({
-            title: "Approve NC bill",
-            defaultReason: "NC bill",
-            message: "NC bills print normally, but their money is excluded from sales totals.",
-            confirmLabel: markNc.isPending ? "Marking..." : "Mark NC bill",
-            danger: true
-          }).catch(() => null);
-          if (approval) setPendingNcApproval(approval);
-        }}
-      >
-        {markNc.isPending ? "Marking NC..." : "Mark NC bill"}
-      </button> : null}
-      {!revisionEditing ? <div className="bill-settle-bar">
-        <div><span>Payment entered</span><strong>{formatInr(newPaid)}</strong></div>
-        <button type="button" className="punch-button" disabled={!canPunchBill} onClick={requestSettle}>
-          <span>{settle.isPending ? "Punching..." : `Punch bill · ${remaining > 0 ? `${formatInr(remaining)} left` : "paid"}`}</span>
-          <kbd>F8</kbd>
-        </button>
-      </div> : null}
+          {markNc.isPending ? "Marking NC..." : "Mark NC bill"}
+        </button> : null}
+      </div>
       <BillPrinterChooser
         open={Boolean(pendingReprintApproval)}
         title="Reprint bill where?"

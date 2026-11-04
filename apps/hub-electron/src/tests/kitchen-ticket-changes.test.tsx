@@ -16,8 +16,8 @@ it("shows cancellations as explicit removal notices and acknowledges them with t
   renderTickets(tickets);
   const cancelled = within(screen.getByText("Order cancelled").closest("article")!);
   const partial = within(screen.getByText("Items cancelled").closest("article")!);
-  expect(cancelled.getByText("Remove 2 ×")).toBeTruthy();
-  expect(partial.getByText("Remove 1 ×")).toBeTruthy();
+  expect(cancelled.getByText("−2 ×")).toBeTruthy();
+  expect(partial.getByText("−1 ×")).toBeTruthy();
   expect(cancelled.queryByRole("button", { name: /preparing|ready/i })).toBeNull();
   expect(partial.queryByRole("button", { name: /preparing|ready/i })).toBeNull();
   expect(screen.getByText("Order cancelled").closest("article")?.classList.contains("cancellation")).toBe(true);
@@ -36,9 +36,20 @@ it("distinguishes note-only updates and clears from preparation quantities, whil
   expect(notes.queryByRole("button", { name: /preparing|ready/i })).toBeNull();
   expect(notes.getByRole("button", { name: "Acknowledge ticket 16 changes" })).toBeTruthy();
   const mixed = within(screen.getByText("Naan").closest("article")!);
-  expect(mixed.getByText("Add 2 ×")).toBeTruthy();
-  expect(mixed.getByText("Remove 1 ×")).toBeTruthy();
+  expect(mixed.getByText("+2 ×")).toBeTruthy();
+  expect(mixed.getByText("−1 ×")).toBeTruthy();
   expect(mixed.getByRole("button", { name: "Mark ticket 17 preparing" })).toBeTruthy();
+});
+
+it("shows bare new-order quantities and timestamp age, with legacy timestamp fallback", () => {
+  renderTickets([
+    { id: "new", type: "new", sequence: 18, table_name: "R9", captain_id: "captain", status: "queued", created_at: new Date(Date.now() - 12 * 60_000).toISOString(), items: [{ name_snapshot: "Naan", quantity_delta: 3 }] },
+    { id: "legacy", type: "new", sequence: 19, table_name: "R10", captain_id: "captain", status: "queued", items: [{ name_snapshot: "Dal", quantity_delta: 1 }] }
+  ]);
+  expect(screen.getByText("3 ×")).toBeTruthy();
+  expect(screen.getByText("12m ago")).toBeTruthy();
+  expect(screen.queryByText("New order")).toBeNull();
+  expect(screen.getByText("Dal").closest("article")?.querySelector("time")).toBeNull();
 });
 
 function renderTickets(tickets: KdsTicket[]) {

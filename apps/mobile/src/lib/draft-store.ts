@@ -28,18 +28,29 @@ export async function setDeviceToken(token: string): Promise<void> {
   await AsyncStorage.setItem(DEVICE_TOKEN_KEY, token.trim());
 }
 
+// A table's earlier slow write must never overwrite a newer edit or resurrect
+// a draft after Send. Other tables remain independent.
+const draftWrites = new Map<string, Promise<void>>();
+function writeTableDraft(tableId: string, write: () => Promise<void>): Promise<void> {
+  const previous = draftWrites.get(tableId);
+  const pending = previous ? previous.catch(() => undefined).then(write) : write();
+  draftWrites.set(tableId, pending);
+  const release = () => { if (draftWrites.get(tableId) === pending) draftWrites.delete(tableId); };
+  void pending.then(release, release);
+  return pending;
+}
+
 export async function loadDraft(tableId: string): Promise<DraftOrder | null> {
+  await draftWrites.get(tableId);
   const raw = await AsyncStorage.getItem(`${DRAFT_PREFIX}${tableId}`);
   return raw ? (JSON.parse(raw) as DraftOrder) : null;
 }
 
-export async function saveDraft(draft: DraftOrder): Promise<void> {
-  await AsyncStorage.setItem(
-    `${DRAFT_PREFIX}${draft.tableId}`,
-    JSON.stringify({ ...draft, updatedAt: new Date().toISOString() })
-  );
+export function saveDraft(draft: DraftOrder): Promise<void> {
+  const value = JSON.stringify({ ...draft, updatedAt: new Date().toISOString() });
+  return writeTableDraft(draft.tableId, () => AsyncStorage.setItem(`${DRAFT_PREFIX}${draft.tableId}`, value));
 }
 
-export async function clearDraft(tableId: string): Promise<void> {
-  await AsyncStorage.removeItem(`${DRAFT_PREFIX}${tableId}`);
+export function clearDraft(tableId: string): Promise<void> {
+  return writeTableDraft(tableId, () => AsyncStorage.removeItem(`${DRAFT_PREFIX}${tableId}`));
 }

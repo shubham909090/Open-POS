@@ -151,15 +151,6 @@ export function ManagerApprovalModal({
           readOnly
           aria-hidden="true"
         />
-        {state.requireReason ? <Input
-          label={state.reasonLabel}
-          value={state.reason}
-          onChange={(event) =>
-            setState((current) => ({ ...current, reason: event.target.value }))
-          }
-          placeholder="Required"
-          autoComplete="off"
-        /> : <details className="approval-optional-reason"><summary>{state.reasonLabel} (optional)</summary><Input label={state.reasonLabel} value={state.reason} onChange={(event) => setState((current) => ({ ...current, reason: event.target.value }))} placeholder="Optional" autoComplete="off" /></details>}
         <Input
           label={state.pinLabel}
           value={state.pin}
@@ -169,7 +160,17 @@ export function ManagerApprovalModal({
           type="password"
           autoComplete="current-password"
           autoFocus
+          data-autofocus
         />
+        {state.requireReason ? <Input
+          label={state.reasonLabel}
+          value={state.reason}
+          onChange={(event) =>
+            setState((current) => ({ ...current, reason: event.target.value }))
+          }
+          placeholder="Required"
+          autoComplete="off"
+        /> : <details className="approval-optional-reason"><summary>{state.reasonLabel} (optional)</summary><Input label={state.reasonLabel} value={state.reason} onChange={(event) => setState((current) => ({ ...current, reason: event.target.value }))} placeholder="Optional" autoComplete="off" /></details>}
         <div className="flex items-center justify-end gap-2 pt-2">
           <Button type="button" variant="secondary" onClick={close}>
             Cancel

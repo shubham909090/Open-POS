@@ -15,6 +15,9 @@ type UseOrderDraftInput = {
   setMessage: Dispatch<SetStateAction<string>>;
 };
 
+/** Informational only: App clears it after a moment so it never pushes the floor down for good. */
+export const DRAFT_RESTORED_MESSAGE = "Draft restored for this table.";
+
 export function useOrderDraft({
   connection,
   client,
@@ -23,8 +26,15 @@ export function useOrderDraft({
   setMessage,
 }: UseOrderDraftInput) {
   const [selectedTableId, setSelectedTableIdState] = useState<string | null>(null);
-  const [pax, setPax] = useState("2");
-  const [items, setItems] = useState<OrderItemInput[]>([]);
+  const [pax, setPaxState] = useState("2");
+  const [items, setItemsState] = useState<OrderItemInput[]>([]);
+  // Native taps can arrive before React commits another render. Keep the next
+  // edit based on the last accepted edit, including notes and variant identity.
+  const latestItems = useRef<OrderItemInput[]>([]);
+  const latestPax = useRef("2");
+  const writeRevision = useRef(0);
+  function setItems(next: OrderItemInput[]) { latestItems.current = next; setItemsState(next); }
+  function setPax(next: string) { latestPax.current = next; setPaxState(next); }
   const [savingDraft, setSavingDraft] = useState(false);
   const [draftLoading, setDraftLoading] = useState(false);
   const scope = useRef(createTableSelection(client));
@@ -44,6 +54,7 @@ export function useOrderDraft({
   function setSelectedTableId(tableId: string | null) {
     const selection = scope.current.select(tableId);
     setSelectedTableIdState(tableId);
+    setSavingDraft(false);
     setItems([]);
     setPax("2");
     setCurrentOrder(null);
@@ -69,7 +80,7 @@ export function useOrderDraft({
       restored = await restoreSelectedDraft(scope.current, selection, loadDraft, (draft) => {
         setItems(draft?.items ?? []);
         setPax(String(draft?.pax ?? 2));
-        setMessage(draft?.items.length ? "Draft restored for this table." : "");
+        setMessage(draft?.items.length ? DRAFT_RESTORED_MESSAGE : "");
       });
     } catch (error) {
       if (scope.current.isCurrent(selection)) setMessage(error instanceof Error ? error.message : "Could not restore this table's draft.");
@@ -82,16 +93,17 @@ export function useOrderDraft({
     if (restored && connection === "online" && scope.current.isCurrent(selection)) await loadTableOrder(tableId);
   }
 
-  async function persistDraft(nextItems = items, nextPax = pax) {
+  async function persistDraft(nextItems = latestItems.current, nextPax = latestPax.current) {
     if (!isCurrentSelection() || !selectedTableId) return;
+    const revision = ++writeRevision.current;
     setSavingDraft(true);
-    await saveDraft({
-      tableId: selectedTableId,
-      pax: normalisePax(nextPax),
-      items: nextItems,
-      updatedAt: new Date().toISOString()
-    });
-    setSavingDraft(false);
+    try {
+      await saveDraft({ tableId: selectedTableId, pax: normalisePax(nextPax), items: nextItems, updatedAt: new Date().toISOString() });
+    } catch (error) {
+      if (isCurrentSelection()) setMessage(error instanceof Error ? error.message : "Could not save the table draft.");
+    } finally {
+      if (revision === writeRevision.current && isCurrentSelection()) setSavingDraft(false);
+    }
   }
 
   function addItem(menuItemId: string, menuItemVariantId?: string) {
@@ -101,10 +113,10 @@ export function useOrderDraft({
       return;
     }
     if (!isCurrentSelection()) return;
-    const current = items.find((item) => item.menuItemId === menuItemId && item.menuItemVariantId === menuItemVariantId);
+    const current = latestItems.current.find((item) => item.menuItemId === menuItemId && item.menuItemVariantId === menuItemVariantId);
     const next = current
-      ? items.map((item) => (item.menuItemId === menuItemId && item.menuItemVariantId === menuItemVariantId ? { ...item, quantity: item.quantity + 1 } : item))
-      : [...items, { menuItemId, menuItemVariantId, quantity: 1 }];
+      ? latestItems.current.map((item) => (item.menuItemId === menuItemId && item.menuItemVariantId === menuItemVariantId ? { ...item, quantity: item.quantity + 1 } : item))
+      : [...latestItems.current, { menuItemId, menuItemVariantId, quantity: 1 }];
     setItems(next);
     void persistDraft(next);
   }
@@ -126,7 +138,7 @@ export function useOrderDraft({
       setMessage("Enter an open item name, price, and group.");
       return false;
     }
-    const next = [...items, {
+    const next = [...latestItems.current, {
       openName,
       openPricePaise: input.openPricePaise,
       saleGroupId: input.saleGroupId,
@@ -141,7 +153,7 @@ export function useOrderDraft({
 
   function changeQty(index: number, delta: number) {
     if (!isCurrentSelection()) return;
-    const next = items
+    const next = latestItems.current
       .map((item, itemIndex) => (itemIndex === index ? { ...item, quantity: Math.max(0, item.quantity + delta) } : item))
       .filter((item) => item.quantity > 0);
     setItems(next);
@@ -150,16 +162,15 @@ export function useOrderDraft({
 
   function changeItemNote(index: number, note: string) {
     if (!isCurrentSelection()) return;
-    const next = items.map((item, itemIndex) => (itemIndex === index ? { ...item, note } : item));
+    const next = latestItems.current.map((item, itemIndex) => (itemIndex === index ? { ...item, note } : item));
     setItems(next);
     void persistDraft(next);
   }
 
   async function clearSelectedTableDraft() {
     if (!isCurrentSelection() || !selectedTableId) return;
-    const tableId = selectedTableId;
+    setItems([]);
     await clearDraft(selectedTableId);
-    if (scope.current.isCurrent(renderSelection) && scope.current.matches(client, tableId)) setItems([]);
   }
 
   return {

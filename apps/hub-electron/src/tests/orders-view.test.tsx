@@ -18,7 +18,7 @@ describe("hub orders view layout", () => {
     const { baseElement } = render(<OrdersView bootstrap={bootstrap()} setNotice={vi.fn()} requestManagerApproval={vi.fn()} />);
 
     expect(baseElement.querySelector(".order-modal-layout.menu-closed")).not.toBeNull();
-    expect(screen.getByRole("button", { name: "Open menu" })).not.toBeNull();
+    expect(screen.queryByRole("button", { name: "Open menu" })).toBeNull();
     expect(screen.getByTestId("selected-workspace")).not.toBeNull();
     expect(screen.queryByPlaceholderText("Search dish")).toBeNull();
   });
@@ -100,7 +100,7 @@ describe("hub orders view layout", () => {
     const { baseElement } = render(<OrdersView bootstrap={data} setNotice={vi.fn()} requestManagerApproval={vi.fn()} />);
 
     expect(screen.getByText("Draft 2 items")).not.toBeNull();
-    expect(screen.getByText("₹80.00")).not.toBeNull();
+    expect(screen.getByText("₹80")).not.toBeNull();
     expect(baseElement.querySelector(".table-tile.draft-warning")).not.toBeNull();
   });
 
@@ -126,9 +126,39 @@ describe("hub orders view layout", () => {
 
     const { baseElement } = render(<OrdersView bootstrap={bootstrap()} setNotice={vi.fn()} requestManagerApproval={vi.fn()} />);
 
-    expect(screen.getByText("Running")).not.toBeNull();
-    expect(baseElement.querySelector(".table-tile.running")).not.toBeNull();
+    expect(baseElement.querySelector(".table-tile.running .table-tile-state")?.textContent).toBe("Running");
     expect(baseElement.querySelector(".table-tile.draft-warning")).toBeNull();
+  });
+});
+
+describe("hub floor filters", () => {
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+    vi.resetModules();
+  });
+
+  it("narrows the floor to running, billed or free tables and shows the open value", async () => {
+    const { OrdersView, useHubStore } = await importOrdersView();
+    useHubStore.setState({ selectedTableId: null, orderPanel: "new", menuSearch: "", drafts: {} });
+    const data = bootstrap();
+    data.tables.push(
+      { ...data.tables[0]!, id: "table-t2", name: "T2", status: "billed", current_order_id: "order-2", current_order_total_paise: 52_000 },
+      { ...data.tables[0]!, id: "table-t3", name: "T3", status: "free", current_order_id: null, occupied_at: null, current_order_total_paise: 0, sent_item_count: 0 }
+    );
+
+    render(<OrdersView bootstrap={data} setNotice={vi.fn()} requestManagerApproval={vi.fn()} />);
+
+    expect(screen.getByLabelText("Open on tables ₹920.00")).not.toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Billed 1" }));
+    expect(screen.queryByRole("button", { name: /Open table T1/ })).toBeNull();
+    expect(screen.getByRole("button", { name: /Open table T2, Bill printed/ })).not.toBeNull();
+    expect(screen.queryByRole("button", { name: /Open table T3/ })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Free 1" }));
+    expect(screen.getByRole("button", { name: "Open table T3, Free" })).not.toBeNull();
+    expect(screen.queryByRole("button", { name: /Open table T2/ })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "All 3" }));
+    expect(screen.getAllByRole("button", { name: /^Open table/ })).toHaveLength(3);
   });
 });
 

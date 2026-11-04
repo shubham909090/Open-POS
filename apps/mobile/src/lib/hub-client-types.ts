@@ -195,6 +195,7 @@ export interface ReadyNotification {
 }
 
 export interface KdsTicket {
+  created_at?: string;
   id: string;
   sequence: number;
   type?: KotType;

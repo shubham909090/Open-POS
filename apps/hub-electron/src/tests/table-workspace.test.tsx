@@ -26,7 +26,7 @@ describe("hub table workspace send actions", () => {
 
     renderWorkspace(TableWorkspace);
 
-    fireEvent.click(await screen.findByRole("button", { name: "KOT F3" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Send KOT F3" }));
 
     await waitFor(() => expect(submitOrderMock).toHaveBeenCalledWith(expect.objectContaining({ printMode: "kot" }), expect.any(String)));
   });
@@ -37,7 +37,7 @@ describe("hub table workspace send actions", () => {
     seedDraft(useHubStore);
     const notice = vi.fn();
     renderWorkspace(TableWorkspace, notice);
-    const trigger = await screen.findByRole("button", { name: "KOT F3" });
+    const trigger = await screen.findByRole("button", { name: "Send KOT F3" });
     trigger.focus();
     fireEvent.click(trigger);
     expect(await screen.findByRole("alert")).toHaveProperty("textContent", "Manager PIN is incorrectDismiss");
@@ -108,7 +108,7 @@ describe("hub table workspace send actions", () => {
     seedDraft(useHubStore);
 
     const { rerender } = renderWorkspace(TableWorkspace);
-    await screen.findByRole("button", { name: "KOT F3" });
+    await screen.findByRole("button", { name: "Send KOT F3" });
     fireEvent.keyDown(window, { key: "F6" });
     await waitFor(() => expect(submitOrderMock).toHaveBeenCalledWith(expect.objectContaining({ printMode: "kot_print" }), expect.any(String)));
 

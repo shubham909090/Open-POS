@@ -1,39 +1,64 @@
+/*
+ * Gaurav POS — "the pass".
+ * Three planes give depth: graphite chrome (navigation, workspace header),
+ * warm paper (the page), white cards (work surfaces) with real elevation.
+ * Colour carries meaning only:
+ *   saffron = kitchen / running table
+ *   indigo  = bill printed, waiting for money
+ *   green   = money settled
+ *   red     = destructive or needs attention
+ * Palette is mirrored in packages/shared/src/design-tokens.ts for Android.
+ */
 :root {
   color-scheme: light;
   --radius: 8px;
 
-  /* Canonical palette — synced with packages/shared/src/design-tokens.ts */
-  --ink: #202624;
-  --muted: #657168;
-  --paper: #f7f8f5;
+  --ink: #1c1917;
+  --focus-ring: #44403c;
+  --ink-2: #44403c;
+  --muted: #6f675f;
+  --faint: #a1988e;
+  --paper: #ece8e1;
   --panel: #ffffff;
-  --wash: #f0f3ed;
-  --line: #dfe5dc;
-  --line-strong: #bcc8bf;
-  --accent: #11695d;
-  --accent-dark: #0d5148;
-  --accent-soft: #e8f2ed;
-  --accent-line: #b9d4c9;
-  --success: #28754b;
-  --success-soft: #eaf4ed;
-  --danger: #b53a35;
-  --danger-soft: #fff1ef;
-  --danger-line: #ecc1bb;
-  --warning: #92630b;
-  --warning-soft: #fff5e2;
-  --warning-line: #e8c88d;
-  --blue: #245c92;
-  --blue-soft: #edf3fa;
-  --blue-line: #bdd0e5;
-  --sidebar: #eff2ec;
+  --wash: #f6f3ef;
+  --sunken: #e4dfd7;
+  --line: #e5dfd6;
+  --line-strong: #cbc2b5;
 
-  --shadow: 0 1px 3px rgba(24, 43, 31, 0.04);
-  --shadow-lg: 0 12px 40px -8px rgba(24, 43, 31, 0.16);
-  --control-height: 36px;
-  --touch-control-height: 48px;
-  --control-radius: 6px;
-  --surface-radius: 10px;
-  --dialog-radius: 12px;
+  --chrome: #1f1c19;
+  --chrome-raised: #2b2723;
+  --chrome-line: #3a3530;
+  --chrome-text: #f1ede7;
+  --chrome-muted: #a8a097;
+
+  --accent: #c2410c;
+  --accent-dark: #9a3412;
+  --accent-bright: #f26a1b;
+  --accent-soft: #fff0e5;
+  --accent-line: #f6c7a3;
+
+  --success: #157f3c;
+  --success-soft: #e9f6ee;
+  --success-line: #b5dfc4;
+  --danger: #b42318;
+  --danger-soft: #fef0ef;
+  --danger-line: #f3c0bb;
+  --warning: #9a5b06;
+  --warning-soft: #fdf5df;
+  --warning-line: #ecd08f;
+  --blue: #4338ca;
+  --blue-soft: #eef0fd;
+  --blue-line: #c8cdf6;
+  --sidebar: var(--chrome);
+
+  --shadow: 0 1px 2px rgba(28, 25, 23, 0.07), 0 0 0 1px rgba(28, 25, 23, 0.05);
+  --shadow-md: 0 6px 16px -6px rgba(28, 25, 23, 0.16), 0 1px 3px rgba(28, 25, 23, 0.08), 0 0 0 1px rgba(28, 25, 23, 0.05);
+  --shadow-lg: 0 28px 70px -18px rgba(20, 16, 12, 0.45), 0 10px 24px -12px rgba(20, 16, 12, 0.25);
+  --control-height: 32px;
+  --touch-control-height: 44px;
+  --control-radius: 7px;
+  --surface-radius: 12px;
+  --dialog-radius: 14px;
   --layer-menu: 30;
   --layer-overlay: 50;
   --layer-dialog: 60;
@@ -42,9 +67,10 @@
   --motion-fast: 120ms;
   --motion-enter: 160ms;
 
-  font-family: "Segoe UI Variable Text", "Segoe UI", -apple-system, BlinkMacSystemFont, sans-serif;
-  font-size: 14px;
-  line-height: 1.5;
+  font-family: "Segoe UI Variable Text", "Segoe UI", -apple-system, BlinkMacSystemFont, "Inter", sans-serif;
+  font-size: 13px;
+  line-height: 1.45;
   color: var(--ink);
   background: var(--paper);
+  font-feature-settings: "tnum" 0;
 }

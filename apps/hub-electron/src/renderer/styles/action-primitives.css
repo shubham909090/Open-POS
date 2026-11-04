@@ -1,39 +1,64 @@
+/*
+ * Buttons. One neutral commit colour (graphite) and three state-producing colours:
+ * saffron sends to kitchen, indigo prints a bill, green settles money.
+ */
 .ui-button { flex-shrink: 0; min-height: var(--control-height); border-radius: var(--control-radius); font-size: 13px; font-weight: 600; text-decoration: none; white-space: nowrap; }
-.ui-button-primary, .primary-button, .punch-button, .hero-send-button, .draft-bar-button, .scan-button { background: var(--accent); color: var(--panel); border-color: transparent; }
-.ui-button-primary:hover:not(:disabled), .primary-button:hover:not(:disabled), .punch-button:hover:not(:disabled) { background: var(--accent-dark); }
-.ui-button-secondary, .secondary-button, .secondary-inline, .fill-rest-btn, .load-more-button, .utility-action, .order-icon-button, .menu-rail-button, .transfer-panel-toggle, .shift-button, .quick-pay-button, .history-print-button, .variant-buttons button { border: 1px solid var(--line-strong); background: var(--panel); color: var(--ink); box-shadow: none; }
-.ui-button-secondary:hover:not(:disabled), .secondary-button:hover:not(:disabled), .secondary-inline:hover:not(:disabled), .variant-buttons button:hover:not(:disabled), .order-icon-button:hover:not(:disabled) { background: var(--wash); border-color: var(--line-strong); }
-.ui-button-ghost { border-color: transparent; background: transparent; color: var(--muted); }
-.ui-button-ghost:hover:not(:disabled) { background: var(--wash); color: var(--ink); }
-.ui-button-danger, .danger-button, .danger-small-button { background: var(--danger); border-color: var(--danger); color: var(--panel); }
-.ui-button-danger:hover:not(:disabled), .danger-button:hover:not(:disabled) { background: var(--danger); filter: brightness(.95); }
-.danger-link { border: 1px solid var(--danger-line); color: var(--danger); background: transparent; }
+.ui-button-primary, .primary-button, .hero-send-button, .draft-bar-button, .scan-button { background: var(--chrome); color: var(--chrome-text); border-color: transparent; }
+.ui-button-primary:hover:not(:disabled), .primary-button:hover:not(:disabled) { background: #000; }
+
+.ui-button-secondary, .secondary-button, .secondary-inline, .fill-rest-btn, .load-more-button, .utility-action, .order-icon-button, .menu-rail-button, .transfer-panel-toggle, .shift-button, .quick-pay-button, .history-print-button, .variant-buttons button {
+  border: 1px solid var(--line-strong); background: var(--panel); color: var(--ink); box-shadow: 0 1px 1px rgba(28, 25, 23, 0.05);
+}
+.ui-button-secondary:hover:not(:disabled), .secondary-button:hover:not(:disabled), .secondary-inline:hover:not(:disabled), .variant-buttons button:hover:not(:disabled), .order-icon-button:hover:not(:disabled), .fill-rest-btn:hover:not(:disabled), .load-more-button:hover:not(:disabled), .utility-action:hover:not(:disabled), .history-print-button:hover:not(:disabled) {
+  background: var(--wash); border-color: var(--faint);
+}
+.ui-button-ghost, .quiet-button { border-color: transparent; background: transparent; color: var(--muted); box-shadow: none; }
+.ui-button-ghost:hover:not(:disabled), .quiet-button:hover:not(:disabled) { background: color-mix(in srgb, var(--ink) 6%, transparent); color: var(--ink); }
+.ui-button-danger, .danger-button, .danger-small-button { background: var(--danger); border-color: var(--danger); color: #fff; }
+.ui-button-danger:hover:not(:disabled), .danger-button:hover:not(:disabled) { background: color-mix(in srgb, var(--danger) 88%, #000); }
+.danger-link { border: 1px solid transparent; color: var(--danger); background: transparent; box-shadow: none; }
 .danger-link:hover:not(:disabled), .secondary-inline.danger:hover:not(:disabled) { background: var(--danger-soft); color: var(--danger); }
-.ui-button-warning { background: var(--warning); color: var(--panel); }
-.ui-button-small { min-height: 32px; padding-inline: 10px; font-size: 12px; }
-.ui-button-large, .ui-button-touch { min-height: 48px; padding-inline: 20px; }
+.ui-button-warning { background: var(--warning); color: #fff; }
+
+/* State-producing actions */
+.action-kot { background: var(--accent); color: #fff; }
+.action-kot:hover:not(:disabled) { background: var(--accent-dark); }
+.action-bill { background: var(--blue); color: #fff; }
+.action-bill:hover:not(:disabled) { background: color-mix(in srgb, var(--blue) 85%, #000); }
+.action-pay, .punch-button { background: var(--success); color: #fff; }
+.action-pay:hover:not(:disabled), .punch-button:hover:not(:disabled) { background: color-mix(in srgb, var(--success) 85%, #000); }
+/* A waiting primary keeps its shape but drops to an outlined placeholder, so it never reads as broken. */
+:is(.action-kot, .action-bill, .action-pay, .punch-button):disabled { opacity: 1; background: var(--wash); border-color: var(--line); color: var(--faint); box-shadow: none; }
+:is(.action-kot, .action-bill, .action-pay, .punch-button):disabled kbd { opacity: .6; }
+
+.ui-button-small { min-height: 28px; padding-inline: 10px; font-size: 12px; }
+.ui-button-large, .ui-button-touch { min-height: 44px; padding-inline: 18px; font-size: 14px; }
 .ui-button-icon { width: var(--control-height); height: var(--control-height); padding: 0; }
-.ui-button-icon-small { width: 32px; min-height: 32px; padding: 0; }
-.variant-buttons, .menu-variant-buttons { display: flex; flex-wrap: wrap; gap: 8px; }
-.split-input, .payment-input-row, .secret-field, .secret-input, .money-input-wrap { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+.ui-button-icon-small { width: 28px; min-height: 28px; height: 28px; padding: 0; }
+.variant-buttons, .menu-variant-buttons { display: flex; flex-wrap: wrap; gap: 6px; }
+.split-input, .payment-input-row, .secret-field, .secret-input, .money-input-wrap { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; }
 .split-input input, .payment-input-row input, .shift-qty-input { min-width: 0; }
-.modal-backdrop { position: fixed; inset: 0; z-index: var(--layer-overlay); background: color-mix(in srgb, var(--ink) 30%, transparent); }
-.modal-card { display: grid; gap: 16px; width: min(460px, 100%); padding: 24px; border-radius: var(--dialog-radius); border: 1px solid var(--line); background: var(--panel); box-shadow: var(--shadow-lg); }
+.modal-backdrop { position: fixed; inset: 0; z-index: var(--layer-overlay); background: color-mix(in srgb, var(--chrome) 55%, transparent); backdrop-filter: blur(2px); }
+.modal-card { display: grid; gap: 16px; width: min(460px, 100%); padding: 20px; border-radius: var(--dialog-radius); background: var(--panel); box-shadow: var(--shadow-lg); }
 .csv-import-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
-.csv-file-button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: var(--control-height); width: fit-content; padding: 0 12px; border-radius: var(--control-radius); background: var(--accent); color: var(--panel); cursor: pointer; }
+.csv-file-button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: var(--control-height); width: fit-content; padding: 0 12px; border-radius: var(--control-radius); background: var(--chrome); color: var(--chrome-text); font-weight: 600; cursor: pointer; }
 .csv-file-button input { position: absolute; width: 1px; height: 1px; opacity: 0; }
-.empty, .empty-state { display: grid; justify-items: center; gap: 4px; padding: 32px 16px; text-align: center; color: var(--muted); font-size: 13px; }
-.ui-field { display: grid; gap: 6px; }
+.empty, .empty-state { display: grid; justify-items: center; gap: 4px; padding: 28px 16px; text-align: center; color: var(--muted); font-size: 13px; }
+.ui-field { display: grid; gap: 4px; }
 .ui-field input { width: 100%; }
 .ui-field-help { font-size: 12px; font-weight: 400; color: var(--muted); }
-.ui-field-error { font-size: 12px; font-weight: 400; color: var(--danger); }
-.ui-notice { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-radius: var(--control-radius); border: 1px solid var(--line); color: var(--ink); background: var(--wash); font-size: 13px; }
-.ui-notice-error { border-color: var(--danger-line); background: var(--danger-soft); color: var(--danger); }
-.ui-notice-warning { border-color: var(--warning-line); background: var(--warning-soft); color: var(--warning); }
-.ui-notice-success { border-color: transparent; background: var(--success-soft); color: var(--success); }
-.ui-badge { display: inline-flex; align-items: center; gap: 4px; min-height: 20px; font-size: 11px; font-weight: 500; color: var(--muted); white-space: nowrap; }
-.ui-badge-accent { color: var(--accent-dark); }
-.ui-badge-warning { color: var(--warning); }
-.ui-badge-danger { color: var(--danger); }
-.ui-badge-blue { color: var(--blue); }
-.ui-badge-solid { color: var(--ink); font-weight: 600; }
+.ui-field-error { font-size: 12px; font-weight: 500; color: var(--danger); }
+.ui-notice { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: var(--control-radius); border: 1px solid var(--line); color: var(--ink); background: var(--panel); font-size: 13px; box-shadow: var(--shadow); }
+.ui-notice-error { border-color: var(--danger-line); background: var(--danger-soft); color: var(--danger); box-shadow: none; }
+.ui-notice-warning { border-color: var(--warning-line); background: var(--warning-soft); color: var(--warning); box-shadow: none; }
+.ui-notice-success { border-color: var(--success-line); background: var(--success-soft); color: var(--success); box-shadow: none; }
+.ui-badge { display: inline-flex; align-items: center; gap: 5px; min-height: 22px; padding: 0 8px; border-radius: 999px; background: color-mix(in srgb, var(--ink) 6%, transparent); font-size: 11px; font-weight: 600; color: var(--ink-2); white-space: nowrap; }
+.ui-badge-accent { background: var(--success-soft); color: var(--success); }
+.ui-badge-warning { background: var(--warning-soft); color: var(--warning); }
+.ui-badge-danger { background: var(--danger-soft); color: var(--danger); }
+.ui-badge-blue { background: var(--blue-soft); color: var(--blue); }
+.ui-badge-solid { background: var(--chrome); color: var(--chrome-text); }
+kbd { display: inline-grid; place-items: center; min-width: 20px; height: 18px; padding: 0 5px; border-radius: 4px; background: color-mix(in srgb, currentColor 16%, transparent); font-size: 10px; font-weight: 700; letter-spacing: .02em; line-height: 1; }
+
+.danger-outline { border-color: var(--danger-line); color: var(--danger); background: transparent; }
+.danger-outline:hover:not(:disabled) { border-color: var(--danger); background: var(--danger-soft); color: var(--danger); }

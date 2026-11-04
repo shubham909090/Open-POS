@@ -1,6 +1,6 @@
 import { formatInr, searchMenuItems } from "@gaurav-pos/shared";
 import { useMutation } from "@tanstack/react-query";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { hubApi, type MenuItem, type TableOrder } from "../../hub-api.js";
 import type { ManagerApprovalRequest } from "../../hooks/use-manager-approval.js";
 import { useKeyboardListNavigation } from "../../hooks/use-keyboard-list-navigation.js";
@@ -49,16 +49,14 @@ function BillRevisionEditor({
     return () => window.cancelAnimationFrame(frame);
   }, [open]);
   const [items, setItems] = useState<RevisionItem[]>([]);
-  const [addMenuItemId, setAddMenuItemId] = useState("");
-  const [addVariantId, setAddVariantId] = useState("");
+  const searchId = useId();
   const [search, setSearch] = useState("");
   const operationKeys = useOperationKeys();
   const pendingScopes = useRef<Record<string, unknown>>({});
   const bill = tableOrder.bill;
-  const addMenuItem = menuItems.find((menuItem) => menuItem.id === addMenuItemId);
-  const addVariants = menuItemVariantOptions(addMenuItem);
   const searchItems = searchMenuItems(menuItems, search);
-  const searchItemIds = searchItems.map((item) => item.id).join("|");
+  const searchOptions = searchItems.flatMap((item) => menuItemVariantOptions(item).map((variant) => ({ item, variant })));
+  const searchItemIds = searchOptions.map(({ item, variant }) => `${item.id}-${variant.id ?? "default"}`).join("|");
 
   const reviseBill = useMutation({
     mutationFn: async () => {
@@ -149,22 +147,11 @@ function BillRevisionEditor({
     });
   }, []);
 
-  function addSelectedDish() {
-    if (!addMenuItem) return;
-    addMenuItemLine(addMenuItem, addVariantId);
-  }
-
-  const addKeyboardItem = useCallback(
-    (item: MenuItem) => {
-      const variantId = menuItemVariantOptions(item)[0]?.id ?? "";
-      setAddMenuItemId(item.id);
-      setAddVariantId(variantId);
-      addMenuItemLine(item, variantId);
-    },
-    [addMenuItemLine]
-  );
+  const addKeyboardItem = useCallback(({ item, variant }: typeof searchOptions[number]) => {
+    addMenuItemLine(item, variant.id);
+  }, [addMenuItemLine]);
   const keyboard = useKeyboardListNavigation({
-    items: searchItems,
+    items: searchOptions,
     enabled: Boolean(open && search.trim()),
     resetKey: `${search}|${searchItemIds}`,
     onCommit: addKeyboardItem
@@ -192,55 +179,21 @@ function BillRevisionEditor({
           onChange={(event) => setSearch(event.target.value)}
           onKeyDown={keyboard.onKeyDown}
           placeholder="Search dish to add" autoFocus
-          aria-label="Search dishes for bill revision"
+          role="combobox" aria-expanded={Boolean(search.trim())} aria-controls={searchId}
+          aria-activedescendant={search.trim() && searchOptions.length ? `${searchId}-${keyboard.activeIndex}` : undefined}
+          aria-autocomplete="list" aria-label="Search dishes for bill revision"
         />
-        <select
-          aria-label="Dish to add to revision"
-          value={addMenuItemId}
-          onChange={(event) => {
-            const nextItemId = event.target.value;
-            const nextItem = menuItems.find((item) => item.id === nextItemId);
-            const nextVariants = menuItemVariantOptions(nextItem);
-            setAddMenuItemId(nextItemId);
-            setAddVariantId(nextVariants[0]?.id ?? "");
-          }}
-        >
-          <option value="">Add dish</option>
-          {searchItems.map((item) => (
-            <option key={item.id} value={item.id}>{item.name} · {formatInr(item.price_paise)}</option>
-          ))}
-        </select>
-        {addVariants.length > 1 ? (
-          <select aria-label="Variant to add to revision" value={addVariantId} onChange={(event) => setAddVariantId(event.target.value)}>
-            {addVariants.map((variant) => (
-              <option key={variant.id ?? "default"} value={variant.id ?? ""}>
-                {variant.kind === "default" ? "Regular" : variant.label} · {formatInr(variant.price_paise)}
-              </option>
-            ))}
-          </select>
-        ) : null}
-        <button type="button" disabled={!addMenuItemId} onClick={addSelectedDish}>Add</button>
       </div>
-      {search.trim() && searchItems.length ? (
-        <div className="revision-search-results">
-          {searchItems.map((item, index) => (
-            <button
-              key={item.id}
-              ref={(element) => keyboard.setItemElement(index, element)}
-              type="button"
-              className={`revision-search-result${keyboard.activeIndex === index ? " keyboard-active" : ""}`}
-              onPointerMove={(event) => keyboard.onPointerMove(index, event)}
-              onClick={() => addKeyboardItem(item)}
-            >
-              <span>
-                <strong>{item.name}</strong>
-                <small>{item.sale_group_name ?? item.production_unit_name ?? "Menu item"}</small>
-              </span>
-              <b>{formatInr(menuItemVariantOptions(item)[0]?.price_paise ?? item.price_paise)}</b>
-            </button>
-          ))}
-        </div>
-      ) : null}
+      {search.trim() ? <div id={searchId} role="listbox" aria-label="Dishes to add" className="revision-search-results">
+        {searchOptions.map((option, index) => <button
+          key={`${option.item.id}-${option.variant.id ?? "default"}`}
+          id={`${searchId}-${index}`} role="option" aria-selected={keyboard.activeIndex === index}
+          ref={(element) => keyboard.setItemElement(index, element)} type="button"
+          className={`revision-search-result${keyboard.activeIndex === index ? " keyboard-active" : ""}`}
+          onPointerMove={(event) => keyboard.onPointerMove(index, event)} onClick={() => addKeyboardItem(option)}
+        ><span><strong>{option.item.name}{option.variant.kind !== "default" ? ` · ${option.variant.label}` : ""}</strong><small>{option.item.sale_group_name ?? "Menu item"}</small></span><b>{formatInr(option.variant.price_paise)}</b></button>)}
+        {!searchOptions.length ? <p className="plain-state">No dishes found</p> : null}
+      </div> : null}
       <LineItems
         emptyTitle="No bill items"
         emptyText="Add at least one item before saving the revised bill."

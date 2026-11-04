@@ -13,6 +13,8 @@ import { Pressable } from "./pressable";
 
 const TABLE_ORDER_KEY = "gaurav-pos:table-order";
 const TABLE_GRID_GAP = 8;
+/** Two compact lines: name + state, then timer + amount. */
+const TABLE_TILE_HEIGHT = 58;
 
 /** Per-phone table order. Name is the default; Custom keeps the positions set on the hub. */
 export function useTableOrderPreference() {
@@ -68,10 +70,12 @@ function TablePicker({
   const { fontScale } = useWindowDimensions();
   const floorGroups = groupTablesByFloor(activeTables, floors, tableOrder);
   const availableCount = activeTables.filter((table) => getTableDisplayState(table) === "free").length;
-  // Three columns keep a full floor visible on a phone; tablets get wider tiles, not more noise.
-  const normalColumns = gridWidth >= 600 ? 5 : gridWidth >= 420 ? 4 : 3;
+  // Keep enough width for table identity, state and money on narrow phones.
+  const normalColumns = gridWidth >= 900 ? 8 : gridWidth >= 640 ? 6 : gridWidth >= 420 ? 4 : 3;
   const columns = fontScale >= 1.3 ? Math.max(2, normalColumns - 1) : normalColumns;
   const tileWidth = gridWidth > 0 ? Math.floor((gridWidth - TABLE_GRID_GAP * (columns - 1)) / columns) : undefined;
+  // Every tile shares one height so rows never go uneven when a live table sits among free ones.
+  const tileHeight = Math.round(TABLE_TILE_HEIGHT * Math.min(Math.max(fontScale, 1), 1.6));
   return (
     <View style={styles.tableSection} onLayout={(event) => setGridWidth(event.nativeEvent.layout.width)}>
       <View style={[styles.cardHeader, fontScale >= 1.3 && styles.tableHeaderStack]}>
@@ -94,7 +98,7 @@ function TablePicker({
               ) : null}
               <View style={styles.tableGrid}>
                 {group.tables.map((table) => (
-                  <TableTile key={table.id} table={table} width={tileWidth} selected={table.id === selectedTableId} onSelectTable={onSelectTable} />
+                  <TableTile key={table.id} table={table} width={tileWidth} height={tileHeight} selected={table.id === selectedTableId} onSelectTable={onSelectTable} />
                 ))}
               </View>
             </View>
@@ -108,40 +112,62 @@ function TablePicker({
 function TableTile({
   table,
   width,
+  height,
   selected,
   onSelectTable
 }: {
   table: HubBootstrap["tables"][number];
   width?: number;
+  height: number;
   selected: boolean;
   onSelectTable: (tableId: string) => void;
 }) {
   const state = getTableDisplayState(table);
   const elapsed = tableElapsed(table);
-  const amount = state !== "free" && typeof table.current_order_total_paise === "number" ? table.current_order_total_paise : null;
+  const live = state !== "free";
+  const amount = live && typeof table.current_order_total_paise === "number" ? table.current_order_total_paise : null;
+  const longRunning = state === "running" && tableMinutesOpen(table) >= LONG_RUNNING_TABLE_MINUTES;
+  const stateLabel = state === "bill_printed" ? "Billed" : tableDisplayLabel(state);
   return (
     <Pressable
-      accessibilityLabel={`Table ${table.name}, ${state === "bill_printed" ? "Billed" : tableDisplayLabel(state)}`}
+      accessibilityLabel={`Table ${table.name}, ${stateLabel}${state === "bill_printed" && elapsed ? ` ${elapsed} ago` : ""}`}
       accessibilityState={{ selected }}
       style={[
         styles.tableTile,
+        { height },
         width ? { width } : null,
+        live && styles.liveTable,
         state === "running" && styles.busyTable,
         state === "bill_printed" && styles.billedTable,
         selected && styles.selectedTable
       ]}
       onPress={() => onSelectTable(table.id)}
     >
-      <Text style={styles.tableName} numberOfLines={1}>{table.name}</Text>
-      <Text style={[styles.tableStatus, state !== "free" && styles.tableStatusBusy, state === "bill_printed" && styles.tableStatusBilled]}>
-        {state === "bill_printed" ? "Billed" : tableDisplayLabel(state)}
-      </Text>
-      <View style={styles.tableMetrics}>
-        {elapsed ? <Text style={styles.tableElapsed}>{elapsed}</Text> : null}
-        {amount !== null ? <Text style={styles.tableAmount}>₹{formatRupees(amount)}</Text> : null}
+      <View style={styles.tableTopline}>
+        <Text style={[styles.tableName, live && styles.tableNameLive]} numberOfLines={1}>{table.name}</Text>
+        {live ? (
+          <Text style={[styles.tableStatus, styles.tableStatusBusy, state === "bill_printed" && styles.tableStatusBilled]} numberOfLines={1}>
+            {stateLabel}
+          </Text>
+        ) : null}
       </View>
+      {live ? (
+        <View style={styles.tableMetrics}>
+          {elapsed ? <Text style={[styles.tableElapsed, longRunning && styles.tableElapsedLong]} numberOfLines={1}>{elapsed}</Text> : null}
+          {amount !== null ? <Text style={styles.tableAmount} numberOfLines={1}>₹{formatRupees(amount)}</Text> : null}
+        </View>
+      ) : null}
     </Pressable>
   );
+}
+
+/** A running table older than this shows a red timer so forgotten checks stand out (matches the hub). */
+const LONG_RUNNING_TABLE_MINUTES = 180;
+
+function tableMinutesOpen(table: HubBootstrap["tables"][number]): number {
+  if (!table.occupied_at) return 0;
+  const start = new Date(table.occupied_at).getTime();
+  return Number.isFinite(start) ? Math.max(0, Math.floor((Date.now() - start) / 60_000)) : 0;
 }
 
 export { TablePicker };

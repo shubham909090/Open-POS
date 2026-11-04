@@ -188,24 +188,11 @@ function ReportHistoryPanel({
     onCommit: addKeyboardHistoryItem
   });
 
-  const fillHistoryPaymentFull = (method: HistoryPaymentMethod) => {
-    setEditPayments({ cash: "0", upi: "0", card: "0", online: "0", [method]: String(editFinalTotal / 100) });
-  };
   const fillHistoryPaymentRemaining = (method: HistoryPaymentMethod) => {
     setEditPayments((current) => {
       const otherTotal = PAYMENT_METHODS
         .filter((candidate) => candidate !== method)
         .reduce((total, candidate) => total + Math.round(Number(current[candidate] || 0) * 100), 0);
-      return { ...current, [method]: String(Math.max(0, editFinalTotal - otherTotal) / 100) };
-    });
-  };
-  const fillHistoryPaymentRemainingOnFocus = (method: HistoryPaymentMethod) => {
-    setEditPayments((current) => {
-      if (Number(current[method] || 0) > 0) return current;
-      const otherTotal = PAYMENT_METHODS
-        .filter((candidate) => candidate !== method)
-        .reduce((total, candidate) => total + Math.round(Number(current[candidate] || 0) * 100), 0);
-      if (otherTotal <= 0) return current;
       return { ...current, [method]: String(Math.max(0, editFinalTotal - otherTotal) / 100) };
     });
   };
@@ -261,9 +248,7 @@ function ReportHistoryPanel({
           onSavePrint={() => setHistoryEditPrintBill(editingBill)}
           updateEditQty={updateEditQty}
           addMenuItem={addMenuItem}
-          fillHistoryPaymentFull={fillHistoryPaymentFull}
           fillHistoryPaymentRemaining={fillHistoryPaymentRemaining}
-          fillHistoryPaymentRemainingOnFocus={fillHistoryPaymentRemainingOnFocus}
         />
       ) : null}
 

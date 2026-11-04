@@ -1,6 +1,7 @@
 import { type Dispatch, type KeyboardEventHandler, type SetStateAction, type PointerEvent } from "react";
 import { formatInr } from "@gaurav-pos/shared";
 import { type MenuItem } from "../../hub-api.js";
+import { DiscountTypeControl, PaymentFields } from "../orders/payment-fields.js";
 import { Dialog } from "../ui/dialog.js";
 import { type HistoryBill } from "./report-history-table.js";
 
@@ -70,9 +71,7 @@ function ReportHistoryEditModal({
   onSavePrint,
   updateEditQty,
   addMenuItem,
-  fillHistoryPaymentFull,
   fillHistoryPaymentRemaining,
-  fillHistoryPaymentRemainingOnFocus,
 }: {
   bill: HistoryBill;
   editItems: HistoryEditItem[];
@@ -110,9 +109,7 @@ function ReportHistoryEditModal({
   onSavePrint: () => void;
   updateEditQty: (key: string, delta: number) => void;
   addMenuItem: (item: MenuItem, variant?: NonNullable<MenuItem["variants"]>[number]) => void;
-  fillHistoryPaymentFull: (method: HistoryPaymentMethod) => void;
   fillHistoryPaymentRemaining: (method: HistoryPaymentMethod) => void;
-  fillHistoryPaymentRemainingOnFocus: (method: HistoryPaymentMethod) => void;
 }) {
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose(); }} title={`Edit bill #${bill.billNumber ?? bill.billId}`} size="wide" className="history-edit-dialog">
@@ -153,46 +150,18 @@ function ReportHistoryEditModal({
               <label>
                 Discount
                 <span className="split-input">
-                  <select value={editDiscountType} onChange={(event) => setEditDiscountType(event.target.value as "amount" | "percent")}>
-                    <option value="amount">Rs</option>
-                    <option value="percent">%</option>
-                  </select>
-                  <input aria-label="History discount amount" value={editDiscount} onChange={(event) => setEditDiscount(event.target.value)} inputMode="decimal" />
+                  <DiscountTypeControl value={editDiscountType} onChange={setEditDiscountType} label="History discount type" />
+                  <input aria-label="History discount amount" value={editDiscount} onFocus={(event) => event.currentTarget.select()} onChange={(event) => setEditDiscount(event.target.value)} inputMode="decimal" />
                 </span>
               </label>
               <label>
                 Tip
-                <input aria-label="History tip amount" value={editTip} onChange={(event) => setEditTip(event.target.value)} inputMode="decimal" />
+                <input aria-label="History tip amount" value={editTip} onFocus={(event) => event.currentTarget.select()} onChange={(event) => setEditTip(event.target.value)} inputMode="decimal" />
               </label>
             </div>
             {!bill.isNc ? (
               <>
-                <div className="quick-payments history-payment-actions">
-                  {PAYMENT_METHODS.map((method) => (
-                    <button key={method} type="button" onClick={() => fillHistoryPaymentFull(method)}>
-                      Full {PAYMENT_METHOD_LABELS[method]}
-                    </button>
-                  ))}
-                </div>
-                <div className="payment-grid history-payment-grid">
-                  {PAYMENT_METHODS.map((method) => (
-                    <label key={method}>
-                      <span>{PAYMENT_METHOD_LABELS[method]}</span>
-                      <div className="payment-input-row">
-                        <input
-                          aria-label={`History ${PAYMENT_METHOD_LABELS[method]} amount`}
-                          value={editPayments[method]}
-                          onFocus={() => fillHistoryPaymentRemainingOnFocus(method)}
-                          onChange={(event) => setEditPayments((current) => ({ ...current, [method]: event.target.value }))}
-                          inputMode="decimal"
-                        />
-                        <button type="button" className="secondary-button compact rest-button" onClick={() => fillHistoryPaymentRemaining(method)} aria-label={`Fill remaining into history ${method}`}>
-                          Rest
-                        </button>
-                      </div>
-                    </label>
-                  ))}
-                </div>
+                <PaymentFields payments={editPayments} setPayments={setEditPayments} fillRemaining={fillHistoryPaymentRemaining} labelPrefix="History " />
                 <label>
                   Payment note
                   <input value={editPaymentReference} onChange={(event) => setEditPaymentReference(event.target.value)} placeholder="UPI ref, card slip, or owner note" />
@@ -225,7 +194,7 @@ function ReportHistoryEditModal({
                     <span>{formatInr(item.unitPricePaise)} each</span>
                   </div>
                   <div className="history-edit-qty">
-                    <button type="button" className="secondary-button compact" aria-label={`Reduce ${item.name}`} onClick={() => updateEditQty(item.key, -1)}>-</button>
+                    <button type="button" className="secondary-button compact" aria-label={`Reduce ${item.name}`} onClick={() => updateEditQty(item.key, -1)}>−</button>
                     <strong>{item.quantity}</strong>
                     <button type="button" className="secondary-button compact" aria-label={`Add ${item.name}`} onClick={() => updateEditQty(item.key, 1)}>+</button>
                   </div>
@@ -269,12 +238,13 @@ function ReportHistoryEditModal({
             ) : null}
           </section>
         </div>
-        <label>
-          Master PIN
-          <input value={masterPin} onChange={(event) => setMasterPin(event.target.value)} type="password" autoComplete="current-password" />
-        </label>
         {editError ? <p className="warning-text" role="alert">{editError}</p> : null}
         <div className="history-edit-footer">
+          <label className="history-master-pin">
+            Master PIN
+            <input aria-label="Master PIN" data-autofocus value={masterPin} onChange={(event) => setMasterPin(event.target.value)} type="password" inputMode="numeric" autoComplete="current-password" />
+          </label>
+
           <button type="button" className="secondary-button" onClick={onClose}>Cancel</button>
           <button type="button" className="secondary-button" disabled={!canSaveEdit} onClick={onSavePrint}>
             {historyEditPending ? "Saving..." : "Save + Print"}

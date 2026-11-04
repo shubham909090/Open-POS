@@ -1,7 +1,7 @@
 import type { KotType } from "@gaurav-pos/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { MutableRefObject } from "react";
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { hubApi, type Bootstrap } from "../../hub-api.js";
 import { type NoticeSetter, messageOf } from "../../lib/format.js";
 import { useHubStore } from "../../store.js";
@@ -15,6 +15,11 @@ export function KitchenView({
   setNotice: NoticeSetter;
 }) {
   const queryClient = useQueryClient();
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
   const selectedKdsUnitId = useHubStore((state) => state.selectedKdsUnitId);
   const setSelectedKdsUnitId = useHubStore((state) => state.setSelectedKdsUnitId);
   const knownTicketIdsRef = useRef<{ unitId: string; ids: Set<string>; initialized: boolean }>({ unitId: "", ids: new Set(), initialized: false });
@@ -138,20 +143,24 @@ export function KitchenView({
             const cancellation = ticket.type === "cancelled" || ticket.type === "partial_cancel" || (ticket.items.some((item) => item.quantity_delta < 0) && ticket.items.every((item) => item.quantity_delta <= 0));
             const acknowledgeOnly = cancellation || ticket.items.every((item) => item.quantity_delta === 0);
             const kind = ticket.type ? ticketLabels[ticket.type] : cancellation ? "Items cancelled" : "Kitchen ticket";
-            const primaryStatus = ticket.status === "ready" ? "served" : "ready";
-            return <article key={ticket.id} className={`kot-card${cancellation ? " cancellation" : ""}${acknowledgeOnly ? " acknowledge-only" : ""}`}>
+            const primaryStatus = ticket.status === "ready" ? "served" : ticket.status === "queued" ? "preparing" : "ready";
+            const createdMs = ticket.created_at ? Date.parse(ticket.created_at) : NaN;
+            const ageMinutes = Number.isFinite(createdMs) ? Math.max(0, Math.floor((now - createdMs) / 60_000)) : null;
+            const age = ageMinutes === null ? null : ageMinutes < 60 ? `${ageMinutes}m` : `${Math.floor(ageMinutes / 60)}h ${ageMinutes % 60}m`;
+            return <article key={ticket.id} className={`kot-card status-${ticket.status}${cancellation ? " cancellation" : ""}${acknowledgeOnly ? " acknowledge-only" : ""}`}>
 
               <header>
-                <strong>
-                  #{ticket.sequence} · {ticket.table_name}
-                </strong>
-                <div className="kot-ticket-kind"><strong>{kind}</strong><span>{acknowledgeOnly && ticket.status !== "served" ? "Needs acknowledgment" : ticket.status}</span></div>
+                <div className="kot-ticket-id">
+                  <strong className="kot-table-name">{ticket.table_name}</strong>
+                  <span>#{ticket.sequence}</span>
+                </div>
+                <div className="kot-ticket-kind">{ticket.type !== "new" ? <strong>{kind}</strong> : null}{age ? <time className="kot-age" dateTime={ticket.created_at} title={ticket.created_at}>{age} ago</time> : null}<span className={`kot-status status-${ticket.status}`}>{acknowledgeOnly && ticket.status !== "served" ? "Needs acknowledgment" : ticket.status}</span></div>
               </header>
               <ul>
                 {ticket.note ? <li className="kot-note">Note: {ticket.note}</li> : null}
                 {ticket.items.map((item, index) => (
-                  <li key={`${item.name_snapshot}-${index}`} className={`kot-change-row${item.quantity_delta < 0 ? " removal" : ""}`}>
-                    <span className="kot-item-change">{item.quantity_delta < 0 ? `Remove ${Math.abs(item.quantity_delta)} ×` : item.quantity_delta === 0 ? item.note_snapshot ? "Note updated" : "Note cleared" : `Add ${item.quantity_delta} ×`}</span>
+                  <li key={`${item.name_snapshot}-${index}`} className={`kot-change-row${item.quantity_delta < 0 ? " removal" : ticket.type !== "new" && item.quantity_delta > 0 ? " addition" : ""}`}>
+                    <span className="kot-item-change">{item.quantity_delta < 0 ? `−${Math.abs(item.quantity_delta)} ×` : item.quantity_delta === 0 ? item.note_snapshot ? "Note updated" : "Note cleared" : ticket.type === "new" ? `${item.quantity_delta} ×` : `+${item.quantity_delta} ×`}</span>
                     <div><span>{item.name_snapshot}</span>{item.note_snapshot ? <small className="kot-note">{item.note_snapshot}</small> : null}</div>
                   </li>
                 ))}

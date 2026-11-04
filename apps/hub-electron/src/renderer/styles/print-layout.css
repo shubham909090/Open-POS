@@ -18,7 +18,7 @@
 .bill-printer-facts { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) minmax(0, 0.8fr); gap: 12px; margin: 0; min-width: 0; }
 .bill-printer-facts div { display: grid; gap: 1px; min-width: 0; }
 .bill-printer-facts dt { font-size: 11px; color: var(--muted); }
-.bill-printer-facts dd { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-variant-numeric: tabular-nums; }
+.bill-printer-facts dd { margin: 0; white-space: normal; overflow-wrap: anywhere; font-size: 13px; font-variant-numeric: tabular-nums; }
 .bill-printer-facts dd.missing { color: var(--warning); font-weight: 600; }
 .bill-printer-actions { display: flex; justify-content: flex-end; gap: 6px; }
 .bill-printer-actions button { min-height: 32px; gap: 6px; padding: 0 10px; font-size: 12px; }
@@ -86,7 +86,7 @@
 .print-style-fields label { display: grid; gap: 2px; min-width: 0; font-size: 11px; color: var(--muted); }
 .print-style-fields select { min-height: 32px; font-size: 12px; }
 .print-size-control > span, .print-size-control > small { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.print-size-control output { padding: 0 6px; border-radius: 4px; background: var(--accent-soft); color: var(--accent-dark); font-variant-numeric: tabular-nums; }
+.print-size-control output { padding: 0 6px; border-radius: 4px; background: var(--wash); color: var(--ink); font-variant-numeric: tabular-nums; }
 .print-size-control input[type="range"] { width: 100%; min-height: 24px; cursor: pointer; }
 .print-size-control small { font-size: 10px; color: var(--muted); }
 .print-style-fields input[type="checkbox"] { width: 16px; height: 16px; }

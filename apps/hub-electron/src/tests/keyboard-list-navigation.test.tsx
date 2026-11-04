@@ -55,3 +55,22 @@ it("keeps the first result after typing beneath a stationary pointer, but follow
   fireEvent.keyDown(screen.getByRole("textbox"), { key: "Enter" });
   expect(commit).toHaveBeenLastCalledWith("new second", 1);
 });
+
+it("keeps background search and revision keys inactive while another dialog is open", () => {
+  const commit = vi.fn();
+  function Search() {
+    const keyboard = useKeyboardListNavigation({ items: ["Paneer", "Coffee"], onCommit: commit });
+    return <input aria-label="Revision search" onKeyDown={keyboard.onKeyDown} />;
+  }
+  render(<Search />);
+  const approval = document.createElement("div");
+  approval.setAttribute("role", "dialog");
+  document.body.append(approval);
+  const input = screen.getByRole("textbox");
+  fireEvent.keyDown(input, { key: "ArrowDown" });
+  fireEvent.keyDown(input, { key: "Enter" });
+  expect(commit).not.toHaveBeenCalled();
+  approval.remove();
+  fireEvent.keyDown(input, { key: "Enter" });
+  expect(commit).toHaveBeenCalledWith("Paneer", 0);
+});

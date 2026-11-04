@@ -1,13 +1,17 @@
 import { getTableDisplayState } from "@gaurav-pos/shared";
 import type { HubBootstrap } from "./hub-client";
 
-/** Billed timers stop at the bill event; older hubs can omit timing entirely. */
+/** Running tables show time occupied; billed tables show time waiting for payment. */
 export function tableElapsed(table: HubBootstrap["tables"][number], now = Date.now()): string | null {
-  if (!table.occupied_at || getTableDisplayState(table) === "free") return null;
-  const start = Date.parse(table.occupied_at);
+  const state = getTableDisplayState(table);
+  if (state === "free") return null;
+  const timestamp = state === "bill_printed" ? table.timer_ended_at : table.occupied_at;
+  if (!timestamp) return null;
+  const start = Date.parse(timestamp);
   if (!Number.isFinite(start)) return null;
-  const end = getTableDisplayState(table) === "bill_printed" && table.timer_ended_at ? Date.parse(table.timer_ended_at) : now;
-  if (!Number.isFinite(end)) return null;
-  const minutes = Math.max(0, Math.floor((end - start) / 60_000));
-  return minutes < 60 ? `${minutes}m` : `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+  const minutes = Math.max(0, Math.floor((now - start) / 60_000));
+  // Tiles are narrow: past ten hours the minutes stop mattering, so "24h" instead of "24h 15m".
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  return hours >= 10 ? `${hours}h` : `${hours}h ${minutes % 60}m`;
 }

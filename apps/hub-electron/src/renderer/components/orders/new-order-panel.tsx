@@ -3,6 +3,7 @@ import { useMutation } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { hubApi, type Bootstrap, type MenuItem } from "../../hub-api.js";
+import { isKeyboardScopeActive } from "../../lib/keyboard-scope.js";
 import { messageOf, type NoticeSetter } from "../../lib/format.js";
 import { useKeyboardListNavigation } from "../../hooks/use-keyboard-list-navigation.js";
 import { useOperationKeys } from "../../hooks/use-operation-keys.js";
@@ -19,6 +20,7 @@ export function NewOrderPanel({
   setNotice,
   refreshTable,
   showSearch = true,
+  tableTotalPaise = 0,
 }: {
   tableId: string;
   bootstrap: Bootstrap;
@@ -26,7 +28,9 @@ export function NewOrderPanel({
   setNotice: NoticeSetter;
   refreshTable: () => Promise<void>;
   showSearch?: boolean;
+  tableTotalPaise?: number;
 }) {
+  const orderScope = useRef<HTMLDivElement>(null);
   const setOrderPanel = useHubStore((state) => state.setOrderPanel);
   const addDraftItem = useHubStore((state) => state.addDraftItem);
   const addOpenDraftItem = useHubStore((state) => state.addOpenDraftItem);
@@ -100,6 +104,7 @@ export function NewOrderPanel({
   useEffect(() => {
     if (!canSendDraft) return;
     const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || !isKeyboardScopeActive(orderScope.current)) return;
       if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
       if (event.key === "F3") {
         event.preventDefault();
@@ -123,8 +128,11 @@ export function NewOrderPanel({
     submitOrder.mutate(printMode);
   };
 
+  const draftQuantity = draft.reduce((total, item) => total + item.quantity, 0);
+  const guestCount = Math.max(1, Number(guests) || 1);
+
   return (
-    <div className="ticket-section new-order-section">
+    <div ref={orderScope} className="ticket-section new-order-section">
       {showSearch ? <section className="state-editor draft-menu-search">
         <div className="state-search">
           <label className="state-search-field">
@@ -171,90 +179,102 @@ export function NewOrderPanel({
           ) : null}
         </div>
       </section> : null}
-      <LineItems
-        emptyTitle="Choose items"
-        emptyText=""
-        rows={draft.map((item) => ({
-          id: item.lineKey,
-          title: item.variantLabel ? `${item.name} ${item.variantLabel}` : item.name,
-          meta: `${formatInr(item.pricePaise)} each`,
-          saleGroupKind: item.saleGroupKind ?? menuById.get(item.menuItemId)?.sale_group_kind ?? saleGroupById.get(item.saleGroupId ?? "")?.kind,
-          saleGroupName: item.saleGroupName ?? menuById.get(item.menuItemId)?.sale_group_name ?? saleGroupById.get(item.saleGroupId ?? "")?.name,
-          quantity: item.quantity,
-          amount: item.pricePaise * item.quantity,
-          onMinus: () => changeDraftQty(tableId, item.lineKey, -1),
-          onPlus: () => changeDraftQty(tableId, item.lineKey, 1),
-          note: item.note ?? "",
-          onNoteChange: (note) => setDraftItemNote(tableId, item.lineKey, note)
-        }))}
-      />
-      <details className="open-item-details">
-        <summary>Custom item</summary>
-      <form
-        className="open-item-form"
-        onSubmit={(event) => {
-          event.preventDefault();
-          const pricePaise = Math.round(Number(openPrice || 0) * 100);
-          if (!openName.trim() || pricePaise <= 0) {
-            setNotice({ tone: "bad", text: "Enter open item name and price." });
-            return;
-          }
-          addOpenDraftItem(tableId, {
-            name: openName.trim(),
-            pricePaise,
-            saleGroupId: openGroup,
-            saleGroupName: saleGroupById.get(openGroup)?.name,
-            saleGroupKind: saleGroupById.get(openGroup)?.kind,
-            productionUnitId: openUnit || null
-          });
-          setOpenName("");
-          setOpenPrice("");
-        }}
-      >
-        <label>
-          Open item
-          <input value={openName} onChange={(event) => setOpenName(event.target.value)} placeholder="Open food / bar item" />
-        </label>
-        <label>
-          Price
-          <input value={openPrice} onChange={(event) => setOpenPrice(event.target.value)} inputMode="decimal" />
-        </label>
-        <label>
-          Group
-          <select value={openGroup} onChange={(event) => setOpenGroup(event.target.value)}>
-            {bootstrap.saleGroups.filter((group) => group.active).map((group) => (
-              <option key={group.id} value={group.id}>{group.name}</option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Print to
-          <select value={openUnit} onChange={(event) => setOpenUnit(event.target.value)}>
-            <option value="">Group default / no KOT</option>
-            {bootstrap.productionUnits.filter((unit) => unit.active).map((unit) => (
-              <option key={unit.id} value={unit.id}>{unit.name}</option>
-            ))}
-          </select>
-        </label>
-        <button type="submit">Add open item</button>
-      </form>
-      </details>
+      <header className="ticket-head">
+        <strong>New items{draftQuantity ? <span className="ticket-head-count">{draftQuantity}</span> : null}</strong>
+        {tableTotalPaise > 0 ? <span>On table <b>{formatInr(tableTotalPaise)}</b></span> : null}
+      </header>
+      <div className="ticket-lines">
+        <LineItems
+          emptyTitle="Tap dishes to start"
+          emptyText={showSearch ? "Search above, or open the menu." : "Items appear here before they go to the kitchen."}
+          rows={draft.map((item) => ({
+            id: item.lineKey,
+            title: item.variantLabel ? `${item.name} ${item.variantLabel}` : item.name,
+            meta: `${formatInr(item.pricePaise)} each`,
+            saleGroupKind: item.saleGroupKind ?? menuById.get(item.menuItemId)?.sale_group_kind ?? saleGroupById.get(item.saleGroupId ?? "")?.kind,
+            saleGroupName: item.saleGroupName ?? menuById.get(item.menuItemId)?.sale_group_name ?? saleGroupById.get(item.saleGroupId ?? "")?.name,
+            quantity: item.quantity,
+            amount: item.pricePaise * item.quantity,
+            onMinus: () => changeDraftQty(tableId, item.lineKey, -1),
+            onPlus: () => changeDraftQty(tableId, item.lineKey, 1),
+            note: item.note ?? "",
+            onNoteChange: (note) => setDraftItemNote(tableId, item.lineKey, note)
+          }))}
+        />
+        <details className="open-item-details">
+          <summary>Custom item</summary>
+          <form
+            className="open-item-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const pricePaise = Math.round(Number(openPrice || 0) * 100);
+              if (!openName.trim() || pricePaise <= 0) {
+                setNotice({ tone: "bad", text: "Enter open item name and price." });
+                return;
+              }
+              addOpenDraftItem(tableId, {
+                name: openName.trim(),
+                pricePaise,
+                saleGroupId: openGroup,
+                saleGroupName: saleGroupById.get(openGroup)?.name,
+                saleGroupKind: saleGroupById.get(openGroup)?.kind,
+                productionUnitId: openUnit || null
+              });
+              setOpenName("");
+              setOpenPrice("");
+            }}
+          >
+            <label className="open-item-name">
+              Open item
+              <input value={openName} onChange={(event) => setOpenName(event.target.value)} placeholder="Open food / bar item" />
+            </label>
+            <label className="open-item-price">
+              Price
+              <input value={openPrice} onChange={(event) => setOpenPrice(event.target.value)} inputMode="decimal" placeholder="₹" />
+            </label>
+            <label>
+              Group
+              <select value={openGroup} onChange={(event) => setOpenGroup(event.target.value)}>
+                {bootstrap.saleGroups.filter((group) => group.active).map((group) => (
+                  <option key={group.id} value={group.id}>{group.name}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Print to
+              <select value={openUnit} onChange={(event) => setOpenUnit(event.target.value)}>
+                <option value="">Group default / no KOT</option>
+                {bootstrap.productionUnits.filter((unit) => unit.active).map((unit) => (
+                  <option key={unit.id} value={unit.id}>{unit.name}</option>
+                ))}
+              </select>
+            </label>
+            <button type="submit" className="secondary-button">Add open item</button>
+          </form>
+        </details>
+      </div>
       <div className="order-action-bar guest-row">
-        <label className="guest-count-field">
-          Guests
-          <input value={guests} onChange={(event) => setGuests(event.target.value)} inputMode="numeric" />
-        </label>
-        <div className="order-action-total" aria-live="polite">
-          <span>New items · {draft.length} {draft.length === 1 ? "line" : "lines"}</span>
-          <strong>{formatInr(draftTotal)}</strong>
+        <div className="order-action-summary">
+          <div className="guest-count-field">
+            <label htmlFor={`guests-${tableId}`}>Guests</label>
+            <div className="guest-stepper">
+              <button type="button" aria-label="Fewer guests" disabled={guestCount <= 1} onClick={() => setGuests(String(Math.max(1, guestCount - 1)))}>−</button>
+              <input id={`guests-${tableId}`} value={guests} onChange={(event) => setGuests(event.target.value.replace(/\D/g, "").slice(0, 3))} inputMode="numeric" />
+              <button type="button" aria-label="More guests" onClick={() => setGuests(String(guestCount + 1))}>+</button>
+            </div>
+          </div>
+          <div className="order-action-total" aria-live="polite">
+            <span>{draft.length ? `${draft.length} ${draft.length === 1 ? "line" : "lines"} to send` : "Nothing to send"}</span>
+            <strong>{formatInr(draftTotal)}</strong>
+          </div>
         </div>
         <div className="send-action-row">
-          <button type="button" aria-label="KOT F3" disabled={!canSendDraft} onClick={() => sendDraft("kot")}>
-            <span>KOT</span>
+          <button type="button" className="action-kot" aria-label="Send KOT F3" disabled={!canSendDraft} onClick={() => sendDraft("kot")}>
+            <span>{submitOrder.isPending ? "Sending…" : "Send KOT"}</span>
             <kbd>F3</kbd>
           </button>
-          <button type="button" aria-label="Print and KOT F6" disabled={!canSendDraft} onClick={() => sendDraft("kot_print")}>
-            <span>{submitOrder.isPending ? "Sending..." : "Print and KOT"}</span>
+          <button type="button" className="secondary-button" aria-label="Print + KOT F6" disabled={!canSendDraft} onClick={() => sendDraft("kot_print")}>
+            <span>Print + KOT</span>
             <kbd>F6</kbd>
           </button>
         </div>

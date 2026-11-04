@@ -26,21 +26,21 @@
   @apply grid gap-3;
 }
 .printer-choice-button {
-  @apply grid w-full min-w-0 items-center gap-3 rounded-lg border border-line bg-white p-3 text-left shadow-sm transition hover:border-accent hover:bg-accent-soft disabled:cursor-not-allowed disabled:opacity-55;
+  @apply grid w-full min-w-0 items-center gap-3 rounded-lg border border-line bg-white p-3 text-left shadow-sm transition hover:border-ink hover:bg-wash disabled:cursor-not-allowed disabled:opacity-55;
   grid-template-columns: auto minmax(0, 1fr) auto;
 }
 .printer-choice-button.active {
-  @apply border-accent bg-accent-soft shadow-md;
-  box-shadow: inset 3px 0 var(--accent);
+  @apply border-ink bg-wash shadow-md;
+  box-shadow: inset 3px 0 var(--ink);
 }
 .printer-choice-icon {
   @apply grid h-11 w-11 shrink-0 place-items-center rounded-md border border-line bg-panel text-muted;
 }
 .printer-choice-button.active .printer-choice-icon {
-  @apply border-accent bg-white text-accent-dark;
+  @apply border-line-strong bg-white text-ink;
 }
 .printer-choice-button.active b {
-  @apply border-accent bg-white text-accent-dark;
+  @apply border-line-strong bg-white text-ink;
 }
 .printer-choice-copy {
   @apply grid min-w-0 gap-1;
@@ -57,15 +57,11 @@
 .printer-choice-button b {
   @apply inline-flex min-h-8 shrink-0 items-center rounded-full border border-line bg-panel px-3 text-xs font-semibold normal-case text-ink;
 }
-.printer-mode-tabs {
-  @apply flex flex-wrap gap-1 rounded-lg border border-line bg-wash p-1;
-}
-.printer-mode-tabs button {
-  @apply min-h-10 flex-1 rounded-md bg-transparent px-3 text-sm font-medium text-muted shadow-none hover:bg-white hover:text-ink;
-}
-.printer-mode-tabs button.active {
-  @apply bg-accent-soft text-accent-dark;
-}
+/* Same segmented control as table order / report tabs. */
+.printer-mode-tabs { display: flex; flex-wrap: wrap; gap: 2px; padding: 3px; border-radius: 10px; background: var(--sunken); }
+.printer-mode-tabs button { flex: 1; min-height: 28px; padding: 0 12px; border-radius: 7px; background: transparent; color: var(--ink-2); font-size: 12px; font-weight: 600; box-shadow: none; }
+.printer-mode-tabs button:hover:not(:disabled) { background: color-mix(in srgb, var(--panel) 60%, transparent); color: var(--ink); }
+.printer-mode-tabs button.active { background: var(--panel); color: var(--ink); box-shadow: var(--shadow); }
 .printer-fields-grid {
   @apply grid items-end gap-3;
   grid-template-columns: minmax(0, 1fr);

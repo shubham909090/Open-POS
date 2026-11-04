@@ -1,92 +1,37 @@
-.pairing-card {
-    display: grid; align-items: start; gap: 24px;
-    grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
-  }
-
-  .pairing-copy {
-    @apply max-w-3xl text-sm font-medium leading-6 text-muted;
-  }
-
-  .pairing-form {
-    @apply grid items-end gap-3;
-    grid-template-columns: minmax(220px, 360px) minmax(160px, 220px) auto;
-  }
-
-  .role-card-grid {
-    @apply grid gap-2;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
-  .role-card {
-    display: grid; align-content: start; justify-content: stretch; justify-items: start; gap: 4px; min-width: 0; padding: 12px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); text-align: left;
-  }
-
-  .role-card strong {
-    @apply text-sm font-semibold leading-5 text-ink;
-  }
-
-  .role-card span,
-  .role-card small {
-    @apply text-sm font-medium leading-5 text-muted;
-  }
-
-  .role-card small {
-    @apply text-xs normal-case;
-  }
-
-  .role-card.active {
-    border-color: var(--accent); background: var(--accent-soft);
-  }
-
-  .role-card.active strong,
-  .role-card.active span,
-  .role-card.active small {
-    color: var(--accent-dark);
-  }
-
-  .pairing-card img {
-    @apply h-56 w-56 rounded-md border border-line bg-white;
-  }
-
-  .pairing-qr-panel {
-    display: grid; justify-items: center; min-width: 0; gap: 12px; padding: 16px; text-align: center;
-  }
-
-  .pairing-code {
-    @apply grid min-w-0 max-w-full gap-1;
-  }
-
-  .pairing-code strong {
-    @apply text-xl font-semibold leading-6 text-ink;
-    overflow-wrap: anywhere;
-  }
-
-  .pairing-code span {
-    @apply text-sm font-semibold leading-5 text-muted;
-    overflow-wrap: anywhere;
-  }
-
-  .pairing-payload-panel {
-    display: grid; min-width: 0; gap: 8px;
-  }
-
-  .pairing-payload-panel > div {
-    @apply flex min-w-0 flex-wrap items-baseline justify-between gap-2;
-  }
-
-  .pairing-payload-panel strong {
-    @apply text-sm font-semibold text-ink;
-  }
-
-  .pairing-payload-panel span {
-    @apply text-sm font-semibold text-muted;
-  }
-
-  .pairing-payload-panel textarea {
-    @apply min-h-32 w-full resize-y whitespace-pre-wrap break-all font-mono text-xs leading-5;
-  }
-
-.pairing-create-form { grid-template-columns: minmax(0, 1fr) auto; }
-.pairing-revoke-button { color: var(--danger); }
-.pairing-payload-panel summary { cursor: pointer; font-size: 13px; }
-@media(max-width: 760px) { .role-card-grid { grid-template-columns: 1fr; } .pairing-create-form { grid-template-columns: 1fr; } }
+/* Staff devices: one compact "pair" panel, then a dense device list. */
+.pairing-create { display: grid; gap: 12px; padding: 16px; border: 1px solid var(--line); border-radius: var(--surface-radius); background: var(--wash); }
+.pairing-create h3, .record-list-header h3 { margin: 0; font-size: 13px; font-weight: 650; }
+.role-card-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.role-card { display: grid; align-content: start; justify-content: stretch; justify-items: start; gap: 2px; min-width: 0; min-height: 0; padding: 10px 12px; border: 1px solid var(--line-strong); border-radius: var(--control-radius); background: var(--panel); color: var(--ink); text-align: left; }
+.role-card:hover:not(:disabled) { border-color: var(--ink-2); }
+.role-card strong { font-size: 13px; font-weight: 650; line-height: 18px; }
+.role-card span { color: var(--ink-2); font-size: 12px; line-height: 16px; }
+.role-card small { color: var(--muted); font-size: 11px; line-height: 15px; }
+.role-card.active { border-color: var(--ink); background: var(--chrome); box-shadow: var(--shadow-md); }
+.role-card.active strong { color: var(--chrome-text); }
+.role-card.active span, .role-card.active small { color: var(--chrome-muted); }
+.pairing-form { display: grid; align-items: end; gap: 8px; }
+.pairing-create-form { grid-template-columns: minmax(200px, 320px) auto; justify-content: start; }
+.pairing-create-form label { display: grid; gap: 4px; font-size: 12px; font-weight: 500; }
+.pairing-card { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; gap: 24px; padding: 16px; border: 1px solid var(--line); border-radius: var(--surface-radius); background: var(--panel); box-shadow: var(--shadow-md); }
+.pairing-card img { width: 200px; height: 200px; border: 1px solid var(--line); border-radius: var(--control-radius); background: #fff; }
+.pairing-qr-panel { display: grid; justify-items: center; gap: 10px; min-width: 0; text-align: center; }
+.pairing-code { display: grid; gap: 2px; max-width: 100%; }
+.pairing-code strong { font-size: 18px; font-weight: 700; letter-spacing: .04em; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.pairing-code span { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.pairing-steps { display: grid; gap: 6px; margin: 0 0 12px; padding-left: 18px; color: var(--ink-2); font-size: 13px; line-height: 19px; }
+.pairing-steps strong { color: var(--ink); }
+.pairing-side { display: grid; align-content: start; gap: 8px; min-width: 0; }
+.pairing-payload-panel { display: grid; gap: 8px; min-width: 0; }
+.pairing-payload-panel summary { cursor: pointer; font-size: 13px; font-weight: 500; }
+.pairing-payload-panel > span { color: var(--muted); font-size: 12px; }
+.pairing-payload-panel textarea { width: 100%; min-height: 120px; resize: vertical; font-family: ui-monospace, Consolas, monospace; font-size: 11px; line-height: 16px; word-break: break-all; }
+.record-list-header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; padding-top: 8px; }
+.record-list-header h3 span { margin-left: 4px; color: var(--muted); font-weight: 500; }
+.record-list-header input { width: 260px; }
+.device-row { grid-template-columns: minmax(0, 1fr) auto auto; }
+.device-seen { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.role-pill { display: inline-flex; align-items: center; height: 18px; padding: 0 7px; border-radius: 999px; background: var(--sunken); color: var(--ink-2); font-size: 11px; font-weight: 600; text-transform: capitalize; }
+.role-pill.role-captain { background: var(--wash); color: var(--ink-2); }
+.role-pill.role-kitchen { background: var(--wash); color: var(--ink-2); }
+@media (max-width: 760px) { .role-card-grid, .pairing-create-form, .pairing-card { grid-template-columns: 1fr; } }

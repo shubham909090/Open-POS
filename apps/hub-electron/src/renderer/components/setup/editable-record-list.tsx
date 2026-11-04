@@ -1,20 +1,32 @@
-import { type ReactNode, useState } from "react";
-import { ArrowDown, ArrowUp, Pencil, Trash2, X } from "lucide-react";
+import { Fragment, type ReactNode, useState } from "react";
+import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Pencil, Trash2, X } from "lucide-react";
 import { type NoticeSetter, messageOf } from "../../lib/format.js";
 import { EmptyState } from "../ui/empty-state.js";
 import { ConfirmationDialog } from "../ui/confirmation-dialog.js";
 
+export type RecordTone = "running" | "billed" | "muted";
+
+/**
+ * Saved setup records. "rows" is a dense one-line list for long catalogs;
+ * "tiles" packs short-named records (tables) into a grid so a 50-table floor
+ * fits on one screen. Both expose the same edit / enable / delete actions.
+ */
 export function EditableRecordList({
   setNotice,
   rows,
   hideSearch = false,
   emptyMessage,
+  layout = "rows",
 }: {
   setNotice: NoticeSetter;
   rows: Array<{
     id: string;
     title: string;
     meta: string;
+    /** Right-aligned value column, e.g. a price. */
+    aside?: string;
+    /** Live state shown as a coloured marker (tiles). */
+    tone?: RecordTone;
     active: boolean;
     onToggle: () => Promise<unknown>;
     onDelete: () => Promise<unknown>;
@@ -28,7 +40,9 @@ export function EditableRecordList({
   }>;
   hideSearch?: boolean;
   emptyMessage?: string;
+  layout?: "rows" | "tiles";
 }) {
+  const tiles = layout === "tiles";
   const [busyId, setBusyId] = useState("");
   const [editingId, setEditingId] = useState("");
   const [search, setSearch] = useState("");
@@ -69,82 +83,138 @@ export function EditableRecordList({
           />
         </div>
       ) : null}
-      {visibleRows.map((row) => (
-        <article
-          key={row.id}
-          className={`record-row${row.onMoveUp || row.onMoveDown ? " has-move-controls" : ""}${editingId === row.id ? " editing" : ""}`}
-        >
-          <div className="record-row-main">
-            <div className="record-row-title">
-              <strong>{row.title}</strong>
-              {!row.active ? <span className="record-status disabled">Disabled</span> : null}
-            </div>
-            <span>{row.meta}</span>
-          </div>
-          {row.onMoveUp || row.onMoveDown ? (
-            <div
-              className="record-move-controls"
-              aria-label={`Move ${row.title}`}
-            >
-              <button
-                type="button"
-                className="record-action icon-only"
-                disabled={
-                  busyId === row.id || row.moveUpDisabled || !row.onMoveUp
-                }
-                onClick={() => row.onMoveUp && void run(row.id, row.onMoveUp)}
-                aria-label={`Move ${row.title} up`}
-              >
-                <ArrowUp size={15} />
-              </button>
-              <button
-                type="button"
-                className="record-action icon-only"
-                disabled={
-                  busyId === row.id || row.moveDownDisabled || !row.onMoveDown
-                }
-                onClick={() =>
-                  row.onMoveDown && void run(row.id, row.onMoveDown)
-                }
-                aria-label={`Move ${row.title} down`}
-              >
-                <ArrowDown size={15} />
-              </button>
-            </div>
-          ) : null}
-          <div className="row-actions">
+      <div className={tiles ? "record-tiles" : "record-rows"}>
+      {visibleRows.map((row) => {
+        const editing = editingId === row.id;
+        const busy = busyId === row.id;
+        const hasMove = Boolean(row.onMoveUp || row.onMoveDown);
+        const moveControls = hasMove ? (
+          <div className="record-move-controls" aria-label={`Move ${row.title}`}>
             <button
               type="button"
-              className="record-action"
-              disabled={busyId === row.id}
-              onClick={() =>
-                setEditingId((current) => (current === row.id ? "" : row.id))
-              }
+              className="record-action icon-only"
+              disabled={busy || row.moveUpDisabled || !row.onMoveUp}
+              onClick={() => row.onMoveUp && void run(row.id, row.onMoveUp)}
+              aria-label={`Move ${row.title} ${tiles ? "earlier" : "up"}`}
+              title={tiles ? "Move earlier" : "Move up"}
             >
-              {editingId === row.id ? <X size={15} /> : <Pencil size={15} />}
-              {editingId === row.id ? "Close" : "Edit"}
+              {tiles ? <ArrowLeft size={14} /> : <ArrowUp size={15} />}
             </button>
             <button
               type="button"
-              className="record-action"
-              disabled={busyId === row.id}
+              className="record-action icon-only"
+              disabled={busy || row.moveDownDisabled || !row.onMoveDown}
+              onClick={() => row.onMoveDown && void run(row.id, row.onMoveDown)}
+              aria-label={`Move ${row.title} ${tiles ? "later" : "down"}`}
+              title={tiles ? "Move later" : "Move down"}
+            >
+              {tiles ? <ArrowRight size={14} /> : <ArrowDown size={15} />}
+            </button>
+          </div>
+        ) : null;
+        const actions = (
+          <div className="row-actions">
+            <button
+              type="button"
+              className={`record-action edit${editing ? " open" : ""}`}
+              disabled={busy}
+              aria-expanded={editing}
+              aria-label={tiles ? `${editing ? "Close" : "Edit"} ${row.title}` : undefined}
+              onClick={() => setEditingId((current) => (current === row.id ? "" : row.id))}
+            >
+              {editing ? <X size={14} /> : <Pencil size={14} />}
+              {editing ? "Close" : "Edit"}
+            </button>
+            <button
+              type="button"
+              className="record-action record-secondary-action"
+              disabled={busy}
               onClick={() => void run(row.id, row.onToggle)}
             >
               {row.active ? "Disable" : "Enable"}
             </button>
             <button
               type="button"
-              className="record-action danger icon-only"
-              disabled={busyId === row.id}
+              className="record-action danger icon-only record-secondary-action"
+              disabled={busy}
               onClick={() => row.deleteApproval ? void run(row.id, row.onDelete) : setDeleting(row)}
               aria-label={`Delete ${row.title}`}
+              title="Delete"
             >
-              <Trash2 size={16} />
+              <Trash2 size={15} />
             </button>
           </div>
-          {editingId === row.id ? row.editForm(() => setEditingId("")) : null}
-        </article>
-      ))}
+        );
+        const className = [
+          tiles ? "record-tile" : "record-row",
+          hasMove ? "has-move-controls" : "",
+          editing ? "editing" : "",
+          row.active ? "" : "inactive",
+          row.tone ? `tone-${row.tone}` : "",
+        ].filter(Boolean).join(" ");
+        if (tiles) {
+          return (
+            <Fragment key={row.id}>
+              <article className={className}>
+                <button
+                  type="button"
+                  className="record-tile-open"
+                  aria-expanded={editing}
+                  aria-label={`${editing ? "Close" : "Edit"} ${row.title}`}
+                  disabled={busy}
+                  onClick={() => setEditingId((current) => (current === row.id ? "" : row.id))}
+                >
+                  <strong title={row.title}>{row.title}</strong>
+                  <span className="record-tile-meta">
+                    {!row.active ? <span className="record-status disabled">Disabled</span> : row.meta}
+                  </span>
+                </button>
+                {moveControls}
+              </article>
+              {editing ? (
+                <div className="record-tile-editor" role="group" aria-label={`Edit ${row.title}`}>
+                  <header>
+                    <strong>{row.title}</strong>
+                    <span>{row.active ? row.meta : "Disabled"}</span>
+                    <div className="row-actions">
+                      <button type="button" className="record-action" disabled={busy} onClick={() => void run(row.id, row.onToggle)}>
+                        {row.active ? "Disable" : "Enable"}
+                      </button>
+                      <button
+                        type="button"
+                        className="record-action danger"
+                        disabled={busy}
+                        onClick={() => row.deleteApproval ? void run(row.id, row.onDelete) : setDeleting(row)}
+                        aria-label={`Delete ${row.title}`}
+                      >
+                        <Trash2 size={14} /> Delete
+                      </button>
+                      <button type="button" className="record-action icon-only" onClick={() => setEditingId("")} aria-label={`Close ${row.title}`}>
+                        <X size={15} />
+                      </button>
+                    </div>
+                  </header>
+                  {row.editForm(() => setEditingId(""))}
+                </div>
+              ) : null}
+            </Fragment>
+          );
+        }
+        return (
+          <article key={row.id} className={className}>
+            <div className="record-row-main">
+              <strong>{row.title}</strong>
+              {!row.active ? <span className="record-status disabled">Disabled</span> : null}
+              {row.meta ? <span>{row.meta}</span> : null}
+            </div>
+            {row.aside !== undefined ? <span className="record-aside">{row.aside}</span> : null}
+            {moveControls}
+            {actions}
+            {editing ? row.editForm(() => setEditingId("")) : null}
+          </article>
+        );
+      })}
+      </div>
       {matchedRows.length > visibleRows.length ? <div className="record-pagination"><span>Showing {visibleRows.length} of {matchedRows.length} records</span><button type="button" className="secondary-button compact" onClick={() => setLimit((current) => current + 60)}>Show {Math.min(60, matchedRows.length - visibleRows.length)} more</button></div> : null}
       {!rows.length ? (
         <EmptyState

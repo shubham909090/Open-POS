@@ -20,9 +20,14 @@ export function MenuResultSection({
   activeItemId,
   onItemPointerMove,
   setItemElement,
-  emptyText
+  emptyText,
+  mixed = false,
+  draftCounts
 }: {
   title: string;
+  mixed?: boolean;
+  /** Quantity of each menu item already in the unsent draft, keyed by menu item id. */
+  draftCounts?: Map<string, number>;
   items: MenuItem[];
   selectedTableId: string;
   onAdd: (tableId: string, item: MenuItem, variantId?: string) => void;
@@ -32,8 +37,8 @@ export function MenuResultSection({
   emptyText?: string;
 }) {
   return (
-    <div className="menu-result-section">
-      <h3>{title}</h3>
+    <div className={`menu-result-section${mixed ? " mixed" : ""}`}>
+      <h3 className="menu-result-title">{title}</h3>
       {items.length ? (
         <div className="menu-grid">
           {items.map((item, index) => (
@@ -42,6 +47,7 @@ export function MenuResultSection({
               rowRef={(element) => setItemElement?.(index, element)}
               active={activeItemId === item.id}
               item={item}
+              draftCount={draftCounts?.get(item.id) ?? 0}
               onActive={(event) => onItemPointerMove?.(index, event)}
               onAdd={(variantId) => onAdd(selectedTableId, item, variantId)}
             />
@@ -56,26 +62,41 @@ export function MenuResultSection({
 
 export function MenuCard({
   item,
+  draftCount = 0,
   active = false,
   onActive,
   rowRef,
   onAdd
 }: {
   item: MenuItem;
+  draftCount?: number;
   active?: boolean;
   onActive?: (event: PointerEvent<HTMLElement>) => void;
   rowRef?: (element: HTMLElement | null) => void;
   onAdd: (variantId?: string) => void;
 }) {
+  const countBadge = draftCount > 0 ? <span className="menu-tile-count" aria-label={`${draftCount} in new order`}>{draftCount}</span> : null;
   const variants = getMenuActionVariants(item);
+  const single = variants.length === 1 && variants[0]?.kind === "default" ? variants[0] : null;
+  const className = `menu-card menu-tile category-${item.sale_group_kind ?? "other"}${single ? " single" : " multi"}${draftCount > 0 ? " in-draft" : ""}${active ? " keyboard-active" : ""}`;
+  // A plain dish is one big target: the whole tile adds it. Variant dishes keep one chip per size.
+  if (single) {
+    const price = formatCompactInr(single.price_paise);
+    return (
+      <article ref={rowRef} className={className} onPointerMove={onActive}>
+        <button type="button" className="menu-tile-button" onClick={() => onAdd(single.id || undefined)} aria-label={`${item.name} + ${price}`}>
+          <strong className="menu-tile-name" title={item.name}>{item.name}</strong>
+          <span className="menu-tile-price">{price}</span>
+        </button>
+        {countBadge}
+      </article>
+    );
+  }
   return (
-    <article ref={rowRef} className={`menu-card compact-menu-card category-${item.sale_group_kind ?? "other"}${active ? " keyboard-active" : ""}`} onPointerMove={onActive}>
-      <div className="menu-card-main">
-        <strong>{item.name}</strong>
-      </div>
-      <footer>
-        <MenuItemActionGroup itemName={item.name} variants={variants} onAdd={onAdd} />
-      </footer>
+    <article ref={rowRef} className={className} onPointerMove={onActive}>
+      <strong className="menu-tile-name" title={item.name}>{item.name}</strong>
+      <MenuItemActionGroup itemName={item.name} variants={variants} onAdd={onAdd} className="menu-tile-variants" />
+      {countBadge}
     </article>
   );
 }

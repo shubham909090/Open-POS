@@ -152,10 +152,16 @@ export function AdvancedView({
                   </span>
                 </div>
               </div>
+              <div className="pin-cards">
               <form
                 className="manager-pin-form"
                 onSubmit={(event) => event.preventDefault()}
+                aria-labelledby="manager-pin-title"
               >
+                <header className="pin-card-header">
+                  <h3 id="manager-pin-title">Manager PIN</h3>
+                  <p>Daily approvals: reprints, cancellations, NC bills and setup unlock. Saving locks setup.</p>
+                </header>
                 <input
                   className="sr-only"
                   name="username"
@@ -198,6 +204,7 @@ export function AdvancedView({
               </form>
               <form
                 className="manager-pin-form master-pin-form"
+                aria-labelledby="master-pin-title"
                 onSubmit={(event) => {
                   event.preventDefault();
                   if (
@@ -218,6 +225,10 @@ export function AdvancedView({
                   readOnly
                   aria-hidden="true"
                 />
+                <header className="pin-card-header">
+                  <h3 id="master-pin-title">Master PIN</h3>
+                  <p>Owner only: payment QR, branding, bill audit, backups and reset.</p>
+                </header>
                 {masterPinConfigured ? (
                   <label className="current-master-pin-field">
                     Current Master PIN
@@ -273,8 +284,8 @@ export function AdvancedView({
                       ? "Change Master PIN"
                       : "Create Master PIN"}
                 </button>
-
               </form>
+              </div>
             </section>
           ) : null}
 
@@ -283,7 +294,13 @@ export function AdvancedView({
               <div className="panel-title">
                 <h2>Sale & tax categories</h2>
               </div>
-              <div className="record-list">
+              <div className="record-rows sale-group-list">
+                <div className="sale-group-head" aria-hidden="true">
+                  <span>Category</span>
+                  <span>Ticket</span>
+                  <span>Taxes (name:percent, …)</span>
+                  <span />
+                </div>
                 {bootstrap.saleGroups.map((group) => (
                   <SaleGroupRow
                     key={group.id}
@@ -386,18 +403,21 @@ export function AdvancedView({
                   check the connection.
                 </p>
               ) : null}
-              <div className="record-list print-job-list">
-                {bootstrap.printJobs.map((job) => (
-                  <article key={job.id} className="record-row print-job-row">
-                    <div className="print-job-description">
-                      <strong>{job.target_type}{job.bill_number != null ? ` #${job.bill_number}` : job.ticket_sequence != null ? ` #${job.ticket_sequence}` : ""}{job.table_name ? ` · ${job.table_name}` : ""} {job.printer_name ? <small>· {job.printer_name}</small> : null}</strong>
-                      <span>{formatPosDateTime(job.created_at)} · {job.attempts} attempt{job.attempts === 1 ? "" : "s"}</span>
-                      {job.last_error ? <span className="print-job-error">{job.last_error}</span> : null}
-                    </div>
-                    <span className={`record-status ${job.status === "failed" ? "warning" : job.status === "printed" ? "active" : "disabled"}`}>{job.status}</span>
-                  </article>
-                ))}
-              </div>
+              {bootstrap.printJobs.length ? (
+                <div className="record-rows print-job-list">
+                  {bootstrap.printJobs.map((job) => (
+                    <article key={job.id} className={`record-row print-job-row status-${job.status}`}>
+                      <div className="print-job-description">
+                        <strong>{job.target_type}{job.bill_number != null ? ` #${job.bill_number}` : job.ticket_sequence != null ? ` #${job.ticket_sequence}` : ""}{job.table_name ? ` · ${job.table_name}` : ""} {job.printer_name ? <small>· {job.printer_name}</small> : null}</strong>
+                        {job.last_error ? <span className="print-job-error">{job.last_error}</span> : null}
+                      </div>
+                      <span className="print-job-time">{formatPosDateTime(job.created_at)}</span>
+                      <span className="print-job-attempts">{job.attempts} attempt{job.attempts === 1 ? "" : "s"}</span>
+                      <span className={`record-status ${job.status === "failed" ? "danger" : job.status === "printed" ? "active" : "warning"}`}>{job.status}</span>
+                    </article>
+                  ))}
+                </div>
+              ) : null}
             </section>
           ) : null}
 
@@ -411,10 +431,13 @@ export function AdvancedView({
                 <h2>Danger zone</h2>
                 <span>Reset this hub PC</span>
               </div>
-              <p className="warning-text">
-                Full reset removes the local restaurant database from this PC.
-                Use this only when you want to start setup from zero.
-              </p>
+              <div className="reset-warning" role="note">
+                <strong>Erases this hub&apos;s restaurant database</strong>
+                <p>
+                  Menu, tables, orders, bills and reports on this PC are removed and setup
+                  starts from zero. Take a backup in Reports → Backups first.
+                </p>
+              </div>
               <div className="reset-options">
                 <label>
                   Type RESET HUB
@@ -434,7 +457,7 @@ export function AdvancedView({
                 </label>
                 <button
                   type="button"
-                  className="danger-button"
+                  className="secondary-button danger-outline"
                   disabled={resetPhrase !== "RESET HUB" || fullReset.isPending}
                   onClick={async () => {
                     const approval = await requestManagerApproval({

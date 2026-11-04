@@ -90,119 +90,88 @@ export function SentOrderPanel({
     onCommit: addKeyboardStateItem
   });
 
+  const sentQuantity = orderStateItems.reduce((total, item) => total + item.quantity, 0);
+
   return (
-    <div className="ticket-section">
-      {data?.order ? (
-        <section className="state-editor">
-          {hasOrderStateChanges ? <div className="state-editor-head">
-            <div className="state-editor-total">
-              <small>Edited total</small>
-              <strong>{formatInr(editableTotal)}</strong>
-            </div>
-            {hasOrderStateChanges ? (
-              <div className="state-editor-actions">
-                <button
-                  type="button"
-                  className="secondary-button"
-                  disabled={saveOrderStatePending || !canSaveOrderState}
-                  onClick={() => requestOrderStateSave("save")}
-                >
-                  {saveOrderStatePending ? "Saving..." : "Save"}
-                </button>
-                <button
-                  type="button"
-                  disabled={saveOrderStatePending || !canSaveOrderState}
-                  onClick={() => requestOrderStateSave("save_print")}
-                >
-                  {saveOrderStatePending ? "Sending..." : "Save and print"}
-                </button>
-              </div>
-            ) : (
-              <span className="state-editor-status">Saved</span>
-            )}
-          </div> : null}
-          {orderStateGuardMessage ? <p className="state-editor-warning">{orderStateGuardMessage}</p> : null}
-          {managerApprovalRequired ? <p className="state-editor-warning">Manager PIN will be required to reduce or remove sent items.</p> : null}
-          <div className="state-search">
-            <label className="state-search-field">
-              <span>Add item</span>
-              <input
-                value={orderStateSearch}
-                onChange={(event) => setOrderStateSearch(event.target.value)}
-                onKeyDown={orderStateKeyboard.onKeyDown}
-                placeholder="Search menu item"
-              />
-            </label>
-            {orderStateSearch.trim() ? (
-              <div className="state-search-results">
-                {orderStateMatches.map((item, index) => {
-                  const variants = getMenuActionVariants(item);
-                  return (
-                    <div
-                      key={item.id}
-                      ref={(element) => orderStateKeyboard.setItemElement(index, element)}
-                      className={`state-search-row menu-card compact-menu-card category-${item.sale_group_kind ?? "other"}${orderStateKeyboard.activeIndex === index ? " keyboard-active" : ""}`}
-                      onPointerMove={(event) => orderStateKeyboard.onPointerMove(index, event)}
-                    >
-                      <CategoryBadge kind={item.sale_group_kind} className="state-search-icon" />
-                      <div className="menu-card-main">
-                        <strong>{item.name}</strong>
-                        <span>{item.sale_group_name ?? item.production_unit_name ?? "Menu item"}</span>
+    <div className="ticket-section sent-section">
+      <div className="sent-card">
+        {data?.order ? (
+          <section className="state-editor">
+            <div className="state-search">
+              <label className="state-search-field">
+                <span>Add item</span>
+                <input
+                  value={orderStateSearch}
+                  onChange={(event) => setOrderStateSearch(event.target.value)}
+                  onKeyDown={orderStateKeyboard.onKeyDown}
+                  placeholder="Search menu item"
+                />
+              </label>
+              {orderStateSearch.trim() ? (
+                <div className="state-search-results">
+                  {orderStateMatches.map((item, index) => {
+                    const variants = getMenuActionVariants(item);
+                    return (
+                      <div
+                        key={item.id}
+                        ref={(element) => orderStateKeyboard.setItemElement(index, element)}
+                        className={`state-search-row menu-card compact-menu-card category-${item.sale_group_kind ?? "other"}${orderStateKeyboard.activeIndex === index ? " keyboard-active" : ""}`}
+                        onPointerMove={(event) => orderStateKeyboard.onPointerMove(index, event)}
+                      >
+                        <CategoryBadge kind={item.sale_group_kind} className="state-search-icon" />
+                        <div className="menu-card-main">
+                          <strong>{item.name}</strong>
+                          <span>{item.sale_group_name ?? item.production_unit_name ?? "Menu item"}</span>
+                        </div>
+                        <footer>
+                          <MenuItemActionGroup
+                            itemName={item.name}
+                            variants={variants}
+                            onAdd={(variantId) => addStateMenuItem(item, variantId)}
+                            className="state-search-actions"
+                          />
+                        </footer>
                       </div>
-                      <footer>
-                        <MenuItemActionGroup
-                          itemName={item.name}
-                          variants={variants}
-                          onAdd={(variantId) => addStateMenuItem(item, variantId)}
-                          className="state-search-actions"
-                        />
-                      </footer>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : null}
-          </div>
-        </section>
-      ) : null}
-      <LineItems
-        emptyTitle="No sent items"
-        emptyText=""
-        rows={orderStateItems.map((item) => ({
-          id: item.key,
-          title: item.name,
-          meta: `${formatInr(item.pricePaise)} each`,
-          punch: formatItemPunch(sentById.get(item.orderItemId ?? "")),
-          saleGroupKind: item.saleGroupKind,
-          saleGroupName: item.saleGroupName,
-          quantity: item.quantity,
-          amount: item.pricePaise * item.quantity,
-          onMinus: () => changeStateQty(item.key, -1),
-          onPlus: () => changeStateQty(item.key, 1),
-          note: item.note ?? "",
-          onNoteChange: (note) => changeStateNote(item.key, note),
-        }))}
-      />
-      {data?.order ? (
-        <section className="shift-panel transfer-panel">
-          <button
-            type="button"
-            className="transfer-panel-toggle"
-            onClick={() => setTransferOpen((current) => !current)}
-            aria-expanded={transferOpen}
-          >
-            <div>
-              <strong>Transfer table or items</strong>
+                    );
+                  })}
+                </div>
+              ) : null}
             </div>
-            <span>{transferOpen ? "Hide" : "Open"}</span>
-          </button>
-          {transferOpen ? (
+          </section>
+        ) : null}
+        <header className="ticket-head">
+          <strong>On the table{sentQuantity ? <span className="ticket-head-count">{sentQuantity}</span> : null}</strong>
+          <span><b>{formatInr(editableTotal)}</b></span>
+        </header>
+        <LineItems
+          emptyTitle="No sent items"
+          emptyText=""
+          rows={orderStateItems.map((item) => ({
+            id: item.key,
+            title: item.name,
+            meta: `${formatInr(item.pricePaise)} each`,
+            punch: formatItemPunch(sentById.get(item.orderItemId ?? "")),
+            saleGroupKind: item.saleGroupKind,
+            saleGroupName: item.saleGroupName,
+            quantity: item.quantity,
+            amount: item.pricePaise * item.quantity,
+            onMinus: () => changeStateQty(item.key, -1),
+            onPlus: () => changeStateQty(item.key, 1),
+            note: item.note ?? "",
+            onNoteChange: (note) => changeStateNote(item.key, note),
+            changed: isChangedLine(item, sentById.get(item.orderItemId ?? "")),
+          }))}
+        />
+        {data?.order && transferOpen ? (
+          <section className="shift-panel transfer-panel" aria-label="Transfer table or items">
             <div className="transfer-panel-body">
               <div className="transfer-panel-head">
+                <strong>Transfer</strong>
                 <div className="transfer-mode-toggle" role="group" aria-label="Transfer mode">
                   <button
                     type="button"
                     className={transferMode === "items" ? "active" : ""}
+                    aria-pressed={transferMode === "items"}
                     onClick={() => setTransferMode("items")}
                   >
                     Items
@@ -210,6 +179,7 @@ export function SentOrderPanel({
                   <button
                     type="button"
                     className={transferMode === "table" ? "active" : ""}
+                    aria-pressed={transferMode === "table"}
                     onClick={() => setTransferMode("table")}
                   >
                     Full table
@@ -251,7 +221,7 @@ export function SentOrderPanel({
                         </div>
                         <div className="transfer-qty-control" aria-label={`Transfer quantity for ${item.name_snapshot}`}>
                           <button type="button" onClick={() => setTransferQuantity(item.id, quantity - 1, item.quantity)} disabled={quantity <= 0}>
-                            -
+                            −
                           </button>
                           <input
                             value={quantity ? String(quantity) : ""}
@@ -283,21 +253,66 @@ export function SentOrderPanel({
                 {shiftTablePending || shiftItemsPending ? "Transferring..." : transferMode === "table" ? "Transfer full table" : "Transfer selected quantities"}
               </button>
             </div>
-          ) : null}
-        </section>
-      ) : null}
+          </section>
+        ) : null}
+      </div>
       {data?.order ? (
-        <button
-          type="button"
-          className="danger-link"
-          disabled={cancelOrderPending}
-          onClick={onCancelOrder}
-        >
-          {cancelOrderPending ? "Cancelling..." : "Cancel order"}
-        </button>
+        <div className={`sent-action-bar${hasOrderStateChanges ? " dirty" : ""}`}>
+          <div className="sent-action-tools">
+            <button
+              type="button"
+              className="transfer-panel-toggle"
+              onClick={() => setTransferOpen((current) => !current)}
+              aria-expanded={transferOpen}
+            >
+              {transferOpen ? "Close transfer" : "Transfer table or items"}
+            </button>
+            <button
+              type="button"
+              className="danger-link"
+              disabled={cancelOrderPending}
+              onClick={onCancelOrder}
+            >
+              {cancelOrderPending ? "Cancelling..." : "Cancel order"}
+            </button>
+          </div>
+          {orderStateGuardMessage ? <p className="state-editor-warning">{orderStateGuardMessage}</p> : null}
+          {!orderStateGuardMessage && managerApprovalRequired ? <p className="state-editor-warning">Manager PIN needed to reduce sent items.</p> : null}
+          {hasOrderStateChanges ? (
+            <div className="state-editor-head">
+              <div className="state-editor-total">
+                <small>Edited total</small>
+                <strong>{formatInr(editableTotal)}</strong>
+              </div>
+              <div className="state-editor-actions">
+                <button
+                  type="button"
+                  className="secondary-button"
+                  disabled={saveOrderStatePending || !canSaveOrderState}
+                  onClick={() => requestOrderStateSave("save")}
+                >
+                  {saveOrderStatePending ? "Saving..." : "Save"}
+                </button>
+                <button
+                  type="button"
+                  className="action-kot"
+                  disabled={saveOrderStatePending || !canSaveOrderState}
+                  onClick={() => requestOrderStateSave("save_print")}
+                >
+                  {saveOrderStatePending ? "Sending..." : "Save and print"}
+                </button>
+              </div>
+            </div>
+          ) : null}
+        </div>
       ) : null}
     </div>
   );
+}
+
+function isChangedLine(item: StateItem, sent: OrderItem | undefined): boolean {
+  if (!sent) return true;
+  return sent.quantity !== item.quantity || (sent.note ?? "") !== (item.note ?? "");
 }
 
 /** Keeps the caller's order; groups consecutive targets under their floor for the native picker. */

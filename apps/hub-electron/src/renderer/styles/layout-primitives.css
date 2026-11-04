@@ -38,7 +38,7 @@
 }
 
 .catalog-status-filter button.active {
-  background: var(--accent-soft); color: var(--accent-dark);
+  background: var(--panel); color: var(--ink); box-shadow: var(--shadow);
 }
 
 .panel-title span,
@@ -91,8 +91,6 @@
 
 .three-col,
 .adjust-grid,
-.payment-grid,
-.change-helper,
 .summary-grid,
 .bill-metrics,
 .report-metrics,
@@ -185,19 +183,19 @@
 .segment-row,
 .alcohol-tabs,
 .segmented-row {
-  display: flex; flex-wrap: wrap; gap: 4px; padding: 4px; background: var(--wash); border-radius: var(--control-radius);
+  display: flex; flex-wrap: wrap; gap: 2px; padding: 3px; background: var(--sunken); border-radius: 10px;
 }
 
 .menu-filter-row button,
 .segment-row button,
 .alcohol-tabs button,
 .segmented-row button {
-  @apply min-h-9 rounded-md bg-transparent px-3 text-sm font-semibold text-muted shadow-none hover:bg-white hover:text-ink;
+  @apply min-h-7 rounded-md bg-transparent px-3 text-xs font-semibold text-ink-2 shadow-none hover:bg-white/60 hover:text-ink;
 }
 
 .menu-filter-row button.active,
 .segment-row button.active,
 .alcohol-tabs button.active,
 .segmented-row button.active {
-  background: var(--accent-soft); color: var(--accent-dark);
+  background: var(--panel); color: var(--ink); box-shadow: var(--shadow);
 }

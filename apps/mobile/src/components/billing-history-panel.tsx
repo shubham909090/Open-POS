@@ -6,7 +6,7 @@ import { formatPosDateTime, type HistoryEditBillInput, type HistoryEditSaveMode,
 
 import { getBillingHistoryViewModel } from "../lib/billing-history";
 import type { CurrentDaySummary, DailyReportDetail, DailyReportRow, HubBootstrap } from "../lib/hub-client";
-import { amountInputToPaise, formatRupees, paiseToRupeeInput } from "../lib/mobile-format";
+import { amountInputToPaise, formatRupees, isValidAmountInput, paiseToRupeeInput } from "../lib/mobile-format";
 import { palette, styles } from "../styles/app-styles";
 import { EmptyState, LabeledMoneyInput, SummaryBox } from "./app-shell";
 
@@ -48,7 +48,8 @@ function BillingHistoryPanel({
   const itemTotal = editItems.reduce((total, item) => total + Math.max(0, item.quantity) * item.unitPricePaise, 0);
   const editTotal = Math.max(0, itemTotal - (editingBill?.discountPaise ?? 0) + (editingBill?.tipPaise ?? 0));
   const paymentTotal = editPayments.reduce((total, payment) => total + amountInputToPaise(payment.amount), 0);
-  const paymentsMatch = editingBill?.isNc || paymentTotal === editTotal;
+  const paymentsValid = editPayments.every((payment) => isValidAmountInput(payment.amount));
+  const paymentsMatch = editingBill?.isNc || (paymentsValid && paymentTotal === editTotal);
   const canSaveEdit = Boolean(editingBill && masterPin.trim().length >= 4 && editItems.some((item) => item.quantity > 0) && paymentsMatch && !sending);
   const closeHistoryEdit = () => { setEditingBill(null); setMasterPin(""); };
 
@@ -130,40 +131,39 @@ function BillingHistoryPanel({
 
   return (
     <View style={[styles.panel, styles.historyScreenPanel]}>
-      <View style={styles.cardHeader}>
-        <Text style={styles.muted}>{history.label}</Text>
-        <Pressable accessibilityState={{ expanded: totalsOpen }} style={styles.openItemLaunchButton} onPress={() => setTotalsOpen((open) => !open)}><Text style={styles.secondaryButtonText}>Totals {totalsOpen ? "−" : "+"}</Text></Pressable>
+      {/* One row: which day, and the totals toggle. The selected day's date rides along when totals open. */}
+      <View style={styles.historyToolbar}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.flexText} contentContainerStyle={styles.historyDayChips}>
+          <Pressable
+            style={[styles.filterChip, styles.historyDayChip, !selectedHistoryDayId && styles.filterChipActive]}
+            onPress={() => onSelectHistoryDay(null)}
+          >
+            <Text style={[styles.filterChipText, !selectedHistoryDayId && styles.filterChipTextActive]}>Today</Text>
+          </Pressable>
+          {dailyReports.map((report) => (
+            <Pressable
+              key={report.pos_day_id}
+              style={[styles.filterChip, styles.historyDayChip, selectedHistoryDayId === report.pos_day_id && styles.filterChipActive]}
+              onPress={() => onSelectHistoryDay(report.pos_day_id)}
+            >
+              <Text style={[styles.filterChipText, selectedHistoryDayId === report.pos_day_id && styles.filterChipTextActive]}>{report.business_date}</Text>
+            </Pressable>
+          ))}
+        </ScrollView>
+        <Pressable accessibilityState={{ expanded: totalsOpen }} style={[styles.filterChip, styles.historyDayChip]} onPress={() => setTotalsOpen((open) => !open)}><Text style={styles.filterChipText}>Totals {totalsOpen ? "−" : "+"}</Text></Pressable>
       </View>
-
+      {totalsOpen ? <Text style={styles.muted}>{history.label}</Text> : null}
       {totalsOpen && history.metrics.length ? (
         <View style={styles.summaryGrid}>
           {history.metrics.map((metric) => (
             <SummaryBox
               key={metric.label}
               label={metric.label}
-              value={"valuePaise" in metric ? `Rs ${formatRupees(metric.valuePaise)}` : metric.value}
+              value={"valuePaise" in metric ? `₹${formatRupees(metric.valuePaise)}` : metric.value}
             />
           ))}
         </View>
       ) : null}
-
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.historyDayChips}>
-        <Pressable
-          style={[styles.filterChip, !selectedHistoryDayId && styles.filterChipActive]}
-          onPress={() => onSelectHistoryDay(null)}
-        >
-          <Text style={[styles.filterChipText, !selectedHistoryDayId && styles.filterChipTextActive]}>Today</Text>
-        </Pressable>
-        {dailyReports.map((report) => (
-          <Pressable
-            key={report.pos_day_id}
-            style={[styles.filterChip, selectedHistoryDayId === report.pos_day_id && styles.filterChipActive]}
-            onPress={() => onSelectHistoryDay(report.pos_day_id)}
-          >
-            <Text style={[styles.filterChipText, selectedHistoryDayId === report.pos_day_id && styles.filterChipTextActive]}>{report.business_date}</Text>
-          </Pressable>
-        ))}
-      </ScrollView>
 
       <View style={styles.historyBox}>
         {history.bills.length === 0 ? (
@@ -175,29 +175,25 @@ function BillingHistoryPanel({
             const previewItems = historyBill.items?.length ? historyBill.items.slice(0, 2) : [];
             return (
               <View key={historyBill.billId} style={styles.historyRow}>
-                <View style={styles.flexText}>
-                  <View style={styles.historyRowHeader}>
+                <View style={styles.historyRowHeader}>
+                  <View style={styles.historyTitleGroup}>
                     <Text style={styles.historyBillTitle}>Bill #{historyBill.billNumber ?? historyBill.billId}</Text>
-                    <Text style={styles.historyAmount}>Rs {formatRupees(historyBill.finalTotalPaise)}</Text>
-                  </View>
-                  <View style={styles.historyTagRow}>
                     <Text style={[styles.historyStatusTag, !historyBill.isNc && historyStatusTagStyle(historyBill.status)]}>{historyBill.isNc ? "NC" : historyStatusLabel(historyBill.status)}</Text>
                     {historyBill.modified ? <Text style={styles.historyModifiedTag}>Modified</Text> : null}
                   </View>
-                  {historyBill.customerName ? <Text style={styles.historyMeta}>{historyBill.customerName}</Text> : null}
-                  <Text style={styles.historyMeta}>Table {historyBill.tableName} · paid Rs {formatRupees(historyBill.paidPaise)}</Text>
-                  <View style={styles.historyItemLines}>
-                    {previewItems.length ? (
-                      previewItems.map((item) => <Text key={item.orderItemId ?? `${historyBill.billId}-${item.name}`} style={styles.muted}>{item.quantity} x {item.name}</Text>)
-                    ) : (
-                      <Text style={styles.muted}>No item details</Text>
-                    )}
-                  </View>
-                  <Text style={styles.smallMuted}>
-                    {historyBill.items && historyBill.items.length > 2 ? `+${historyBill.items.length - 2} more · ` : ""}{historyBill.settledAt ? formatPosDateTime(historyBill.settledAt) : ""}
-                  </Text>
+                  <Text style={styles.historyAmount}>₹{formatRupees(historyBill.finalTotalPaise)}</Text>
                 </View>
-                <View style={styles.historyActionStack}>
+                <Text style={styles.historyMeta} numberOfLines={1}>
+                  {historyBill.customerName ? `${historyBill.customerName} · ` : ""}Table {historyBill.tableName} · paid ₹{formatRupees(historyBill.paidPaise)}
+                </Text>
+                <Text style={styles.historyItemsLine} numberOfLines={2}>
+                  {previewItems.length ? previewItems.map((item) => `${item.quantity} x ${item.name}`).join(", ") : "No item details"}
+                </Text>
+                <View style={styles.historyFooter}>
+                  <Text style={[styles.smallMuted, styles.flexText]}>
+                    {historyBill.items && historyBill.items.length > 2 ? `+${historyBill.items.length - 2} more · ` : ""}{historyBill.settledAt ? formatPosDateTime(historyBill.settledAt) : "Not settled"}
+                  </Text>
+                  <View style={styles.historyActionStack}>
                   <Pressable style={[styles.secondaryButton, styles.historyPrintButton, sending && styles.buttonDisabled]} disabled={sending} onPress={() => onHistoryPrint(historyBill.billId)}>
                     <Text style={styles.secondaryButtonText}>Print</Text>
                   </Pressable>
@@ -206,6 +202,7 @@ function BillingHistoryPanel({
                       <Text style={styles.secondaryButtonText}>Edit</Text>
                     </Pressable>
                   ) : null}
+                  </View>
                 </View>
               </View>
             );
@@ -219,7 +216,7 @@ function BillingHistoryPanel({
             <View style={styles.sectionHeaderRow}>
               <View style={styles.flexText}>
                 <Text style={styles.sectionTitle}>Edit bill #{editingBill?.billNumber ?? editingBill?.billId}</Text>
-                <Text style={styles.muted}>Rs {formatRupees(editTotal)} edited total</Text>
+                <Text style={styles.muted}>₹{formatRupees(editTotal)} edited total</Text>
               </View>
               <Pressable style={styles.secondaryButton} onPress={closeHistoryEdit}>
                 <Text style={styles.secondaryButtonText}>Close</Text>
@@ -243,10 +240,10 @@ function BillingHistoryPanel({
                 <View key={item.key} style={styles.historyEditLine}>
                   <View style={styles.flexText}>
                     <Text style={styles.sentName}>{item.name}</Text>
-                    <Text style={styles.muted}>Rs {formatRupees(item.unitPricePaise)} each</Text>
+                    <Text style={styles.muted}>₹{formatRupees(item.unitPricePaise)} each</Text>
                   </View>
                   <Pressable accessibilityLabel={`Decrease ${item.name} quantity`} style={styles.qtyButton} onPress={() => changeEditQty(item.key, -1)}>
-                    <Text style={styles.qtyText}>-</Text>
+                    <Text style={styles.qtyText}>−</Text>
                   </Pressable>
                   <Text style={styles.qtyValue}>{item.quantity}</Text>
                   <Pressable accessibilityLabel={`Increase ${item.name} quantity`} style={styles.qtyButton} onPress={() => changeEditQty(item.key, 1)}>
@@ -263,11 +260,11 @@ function BillingHistoryPanel({
                     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.historyVariantActions}>
                       {variants.length ? variants.map((variant) => (
                         <Pressable key={variant.id} style={styles.secondaryButton} onPress={() => addHistoryMenuItem(item, variant)}>
-                          <Text style={styles.secondaryButtonText}>{variant.label} Rs {formatRupees(variant.price_paise)}</Text>
+                          <Text style={styles.secondaryButtonText}>{variant.label} ₹{formatRupees(variant.price_paise)}</Text>
                         </Pressable>
                       )) : (
                         <Pressable style={styles.secondaryButton} onPress={() => addHistoryMenuItem(item)}>
-                          <Text style={styles.secondaryButtonText}>+ Rs {formatRupees(item.price_paise)}</Text>
+                          <Text style={styles.secondaryButtonText}>+ ₹{formatRupees(item.price_paise)}</Text>
                         </Pressable>
                       )}
                     </ScrollView>
@@ -315,7 +312,7 @@ function BillingHistoryPanel({
                     <Text style={styles.secondaryButtonText}>Add payment</Text>
                   </Pressable>
                   <Text style={[styles.smallMuted, !paymentsMatch && styles.dangerText]} accessibilityLiveRegion="polite">
-                    {paymentsMatch ? `Payments match · Rs ${formatRupees(paymentTotal)}` : `Payments Rs ${formatRupees(paymentTotal)} · edited total Rs ${formatRupees(editTotal)}`}
+                    {!paymentsValid ? "Enter valid payment amounts with up to two decimal places." : paymentsMatch ? `Payments match · ₹${formatRupees(paymentTotal)}` : `Payments ₹${formatRupees(paymentTotal)} · edited total ₹${formatRupees(editTotal)}`}
                   </Text>
                 </View>
               ) : <Text style={styles.smallMuted}>Non-chargeable · no payment.</Text>}
@@ -325,7 +322,7 @@ function BillingHistoryPanel({
                 <Pressable style={[styles.secondaryButton, styles.historyEditActionButton, !canSaveEdit && styles.buttonDisabled]} disabled={!canSaveEdit} onPress={() => void saveHistoryEdit("save_print")}>
                   <Text style={styles.secondaryButtonText}>{sending ? "Saving..." : "Save + Print"}</Text>
                 </Pressable>
-                <Pressable style={[styles.primaryButton, styles.historyEditActionButton, !canSaveEdit && styles.buttonDisabled]} disabled={!canSaveEdit} onPress={() => void saveHistoryEdit("save")}>
+                <Pressable style={[styles.primaryButton, styles.historyEditActionButton, !canSaveEdit && styles.primaryButtonWaiting]} disabled={!canSaveEdit} onPress={() => void saveHistoryEdit("save")}>
                   <Text style={styles.primaryButtonText}>{sending ? "Saving..." : "Save"}</Text>
                 </Pressable>
               </View>

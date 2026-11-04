@@ -14,27 +14,29 @@ export const settingsStyles = StyleSheet.create({
   },
   brandMarkLogo: { width: "86%", height: "86%" },
   brandMarkDefault: { width: "100%", height: "100%" },
+  // Each settings group is one white card on the paper page, matching service screens.
   section: {
     gap: 12,
-    paddingTop: 24,
-    paddingBottom: 16,
-    borderTopWidth: 1,
-    borderTopColor: palette.line
+    padding: 16,
+    borderRadius: 12,
+    backgroundColor: palette.paper,
+    borderWidth: 1,
+    borderColor: palette.line
   },
   sectionHead: { gap: 2 },
   brandEditorRow: { flexDirection: "row", alignItems: "center", gap: 16 },
   brandEditorActions: { flex: 1, minWidth: 0, alignItems: "flex-start", gap: 2 },
   smallButton: {
-    minHeight: 48,
-    borderRadius: 6,
+    minHeight: 44,
+    borderRadius: 8,
     borderWidth: 1,
-    borderColor: palette.line,
+    borderColor: palette.lineStrong,
     backgroundColor: palette.paper,
     paddingHorizontal: 14,
     alignItems: "center",
     justifyContent: "center"
   },
-  smallButtonText: { color: palette.ink, fontWeight: "600", fontSize: 14 },
+  smallButtonText: { color: palette.ink, fontWeight: "700", fontSize: 14 },
   textButton: { minHeight: 48, justifyContent: "center", paddingHorizontal: 2 },
   textButtonDanger: { color: palette.red, fontWeight: "600", fontSize: 14 },
   approvalBlock: { gap: 10 },

@@ -3,8 +3,6 @@
   .reports-layout .report-detail-grid,
   .order-workspace-grid.menu-open,
   .order-workspace-grid.menu-collapsed,
-  .sale-group-row,
-  .sale-group-form,
   .manager-pin-form {
     grid-template-columns: 1fr;
   }
@@ -27,27 +25,6 @@
 
   .panel-title {
     @apply items-start;
-  }
-
-  .guest-row,
-  .send-action-row {
-    grid-template-columns: 1fr;
-  }
-
-  .guest-row {
-    @apply items-stretch gap-2 p-2;
-  }
-
-  .guest-count-field,
-  .kot-note-field,
-  .send-action-row {
-    @apply w-full;
-  }
-
-  .guest-count-field input,
-  .kot-note-field input,
-  .send-action-row button {
-    @apply min-h-12 w-full;
   }
 
   .update-package-card,
@@ -74,10 +51,9 @@
 
 /* One touch target rule survives compact desktop button variants. */
 @media (pointer: coarse) {
-  button, summary, .payment-qr-download { min-height: 48px !important; }
-  .ui-button-icon, .ui-button-icon-small, .order-icon-button, .qty-cluster button, .transfer-qty-control button { min-width: 48px; width: 48px; }
-  .ticket-body .qty-cluster, .qty-cluster { grid-template-columns: 48px minmax(40px, auto) 48px; }
-  .qty-cluster.qty-readonly { grid-template-columns: auto; }
-  .transfer-qty-control { grid-template-columns: 48px 72px 48px; }
-  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select { min-height: 48px !important; }
+  button, summary, .payment-qr-download { min-height: 44px !important; }
+  .ui-button-icon, .ui-button-icon-small, .order-icon-button { min-width: 44px; width: 44px; }
+  .transfer-qty-control { grid-template-columns: 44px 56px 44px; }
+  .transfer-qty-control button { width: 44px; }
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select { min-height: 44px !important; }
 }

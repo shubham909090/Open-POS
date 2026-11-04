@@ -21,6 +21,8 @@ export function LineItems({
     onPlus?: () => void;
     note?: string;
     onNoteChange?: (note: string) => void;
+    /** Unsaved edit against what the kitchen already has. */
+    changed?: boolean;
     action?: ReactNode;
   }>;
   emptyTitle: string;
@@ -31,51 +33,50 @@ export function LineItems({
 
   return (
     <div className="line-list">
-      {rows.map((row) => (
-        <article key={row.id} className="line-row">
-          <div className="line-main">
-            <div className="line-title-row">
-              {row.saleGroupKind ? <CategoryBadge kind={row.saleGroupKind} className="line-category-icon" /> : null}
-              <div className="line-title-copy">
-                <strong>{row.title}</strong>
-                <div className="line-metadata">
-                  <span>{row.meta}</span>
-                  {row.punch ? <small className="line-punch">{row.punch}</small> : null}
-                  {row.onNoteChange ? (
-                    <details className="line-note-field" open={Boolean(row.note?.trim())}>
-                      <summary>{row.note?.trim() ? "Edit item note" : "Add item note"}</summary>
-                      <input
-                        value={row.note ?? ""}
-                        onChange={(event) => row.onNoteChange?.(event.target.value)}
-                        maxLength={500}
-                        placeholder="Kitchen/bar note"
-                      />
-                    </details>
-                  ) : null}
-                </div>
+      {rows.map((row) => {
+        const editable = Boolean(row.onMinus || row.onPlus);
+        return (
+          <article key={row.id} className={`line-row${row.quantity === 0 ? " removed" : ""}${row.changed ? " changed" : ""}`}>
+            {row.saleGroupKind ? <CategoryBadge kind={row.saleGroupKind} className={`line-category-icon category-${row.saleGroupKind}`} /> : null}
+            <div className="line-main">
+              <strong className="line-title">{row.title}</strong>
+              <div className="line-metadata">
+                <span>{row.meta}</span>
+                {row.punch ? <small className="line-punch">{row.punch}</small> : null}
               </div>
             </div>
-          </div>
-          <strong className="line-amount">{formatInr(row.amount)}</strong>
-          <div className={row.onMinus || row.onPlus ? "qty-cluster" : "qty-cluster qty-readonly"}>
-            {row.onMinus ? (
-              <button type="button" onClick={row.onMinus}>
-                -
-              </button>
+            <div className={editable ? "qty-cluster" : "qty-cluster qty-readonly"}>
+              {row.onMinus ? (
+                <button type="button" onClick={row.onMinus} aria-label={`Decrease ${row.title}`}>
+                  −
+                </button>
+              ) : null}
+              <b>{editable ? row.quantity : `${row.quantity}×`}</b>
+              {row.onPlus ? (
+                <button type="button" onClick={row.onPlus} aria-label={`Increase ${row.title}`}>
+                  +
+                </button>
+              ) : null}
+            </div>
+            <strong className="line-amount">{formatInr(row.amount)}</strong>
+            {row.onNoteChange ? (
+              <details className="line-note-field" open={Boolean(row.note?.trim())}>
+                <summary>{row.note?.trim() ? "Note" : "Add note"}</summary>
+                <input
+                  value={row.note ?? ""}
+                  onChange={(event) => row.onNoteChange?.(event.target.value)}
+                  maxLength={500}
+                  aria-label={`Kitchen note for ${row.title}`}
+                  placeholder="Kitchen/bar note"
+                />
+              </details>
+            ) : row.note ? (
+              <p className="line-note-text">{row.note}</p>
             ) : null}
-            <b>{row.quantity}<span aria-hidden="true"> x</span></b>
-            {row.onPlus ? (
-              <button type="button" onClick={row.onPlus}>
-                +
-              </button>
-            ) : null}
-          </div>
-          {!row.onNoteChange && row.note ? (
-            <p className="line-note-text">{row.note}</p>
-          ) : null}
-          {row.action ? <div className="line-row-action">{row.action}</div> : null}
-        </article>
-      ))}
+            {row.action ? <div className="line-row-action">{row.action}</div> : null}
+          </article>
+        );
+      })}
     </div>
   );
 }

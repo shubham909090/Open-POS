@@ -176,7 +176,8 @@ export function DishesCard({
         rows={visibleItems.map((item) => ({
           id: item.id,
           title: item.name,
-          meta: `${formatInr(item.price_paise)} · ${item.sale_group_name} · ${item.production_unit_name ?? "No kitchen assigned"}`,
+          meta: `${item.sale_group_name} · ${item.production_unit_name ?? "No kitchen assigned"}`,
+          aside: formatInr(item.price_paise),
           active: item.active,
           deleteApproval: true,
           onToggle: () => hubApi.updateDish(item.id, { active: !item.active }).then(invalidate),

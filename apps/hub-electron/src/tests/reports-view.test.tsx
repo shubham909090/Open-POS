@@ -79,6 +79,9 @@ describe("reports history payment edit", () => {
     expect((saveButton as HTMLButtonElement).disabled).toBe(true);
 
     fireEvent.focus(screen.getByLabelText("History UPI amount"));
+    expect(screen.getByLabelText<HTMLInputElement>("History UPI amount").value).toBe("0");
+    expect((saveButton as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Fill remaining into History upi" }));
     expect(screen.getByLabelText<HTMLInputElement>("History UPI amount").value).toBe("300");
     expect(screen.getByText("Payment exact")).toBeTruthy();
     expect((saveButton as HTMLButtonElement).disabled).toBe(false);
@@ -243,9 +246,11 @@ describe("reports history payment edit", () => {
     expect(screen.getAllByText("+₹180.00").length).toBeGreaterThan(0);
 
     fireEvent.click(screen.getByRole("button", { name: "Open" }));
-    expect(screen.getByText("Dal Fry")).toBeTruthy();
-    expect(screen.getByText("1 -> 2")).toBeTruthy();
-    expect(screen.getByText("Bill bill-1 · Order order-1")).toBeTruthy();
+    const diff = document.querySelector(".audit-diff-table")!;
+    expect(diff.textContent).toContain("Dal Fry");
+    expect(diff.querySelector(".changed-value")?.textContent).toBe("2");
+    expect(screen.getByText("bill-1").closest("footer")).toBeTruthy();
+    expect(screen.getByText("order-1").closest("footer")).toBeTruthy();
 
     fireEvent.change(screen.getByLabelText("Exact search"), { target: { value: "order-1" } });
     fireEvent.click(screen.getByRole("button", { name: "Search" }));

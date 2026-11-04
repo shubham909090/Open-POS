@@ -12,7 +12,12 @@ export interface PairingPayload {
 
 export function formatRupees(paise: number) {
   const rupees = paise / 100;
-  return rupees % 1 === 0 ? rupees.toFixed(0) : rupees.toFixed(2);
+  return rupees.toLocaleString("en-IN", { minimumFractionDigits: rupees % 1 === 0 ? 0 : 2, maximumFractionDigits: 2 });
+}
+
+/** Empty fields mean zero; malformed or sub-paise amounts must block a commit. */
+export function isValidAmountInput(value: string): boolean {
+  return /^(?:\d+(?:\.\d{0,2})?|\.\d{1,2})?$/.test(value.trim()) && Number.isFinite(Number(value || 0));
 }
 
 export function amountInputToPaise(value: string) {

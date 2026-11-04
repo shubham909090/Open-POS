@@ -22,8 +22,9 @@ export function UpdateProgressOverlay({ open }: { open: boolean }) {
         >
           <LoaderCircle className="update-progress-spinner" size={24} aria-hidden="true" />
           <Dialog.Title>Updating Hub…</Dialog.Title>
-          <Dialog.Description className="sr-only">
-            The Windows installer will open when the update is ready.
+          <Dialog.Description className="update-progress-copy">
+            A backup is saved first. The Windows installer opens when the update is
+            ready and Hub reopens by itself. Keep this PC on.
           </Dialog.Description>
         </Dialog.Content>
       </Dialog.Portal>

@@ -188,7 +188,7 @@ export function BackupPanel({
               <Power size={18} />
               Restart Hub now
             </button>
-            <button type="button" className="danger-button" onClick={() => void cancelPending()} disabled={!masterPinConfigured || destructiveBusy}>
+            <button type="button" className="secondary-button danger-outline" onClick={() => void cancelPending()} disabled={!masterPinConfigured || destructiveBusy}>
               <XCircle size={18} />
               Cancel pending restore
             </button>
@@ -246,7 +246,7 @@ export function BackupPanel({
               </button>
               <button
                 type="button"
-                className="danger-button"
+                className="secondary-button danger-outline"
                 onClick={() => openDeletePanel(backup)}
                 disabled={!masterPinConfigured || destructiveBusy || pendingRestore?.backup.fileName === backup.fileName}
               >

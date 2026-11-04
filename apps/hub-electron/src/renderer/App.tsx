@@ -208,6 +208,7 @@ function HubShell() {
           <header className="pin-setup-heading">
             <img src={DEFAULT_BRAND_MARK_URL} alt="" />
             <h1 id="pin-setup-title">Create manager PIN</h1>
+            <p>Approves reprints, cancellations and setup changes on this hub.</p>
           </header>
           {notice ? (
             <Notice variant={notice.tone === "good" ? "success" : "error"}>
@@ -249,7 +250,11 @@ function HubShell() {
               placeholder="4+ characters"
               minLength={4}
               required
+              aria-describedby="pin-setup-hint"
             />
+            <small id="pin-setup-hint" className={newPin && newPin.length < 4 ? "pin-setup-hint warn" : "pin-setup-hint"}>
+              {newPin && newPin.length < 4 ? `${4 - newPin.length} more to go` : "At least 4 characters"}
+            </small>
             <Button
               type="submit"
               variant="accent"
@@ -457,6 +462,7 @@ function UnlockSetupModal({
           type="password"
           autoComplete="current-password"
           autoFocus
+          data-autofocus
         />
         <div className="flex items-center justify-end gap-2 pt-2">
           <Button type="button" variant="secondary" onClick={onClose}>

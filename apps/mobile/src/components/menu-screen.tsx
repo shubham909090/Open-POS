@@ -1,6 +1,6 @@
 import { FormModal } from "./form-modal";
 import { useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Alert, ScrollView, SectionList, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Alert, ScrollView, FlatList, Text, TextInput, useWindowDimensions, View } from "react-native";
 import { Pressable } from "./pressable";
 import { Plus, Search, X } from "lucide-react-native";
 import { formatPosDateTime, getTableDisplayState, searchMenuItems, tableDisplayLabel, type OrderItemInput, type SaleGroupKind } from "@gaurav-pos/shared";
@@ -8,7 +8,7 @@ import { formatPosDateTime, getTableDisplayState, searchMenuItems, tableDisplayL
 import type { CurrentDaySummary, DailyReportDetail, DailyReportRow, HubBootstrap, HubOrder, KdsTicket } from "../lib/hub-client";
 import { mobileDraftOrderStateSignature, mobileSavedOrderStateSignature } from "../lib/order-state";
 import { formatMobileMenuActionLabel } from "../lib/menu-actions";
-import { amountInputToPaise, findMenuVariant, formatRupees, paiseToRupeeInput } from "../lib/mobile-format";
+import { amountInputToPaise, findMenuVariant, formatRupees, isValidAmountInput, paiseToRupeeInput } from "../lib/mobile-format";
 import type { ConnectionState, MobileOrderStateItem, OrderStateSaveMode, PaymentMethod, PrintMode } from "../lib/mobile-types";
 import { palette, styles } from "../styles/app-styles";
 import { CollapsibleSection, EmptyState, LabeledMoneyInput, SummaryBox, UncontrolledInput } from "./app-shell";
@@ -50,6 +50,8 @@ function MenuScreen({
   onAddItem: (menuItemId: string, variantId?: string) => void;
   onAddOpenItem: (input: { openName: string; openPricePaise: number; saleGroupId: string; productionUnitId?: string | null }) => boolean;
 }) {
+  const { width, fontScale } = useWindowDimensions();
+  const columns = width >= 1000 && fontScale < 1.3 ? 3 : width >= 600 ? 2 : 1;
   const activeSaleGroups = saleGroups.filter((group) => group.active !== false && group.active !== 0);
   const activeProductionUnits = productionUnits.filter((unit) => unit.active !== false && unit.active !== 0);
   const defaultSaleGroupId = activeSaleGroups.find((group) => group.id === "sg-food")?.id ?? activeSaleGroups[0]?.id ?? "sg-food";
@@ -101,7 +103,7 @@ function MenuScreen({
   };
   const submitOpenItem = () => {
     const openPricePaise = amountInputToPaise(openItemPrice);
-    if (!openItemName.trim() || openPricePaise <= 0) {
+    if (!openItemName.trim() || !isValidAmountInput(openItemPrice) || openPricePaise <= 0) {
       setOpenItemError("Enter an item name and a price above zero.");
       return;
     }
@@ -197,18 +199,21 @@ function MenuScreen({
       <>
         <View style={[styles.panel, styles.menuPanel, styles.virtualMenuPanel]}>
           <View style={styles.menuToolbar}>{header}</View>
-          <SectionList
-          sections={selectedTableName ? sections : []}
+          <FlatList
+          key={`menu-${columns}`}
+          data={selectedTableName ? visibleMenu : []}
+          numColumns={columns}
+          columnWrapperStyle={columns > 1 ? styles.menuGridRow : undefined}
           keyExtractor={(item) => item.id}
           renderItem={({ item }) => (
-            <MenuItemRow
+            <View style={columns > 1 ? [styles.menuGridTile, { maxWidth: columns === 3 ? "32.4%" : "49.2%" }] : undefined}><MenuItemRow
               menuItem={item}
+              fillTile={columns > 1}
               draftQuantity={draftQuantitiesByMenuItemId[item.id] ?? 0}
               draftSelectionLabel={draftSelectionLabelsByMenuItemId[item.id]}
               onAddItem={onAddItem}
-            />
+            /></View>
           )}
-          renderSectionHeader={() => null}
           ListEmptyComponent={
             !selectedTableName ? (
               <EmptyState title="No table selected" text="Choose a table to add dishes." />
@@ -216,7 +221,6 @@ function MenuScreen({
               <EmptyState title="No dishes found" text="Try a different search." />
             )
           }
-          stickySectionHeadersEnabled={false}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
           contentContainerStyle={[styles.virtualMenuList, hasNewItems && styles.screenContentWithDraft]}
@@ -288,19 +292,44 @@ function MenuListSection({
 function MenuItemRow({
   menuItem,
   draftQuantity = 0,
+  fillTile = false,
   draftSelectionLabel,
   onAddItem
 }: {
   menuItem: HubBootstrap["menuItems"][number];
   draftQuantity?: number;
+  fillTile?: boolean;
   draftSelectionLabel?: string;
   onAddItem: (menuItemId: string, variantId?: string) => void;
 }) {
   const variants = menuItem.variants?.filter((variant) => Boolean(variant.active)) ?? [];
   const activeVariants = variants.length || menuItem.sale_group_kind === "alcohol" ? variants : [{ id: "", label: "Regular", kind: "default", price_paise: menuItem.price_paise }];
   const hasMultipleVariants = activeVariants.length > 1;
+  const singleVariant = activeVariants.length === 1 ? activeVariants[0]! : null;
+  if (singleVariant) {
+    // One price: the whole row adds it, so the tap target is the dish, not a small price button.
+    const actionLabel = formatMobileMenuActionLabel({ kind: singleVariant.kind, label: singleVariant.label, pricePaise: singleVariant.price_paise });
+    return (
+      <Pressable
+        accessibilityLabel={`Add ${menuItem.name}, ${actionLabel}`}
+        style={[styles.menuItem, styles.menuItemInline, styles.menuItemTap, fillTile && styles.menuFillTile, draftQuantity > 0 && styles.menuItemSelected]}
+        onPress={() => onAddItem(menuItem.id, singleVariant.id || undefined)}
+      >
+        <View style={styles.menuIdentity}>
+          {draftQuantity > 0 ? <Text accessibilityLabel={`${draftQuantity} selected`} style={styles.menuSelectedQuantity}>{draftQuantity}×</Text> : null}
+          <View style={styles.menuText}>
+            <Text style={styles.menuName} numberOfLines={2}>{menuItem.name}</Text>
+          </View>
+        </View>
+        <View style={styles.menuRowPrice}>
+          <Text style={styles.menuRowPriceText}>{singleVariant.kind === "default" ? `₹${formatRupees(singleVariant.price_paise)}` : actionLabel}</Text>
+          <View style={styles.menuRowPlus} importantForAccessibility="no"><Text style={styles.menuRowPlusText}>+</Text></View>
+        </View>
+      </Pressable>
+    );
+  }
   return (
-    <View style={[styles.menuItem, draftQuantity > 0 && styles.menuItemSelected, styles.menuItemInline, hasMultipleVariants && draftSelectionLabel && styles.menuItemWithSelection, hasMultipleVariants && styles.menuItemStacked]}>
+    <View style={[styles.menuItem, fillTile && styles.menuFillTile, draftQuantity > 0 && styles.menuItemSelected, styles.menuItemInline, hasMultipleVariants && draftSelectionLabel && styles.menuItemWithSelection, hasMultipleVariants && styles.menuItemStacked]}>
       <View style={[styles.menuIdentity, hasMultipleVariants && styles.menuIdentityFull]}>
         {draftQuantity > 0 ? <Text accessibilityLabel={`${draftQuantity} selected`} style={styles.menuSelectedQuantity}>{draftQuantity}×</Text> : null}
         <View style={styles.menuText}>
@@ -320,7 +349,7 @@ function MenuItemRow({
         ) : (
           <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always" contentContainerStyle={styles.variantWrap}>
             {activeVariants.map((variant) => (
-              <Pressable key={variant.id || menuItem.id} accessibilityLabel={`Add ${menuItem.name}, ${variant.label}, Rs ${formatRupees(variant.price_paise)}`} style={styles.variantChip} onPress={() => onAddItem(menuItem.id, variant.id || undefined)}>
+              <Pressable key={variant.id || menuItem.id} accessibilityLabel={`Add ${menuItem.name}, ${variant.label}, ₹${formatRupees(variant.price_paise)}`} style={styles.variantChip} onPress={() => onAddItem(menuItem.id, variant.id || undefined)}>
                 <Text style={styles.filterChipText}>{variant.label}</Text><Text style={styles.variantPrice}>₹{formatRupees(variant.price_paise)}</Text>
               </Pressable>
             ))}

@@ -1,5 +1,5 @@
 import { Users } from "lucide-react";
-import type { Dispatch, SetStateAction } from "react";
+import { useState, type Dispatch, type SetStateAction } from "react";
 import { hubApi, type Bootstrap } from "../../hub-api.js";
 import type { NoticeSetter } from "../../lib/format.js";
 import { EditableRecordList } from "./editable-record-list.js";
@@ -44,6 +44,7 @@ export function FloorsTablesCard({
   invalidate: SaveCallback;
   setNotice: NoticeSetter;
 }) {
+  const [tableSearch, setTableSearch] = useState("");
   const tableOrderMode = useHubStore((state) => state.tableOrderMode);
   const setTableOrderMode = useHubStore((state) => state.setTableOrderMode);
   const orderedFloors = bootstrap.floors;
@@ -54,6 +55,10 @@ export function FloorsTablesCard({
     floorTables.push(table);
     tablesByFloor.set(table.floor_id, floorTables);
   }
+
+  const tableNeedle = tableSearch.trim().toLowerCase();
+  const matchesSearch = (tableName: string, floorName: string) => `${floorName} ${tableName}`.toLowerCase().includes(tableNeedle);
+  const hasSearchMatches = orderedFloors.some((floor) => (tablesByFloor.get(floor.id) ?? []).some((table) => matchesSearch(table.name, floor.name)));
 
   const tableIndexKey = (tableId: string, floorId: string) => {
     const floorTables = sortTables(tablesByFloor.get(floorId) ?? [], "custom");
@@ -150,6 +155,7 @@ export function FloorsTablesCard({
       </form>
         </details>
       </div>
+      <div className="setup-search-row"><input aria-label="Search tables" placeholder="Search tables across floors" value={tableSearch} onChange={(event) => setTableSearch(event.target.value)} /></div>
       <div className="table-order-bar">
         <div>
           <h3 id="table-order-label">Table order</h3>
@@ -170,10 +176,13 @@ export function FloorsTablesCard({
           ))}
         </div>
       </div>
+      {tableNeedle && !hasSearchMatches ? <p className="plain-state">No tables match this search.</p> : null}
       {orderedFloors.map((floor) => {
         const floorTables = tablesByFloor.get(floor.id) ?? [];
         if (!floorTables.length) return null;
         const shownTables = sortTables(floorTables, tableOrderMode);
+        const matchedTables = shownTables.filter((table) => matchesSearch(table.name, floor.name));
+        if (!matchedTables.length) return null;
         return (
           <section className="floor-record-group" key={floor.id} aria-label={`${floor.name} tables`}>
             <header>
@@ -182,33 +191,38 @@ export function FloorsTablesCard({
             </header>
             <EditableRecordList
               setNotice={setNotice}
-              rows={shownTables.map((table, index) => ({
-                id: table.id,
-                title: table.name,
-                meta: `${tableOrderMode === "custom" ? `Position ${index + 1} · ` : ""}${table.active ? tableStatusLabel(table.status) : "Disabled"}`,
-                active: table.active,
-                ...(tableOrderMode === "custom"
-                  ? {
-                      onMoveUp: () => moveTable(table.id, table.floor_id, -1),
-                      onMoveDown: () => moveTable(table.id, table.floor_id, 1),
-                      moveUpDisabled: index <= 0,
-                      moveDownDisabled: index >= shownTables.length - 1,
-                    }
-                  : {}),
-                onToggle: () => hubApi.updateTable(table.id, { active: !table.active }).then(invalidate),
-                onDelete: () => hubApi.deleteTable(table.id).then(invalidate),
-                editForm: (close: () => void) => (
-                  <TableEditForm
-                    table={table}
-                    floors={activeFloors}
-                    onSaved={async () => {
-                      close();
-                      await invalidate();
-                    }}
-                    setNotice={setNotice}
-                  />
-                ),
-              }))}
+              layout="tiles"
+              hideSearch
+              rows={matchedTables.map((table) => {
+                const index = shownTables.indexOf(table);
+                return {
+                  id: table.id,
+                  title: table.name,
+                  meta: tableOrderMode === "custom" ? `Position ${index + 1}` : "",
+                  active: table.active,
+                  ...(tableOrderMode === "custom"
+                    ? {
+                        onMoveUp: () => moveTable(table.id, table.floor_id, -1),
+                        onMoveDown: () => moveTable(table.id, table.floor_id, 1),
+                        moveUpDisabled: index <= 0,
+                        moveDownDisabled: index >= shownTables.length - 1,
+                      }
+                    : {}),
+                  onToggle: () => hubApi.updateTable(table.id, { active: !table.active }).then(invalidate),
+                  onDelete: () => hubApi.deleteTable(table.id).then(invalidate),
+                  editForm: (close: () => void) => (
+                    <TableEditForm
+                      table={table}
+                      floors={activeFloors}
+                      onSaved={async () => {
+                        close();
+                        await invalidate();
+                      }}
+                      setNotice={setNotice}
+                    />
+                  ),
+                };
+              })}
             />
           </section>
         );
@@ -249,11 +263,4 @@ export function FloorsTablesCard({
       </section>
     </SetupCard>
   );
-}
-
-function tableStatusLabel(status: string): string {
-  if (status === "occupied") return "Running";
-  if (status === "billed") return "Billed";
-  if (status === "free") return "Free";
-  return status;
 }

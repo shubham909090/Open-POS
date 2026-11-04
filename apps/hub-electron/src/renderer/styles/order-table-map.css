@@ -1,195 +1,79 @@
 /*
- * Table map. Every tile shares one geometry regardless of floor or state:
- * fixed column width (auto-fill keeps empty tracks, so a floor with two tables
- * does not stretch them across the row) and fixed row height. The name and
- * state line sit at the same position in every tile; live tables add a
- * shortcut strip in the bottom band that free tables leave empty.
- *
- * Status colors match the shared StatusBadge and the mobile app:
- * free = neutral, running = amber, bill printed = blue, attention = red.
+ * Floor. Free tables recede (flat, name only, short rows); live tables are lifted
+ * cards with a state edge, timer and amount, so the six that matter mid-service are
+ * found in one glance among fifty. Every row has the same short height; a live
+ * table spans two rows, so free tables beside it never stretch into empty boxes.
  */
-.table-map {
-  @apply grid gap-4;
-}
+.floor-view { display: grid; gap: 14px; }
+.floor-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
+.floor-filter { display: inline-flex; gap: 2px; padding: 3px; border-radius: 10px; background: var(--sunken); }
+.floor-filter-chip { gap: 7px; min-height: 28px; padding: 0 10px; border-radius: 7px; background: transparent; color: var(--ink-2); font-size: 12.5px; font-weight: 600; box-shadow: none; }
+.floor-filter-chip:hover:not(:disabled) { background: color-mix(in srgb, var(--panel) 60%, transparent); color: var(--ink); }
+.floor-filter-chip b { min-width: 18px; padding: 1px 5px; border-radius: 999px; background: color-mix(in srgb, var(--ink) 8%, transparent); font-size: 11px; font-weight: 700; text-align: center; }
+.floor-filter-chip.running b { background: var(--accent); color: #fff; }
+.floor-filter-chip.billed b { background: var(--blue); color: #fff; }
+.floor-filter-chip.active { background: var(--panel); color: var(--ink); box-shadow: var(--shadow); }
+.floor-open-value { display: flex; align-items: baseline; gap: 8px; margin: 0; color: var(--muted); font-size: 12px; }
+.floor-open-value strong { color: var(--ink); font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.floor-filter-empty { margin: 0; padding: 24px; border: 1px dashed var(--line-strong); border-radius: var(--surface-radius); color: var(--muted); text-align: center; }
 
-.table-list {
-  /* Keep tile geometry in step with enlarged interface text. */
-  --table-tile-height: 6.875rem;
-  @apply grid gap-2;
-  grid-template-columns: repeat(auto-fill, minmax(10.5rem, 10.5rem));
-  grid-auto-rows: var(--table-tile-height);
-}
+.floor-table-list { display: grid; gap: 18px; }
+.floor-group { display: grid; gap: 8px; }
+.floor-group-header { display: flex; align-items: baseline; gap: 8px; }
+.floor-group-header h3 { margin: 0; color: var(--ink); font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+.floor-group-header span { color: var(--muted); font-size: 11.5px; font-weight: 500; font-variant-numeric: tabular-nums; }
 
-.table-tile {
-  @apply relative grid min-w-0 overflow-hidden rounded-lg border border-line bg-panel transition-colors hover:border-line-strong;
-  grid-template-rows: minmax(0, 1fr) auto;
-}
+.table-list { display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(134px, 1fr)); grid-auto-rows: 40px; }
+.table-tile.live { grid-row: span 2; }
 
-.table-tile.active {
-  @apply border-accent ring-2 ring-accent ring-offset-1 ring-offset-panel;
-}
+.table-tile { position: relative; display: grid; grid-template-rows: minmax(0, 1fr) auto; min-width: 0; overflow: hidden; border-radius: 10px; background: color-mix(in srgb, var(--panel) 45%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--line-strong) 70%, transparent); transition: box-shadow var(--motion-fast), transform var(--motion-fast), background var(--motion-fast); }
+.table-tile:hover { background: var(--panel); box-shadow: inset 0 0 0 1px var(--line-strong), var(--shadow); }
+.table-tile-main { display: grid; align-content: center; justify-content: stretch; justify-items: stretch; gap: 3px; width: 100%; min-height: 0; padding: 6px 10px 6px 12px; border: 0; border-radius: 0; background: transparent; color: var(--ink); text-align: left; box-shadow: none; }
+.table-tile-main:hover:not(:disabled) { background: transparent; }
+.table-tile-main:focus-visible { outline-offset: -3px; border-radius: 10px; }
+.table-tile-topline, .table-tile-meta { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 6px; }
+.table-tile-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; font-weight: 650; line-height: 20px; letter-spacing: -.01em; color: var(--ink-2); }
+.table-tile-state { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; font-weight: 600; line-height: 16px; color: var(--muted); }
+.table-tile-total { flex-shrink: 0; font-size: 13.5px; font-weight: 700; line-height: 18px; color: var(--ink); font-variant-numeric: tabular-nums; }
+.table-tile-duration { display: inline-flex; flex-shrink: 0; align-items: center; gap: 3px; height: 18px; padding: 0 6px; border-radius: 999px; font-size: 10.5px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
 
-.table-tile-main {
-  @apply grid w-full gap-0.5 rounded-none bg-transparent px-3 pb-2 pt-2.5 text-left text-ink shadow-none hover:bg-black/[0.025] focus-visible:ring-inset focus-visible:ring-offset-0;
-  align-content: start;
-  justify-content: stretch;
-  min-height: 0;
-}
+/* Live tables: lifted card + state edge */
+.table-tile.live { background: var(--panel); box-shadow: var(--shadow-md); }
+.table-tile.live::before { content: ""; position: absolute; inset: 0 0 auto; height: 3px; background: var(--tile-edge, var(--line-strong)); }
+.table-tile.live .table-tile-main { align-content: start; padding-top: 9px; }
+.table-tile.live .table-tile-name { color: var(--ink); font-size: 16px; font-weight: 750; }
+.table-tile.live:hover { transform: translateY(-1px); box-shadow: 0 10px 22px -10px rgba(28, 25, 23, .3), 0 0 0 1px rgba(28, 25, 23, .06); }
 
-.table-tile-topline,
-.table-tile-meta {
-  @apply flex min-w-0 items-center justify-between gap-2;
-}
+.table-tile.running, .table-tile.occupied { --tile-edge: var(--accent-bright); }
+.table-tile.running .table-tile-state, .table-tile.occupied .table-tile-state { color: var(--accent); }
+.table-tile.running .table-tile-duration { background: var(--accent-soft); color: var(--accent-dark); }
+.table-tile.long-running .table-tile-duration { background: var(--danger); color: #fff; }
 
-.table-tile-name {
-  @apply truncate text-lg font-semibold leading-6 tracking-tight;
-}
+.table-tile.bill-printed, .table-tile.billed, .table-tile.bill_printed { --tile-edge: var(--blue); }
+.table-tile.bill-printed .table-tile-state, .table-tile.billed .table-tile-state { color: var(--blue); }
+.table-tile.bill-printed .table-tile-duration, .table-tile.billed .table-tile-duration { background: var(--blue-soft); color: var(--blue); }
 
-.table-tile-state {
-  @apply truncate text-xs font-medium leading-5 text-muted;
-}
+.table-tile.draft-warning, .table-tile.needs-attention, .table-tile.needs_attention { --tile-edge: var(--danger); }
+.table-tile.draft-warning { background: var(--panel); box-shadow: var(--shadow-md), inset 0 0 0 1px var(--danger-line); }
+.table-tile.draft-warning .table-tile-state, .table-tile.needs-attention .table-tile-state { color: var(--danger); }
 
-.table-tile-total {
-  @apply shrink-0 text-sm font-semibold leading-5 text-ink;
-  font-variant-numeric: tabular-nums;
-}
+.table-tile.active { box-shadow: 0 0 0 2px var(--focus-ring), var(--shadow-md); }
 
-.table-tile-duration {
-  @apply inline-flex h-6 shrink-0 items-center gap-1 text-xs font-medium leading-none text-muted;
-  font-variant-numeric: tabular-nums;
-}
+.table-tile-actions { display: grid; grid-template-columns: 1fr 1fr; border-top: 1px solid var(--line); }
+.table-tile-shortcut { min-height: 26px; height: 26px; padding: 0 4px; border: 0; border-radius: 0; background: transparent; color: var(--ink-2); font-size: 11.5px; font-weight: 600; box-shadow: none; }
+.table-tile-shortcut:hover:not(:disabled) { background: var(--wash); color: var(--ink); }
+.table-tile-shortcut:focus-visible { outline-offset: -2px; }
+.table-tile-shortcut.primary { border-left: 1px solid var(--line); color: var(--blue); font-weight: 700; }
+.table-tile-shortcut.primary:hover:not(:disabled) { background: var(--blue-soft); color: var(--blue); }
 
-.table-tile-actions {
-  @apply grid grid-cols-2 border-t border-line;
-}
-
-.table-tile-shortcut {
-  @apply min-h-9 rounded-none border-0 bg-transparent text-xs font-medium text-muted shadow-none hover:bg-black/[0.04] hover:text-ink focus-visible:ring-inset focus-visible:ring-offset-0;
-}
-
-.table-tile-shortcut.primary {
-  @apply border-l border-line font-semibold text-accent-dark hover:bg-accent-soft hover:text-accent-dark;
-}
-
-/* Running */
-.table-tile.running,
-.table-tile.occupied {
-  border-color: color-mix(in srgb, var(--warning) 28%, var(--line));
-  background: color-mix(in srgb, var(--warning-soft) 70%, var(--panel));
-}
-
-.table-tile.running .table-tile-state,
-.table-tile.occupied .table-tile-state,
-.table-tile.running .table-tile-duration,
-.table-tile.occupied .table-tile-duration {
-  color: var(--warning);
-}
-
-/* Bill printed */
-.table-tile.billed,
-.table-tile.bill_printed,
-.table-tile.bill-printed {
-  border-color: color-mix(in srgb, var(--blue) 24%, var(--line));
-  background: color-mix(in srgb, var(--blue-soft) 75%, var(--panel));
-}
-
-.table-tile.billed .table-tile-state,
-.table-tile.bill_printed .table-tile-state,
-.table-tile.bill-printed .table-tile-state,
-.table-tile.billed .table-tile-duration,
-.table-tile.bill_printed .table-tile-duration,
-.table-tile.bill-printed .table-tile-duration {
-  color: var(--blue);
-}
-
-/* Unsent local draft on a free table, or a table flagged for attention */
-.table-tile.draft-warning,
-.table-tile.needs_attention,
-.table-tile.needs-attention {
-  border-color: color-mix(in srgb, var(--danger) 35%, var(--line));
-  background: var(--danger-soft);
-}
-
-.table-tile.draft-warning .table-tile-state,
-.table-tile.needs-attention .table-tile-state,
-.table-tile.needs_attention .table-tile-state {
-  color: var(--danger);
-}
-
-.table-tile.running .table-tile-duration,
-.table-tile.occupied .table-tile-duration,
-.table-tile.billed .table-tile-duration,
-.table-tile.bill_printed .table-tile-duration,
-.table-tile.bill-printed .table-tile-duration {
-  border-color: transparent;
-  background: color-mix(in srgb, var(--panel) 70%, transparent);
-}
-
-.table-tile.running .table-tile-actions,
-.table-tile.occupied .table-tile-actions {
-  border-top-color: color-mix(in srgb, var(--warning) 20%, var(--line));
-}
-
-.table-tile.running .table-tile-shortcut.primary,
-.table-tile.occupied .table-tile-shortcut.primary {
-  border-left-color: color-mix(in srgb, var(--warning) 20%, var(--line));
-}
-
-.table-tile.billed .table-tile-actions,
-.table-tile.bill_printed .table-tile-actions,
-.table-tile.bill-printed .table-tile-actions {
-  border-top-color: color-mix(in srgb, var(--blue) 18%, var(--line));
-}
-
-.table-tile.billed .table-tile-shortcut.primary,
-.table-tile.bill_printed .table-tile-shortcut.primary,
-.table-tile.bill-printed .table-tile-shortcut.primary {
-  border-left-color: color-mix(in srgb, var(--blue) 18%, var(--line));
-}
-
-.table-map > .panel-title {
-  @apply flex-wrap gap-y-1;
-}
-
-.table-map-counts {
-  @apply ml-auto flex flex-wrap justify-end gap-x-3 gap-y-1;
-}
-
-.table-map .panel-title .state-dot {
-  @apply inline-flex min-h-6 items-center gap-1.5 text-xs font-medium text-muted;
-  font-variant-numeric: tabular-nums;
-}
-
-.state-dot::before {
-  @apply block h-2 w-2 rounded-full content-[''];
-}
-
-.state-dot.free::before {
-  @apply border border-line-strong bg-panel;
-}
-
-.state-dot.running::before {
-  background: var(--warning);
-}
-
-.state-dot.billed::before {
-  background: var(--blue);
-}
-
-.floor-group {
-  @apply gap-2;
-}
-
-.floor-group-header {
-  @apply flex items-baseline gap-2;
-}
-
-.floor-group-header span {
-  @apply text-xs text-muted;
-  font-variant-numeric: tabular-nums;
-}
+/* Legacy count chips (still used by mobile-style summaries elsewhere) */
+.state-dot { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+.state-dot::before { content: ""; display: block; width: 8px; height: 8px; border-radius: 999px; background: var(--line-strong); }
+.state-dot.running::before { background: var(--accent-bright); }
+.state-dot.billed::before { background: var(--blue); }
 
 @media (pointer: coarse) {
-  .table-list { --table-tile-height: 7.75rem; }
-  .table-tile-shortcut { min-height: 48px; }
+  .table-list { grid-template-columns: repeat(auto-fill, minmax(128px, 1fr)); grid-auto-rows: 52px; }
+  .table-tile-shortcut { height: 44px; }
+  .table-tile-shortcut { min-height: 44px !important; }
 }

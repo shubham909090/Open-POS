@@ -1,3 +1,4 @@
+import { isKeyboardScopeActive } from "../lib/keyboard-scope.js";
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 
 export function useKeyboardListNavigation<T>({
@@ -44,7 +45,7 @@ export function useKeyboardListNavigation<T>({
 
   const onKeyDown = useCallback(
     (event: KeyboardEvent<HTMLInputElement>) => {
-      if (!enabled || !items.length) return;
+      if (!enabled || !items.length || event.defaultPrevented || !isKeyboardScopeActive(event.currentTarget)) return;
 
       if (event.key === "ArrowDown") {
         event.preventDefault();

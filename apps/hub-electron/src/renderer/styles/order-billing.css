@@ -1,102 +1,115 @@
-.bill-adjustments,
-.bill-payment-section,
-.change-helper {
-  @apply grid gap-3 border-0 border-t border-line bg-transparent py-4;
+/*
+ * Bill. Receipt card on the left (what the guest is paying for), settle card on the
+ * right (how they pay). Both are content-sized, never stretched across the screen.
+ * The punch action sits pinned at the bottom of the settle card, where KOT sits on
+ * the new-order ticket.
+ */
+.ticket-body.panel-bill { padding: 14px; overflow: auto; justify-content: safe center; }
+.ticket-body.panel-bill > .bill-draft-note, .ticket-body.panel-bill > .workspace-operation-error { width: min(836px, 100%); margin: 0 auto 10px; }
+.bill-layout {
+  display: grid; flex: 1; min-height: 0; justify-content: center; align-items: start; gap: 14px 16px; padding-top: 4px;
+  grid-template-columns: minmax(320px, 460px) minmax(340px, 420px);
+  grid-template-areas: "receipt settle" "actions settle";
+  grid-template-rows: max-content 1fr;
 }
+.bill-layout.revising { grid-template-columns: minmax(0, 760px); grid-template-areas: "actions"; grid-template-rows: auto; }
 
-.bill-adjustments {
-  @apply bg-panel;
+/* Receipt */
+.bill-receipt {
+  grid-area: receipt; position: relative; display: grid; gap: 0; padding: 16px 18px 18px;
+  border-radius: 4px 4px 0 0; background: var(--panel); box-shadow: var(--shadow);
+  font-variant-numeric: tabular-nums;
 }
-
-.bill-adjustments .adjust-grid,
-.bill-payment-section .payment-grid {
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+/* Torn-paper edge: the one decorative flourish, and it says "bill". */
+.bill-receipt::after {
+  content: ""; position: absolute; left: 0; right: 0; bottom: -7px; height: 8px;
+  background: linear-gradient(-45deg, transparent 5px, var(--panel) 0) 0 0 / 10px 8px repeat-x,
+              linear-gradient(45deg, transparent 5px, var(--panel) 0) 0 0 / 10px 8px repeat-x;
+  filter: drop-shadow(0 1px 0 rgba(28, 25, 23, .06));
 }
+.bill-receipt.nc { box-shadow: var(--shadow), inset 0 3px 0 var(--danger); }
+.bill-receipt-head { display: grid; justify-items: center; gap: 1px; padding-bottom: 10px; border-bottom: 1px dashed var(--line-strong); text-align: center; }
+.bill-receipt-head strong { font-size: 18px; font-weight: 800; letter-spacing: -.01em; }
+.bill-receipt-head span { color: var(--muted); font-size: 11.5px; font-weight: 500; }
+.bill-receipt-head .bill-receipt-customer { color: var(--ink-2); font-weight: 600; }
+.bill-receipt-lines { display: grid; gap: 0; max-height: 46vh; margin: 0; padding: 8px 0; overflow: auto; list-style: none; border-bottom: 1px dashed var(--line-strong); }
+.bill-receipt-lines li { display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; gap: 8px; padding: 4px 0; font-size: 13px; line-height: 18px; }
+.bill-receipt-qty { color: var(--muted); font-weight: 700; text-align: right; }
+.bill-receipt-qty::after { content: "×"; margin-left: 1px; font-weight: 500; }
+.bill-receipt-name { overflow-wrap: anywhere; color: var(--ink); font-weight: 500; }
+.bill-receipt-amount { font-weight: 600; text-align: right; }
+.bill-receipt-totals { display: grid; gap: 3px; padding-top: 10px; }
+.bill-receipt-totals > div { display: flex; justify-content: space-between; gap: 12px; color: var(--ink-2); font-size: 12.5px; }
+.bill-receipt-totals .bill-subtotal { padding: 0; border: 0; color: var(--ink-2); font-size: 13px; }
+.bill-receipt-totals .bill-subtotal strong { font-size: 18px; font-weight: 800; }
+.bill-receipt-grand { align-items: baseline; margin-top: 6px; padding-top: 8px; border-top: 1px solid var(--ink); color: var(--ink) !important; font-size: 13px !important; font-weight: 700; }
+.bill-receipt-grand strong { font-size: 22px; font-weight: 800; letter-spacing: -.02em; }
+.bill-receipt-balance { color: var(--blue) !important; font-weight: 700; }
+.bill-receipt-balance strong { font-size: 15px; }
 
-.bill-payment-section .quick-pay {
-  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-}
+.bill-receipt-actions { grid-area: actions; align-self: start; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding-top: 6px; }
+.bill-receipt-actions .reprint-bill-button { gap: 10px; }
+.bill-receipt-actions .reprint-bill-button kbd { color: var(--muted); }
+.bill-receipt-actions .danger-link { margin-left: auto; }
+.bill-layout.revising .bill-receipt-actions { display: block; padding: 0; }
 
-.change-helper {
-  @apply bg-wash;
-}
+/* Settle card */
+.bill-settle { grid-area: settle; display: grid; gap: 12px; padding: 14px; border-radius: var(--surface-radius); background: var(--panel); box-shadow: var(--shadow-md); }
+.bill-name-field label, .payment-note-field { display: grid; gap: 4px; }
+.bill-name-field input, .payment-note-field input { width: 100%; }
+.bill-adjustments { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 10px; padding: 0; border: 0; background: transparent; }
+.bill-adjust-field { display: grid; gap: 4px; }
+.bill-adjustments .split-input { grid-template-columns: auto minmax(0, 1fr); gap: 4px; }
+.bill-adjustments select { padding: 0 6px; text-align: center; }
+.bill-adjustments input { text-align: right; }
 
-.change-helper-row {
-  @apply grid items-end gap-3;
-  grid-template-columns: minmax(180px, 1fr) auto;
-}
+.bill-payment-section { display: grid; gap: 6px; padding: 10px 0 0; border: 0; border-top: 1px solid var(--line); background: transparent; }
+.bill-payment-section .mini-title { display: flex; align-items: baseline; justify-content: space-between; }
+.bill-payment-section .mini-title strong { font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+.bill-payment-section .mini-title span { color: var(--ink-2); font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.bill-payment-section .mini-title span.settled { color: var(--success); }
+.payment-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; }
+.payment-row { display: grid; grid-template-columns: 92px minmax(0, 1fr); align-items: center; gap: 6px; padding: 3px; border-radius: 9px; transition: background var(--motion-fast); }
+.payment-row.filled { background: var(--wash); }
+.payment-method { justify-content: space-between; gap: 6px; min-height: 32px; padding: 0 10px; border: 0; border-radius: 7px; background: var(--panel); color: var(--ink); font-size: 13px; font-weight: 650; box-shadow: inset 0 0 0 1px var(--line-strong), 0 1px 1px rgba(28,25,23,.06); }
+.payment-method::after { content: "↳"; color: var(--faint); font-size: 10.5px; font-weight: 600; letter-spacing: .02em; }
+.payment-row.filled .payment-method::after { content: "↳"; color: var(--ink-2); }
+.payment-method:hover:not(:disabled) { background: var(--chrome); color: #fff; box-shadow: none; }
+.payment-method:hover:not(:disabled)::after { color: var(--chrome-muted); }
+.payment-row.filled .payment-method { background: var(--wash); color: var(--ink); }
+.payment-row .payment-input-row { grid-template-columns: minmax(0, 1fr) auto; gap: 4px; }
+.payment-row input { text-align: right; font-size: 14px; font-weight: 650; }
+.payment-row .fill-rest-btn { min-height: 32px; padding: 0 9px; border: 0; background: transparent; color: var(--muted); font-size: 11.5px; box-shadow: none; }
+.payment-row .fill-rest-btn:hover:not(:disabled) { background: var(--panel); color: var(--ink); }
+.payment-row .fill-rest-btn:disabled { opacity: .35; }
+.split-summary { padding: 6px 10px; border-radius: 8px; background: var(--wash); color: var(--ink-2); font-size: 12px; font-weight: 600; }
+.payment-overpaid { margin: 0; color: var(--danger); font-size: 12px; font-weight: 600; }
 
-.change-helper-row strong {
-  @apply inline-flex min-h-10 items-center justify-center rounded-md border border-line bg-white px-3 text-sm font-semibold text-ink;
-}
+.change-helper { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 10px; padding: 10px 0 0; border: 0; border-top: 1px solid var(--line); background: transparent; }
+.change-helper label { display: grid; gap: 4px; }
+.change-helper input { width: 100%; text-align: right; }
+.change-helper > strong { display: inline-flex; align-items: center; min-height: var(--control-height); padding: 0 10px; border-radius: 8px; background: var(--wash); color: var(--ink-2); font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.change-helper.good > strong { background: var(--success-soft); color: var(--success); }
 
-.change-helper-row strong,
-.bill-adjustments input,
-.bill-payment-section input,
-.bill-payment-section strong { font-variant-numeric: tabular-nums; }
-
-.reprint-action-row {
-  @apply grid gap-2;
-}
-
-.reprint-bill-button {
-  @apply w-full justify-between px-4;
-}
-
-.reprint-bill-button kbd,
-.punch-button kbd {
-  @apply rounded border border-line bg-wash px-2 py-1 text-xs font-semibold text-muted;
-}
-
-.change-helper.good {
-  border-color: var(--success); color: var(--success);
-}
-
-.change-helper.good .change-helper-row strong {
-  border-color: var(--success); color: var(--success);
-}
-
-.change-helper.bad {
-  border-color: var(--danger-line); color: var(--danger);
-}
-
-@media (max-width: 720px) {
-  .change-helper-row {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .change-helper-row strong {
-    @apply justify-start;
-  }
-}
-
-/* Unit picker (Rs / %) stays narrow; the amount field takes the remaining width. */
-.split-input {
-  grid-template-columns: minmax(76px, max-content) minmax(0, 1fr);
-}
-
-/* Keep the settlement decision visible while the bill's supporting fields scroll. */
-.ticket-body > .billing-panel { display: flex; flex: 1 0 auto; flex-direction: column; padding-bottom: 0; }
-.ticket-body .bill-metrics { gap: 20px; padding: 0 0 8px; border-bottom: 1px solid var(--line); }
-.ticket-body .bill-metrics > * { border: 0; border-radius: 0; background: transparent; padding: 0; box-shadow: none; }
-.ticket-body .bill-adjustments, .ticket-body .bill-payment-section, .ticket-body .change-helper { border: 0; border-radius: 0; padding: 12px 0; background: transparent; }
-.ticket-body .bill-payment-section { border-block: 1px solid var(--line); }
-.ticket-body .bill-adjustments { padding-block: 8px; }
-.bill-subtotal { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding-block: 4px 12px; border-bottom: 1px solid var(--line); color: var(--muted); font-size: 13px; }
-.bill-subtotal strong { color: var(--ink); font-variant-numeric: tabular-nums; }
-.bill-name-field { max-width: 440px; }
-.ticket-body > .bill-draft-note { margin: 0 0 12px; padding: 8px 12px; border-left: 2px solid var(--warning); background: var(--warning-soft); color: var(--warning); font-size: 12px; }
-.ticket-body .quick-pay button { min-height: 36px; font-weight: 500; }
-.ticket-body .reprint-action-row { justify-items: start; }
-.ticket-body .reprint-bill-button { width: auto; gap: 16px; }
-.ticket-body .billing-panel > .danger-link { align-self: start; width: auto; border: 1px solid var(--line); background: var(--panel); color: var(--danger); }
-.ticket-body .billing-panel > .danger-link:hover:not(:disabled) { border-color: var(--danger); background: var(--danger-soft); }
-.ticket-body .billing-panel > .revision-trigger { align-self: start; }
-.bill-settle-bar { position: sticky; bottom: 0; z-index: 2; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 16px; margin: auto -20px 0; padding: 12px 20px 14px; border-top: 1px solid var(--line); background: var(--panel); }
-.bill-settle-bar > div { display: grid; gap: 2px; text-align: right; }
-.bill-settle-bar > div span { font-size: 12px; color: var(--muted); }
-.bill-settle-bar strong { font-size: 20px; font-weight: 650; font-variant-numeric: tabular-nums; }
-.bill-settle-bar .punch-button { min-height: var(--control-height); min-width: 230px; }
-@media (max-width: 720px) { .bill-settle-bar { margin-inline: -12px; padding-inline: 12px; } .bill-settle-bar .punch-button { flex: 1; min-width: 180px; } }
-
+.bill-settle-bar, .bill-action-bar { display: grid; gap: 8px; margin: 2px -14px -14px; padding: 12px 14px 14px; border-top: 1px solid var(--line); border-radius: 0 0 var(--surface-radius) var(--surface-radius); background: var(--wash); }
+.bill-settle-bar > div, .bill-action-total { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.bill-settle-bar > div span, .bill-action-total span { color: var(--muted); font-size: 12px; }
+.bill-settle-bar strong, .bill-action-total strong { font-size: 22px; font-weight: 800; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.bill-settle-bar .punch-button, .bill-action-bar .action-bill { justify-content: space-between; width: 100%; min-height: 44px; padding: 0 14px; font-size: 14px; font-weight: 700; }
+.bill-action-bar .action-bill { justify-content: center; }
 .bill-version-note { margin: 0; color: var(--muted); font-size: 12px; }
+
+@media (max-width: 860px) {
+  .bill-layout { grid-template-columns: minmax(0, 1fr); grid-template-areas: "receipt" "actions" "settle"; grid-template-rows: auto; }
+}
+@media (pointer: coarse) {
+  .payment-method, .payment-row .fill-rest-btn { min-height: 44px !important; }
+}
+
+.discount-type-control { display: inline-flex; align-items: center; gap: 2px; padding: 2px; border-radius: var(--control-radius); background: var(--sunken); }
+.discount-type-control button { min-width: 28px; min-height: 26px; padding: 0 7px; border: 0; background: transparent; color: var(--muted); box-shadow: none; }
+.discount-type-control button[aria-pressed="true"] { background: var(--panel); color: var(--ink); box-shadow: var(--shadow); }
+.bill-adjustments .split-input, .history-edit-money .split-input { display: grid; grid-template-columns: auto minmax(72px, 1fr); gap: 6px; }
+@media (min-height: 820px) { .bill-layout:not(.revising) { align-content: center; flex: 0 0 auto; padding-block: 22px; grid-template-rows: max-content 1fr; } }
+
+.change-helper-error { grid-column: 1 / -1; color: var(--danger); font-size: 12px; }

@@ -9,32 +9,36 @@ button, input, select, textarea { font: inherit; }
 button, a, input, select, textarea, summary { -webkit-tap-highlight-color: transparent; }
 button, a, summary { touch-action: manipulation; }
 button svg { flex-shrink: 0; }
-input[type="number"], output, time, td { font-variant-numeric: tabular-nums; }
+input, output, time, td, kbd { font-variant-numeric: tabular-nums; }
 h1, h2, h3, p { overflow-wrap: break-word; }
-::selection { background: var(--accent-soft); color: var(--ink); }
-:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+::selection { background: var(--sunken); color: var(--ink); }
+:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; box-shadow: 0 0 0 2px var(--panel); }
 [hidden] { display: none !important; }
+kbd { font-family: inherit; }
 
 @layer base {
-  label { display: grid; min-width: 0; gap: 6px; color: var(--ink); font-size: 13px; font-weight: 500; line-height: 20px; }
-  input, select, textarea { min-width: 0; border: 1px solid var(--line-strong); border-radius: var(--control-radius); background: var(--panel); color: var(--ink); padding: 0 12px; font-size: 13px; outline: none; transition: border-color var(--motion-fast); }
+  label { display: grid; min-width: 0; gap: 4px; color: var(--ink-2); font-size: 12px; font-weight: 500; line-height: 16px; }
+  input, select, textarea { min-width: 0; border: 1px solid var(--line-strong); border-radius: var(--control-radius); background: var(--panel); color: var(--ink); padding: 0 10px; font-size: 13px; font-weight: 500; outline: none; transition: border-color var(--motion-fast), box-shadow var(--motion-fast); box-shadow: inset 0 1px 1px rgba(28, 25, 23, 0.04); }
   input, select { height: var(--control-height); }
-  textarea { min-height: 88px; padding-block: 8px; line-height: 20px; }
-  input::placeholder, textarea::placeholder { color: var(--muted); font-weight: 400; }
-  input:focus, select:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+  textarea { min-height: 80px; padding-block: 7px; line-height: 19px; }
+  input::placeholder, textarea::placeholder { color: var(--faint); font-weight: 400; }
+  input:hover:not(:disabled):not(:focus), select:hover:not(:disabled):not(:focus), textarea:hover:not(:disabled):not(:focus) { border-color: var(--faint); }
+  input:focus, select:focus, textarea:focus { border-color: var(--focus-ring); box-shadow: none; }
+  input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; box-shadow: 0 0 0 2px var(--panel); }
   input:disabled, select:disabled, textarea:disabled { background: var(--wash); color: var(--muted); cursor: not-allowed; }
-  select { cursor: pointer; padding-right: 28px; }
-  input[type="checkbox"], input[type="radio"] { width: 16px; height: 16px; accent-color: var(--accent); }
-  input[type="range"] { width: 100%; min-height: 28px; padding: 0; border: 0; box-shadow: none; accent-color: var(--accent); }
-  button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: var(--control-height); padding: 0 12px; border: 1px solid transparent; border-radius: var(--control-radius); background: var(--accent); color: var(--panel); font-size: 13px; font-weight: 600; cursor: pointer; transition: background var(--motion-fast), border-color var(--motion-fast); }
-  button:where(:hover:not(:disabled)) { background: var(--accent-dark); }
-  button:disabled { opacity: .45; cursor: not-allowed; }
-  button:not(:disabled):active { filter: brightness(.96); }
+  select { cursor: pointer; padding-right: 26px; }
+  input[type="checkbox"], input[type="radio"] { width: 16px; height: 16px; accent-color: var(--ink); box-shadow: none; }
+  input[type="range"] { width: 100%; min-height: 28px; padding: 0; border: 0; box-shadow: none; accent-color: var(--ink); }
+  /* Unstyled buttons are the neutral "commit" action: graphite, not brand colour. */
+  button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: var(--control-height); padding: 0 12px; border: 1px solid transparent; border-radius: var(--control-radius); background: var(--chrome); color: var(--chrome-text); font-size: 13px; font-weight: 600; line-height: 1; cursor: pointer; transition: background var(--motion-fast), border-color var(--motion-fast), color var(--motion-fast), box-shadow var(--motion-fast); }
+  button:where(:hover:not(:disabled)) { background: #000; }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  button:not(:disabled):active { transform: translateY(0.5px); }
   details { min-width: 0; }
-  summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: var(--control-height); padding: 8px 0; list-style: none; cursor: pointer; color: var(--ink); font-size: 13px; font-weight: 600; }
+  summary { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: var(--control-height); padding: 6px 0; list-style: none; cursor: pointer; color: var(--ink); font-size: 13px; font-weight: 600; }
   summary::-webkit-details-marker { display: none; }
-  summary::after { content: "⌄"; color: var(--muted); }
-  details[open] > summary::after { transform: rotate(180deg); }
+  summary::after { content: ""; width: 6px; height: 6px; border-right: 1.5px solid var(--muted); border-bottom: 1.5px solid var(--muted); transform: rotate(45deg) translateY(-2px); transition: transform var(--motion-fast); }
+  details[open] > summary::after { transform: rotate(-135deg) translateY(-1px); }
 }
 @media (pointer: coarse) {
   :root { --control-height: var(--touch-control-height); }

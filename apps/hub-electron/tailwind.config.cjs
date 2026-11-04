@@ -10,6 +10,11 @@ module.exports = {
     extend: {
       colors: {
         ink: semanticColor("ink"),
+        "ink-2": semanticColor("ink-2"),
+        faint: semanticColor("faint"),
+        sunken: semanticColor("sunken"),
+        chrome: semanticColor("chrome"),
+        "success-line": semanticColor("success-line"),
         muted: semanticColor("muted"),
         paper: semanticColor("paper"),
         panel: semanticColor("panel"),
@@ -38,6 +43,7 @@ module.exports = {
       },
       boxShadow: {
         pos: semanticColor("shadow"),
+        "pos-md": semanticColor("shadow-md"),
         "pos-lg": semanticColor("shadow-lg"),
       },
     },

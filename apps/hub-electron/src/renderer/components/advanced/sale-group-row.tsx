@@ -14,6 +14,7 @@ export function SaleGroupRow({
   const [ticketLabel, setTicketLabel] = useState<"KOT" | "BOT">(
     group.ticket_label,
   );
+  const [savedTicketLabel, setSavedTicketLabel] = useState(group.ticket_label);
   const [taxText, setTaxText] = useState(() => {
     try {
       return (
@@ -28,7 +29,9 @@ export function SaleGroupRow({
       return "";
     }
   });
+  const [savedTaxText, setSavedTaxText] = useState(taxText);
   const [saving, setSaving] = useState(false);
+  const dirty = ticketLabel !== savedTicketLabel || taxText.trim() !== savedTaxText.trim();
 
   function parseTaxComponents() {
     return taxText
@@ -51,9 +54,7 @@ export function SaleGroupRow({
     <article className="record-row sale-group-row">
       <div className="record-row-main">
         <strong>{group.name}</strong>
-        <span>
-          {group.kind} category · prints {ticketLabel}
-        </span>
+        {group.kind.toLowerCase() !== group.name.toLowerCase() ? <span>{group.kind}</span> : null}
       </div>
       <form
         className="sale-group-form"
@@ -66,9 +67,11 @@ export function SaleGroupRow({
               taxComponents: parseTaxComponents(),
             })
             .then(onSaved)
-            .then(() =>
-              setNotice({ tone: "good", text: "Tax group saved." }),
-            )
+            .then(() => {
+              setSavedTicketLabel(ticketLabel);
+              setSavedTaxText(taxText);
+              setNotice({ tone: "good", text: "Tax group saved." });
+            })
             .catch((error) =>
               setNotice({ tone: "bad", text: messageOf(error) }),
             )
@@ -76,7 +79,7 @@ export function SaleGroupRow({
         }}
       >
         <label>
-          Ticket
+          <span className="sr-only">Ticket for {group.name}</span>
           <select
             value={ticketLabel}
             onChange={(event) =>
@@ -88,15 +91,15 @@ export function SaleGroupRow({
           </select>
         </label>
         <label>
-          Taxes
+          <span className="sr-only">Taxes for {group.name}</span>
           <input
             value={taxText}
             onChange={(event) => setTaxText(event.target.value)}
             placeholder="CGST:2.5, SGST:2.5"
           />
         </label>
-        <button type="submit" disabled={saving}>
-          {saving ? "Saving..." : "Save"}
+        <button type="submit" className={dirty ? "" : "secondary-button"} disabled={saving || !dirty}>
+          {saving ? "Saving..." : dirty ? "Save" : "Saved"}
         </button>
       </form>
     </article>

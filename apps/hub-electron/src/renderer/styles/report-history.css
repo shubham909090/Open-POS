@@ -58,19 +58,19 @@
 }
 
 .bill-status {
-  @apply inline-flex rounded-md border border-line bg-wash px-2 py-0.5 text-xs font-medium capitalize text-muted;
+  @apply inline-flex items-center rounded-full bg-wash px-2 text-[11px] font-semibold capitalize leading-5 text-muted;
 }
 
 .bill-status.paid {
-  @apply border-success bg-success-soft text-success;
+  @apply bg-success-soft text-success;
 }
 
 .bill-status.pending {
-  @apply border-warning bg-warning-soft text-warning;
+  @apply bg-blue-soft text-blue;
 }
 
 .bill-status.cancelled {
-  @apply border-danger bg-danger-soft text-danger;
+  @apply bg-danger-soft text-danger;
 }
 
 .bill-history-money {
@@ -94,7 +94,7 @@
 }
 
 .history-actions {
-  @apply flex flex-col items-stretch gap-2;
+  @apply flex flex-row items-center justify-end gap-1.5;
 }
 
 .modified-pill {
@@ -174,28 +174,16 @@
 .bill-history-money { font-variant-numeric: tabular-nums; }
 
 .history-edit-summary .final strong {
-  @apply text-accent-dark;
+  @apply text-ink;
 }
 
 .history-edit-workbench {
-  @apply grid gap-4 lg:grid-cols-[minmax(280px,360px)_1fr];
+  display: grid; gap: 20px; grid-template-columns: minmax(0, 1.2fr) minmax(320px, 1fr);
 }
 
 .history-edit-money,
 .history-edit-items-panel {
   @apply grid content-start gap-3;
-}
-
-.history-payment-actions {
-  @apply grid grid-cols-2 gap-2;
-}
-
-.history-payment-actions button {
-  @apply rounded-md border border-line bg-wash px-3 py-2 text-xs font-medium text-ink transition hover:border-accent hover:bg-accent-soft;
-}
-
-.history-payment-grid {
-  @apply grid grid-cols-1 gap-2 sm:grid-cols-2;
 }
 
 .history-money-status {
@@ -246,7 +234,7 @@
 }
 
 .history-edit-search-row.keyboard-active {
-  @apply border-accent bg-accent-soft;
+  border-color: var(--focus-ring); background: var(--wash); box-shadow: inset 0 0 0 1px var(--focus-ring);
 }
 
 .history-edit-qty,
@@ -296,3 +284,14 @@
     @apply justify-start;
   }
 }
+
+.history-edit-items-panel { grid-column: 1; grid-row: 1; }
+.history-edit-money { grid-column: 2; grid-row: 1; padding-left: 20px; border-left: 1px solid var(--line); }
+.history-edit-money .adjust-grid { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(80px, 110px); gap: 10px; }
+.history-edit-money input { width: 100%; }
+.history-edit-footer { align-items: end; }
+.history-edit-footer .history-master-pin { width: 124px; margin-right: auto; }
+.history-master-pin input { width: 100%; text-align: center; letter-spacing: .2em; }
+.history-edit-summary .final strong { font-size: 22px; }
+.history-items-details > summary { justify-content: flex-start; gap: 8px; font-size: 12px; font-weight: 400; color: var(--muted); }
+@media (max-width: 760px) { .history-edit-workbench { grid-template-columns: minmax(0, 1fr); } .history-edit-items-panel, .history-edit-money { grid-column: 1; grid-row: auto; } .history-edit-money { padding-left: 0; border-left: 0; } }

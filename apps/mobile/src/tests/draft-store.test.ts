@@ -1,3 +1,4 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { clearDraft, getDeviceToken, getHubUrl, loadDraft, saveDraft, setDeviceToken, setHubUrl } from "../lib/draft-store";
 
@@ -61,4 +62,27 @@ describe("mobile draft and session storage", () => {
 
     await expect(loadDraft("table-t1")).resolves.toBeNull();
   });
+});
+
+it("serializes a table's slow writes, awaits latest on restore, and clears after pending writes", async () => {
+  let finishFirst!: () => void;
+  const firstWrite = new Promise<void>((resolve) => { finishFirst = resolve; });
+  const nativeWrite = vi.mocked(AsyncStorage.setItem);
+  nativeWrite.mockImplementationOnce(async (key, value) => { await firstWrite; storage.set(key, value); });
+  const make = (tableId: string, quantity: number) => ({ tableId, pax: 2, items: [{ menuItemId: "dish", quantity }], updatedAt: "now" });
+  const first = saveDraft(make("slow-A", 1));
+  const latest = saveDraft(make("slow-A", 6));
+  await saveDraft(make("other-B", 2));
+  expect(JSON.parse(storage.get("gaurav-pos:draft:other-B")!).items[0].quantity).toBe(2);
+  let restored = false;
+  const restore = loadDraft("slow-A").then((value) => { restored = true; return value; });
+  await Promise.resolve();
+  expect(restored).toBe(false);
+  finishFirst();
+  await Promise.all([first, latest]);
+  expect((await restore)?.items[0]?.quantity).toBe(6);
+  const write = saveDraft(make("slow-A", 7));
+  const clear = clearDraft("slow-A");
+  await Promise.all([write, clear]);
+  expect(await loadDraft("slow-A")).toBeNull();
 });

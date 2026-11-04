@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Printer } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState, type KeyboardEvent, type RefObject } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type RefObject } from "react";
 import { hubApi, type BillPrinterProfile, type BillPrinterSlot } from "../../hub-api.js";
 import { Dialog } from "../ui/dialog.js";
 
@@ -50,18 +50,39 @@ export function BillPrinterChooser({
     setActiveSlot(enabledOptions[0]?.slot ?? "default");
   }, [enabledOptions, open]);
 
+  // Start on the default printer so Enter prints there; printers may load after the dialog opens.
+  const listRef = useRef<HTMLDivElement>(null);
+  const hasFocusedChoice = useRef(false);
+  useEffect(() => {
+    if (!open) { hasFocusedChoice.current = false; return; }
+    if (hasFocusedChoice.current || !enabledOptions.length) return;
+    const frame = requestAnimationFrame(() => {
+      if (hasFocusedChoice.current) return;
+      const target = listRef.current?.querySelector<HTMLButtonElement>("button:not(:disabled)");
+      if (!target) return;
+      hasFocusedChoice.current = true;
+      if (!listRef.current?.contains(document.activeElement)) target.focus({ preventScroll: true });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [enabledOptions, open]);
+
   const handleKeyDown = useCallback((event: KeyboardEvent<HTMLDivElement>) => {
     const fallback = enabledOptions[0];
     if (!fallback || busy) return;
     const currentIndex = Math.max(0, enabledOptions.findIndex((option) => option.slot === activeSlot));
+    const activate = (slot: BillPrinterSlot) => {
+      hasFocusedChoice.current = true;
+      setActiveSlot(slot);
+      listRef.current?.querySelector<HTMLButtonElement>(`[data-printer-slot="${slot}"]`)?.focus({ preventScroll: true });
+    };
     if (event.key === "ArrowDown") {
       event.preventDefault();
-      setActiveSlot(enabledOptions[Math.min(enabledOptions.length - 1, currentIndex + 1)]?.slot ?? fallback.slot);
+      activate(enabledOptions[Math.min(enabledOptions.length - 1, currentIndex + 1)]?.slot ?? fallback.slot);
       return;
     }
     if (event.key === "ArrowUp") {
       event.preventDefault();
-      setActiveSlot(enabledOptions[Math.max(0, currentIndex - 1)]?.slot ?? fallback.slot);
+      activate(enabledOptions[Math.max(0, currentIndex - 1)]?.slot ?? fallback.slot);
       return;
     }
     if ((event.key === "Enter" || event.key === " " || event.key === "Spacebar") && !isDialogChromeKeyTarget(event.target)) {
@@ -76,19 +97,21 @@ export function BillPrinterChooser({
       <div className="printer-choice-panel">
         {billPrinters.isLoading ? <p className="plain-state" role="status">Loading bill printers…</p> : null}
         {billPrinters.isError ? <div className="printer-choice-note" role="alert"><p>Bill printers could not load. Try again before printing.</p><button type="button" className="secondary-button compact" onClick={() => void billPrinters.refetch()} disabled={billPrinters.isFetching}>{billPrinters.isFetching ? "Retrying…" : "Retry"}</button></div> : null}
-        <div className="printer-choice-list">
+        <div className="printer-choice-list" ref={listRef}>
           {options.map(({ slot, profile }) => (
             <button
               key={slot}
+              data-printer-slot={slot}
               type="button"
               className={`printer-choice-button ${slot}${activeSlot === slot && profile.configured ? " active" : ""}`}
               aria-pressed={activeSlot === slot && profile.configured}
               disabled={busy || !profile.configured}
+              data-autofocus={slot === enabledOptions[0]?.slot ? true : undefined}
               onMouseEnter={() => {
                 if (profile.configured) setActiveSlot(slot);
               }}
               onFocus={() => {
-                if (profile.configured) setActiveSlot(slot);
+                if (profile.configured) { hasFocusedChoice.current = true; setActiveSlot(slot); }
               }}
               onClick={() => {
                 if (!profile.configured) return;

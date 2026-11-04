@@ -1,3 +1,4 @@
+import { AlcoholNumberField } from "./alcohol-number-field.js";
 import { useMutation } from "@tanstack/react-query";
 import { useState } from "react";
 import { Plus, Save, X } from "lucide-react";
@@ -131,7 +132,7 @@ export function AlcoholEditForm({
         save.mutate();
       }}
     >
-      <div className="three-col">
+      <div className="alcohol-identity-fields">
         <label>
           Type
           <select
@@ -168,6 +169,7 @@ export function AlcoholEditForm({
         <label>
           Name
           <input
+            autoFocus
             value={name}
             onChange={(event) => setName(event.target.value)}
           />
@@ -197,25 +199,13 @@ export function AlcoholEditForm({
       </label>
       {type === "plain_liquor" ? (
         <>
-          <div className="three-col">
-            <label>
-              Large ml
-              <input
-                value={largeMl}
-                onChange={(event) => setLargeMl(event.target.value)}
-                inputMode="numeric"
-              />
-            </label>
-            <label>
-              Small ml
-              <input
-                value={smallMl}
-                onChange={(event) => setSmallMl(event.target.value)}
-                inputMode="numeric"
-              />
-            </label>
-            <span />
+          <div className="alcohol-form-groups alcohol-edit-groups">
+            <fieldset><legend>Bottle sizes</legend>
+              <AlcoholNumberField label="Large" unit="ml" aria-label="Large ml" value={largeMl} onChange={(event) => setLargeMl(event.target.value)} />
+              <AlcoholNumberField label="Small" unit="ml" aria-label="Small ml" value={smallMl} onChange={(event) => setSmallMl(event.target.value)} />
+            </fieldset>
           </div>
+          <fieldset className="alcohol-variants-fieldset"><legend>Menu variants</legend>
           <div className="variant-edit-list">
             {variants.map((variant, index) => (
               <div className="variant-edit-row" key={variant.kind}>
@@ -251,9 +241,7 @@ export function AlcoholEditForm({
                     placeholder="30 ml"
                   />
                 </label>
-                <label>
-                  Volume
-                  <input
+                <AlcoholNumberField label="Volume" unit="ml"
                     value={variant.volumeMl}
                     onChange={(event) =>
                       setVariants((current) =>
@@ -265,12 +253,8 @@ export function AlcoholEditForm({
                       )
                     }
                     inputMode="numeric"
-                    placeholder="ml"
-                  />
-                </label>
-                <label>
-                  Price
-                  <input
+                    placeholder="ml" />
+                <AlcoholNumberField label="Price" unit="₹"
                     value={variant.price}
                     onChange={(event) =>
                       setVariants((current) =>
@@ -282,18 +266,15 @@ export function AlcoholEditForm({
                       )
                     }
                     inputMode="decimal"
-                    placeholder="Price"
-                  />
-                </label>
+                    placeholder="Price" />
               </div>
             ))}
           </div>
+          </fieldset>
         </>
       ) : (
         <>
-          <label>
-            Price
-            <input
+          <AlcoholNumberField label="Price" unit="₹"
               value={variants[0]?.price ?? ""}
               onChange={(event) =>
                 setVariants((current) => [
@@ -303,9 +284,7 @@ export function AlcoholEditForm({
                   },
                 ])
               }
-              inputMode="decimal"
-            />
-          </label>
+              inputMode="decimal" />
           <div className="recipe-list">
             {recipe.map((row, index) => (
               <div className="recipe-row" key={index}>

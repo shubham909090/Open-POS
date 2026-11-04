@@ -72,6 +72,7 @@ export interface TableOrder {
 
 export interface KdsTicket {
   type?: KotType;
+  created_at?: string;
   id: string;
   sequence: number;
   table_name: string;

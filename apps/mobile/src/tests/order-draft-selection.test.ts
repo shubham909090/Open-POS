@@ -60,3 +60,23 @@ it("invalidates pending draft and order work when the hub client changes", async
   expect(oldClient.tableOrder).not.toHaveBeenCalled();
   expect(publish.mock.calls.filter(([value]) => value !== null)).toEqual([]);
 });
+
+it("accepts six rapid adds before a render without losing quantities, variants, or notes", async () => {
+  vi.mocked(loadDraft).mockResolvedValue({ ...draft("A"), items: [{ menuItemId: "coffee", menuItemVariantId: "small", quantity: 1, note: "No sugar" }] });
+  const client = { tableOrder: vi.fn().mockResolvedValue(order("A")) } as unknown as HubClient;
+  const { result } = renderHook(() => useOrderDraft({ client, connection: "online", setCurrentOrder: vi.fn(), setMessage: vi.fn(), setMode: vi.fn() }));
+  await act(async () => { await result.current.selectTable("A"); });
+  act(() => {
+    const add = result.current.addItem;
+    add("coffee", "small"); add("coffee", "large"); add("coffee", "small");
+    add("tea"); add("coffee", "large"); add("tea");
+  });
+  expect(result.current.items).toEqual([
+    { menuItemId: "coffee", menuItemVariantId: "small", quantity: 3, note: "No sugar" },
+    { menuItemId: "coffee", menuItemVariantId: "large", quantity: 2 },
+    { menuItemId: "tea", menuItemVariantId: undefined, quantity: 2 },
+  ]);
+  expect(result.current.items.reduce((sum, item) => sum + item.quantity, 0)).toBe(7);
+  expect(result.current.items.reduce((sum, item) => sum + item.quantity * (item.menuItemId === "tea" ? 4000 : item.menuItemVariantId === "large" ? 14000 : 9000), 0)).toBe(63000);
+  expect(saveDraft).toHaveBeenLastCalledWith(expect.objectContaining({ tableId: "A", items: result.current.items }));
+});

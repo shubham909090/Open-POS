@@ -1,5 +1,5 @@
 import { FormModal } from "./form-modal";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { ScrollView, Text, TextInput, View } from "react-native";
 import { Pressable } from "./pressable";
 import { getTableDisplayState, isTransferTargetTable, tableDisplayLabel } from "@gaurav-pos/shared";
@@ -16,6 +16,7 @@ function TicketTransferSection({
   floors,
   tableOrder,
   sending,
+  bare = false,
   expanded,
   onToggle,
   onShiftTable,
@@ -27,6 +28,7 @@ function TicketTransferSection({
   floors: HubBootstrap["floors"];
   tableOrder: TableOrder;
   sending: boolean;
+  bare?: boolean;
   expanded: boolean;
   onToggle: () => void;
   onShiftTable: (tableId: string) => void;
@@ -69,7 +71,7 @@ function TicketTransferSection({
 
   return (
     <>
-      <CollapsibleSection title="Move table or items"  expanded={expanded} onToggle={onToggle}>
+      <TransferFrame bare={bare} expanded={expanded} onToggle={onToggle}>
         {shiftTargets.length === 0 ? (
           <Text style={styles.smallMuted}>No available table.</Text>
         ) : (
@@ -86,11 +88,11 @@ function TicketTransferSection({
                   <Text style={styles.secondaryButtonText}>{selectedFullShiftTarget ? "Change target" : "Choose table"}</Text>
                 </Pressable>
                 <Pressable
-                  style={[styles.primaryButton, styles.sendButton, (!selectedFullShiftTarget || sending) && styles.buttonDisabled]}
+                  style={[styles.primaryButton, styles.sendButton, !selectedFullShiftTarget ? styles.secondaryButton : sending && styles.buttonDisabled]}
                   disabled={!selectedFullShiftTarget || sending}
                   onPress={() => selectedFullShiftTarget && onShiftTable(selectedFullShiftTarget.id)}
                 >
-                  <Text style={styles.primaryButtonText}>{sending ? "Moving..." : "Transfer table"}</Text>
+                  <Text style={!selectedFullShiftTarget ? styles.secondaryButtonText : styles.primaryButtonText}>{sending ? "Moving..." : "Transfer table"}</Text>
                 </Pressable>
               </View>
             </View>
@@ -119,7 +121,7 @@ function TicketTransferSection({
                       disabled={quantity <= 1}
                       onPress={() => setItemShiftQty((current) => ({ ...current, [item.id]: stepTransferQuantity(current[item.id], -1, item.quantity) }))}
                     >
-                      <Text style={styles.qtyText}>-</Text>
+                      <Text style={styles.qtyText}>−</Text>
                     </Pressable>
                     <TextInput
                       style={styles.shiftQtyInput}
@@ -148,7 +150,7 @@ function TicketTransferSection({
             })}
           </>
         )}
-      </CollapsibleSection>
+      </TransferFrame>
 
       <FormModal visible={Boolean(targetPickerMode)} transparent animationType="fade" onRequestClose={() => setTargetPickerMode(null)}>
         <View style={styles.popupBackdrop}>
@@ -183,7 +185,7 @@ function TicketTransferSection({
                         const selected = table.id === (targetPickerMode === "full" ? fullShiftTargetId : itemShiftTargetId);
                         return (
                           <Pressable key={table.id} style={[styles.targetPickerRow, selected && styles.shiftButtonActive]} onPress={() => selectShiftTarget(table.id)}>
-                            <Text style={[styles.shiftButtonText, styles.flexText]}>{table.name}</Text>
+                            <Text style={styles.shiftButtonText} numberOfLines={1}>{table.name}</Text>
                             <Text style={[styles.shiftButtonMeta, state === "running" && styles.tableStatusBusy, state === "bill_printed" && styles.tableStatusBilled]}>
                               {tableDisplayLabel(state)}
                             </Text>
@@ -203,6 +205,10 @@ function TicketTransferSection({
       </FormModal>
     </>
   );
+}
+
+function TransferFrame({ bare, expanded, onToggle, children }: { bare: boolean; expanded: boolean; onToggle: () => void; children: ReactNode }) {
+  return bare ? <View style={styles.formStack}>{children}</View> : <CollapsibleSection title="Move table or items" expanded={expanded} onToggle={onToggle}>{children}</CollapsibleSection>;
 }
 
 export { TicketTransferSection };

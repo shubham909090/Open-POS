@@ -56,6 +56,7 @@ export function DevicePairingCard({
   const [deviceName, setDeviceName] = useState("");
   const [role, setRole] = useState<Role>("waiter");
   const [pairing, setPairing] = useState<PairingCodeResult | null>(null);
+  const [pairingRole, setPairingRole] = useState<Role>("waiter");
   const [deviceSearch, setDeviceSearch] = useState("");
   const [revoking, setRevoking] = useState<LocalDevice | null>(null);
   const createButton = useRef<HTMLButtonElement>(null);
@@ -98,6 +99,7 @@ export function DevicePairingCard({
     onSuccess: async (result) => {
       if (!result) return;
       setPairing(result);
+      setPairingRole(role);
       setNotice({
         tone: "good",
         text: "QR code created. Scan it from the phone app within 10 minutes.",
@@ -130,44 +132,47 @@ export function DevicePairingCard({
       icon={<QrCode size={20} />}
       summary={`${activeDevices.length} paired devices`}
     >
-      <div
-        className="role-card-grid"
-        role="group"
-        aria-label="Staff device role"
-      >
-        {roleOptions.map((option) => (
-          <button
-            key={option.role}
-            type="button"
-            className={`role-card ${role === option.role ? "active" : ""}`}
-            aria-pressed={role === option.role}
-            onClick={() => setRole(option.role)}
-          >
-            <strong>{option.title}</strong>
-            <span>{option.description}</span>
-            <small>{option.permissions}</small>
+      <section className="pairing-create" aria-labelledby="pairing-create-title">
+        <h3 id="pairing-create-title">Pair a new phone</h3>
+        <div
+          className="role-card-grid"
+          role="group"
+          aria-label="Staff device role"
+        >
+          {roleOptions.map((option) => (
+            <button
+              key={option.role}
+              type="button"
+              className={`role-card ${role === option.role ? "active" : ""}`}
+              aria-pressed={role === option.role}
+              onClick={() => setRole(option.role)}
+            >
+              <strong>{option.title}</strong>
+              <span>{option.description}</span>
+              <small>{option.permissions}</small>
+            </button>
+          ))}
+        </div>
+        <form
+          className="pairing-form pairing-create-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (!createPairing.isPending) createPairing.mutate();
+          }}
+        >
+          <label>
+            Device name
+            <input
+              value={deviceName}
+              onChange={(event) => setDeviceName(event.target.value)}
+              placeholder={`${roleOptions.find((option) => option.role === role)?.title} phone 1`}
+            />
+          </label>
+          <button ref={createButton} type="submit" disabled={createPairing.isPending}>
+            {createPairing.isPending ? "Creating..." : "Create QR code"}
           </button>
-        ))}
-      </div>
-      <form
-        className="pairing-form pairing-create-form"
-        onSubmit={(event) => {
-          event.preventDefault();
-          if (!createPairing.isPending) createPairing.mutate();
-        }}
-      >
-        <label>
-          Device name
-          <input
-            value={deviceName}
-            onChange={(event) => setDeviceName(event.target.value)}
-            placeholder={`${roleOptions.find((option) => option.role === role)?.title} phone 1`}
-          />
-        </label>
-        <button ref={createButton} type="submit" disabled={createPairing.isPending}>
-          {createPairing.isPending ? "Creating..." : "Create QR code"}
-        </button>
-      </form>
+        </form>
+      </section>
       {pairing ? (
         <section className="pairing-card">
           <div className="pairing-qr-panel">
@@ -177,26 +182,34 @@ export function DevicePairingCard({
               <span>Expires {formatPosDateTime(pairing.expiresAt)}</span>
             </div>
           </div>
+          <div className="pairing-side">
+          <ol className="pairing-steps">
+            <li>On the phone open <strong>Settings → Pair phone</strong>.</li>
+            <li>Tap <strong>Scan pairing QR</strong>, or type code <strong>{pairing.code}</strong>.</li>
+            <li>The phone opens as <strong>{roleOptions.find((option) => option.role === pairingRole)?.title ?? pairingRole}</strong> once paired.</li>
+          </ol>
           <details className="pairing-payload-panel">
             <summary>Pair without scanning</summary>
             <span>Use this payload only if QR scanning is unavailable.</span>
             <textarea aria-label="Manual pairing payload" readOnly value={pairing.pairingPayloadText} />
           </details>
+          </div>
         </section>
       ) : null}
       <div className="record-list">
-        {loading ? (
-          <p className="text-sm text-muted">Loading paired devices...</p>
-        ) : null}
-        {activeDevices.length > 12 ? (
-          <div className="setup-search-row">
+        <div className="record-list-header">
+          <h3>Paired devices <span>{activeDevices.length}</span></h3>
+          {activeDevices.length > 12 ? (
             <input
               value={deviceSearch}
               aria-label="Search paired devices"
               onChange={(event) => setDeviceSearch(event.target.value)}
               placeholder="Search paired devices"
             />
-          </div>
+          ) : null}
+        </div>
+        {loading ? (
+          <p className="text-sm text-muted">Loading paired devices...</p>
         ) : null}
         {!loading && activeDevices.length === 0 ? (
           <EmptyState
@@ -204,27 +217,31 @@ export function DevicePairingCard({
             description="Create a QR code above, then scan it from the Android app."
           />
         ) : null}
-        {visibleDevices.map((device) => (
-          <article key={device.id} className="record-row">
-            <div>
-              <strong>{device.name}</strong>
-              <span>
-                {device.role} · {device.status}
-                {device.last_seen_at
-                  ? ` · seen ${formatPosDateTime(device.last_seen_at)}`
-                  : ""}
-              </span>
-            </div>
-            <button
-              type="button"
-              className="secondary-button pairing-revoke-button"
-              onClick={() => setRevoking(device)}
-              disabled={revoke.isPending}
-            >
-              Revoke
-            </button>
-          </article>
-        ))}
+        {visibleDevices.length ? (
+          <div className="record-rows device-rows">
+            {visibleDevices.map((device) => (
+              <article key={device.id} className="record-row device-row">
+                <div className="record-row-main">
+                  <strong>{device.name}</strong>
+                  <span className={`role-pill role-${device.role}`}>{device.role}</span>
+                  {device.status !== "active" ? <span>{device.status}</span> : null}
+                </div>
+                <span className="device-seen">
+                  {device.last_seen_at ? `Seen ${formatPosDateTime(device.last_seen_at)}` : "Never seen"}
+                </span>
+                <button
+                  type="button"
+                  className="record-action danger pairing-revoke-button"
+                  onClick={() => setRevoking(device)}
+                  disabled={revoke.isPending}
+                  aria-label={`Revoke ${device.name}`}
+                >
+                  Revoke
+                </button>
+              </article>
+            ))}
+          </div>
+        ) : null}
       </div>
       <ConfirmationDialog
         open={Boolean(revoking)}

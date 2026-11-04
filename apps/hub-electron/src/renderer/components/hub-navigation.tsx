@@ -161,8 +161,7 @@ export function HubNavigation({
         </button>
         <nav aria-label="Hub sections">
           {["Service", "Management", "Configuration"].map((group) => (
-            <div className="nav-group" key={group}>
-              <p className="nav-group-label">{group}</p>
+            <div className="nav-group" key={group} role="group" aria-label={group}>
               {hubNavigation
                 .filter((item) => item.group === group)
                 .map(({ view: target, label, icon: Icon }) => (
@@ -174,7 +173,7 @@ export function HubNavigation({
                     title={label}
                     onClick={() => onChange(target)}
                   >
-                    <Icon size={17} strokeWidth={1.7} />
+                    <Icon size={17} strokeWidth={1.8} />
                     <span>{label}</span>
                   </button>
                 ))}
@@ -254,6 +253,7 @@ function WorkspaceSearch({
         <Search size={18} />
         <input
           autoFocus
+          data-autofocus
           aria-label="Search pages"
           role="combobox"
           aria-expanded

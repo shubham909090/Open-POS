@@ -1,103 +1,63 @@
-.kitchen-layout .panel {
-  @apply grid gap-4;
-}
+/*
+ * Kitchen display. Each ticket is a chit: table name big enough to read across a
+ * pass, quantities as bold counters, notes on a warning strip, and one obvious next
+ * action whose colour follows the ticket (queued → start, preparing → ready, ready → served).
+ */
+.kitchen-layout { display: grid; gap: 12px; }
+.kitchen-layout > .panel { display: grid; gap: 12px; padding: 0; background: transparent; }
+.kitchen-layout .panel-title { align-items: center; }
+.kitchen-layout .panel-title h2 { font-size: 13px; font-weight: 700; color: var(--ink-2); }
+.kitchen-layout .panel-title select { width: min(220px, 100%); background: var(--panel); }
+.kitchen-queue-summary { display: block; margin-top: 0; color: var(--muted); font-size: 12px; font-weight: 500; }
+.kitchen-station-picker { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.kitchen-station-picker label { color: var(--muted); font-size: 12px; font-weight: 500; }
+.kot-load-state { display: grid; min-height: 160px; place-content: center; gap: 12px; color: var(--muted); font-size: 13px; text-align: center; }
+.kitchen-error { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 14px; border-radius: 10px; background: var(--danger-soft); color: var(--danger); font-size: 13px; }
+.kitchen-error button { min-height: 30px; border: 1px solid var(--danger-line); background: var(--panel); color: var(--danger); font-size: 12px; }
 
-.kitchen-layout .panel-title {
-  @apply items-center;
-}
+.kot-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr)); align-items: start; }
+.kot-card { position: relative; display: grid; align-content: start; gap: 0; overflow: hidden; border-radius: var(--surface-radius); background: var(--panel); box-shadow: var(--shadow-md); }
+.kot-card::before { content: ""; position: absolute; inset: 0 0 auto; height: 4px; background: var(--faint); }
+.kot-card.status-queued::before { background: var(--accent-bright); }
+.kot-card.status-preparing::before { background: var(--warning); }
+.kot-card.status-ready::before { background: var(--success); }
+.kot-card.cancellation::before { background: var(--danger); }
+.kot-card header { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; padding: 14px 14px 10px; border-bottom: 1px dashed var(--line-strong); }
+.kot-ticket-id { display: flex; align-items: baseline; gap: 8px; }
+.kot-table-name { font-size: 22px; font-weight: 800; letter-spacing: -.02em; color: var(--ink); line-height: 1.1; }
+.kot-ticket-id > span { color: var(--muted); font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.kot-ticket-kind { display: grid; justify-items: end; gap: 3px; text-align: right; }
+.kot-ticket-kind strong { font-size: 12px; font-weight: 650; color: var(--ink-2); }
+.kot-status { display: inline-flex; align-items: center; min-height: 18px; padding: 0 7px; border-radius: 999px; background: var(--wash); color: var(--muted); font-size: 10.5px; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; }
+.kot-status.status-queued { background: var(--accent-soft); color: var(--accent-dark); }
+.kot-status.status-preparing { background: var(--warning-soft); color: var(--warning); }
+.kot-status.status-ready { background: var(--success-soft); color: var(--success); }
 
-.kitchen-layout .panel-title select {
-  @apply w-[min(220px,100%)];
-}
+.kot-card ul { display: grid; gap: 0; margin: 0; padding: 4px 14px; list-style: none; }
+.kot-card li { padding: 7px 0; border-bottom: 1px solid var(--line); color: var(--ink); font-size: 14px; font-weight: 600; line-height: 20px; }
+.kot-card li:last-child { border-bottom: 0; }
+.kot-card .kot-change-row { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; gap: 10px; }
+.kot-item-change { display: inline-flex; align-items: center; min-height: 22px; padding: 0 7px; border-radius: 6px; background: var(--chrome); color: #fff; font-size: 12px; font-weight: 750; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.kot-change-row.removal .kot-item-change { background: var(--danger); }
+.kot-card li.kot-note { margin: 6px 0 2px; padding: 6px 9px; border: 0; border-radius: 8px; background: var(--warning-soft); color: var(--warning); font-size: 12.5px; font-weight: 600; line-height: 17px; }
+.kot-card small.kot-note { display: block; width: fit-content; margin-top: 2px; color: var(--warning); font-size: 12px; font-weight: 600; line-height: 16px; }
 
-.kot-grid {
-  @apply grid gap-4;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr));
-  align-items: start;
-}
-
-.kot-card {
-  @apply grid content-start gap-4 rounded-lg border border-line bg-panel p-4;
-}
-
-.kot-card header,
-.kot-card footer {
-  @apply flex flex-wrap items-center justify-between gap-2;
-}
-
-.kot-card header {
-  @apply border-b border-line pb-3;
-}
-
-.kot-card header strong {
-  @apply text-base font-semibold text-ink;
-}
-
-.kot-card header span {
-  @apply text-xs font-medium capitalize text-muted;
-}
-
-.kot-card ul {
-  @apply m-0 grid list-none gap-0 rounded-none border-0 bg-transparent p-0;
-}
-
-.kot-card li {
-  @apply border-0 border-b border-line bg-transparent px-0 py-3 text-base font-medium leading-6 text-ink;
-}
-
-.kot-card li:last-child {
-  @apply border-b-0;
-}
-
-.kot-card footer {
-  @apply grid justify-start gap-2 pt-1;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-
-.kot-status-button {
-  min-height: var(--control-height); width: 100%; padding-inline: 8px; font-size: 13px; font-weight: 500; border: 1px solid;
-}
-
-.kot-status-button.preparing {
-  @apply border-warning/40 bg-warning-soft text-warning hover:border-warning hover:bg-warning hover:text-white;
-}
-
-.kot-status-button.ready {
-  @apply border-success/40 bg-success-soft text-success hover:border-success hover:bg-success hover:text-white;
-}
-
-.kot-status-button.served {
-  @apply border-line-strong bg-panel text-ink hover:bg-wash;
-}
-
-.kot-note {
-  @apply font-medium text-muted;
-}
-
-.kitchen-queue-summary { @apply mt-1 block text-sm font-normal text-muted; }
-.kitchen-station-picker { @apply flex flex-wrap items-center gap-2; }
-.kitchen-station-picker label { @apply text-xs font-medium text-muted; }
-.kot-load-state { @apply grid min-h-40 place-content-center gap-3 text-center text-sm text-muted; }
-.kitchen-error { @apply flex flex-wrap items-center justify-between gap-3 rounded-lg border border-danger/20 bg-danger-soft px-4 py-3 text-sm text-danger; }
-.kitchen-error button { @apply min-h-8 border border-danger/20 bg-panel px-3 text-xs text-danger hover:bg-danger-soft; }
-
-.kot-card small.kot-note {
-  @apply mt-1 block w-fit text-xs leading-4;
-}
-
-.kot-card li.kot-note {
-  @apply list-none;
-}
-
-.kot-ticket-kind { display: grid; gap: 2px; text-align: right; }
-.kot-ticket-kind strong { font-size: 12px; font-weight: 600; }
-.kot-card .kot-change-row { display: grid; grid-template-columns: minmax(86px, auto) minmax(0, 1fr); align-items: start; gap: 12px; }
-.kot-item-change { font-size: 12px; font-weight: 600; white-space: nowrap; }
-.kot-card.cancellation { border-color: var(--danger-line); background: var(--danger-soft); }
-.kot-card.cancellation .kot-ticket-kind, .kot-card.cancellation .kot-ticket-kind strong, .kot-change-row.removal .kot-item-change { color: var(--danger); }
+.kot-card footer { display: grid; grid-template-columns: auto auto auto; justify-content: end; gap: 6px; padding: 10px 14px 14px; background: var(--wash); border-top: 1px solid var(--line); }
+.kot-status-button { width: auto; min-height: 30px; padding-inline: 8px; border: 1px solid var(--line-strong); background: var(--panel); color: var(--ink-2); font-size: 12.5px; font-weight: 600; box-shadow: none; }
+.kot-status-button:hover:not(:disabled) { background: var(--panel); border-color: var(--faint); color: var(--ink); }
+.kot-status-button[aria-pressed="true"] { opacity: 1; border-color: transparent; background: transparent; color: var(--faint); }
+.kot-status-button.kot-next-action { min-width: 96px; min-height: 38px; border-color: transparent; background: var(--success); color: #fff; font-weight: 700; }
+.kot-status-button.kot-next-action:hover:not(:disabled) { background: color-mix(in srgb, var(--success) 85%, #000); color: #fff; }
+.kot-status-button.served.kot-next-action { background: var(--chrome); }
 .kot-card.acknowledge-only footer { grid-template-columns: minmax(0, 1fr); }
 .kot-acknowledge-button { border: 1px solid var(--line-strong); background: var(--panel); color: var(--ink); }
-.kot-card.cancellation .kot-acknowledge-button { border-color: var(--danger-line); color: var(--danger); }
-.kot-acknowledge-button:hover:not(:disabled) { background: var(--wash); }
-.kot-status-button.kot-next-action { border-color: var(--accent); background: var(--accent); color: var(--panel); font-weight: 600; }
-.kot-status-button.kot-next-action:hover:not(:disabled) { border-color: var(--accent-dark); background: var(--accent-dark); }
+.kot-card.cancellation { background: var(--panel); box-shadow: var(--shadow-md), inset 0 0 0 1px var(--danger-line); }
+.kot-card.cancellation .kot-ticket-kind strong { color: var(--danger); }
+.kot-card.cancellation .kot-acknowledge-button { border-color: var(--danger-line); background: var(--panel); color: var(--danger); }
+.kot-acknowledge-button:hover:not(:disabled) { filter: brightness(.95); }
+@media (pointer: coarse) { .kot-status-button { min-height: 48px; } }
+
+.kot-age { color: var(--ink-2); font-size: 13px; font-weight: 700; white-space: nowrap; }
+.kot-change-row.addition .kot-item-change { background: var(--success-soft); color: var(--success); }
+.kot-status-button.preparing.kot-next-action { background: var(--accent); }
+.kot-card footer { align-items: center; }

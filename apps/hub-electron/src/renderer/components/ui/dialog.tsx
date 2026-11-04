@@ -54,6 +54,13 @@ export function Dialog({
             className,
           )}
           onKeyDown={onKeyDown}
+          onOpenAutoFocus={(event) => {
+            // Start where the work is (a PIN or search field), not on the Close button.
+            const target = content.current?.querySelector<HTMLElement>("[data-autofocus]");
+            if (!target) return;
+            event.preventDefault();
+            target.focus({ preventScroll: true });
+          }}
           onCloseAutoFocus={(event) => {
             onCloseAutoFocus?.(event);
             const target = returnFocusRef?.current ?? returnFocus.current;

@@ -1,90 +1,21 @@
-.transfer-panel-toggle {
-  @apply w-full justify-between rounded-md border-0 bg-panel px-3 py-3 text-left shadow-none hover:bg-wash;
-}
-
-.transfer-panel-toggle > div {
-  @apply grid min-w-0 gap-0.5;
-}
-
-.transfer-panel-toggle strong {
-  @apply text-base font-semibold text-ink;
-}
-
-.transfer-panel-toggle span {
-  @apply text-xs font-medium text-muted;
-}
-
-.transfer-panel-body {
-  @apply grid gap-3 border-t border-line p-3;
-}
-
-.transfer-panel-head {
-  @apply flex flex-wrap items-center justify-between gap-2;
-}
-
-.transfer-mode-toggle {
-  @apply inline-grid rounded-md border border-line bg-wash p-1;
-  grid-template-columns: repeat(2, minmax(112px, 1fr));
-}
-
-.transfer-mode-toggle button {
-  @apply min-h-10 rounded-md bg-transparent px-4 text-sm font-semibold text-muted shadow-none hover:bg-white hover:text-ink;
-}
-
-.transfer-mode-toggle button.active {
-  @apply bg-accent-soft text-accent-dark;
-}
-
-.transfer-target-field {
-  @apply grid max-w-xl gap-1;
-}
-
-.transfer-target-field select {
-  @apply h-11;
-}
-
-.transfer-target-note {
-  @apply m-0 rounded-md border border-blue bg-blue-soft px-3 py-2 text-sm font-semibold text-blue;
-}
-
-.transfer-warning {
-  @apply m-0 rounded-md border border-warning bg-warning-soft px-3 py-2 text-sm font-semibold leading-5 text-warning;
-}
-
-.transfer-submit-button {
-  @apply inline-flex min-h-11 w-fit min-w-64 items-center justify-center rounded-md bg-accent px-4 text-sm font-semibold text-white hover:bg-accent-dark disabled:bg-wash disabled:text-muted disabled:opacity-100;
-}
-
-.transfer-item-list {
-  @apply grid gap-2;
-}
-
-.transfer-item-row {
-  @apply grid items-center gap-3 border-0 border-b border-line bg-transparent py-3;
-  grid-template-columns: minmax(0, 1fr) auto;
-}
-
-.transfer-item-row > div:first-child {
-  @apply grid min-w-0 gap-1;
-}
-
-.transfer-item-row strong {
-  @apply min-w-0 text-sm font-semibold text-ink;
-}
-
-.transfer-item-row span {
-  @apply min-w-0 text-sm font-medium text-muted;
-}
-
-.transfer-qty-control {
-  @apply grid items-center gap-1;
-  grid-template-columns: 38px 72px 38px;
-}
-
-.transfer-qty-control button {
-  @apply h-9 min-h-9 w-9 p-0;
-}
-
-.transfer-qty-control input {
-  @apply h-9 text-center;
-}
+/* Transfer table or items: an inline card inside Sent items. */
+.transfer-panel { margin: 4px 14px 14px; padding: 0; border-radius: 10px; background: var(--wash); box-shadow: inset 0 0 0 1px var(--line); }
+.transfer-panel-body { display: grid; gap: 10px; padding: 12px; }
+.transfer-panel-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.transfer-panel-head > strong { font-size: 13px; font-weight: 700; }
+.transfer-mode-toggle { display: inline-flex; gap: 2px; padding: 3px; border-radius: 9px; background: var(--sunken); }
+.transfer-mode-toggle button { min-height: 26px; padding: 0 12px; border-radius: 6px; background: transparent; color: var(--ink-2); font-size: 12px; font-weight: 600; box-shadow: none; }
+.transfer-mode-toggle button.active { background: var(--panel); color: var(--ink); box-shadow: var(--shadow); }
+.transfer-target-field { display: grid; gap: 4px; max-width: 320px; }
+.transfer-target-note { margin: 0; padding: 6px 10px; border-radius: 8px; background: var(--blue-soft); color: var(--blue); font-size: 12px; font-weight: 600; }
+.transfer-warning { margin: 0; padding: 6px 10px; border-radius: 8px; background: var(--warning-soft); color: var(--warning); font-size: 12px; font-weight: 600; }
+.transfer-submit-button { justify-self: end; min-width: 200px; }
+.transfer-item-list { display: grid; gap: 0; border-radius: 8px; background: var(--panel); box-shadow: var(--shadow); }
+.transfer-item-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 7px 10px; border-bottom: 1px solid var(--line); }
+.transfer-item-row:last-child { border-bottom: 0; }
+.transfer-item-row > div:first-child { display: grid; gap: 0; min-width: 0; }
+.transfer-item-row strong { font-size: 13px; font-weight: 600; }
+.transfer-item-row span { color: var(--muted); font-size: 11.5px; }
+.transfer-qty-control { display: inline-grid; grid-template-columns: 28px 44px 28px; align-items: center; gap: 2px; }
+.transfer-qty-control button { width: 28px; height: 28px; min-height: 28px; padding: 0; border: 1px solid var(--line-strong); background: var(--panel); color: var(--ink); box-shadow: none; }
+.transfer-qty-control input { height: 28px; padding: 0; text-align: center; font-weight: 700; }

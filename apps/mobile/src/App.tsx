@@ -9,7 +9,7 @@ import {
   View
 } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
-import type { SaleGroupKind } from "@gaurav-pos/shared";
+import { feedbackTiming, type SaleGroupKind } from "@gaurav-pos/shared";
 import { HubClient, type CurrentDaySummary, type DailyReportDetail, type DailyReportRow, type HubBootstrap, type HubOrder, type KdsTicket } from "./lib/hub-client";
 import { getMobileServiceViewModel } from "./lib/mobile-app-view-model";
 import { palette, styles } from "./styles/app-styles";
@@ -27,7 +27,7 @@ import { useKitchenActions } from "./hooks/use-kitchen-actions";
 import { useMobileChime } from "./hooks/use-mobile-chime";
 import { useMobileHubRefresh } from "./hooks/use-mobile-hub-refresh";
 import { useOperationKeys } from "./hooks/use-operation-keys";
-import { useOrderDraft } from "./hooks/use-order-draft";
+import { DRAFT_RESTORED_MESSAGE, useOrderDraft } from "./hooks/use-order-draft";
 import { useTableServiceActions } from "./hooks/use-table-service-actions";
 import { useMobileUpdate } from "./hooks/use-mobile-update";
 import { useRestaurantBranding } from "./hooks/use-restaurant-branding";
@@ -50,6 +50,11 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
   const [message, setMessage] = useState("Checking hub connection...");
+  useEffect(() => {
+    if (message !== DRAFT_RESTORED_MESSAGE && !message.endsWith(" is paired and ready.")) return;
+    const timer = setTimeout(() => setMessage((current) => (current === message ? "" : current)), feedbackTiming.successNoticeMs);
+    return () => clearTimeout(timer);
+  }, [message]);
   const connectionFailuresRef = useRef(0);
   const {
     hubUrlDraft,
@@ -281,7 +286,7 @@ export default function App() {
       <Text style={styles.muted}>Loading this table…</Text>
     </View>
   ) : (
-    <View style={[styles.workArea, useVirtualMenu && styles.workAreaMenuOnly]}>
+    <View style={[styles.workArea, (useVirtualMenu || mode === "ticket") && styles.workAreaMenuOnly]}>
       {!historyMode && mode === "tables" && (
         <TablePicker
           activeTables={activeTables}
@@ -336,7 +341,7 @@ export default function App() {
           onPaxChange={(value) => {
             const clean = value.replace(/\D/g, "").slice(0, 3);
             setPax(clean);
-            void persistDraft(items, clean);
+            void persistDraft(undefined, clean);
           }}
           onChangeQty={changeQty}
           onChangeItemNote={changeItemNote}
@@ -419,9 +424,9 @@ export default function App() {
 
 
 
-          {!shouldShowOnboarding && !licenseBlocked && (message || savingDraft || licenseWarning) ? (
+          {!shouldShowOnboarding && !licenseBlocked && (message || licenseWarning) ? (
             <View style={styles.serviceFeedback}>
-              <ConnectionBanner message={licenseWarning ? license.message : message} savingDraft={!isKitchenDevice && savingDraft} onDismiss={licenseWarning ? undefined : () => setMessage("")} />
+              <ConnectionBanner message={licenseWarning ? license.message : message} savingDraft={false} onDismiss={licenseWarning ? undefined : () => setMessage("")} />
             </View>
           ) : null}
 
@@ -468,18 +473,18 @@ export default function App() {
             />
           ) : (
             <>
-              {useVirtualMenu ? (
+              {useVirtualMenu || (!isKitchenDevice && mode === "ticket") ? (
                 <View style={styles.screen}>
                   <View style={[styles.screenContent, styles.virtualMenuContent]}>
                     {serviceContent}
                   </View>
                 </View>
               ) : (
-                <ScrollView key={`${mode}:${selectedTableId ?? ""}:${selectedHistoryDayId ?? ""}`} style={styles.screen} contentContainerStyle={[styles.screenContent, hasNewItems && mode !== "ticket" && !isKitchenDevice && styles.screenContentWithDraft]} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
+                <ScrollView key={`${mode}:${selectedTableId ?? ""}:${selectedHistoryDayId ?? ""}`} style={styles.screen} contentContainerStyle={[styles.screenContent, hasNewItems && mode === "tables" && !isKitchenDevice && styles.screenContentWithDraft]} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
                   {serviceContent}
                 </ScrollView>
               )}
-              {!isKitchenDevice && hasNewItems && mode !== "ticket" ? (
+              {!isKitchenDevice && hasNewItems && (mode === "menu" || mode === "tables") ? (
                 <DraftBar
                   count={items.reduce((total, item) => total + item.quantity, 0)}
                   total={draftTotal}
@@ -488,18 +493,6 @@ export default function App() {
               ) : null}
             </>
           )}
-          {!shouldShowOnboarding && !isKitchenDevice && !licenseBlocked && hasNewItems && mode === "ticket" ? (
-            <View style={styles.serviceActionBar}>
-              <View style={styles.serviceActionTotal}>
-                <Text style={styles.muted}>{items.reduce((total, item) => total + item.quantity, 0)} new</Text>
-                <Text style={styles.totalText}>Rs {formatRupees(draftTotal)}</Text>
-              </View>
-              <View style={styles.sendButtonRow}>
-                <Button label="Print + KOT" tone="secondary" disabled={sending} style={{ flex: 1 }} onPress={() => void submitOrder("kot_print")} />
-                <Button label={sending ? "Sending…" : connection === "online" ? "Send KOT" : "Save draft"} disabled={sending} style={{ flex: 1 }} onPress={() => void submitOrder("kot")} />
-              </View>
-            </View>
-          ) : null}
           {!shouldShowOnboarding && !isKitchenDevice && !licenseBlocked ? (
             <ModeTabs mode={mode} onModeChange={setMode} newItemCount={items.reduce((total, item) => total + item.quantity, 0)} showHistory={canBill} />
           ) : null}

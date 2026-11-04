@@ -57,6 +57,12 @@ export function PaymentQrModal({
   }, [Boolean(change)]);
   const [pin, setPin] = useState("");
   const [manageOpen, setManageOpen] = useState(false);
+  // The management actions open below a full-size QR: bring them into view so the tap visibly does something.
+  useEffect(() => {
+    if (!manageOpen) return;
+    const timer = setTimeout(() => scrollRef.current?.scrollToEnd({ animated: !reducedMotion }), 60);
+    return () => clearTimeout(timer);
+  }, [manageOpen, reducedMotion]);
   const close = () => {
     setPin("");
     setChange(null);
@@ -328,14 +334,14 @@ export function PaymentQrModal({
                         <>
                           <Pressable
                             accessibilityRole="button"
-                            style={[s.action, s.primary, !online && s.disabled]}
+                            style={[s.action, !online && s.disabled]}
                             disabled={!online || busy}
                             onPress={() => {
                               setPin("");
                               void pickImage();
                             }}
                           >
-                            <Text style={[s.actionText, s.primaryText]}>
+                            <Text style={s.actionText}>
                               {qr ? "Replace QR image" : "Upload QR image"}
                             </Text>
                           </Pressable>

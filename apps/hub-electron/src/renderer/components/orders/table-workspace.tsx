@@ -358,33 +358,15 @@ export function TableWorkspace({
       const button = event.target.closest("button");
       if (button instanceof HTMLButtonElement && sectionRef.current?.contains(button)) operationTrigger.current = button;
     }}>
-      {/* The order modal header already names the table; this row carries the panel switch and running total. */}
-      <div className="ticket-header">
-        <div className="segmented" role="group" aria-label={`${tableName} order panels`}>
-          <button type="button" aria-pressed={orderPanel === "new"} className={orderPanel === "new" ? "active" : ""} onClick={() => setOrderPanel("new")}>New order</button>
-          <button type="button" aria-pressed={orderPanel === "sent"} className={orderPanel === "sent" ? "active" : ""} onClick={() => setOrderPanel("sent")}>Sent items</button>
-          <button type="button" aria-pressed={orderPanel === "bill"} className={orderPanel === "bill" ? "active" : ""} onClick={() => setOrderPanel("bill")}>Bill</button>
-        </div>
-        <div className="ticket-header-actions">
-          {orderPanel !== "bill" ? <div className="ticket-total" aria-live="polite">
-            <span>{draft.length > 0 ? "Table + draft" : "Table total"}</span>
-            <strong>{formatInr(draftTotal + sentTotal)}</strong>
-          </div> : null}
-          {onClose ? (
-            <button type="button" className="quiet-button" onClick={onClose}>
-              Close
-            </button>
-          ) : null}
-        </div>
-      </div>
-
-      <div className="ticket-body">
+      {/* Panel tabs live in the order dialog header so they never move between panels. */}
+      <div className={`ticket-body panel-${orderPanel}`}>
         {shownNotice?.tone === "bad" ? <Notice variant="error" className="workspace-operation-error"><span>{shownNotice.text}</span><button type="button" aria-label="Dismiss operation error" className="ui-button-ghost" onClick={() => setLocalNotice({ tone: "good", text: "" })}>Dismiss</button></Notice> : null}
         {orderPanel === "bill" && draft.length > 0 ? <p className="bill-draft-note" role="status">{draft.reduce((total, item) => total + item.quantity, 0)} unsent items are not included in this bill. Send them from New order first if they should be billed.</p> : null}
       {orderPanel === "new" ? (
         <NewOrderPanel
           showSearch={!menuVisible}
           tableId={tableId}
+          tableTotalPaise={sentTotal}
           bootstrap={bootstrap}
           draft={draft}
           setNotice={setNotice}
@@ -443,6 +425,7 @@ export function TableWorkspace({
       {orderPanel === "bill" ? (
         <BillingPanel
           tableOrder={data}
+          tableName={tableName}
           menuItems={bootstrap.menuItems}
           sentTotal={sentTotal}
           generateBill={(adjustments) => {

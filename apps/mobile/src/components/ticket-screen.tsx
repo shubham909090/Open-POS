@@ -1,7 +1,7 @@
 import { FormModal } from "./form-modal";
 import { useEffect, useRef, useState } from "react";
 import {
-  LayoutAnimation,
+  Keyboard,
   ScrollView,
   Text,
   TextInput,
@@ -22,11 +22,12 @@ import type {
 } from "../lib/mobile-types";
 import { useTicketStateEditor } from "../hooks/use-ticket-state-editor";
 import { palette, styles } from "../styles/app-styles";
-import { CollapsibleSection, UncontrolledInput } from "./app-shell";
+import { EmptyState } from "./app-shell";
 import { CaptainBillingPanel } from "./billing-panel";
 import { MenuItemRow } from "./menu-screen";
 import { TicketTransferSection } from "./ticket-transfer-section";
-import { useReducedMotion } from "../hooks/use-reduced-motion";
+import { Button } from "./ui-primitives";
+import { useKeyboardVisible } from "../hooks/use-keyboard-visible";
 
 function TicketScreen({
   selectedTableName,
@@ -106,7 +107,7 @@ function TicketScreen({
   }) => void;
   onSubmit: (printMode: PrintMode) => void;
 }) {
-  const reducedMotion = useReducedMotion();
+  const keyboardVisible = useKeyboardVisible();
   const [openDraftNotes, setOpenDraftNotes] = useState<Set<number>>(new Set());
   const canSubmit = Boolean(selectedTableName && items.length > 0 && !sending);
   const sentCount = sentItems.reduce((total, item) => total + item.quantity, 0);
@@ -140,27 +141,14 @@ function TicketScreen({
     onSaveOrderState,
   });
   const sentById = new Map(sentItems.map((item) => [item.id, item]));
-  // Open the section holding the next likely action: new dishes to send, otherwise billing.
-  const [expandedSections, setExpandedSections] = useState<Set<string>>(
-    () => new Set([items.length === 0 && sentItems.length > 0 ? canBill ? "billing" : "sent" : "new"]),
-  );
+  const [segment, setSegment] = useState<"new" | "sent" | "bill">(() => items.length ? "new" : sentItems.length ? (canBill ? "bill" : "sent") : "new");
+  const [transferOpen, setTransferOpen] = useState(false);
+  useEffect(() => { setSegment(items.length ? "new" : sentItems.length ? (canBill ? "bill" : "sent") : "new"); setTransferOpen(false); }, [selectedTableId, currentOrder?.order?.id]);
   const hadDraft = useRef(items.length > 0);
   useEffect(() => {
-    if (hadDraft.current && items.length === 0 && sentItems.length > 0) {
-      setExpandedSections(new Set([canBill ? "billing" : "sent"]));
-    }
+    if (hadDraft.current && items.length === 0 && sentItems.length > 0) setSegment(canBill ? "bill" : "sent");
     hadDraft.current = items.length > 0;
   }, [items.length, sentItems.length, canBill]);
-  const toggleSection = (id: string) => {
-    if (!reducedMotion)
-      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    setExpandedSections((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
   const showDraftNote = (index: number) => {
     setOpenDraftNotes((current) => new Set(current).add(index));
   };
@@ -170,12 +158,22 @@ function TicketScreen({
   };
   return (
     <View style={[styles.panel, styles.ticketPanel]}>
-      {items.length > 0 ? (
-      <CollapsibleSection
-        title={`New · ${newCount}`}
-        expanded={expandedSections.has("new")}
-        onToggle={() => toggleSection("new")}
-      >
+      <View style={[styles.checkHeader, keyboardVisible && styles.checkHeaderKeyboard]}>
+        {!keyboardVisible ? <View style={styles.sectionHeaderRow}>
+          <Text style={styles.sectionTitle}>Guests</Text>
+          <View style={styles.qtyControls}>
+            <Pressable accessibilityLabel="Fewer guests" style={styles.qtyButton} onPress={() => onPaxChange(String(Math.max(1, Number(pax || 1) - 1)))}><Text style={styles.qtyText}>−</Text></Pressable>
+            <TextInput accessibilityLabel="Guests" style={styles.checkGuestInput} value={pax} onChangeText={(value) => onPaxChange(value.replace(/\D/g, "").slice(0, 3))} keyboardType="number-pad" selectTextOnFocus />
+            <Pressable accessibilityLabel="More guests" style={styles.qtyButton} onPress={() => onPaxChange(String(Number(pax || 1) + 1))}><Text style={styles.qtyText}>+</Text></Pressable>
+          </View>
+        </View> : null}
+        <View style={styles.segmentedRow}>
+          {(["new", "sent", ...(canBill ? ["bill"] : [])] as Array<"new" | "sent" | "bill">).map((tab) => <Pressable key={tab} accessibilityRole="tab" accessibilityState={{ selected: segment === tab }} style={[styles.segmentButton, segment === tab && styles.segmentButtonActive]} onPress={() => setSegment(tab)}><Text style={[styles.segmentText, segment === tab && styles.segmentTextActive]}>{tab === "new" ? `New · ${newCount}` : tab === "sent" ? `Sent · ${sentCount}` : "Bill"}</Text></Pressable>)}
+        </View>
+      </View>
+      {segment === "new" ? <View style={styles.ticketSegment}>
+        <ScrollView testID="new-items-scroll" style={styles.ticketScroll} contentContainerStyle={styles.checkBody} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
+        {items.length === 0 ? <EmptyState title="No new items" text="Add dishes from Menu." compact /> : null}
           <View style={styles.ticketList}>
             {items.map((item, index) => {
               const menuItem = menuItems.find(
@@ -200,7 +198,7 @@ function TicketScreen({
                       {lineName}
                     </Text>
                     <Text style={styles.muted}>
-                      Rs {formatRupees(unitPrice * item.quantity)}
+                      ₹{formatRupees(unitPrice * item.quantity)}
                     </Text>
                   </View>
                   <View style={styles.qtyControls}>
@@ -209,7 +207,7 @@ function TicketScreen({
                       style={styles.qtyButton}
                       onPress={() => onChangeQty(index, -1)}
                     >
-                      <Text style={styles.qtyText}>-</Text>
+                      <Text style={styles.qtyText}>−</Text>
                     </Pressable>
                     <Text style={styles.qtyValue}>{item.quantity}</Text>
                     <Pressable
@@ -242,17 +240,19 @@ function TicketScreen({
               );
             })}
           </View>
-      </CollapsibleSection>
-      ) : null}
+          </ScrollView>
+          {keyboardVisible ? <View style={styles.keyboardCommit}><Button label="Done editing" tone="secondary" onPress={() => Keyboard.dismiss()} /></View> : items.length > 0 ? <View testID="new-items-actions" style={styles.checkCommit}>
+            <View style={styles.billAmountRow}><Text style={styles.muted}>{newCount} new items</Text><Text style={styles.totalText}>₹{formatRupees(draftTotal)}</Text></View>
+            <View style={styles.sendButtonRow}>
+              <Button label="Print + KOT" tone="secondary" disabled={!canSubmit} style={{ flex: 1 }} onPress={() => onSubmit("kot_print")} />
+              <Button label={sending ? "Sending…" : connection === "online" ? "Send KOT" : "Save draft"} disabled={!canSubmit} style={{ flex: 1 }} onPress={() => onSubmit("kot")} />
+            </View>
+          </View> : null}
+      </View> : null}
 
-      {canBill && currentOrder?.order ? (
-        <CollapsibleSection
-          title="Billing"
-          subtitle={undefined}
-          expanded={expandedSections.has("billing")}
-          onToggle={() => toggleSection("billing")}
-        >
+      {segment === "bill" && canBill ? <View style={styles.ticketSegment}>
           <CaptainBillingPanel
+            keyboardVisible={keyboardVisible}
             canBill={canBill}
             sentTotalPaise={sentItems.reduce((sum, item) => sum + item.quantity * item.unit_price_paise, 0)}
             currentOrder={currentOrder}
@@ -264,32 +264,10 @@ function TicketScreen({
             onReviseBill={onReviseBill}
             onSettleBill={onSettleBill}
           />
-        </CollapsibleSection>
-      ) : null}
+      </View> : null}
 
-      <CollapsibleSection
-        title="Guests"
-        subtitle={pax || undefined}
-        expanded={expandedSections.has("stats")}
-        onToggle={() => toggleSection("stats")}
-      >
-        <View style={styles.formStack}>
-          <UncontrolledInput
-            inputKey={`pax-${selectedTableName ?? "none"}`}
-            label="Guests"
-            defaultValue={pax}
-            onChangeText={onPaxChange}
-            keyboardType="number-pad"
-            returnKeyType="done"
-          />
-        </View>
-      </CollapsibleSection>
-
-      {currentOrder?.order || sentItems.length > 0 ? <CollapsibleSection
-        title={`Sent · ${sentCount}`}
-        expanded={expandedSections.has("sent")}
-        onToggle={() => toggleSection("sent")}
-      >
+      {segment === "sent" ? <ScrollView style={styles.ticketScroll} contentContainerStyle={styles.checkBody} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
+        {selectedTableId && sentItems.length > 0 && canShift ? <Button label="Move table or items" tone="secondary" onPress={() => setTransferOpen(true)} /> : null}
         {sentItems.length === 0 ? (
           <Text style={styles.smallMuted}>
             No sent items.
@@ -303,7 +281,7 @@ function TicketScreen({
                     {item.name_snapshot}
                   </Text>
                   <Text style={styles.muted}>
-                    Rs {formatRupees(item.unit_price_paise)} each
+                    ₹{formatRupees(item.unit_price_paise)} each
                   </Text>
                   {formatItemPunch(item) ? (
                     <Text style={styles.smallMuted}>
@@ -317,7 +295,7 @@ function TicketScreen({
           </View>
         ) : (
           <View style={styles.stateEditor}>
-            {hasStateChanges ? <Text style={[styles.actionAmount, { textAlign: "right" }]}>Rs {formatRupees(stateTotal)}</Text> : null}
+            {hasStateChanges ? <Text style={[styles.actionAmount, { textAlign: "right" }]}>₹{formatRupees(stateTotal)}</Text> : null}
 
             <TextInput
               style={styles.input}
@@ -376,7 +354,7 @@ function TicketScreen({
                           {name}
                         </Text>
                         <Text style={styles.muted}>
-                          Rs {formatRupees(unitPrice * item.quantity)}
+                          ₹{formatRupees(unitPrice * item.quantity)}
                         </Text>
                         {punch ? (
                           <Text style={styles.smallMuted}>{punch}</Text>
@@ -388,7 +366,7 @@ function TicketScreen({
                           style={styles.qtyButton}
                           onPress={() => changeStateQty(index, -1)}
                         >
-                          <Text style={styles.qtyText}>-</Text>
+                          <Text style={styles.qtyText}>−</Text>
                         </Pressable>
                         <Text style={styles.qtyValue}>{item.quantity}</Text>
                         <Pressable
@@ -460,8 +438,12 @@ function TicketScreen({
             ) : null}
           </View>
         )}
-      </CollapsibleSection> : null}
+      </ScrollView> : null}
 
+      <FormModal visible={transferOpen} transparent animationType="fade" onRequestClose={() => setTransferOpen(false)}>
+        <View style={styles.popupBackdrop}><View style={styles.popupCard}>
+          <View style={styles.sectionHeaderRow}><Text style={styles.sectionTitle}>Move table or items</Text><Button label="Close" tone="secondary" onPress={() => setTransferOpen(false)} /></View>
+          <ScrollView keyboardShouldPersistTaps="handled">
       {selectedTableId && sentItems.length > 0 && canShift ? (
         <TicketTransferSection
           selectedTableId={selectedTableId}
@@ -470,12 +452,16 @@ function TicketScreen({
           floors={floors}
           tableOrder={tableOrder}
           sending={sending}
-          expanded={expandedSections.has("shift")}
-          onToggle={() => toggleSection("shift")}
+          bare
+          expanded
+          onToggle={() => setTransferOpen(false)}
           onShiftTable={onShiftTable}
           onShiftItem={onShiftItem}
         />
       ) : null}
+          </ScrollView>
+        </View></View>
+      </FormModal>
 
 
       <FormModal
@@ -499,6 +485,7 @@ function TicketScreen({
               </Text>
             </View>
             <TextInput
+              autoFocus
               accessibilityLabel="Manager PIN"
               style={styles.input}
               value={approvalPin}
@@ -527,7 +514,7 @@ function TicketScreen({
                 style={[
                   styles.primaryButton,
                   styles.sendButton,
-                  (sending || approvalPin.trim().length < 4) && styles.buttonDisabled,
+                  approvalPin.trim().length < 4 ? styles.primaryButtonWaiting : sending && styles.buttonDisabled,
                 ]}
                 disabled={sending || approvalPin.trim().length < 4}
                 onPress={confirmStateSave}

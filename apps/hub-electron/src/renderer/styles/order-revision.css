@@ -1,37 +1,19 @@
-.revision-search-results {
-  @apply grid max-h-56 gap-0 overflow-auto border-0 border-b border-line;
-}
-
-.revision-search-result {
-  @apply flex min-w-0 items-center justify-between gap-3 rounded-none border-0 border-b border-line bg-white px-2 py-3 text-left text-ink hover:bg-accent-soft;
-}
-
-.revision-search-result span {
-  @apply grid min-w-0 gap-0.5;
-}
-
-.revision-search-result strong {
-  @apply min-w-0 text-sm font-semibold leading-5;
-}
-
-.revision-search-result small {
-  @apply min-w-0 text-xs font-semibold text-muted;
-}
-
-.revision-search-result b {
-  @apply shrink-0 text-sm font-semibold;
-}
-
-.revision-search-result.keyboard-active {
-  @apply border-accent bg-accent-soft;
-}
-.revision-actions { position: sticky; bottom: 0; z-index: 2; display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 16px; padding: 12px 0 0; border-top: 1px solid var(--line); background: var(--panel); }
-.revision-actions > div { display: grid; gap: 2px; text-align: right; }
-.revision-actions span { font-size: 12px; color: var(--muted); }
-.revision-actions strong { font-size: 18px; font-variant-numeric: tabular-nums; }
-.revision-actions button { min-height: var(--control-height); }
-.revision-add-row { display: grid; grid-template-columns: minmax(160px, 1fr) minmax(180px, 1.4fr) auto; gap: 8px; }
+/* Bill revision: replaces the bill view while editing, one centred card. */
+.revision-box { display: flex; flex-direction: column; gap: 10px; padding: 14px; border-radius: var(--surface-radius); background: var(--panel); box-shadow: var(--shadow-md); }
+.revision-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.revision-head strong { font-size: 15px; font-weight: 700; }
+.revision-add-row { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; }
+.revision-search-results { display: grid; max-height: 224px; overflow: auto; border-radius: 10px; background: var(--panel); box-shadow: var(--shadow-md); }
+.revision-search-result { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 10px; padding: 7px 10px; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: transparent; color: var(--ink); text-align: left; box-shadow: none; }
+.revision-search-result:hover:not(:disabled), .revision-search-result.keyboard-active { background: var(--wash); }
+.revision-search-result span { display: grid; min-width: 0; gap: 0; }
+.revision-search-result strong { font-size: 13px; font-weight: 600; }
+.revision-search-result small { color: var(--muted); font-size: 11px; }
+.revision-search-result b { flex-shrink: 0; font-size: 13px; font-variant-numeric: tabular-nums; }
+.revision-actions { position: sticky; bottom: 0; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 14px; margin: 0 -14px -14px; padding: 10px 14px; border-top: 1px solid var(--line); border-radius: 0 0 var(--surface-radius) var(--surface-radius); background: var(--wash); }
+.revision-actions > div { display: grid; gap: 0; text-align: right; }
+.revision-actions span { color: var(--muted); font-size: 11.5px; }
+.revision-actions strong { font-size: 18px; font-weight: 750; font-variant-numeric: tabular-nums; }
 @media (max-width: 720px) { .revision-add-row { grid-template-columns: minmax(0, 1fr); } }
 
-.billing-panel > .revision-box { display: flex; flex: 1 0 auto; flex-direction: column; }
-.billing-panel > .revision-box > .revision-actions { margin-top: auto; }
+.revision-search-result.keyboard-active { box-shadow: inset 0 0 0 2px var(--focus-ring); }

@@ -1,3 +1,4 @@
+import { AlcoholNumberField } from "./alcohol-number-field.js";
 import { useMutation } from "@tanstack/react-query";
 import { useState } from "react";
 import { Plus, X } from "lucide-react";
@@ -190,22 +191,14 @@ function AlcoholItemCreatePanel({
           </select>
         </label>
         {type === "plain_liquor" ? (
-          <>
-            <div className="three-col">
-              <label>
-                Large ml
-                <input value={largeMl} onChange={(event) => setLargeMl(event.target.value)} inputMode="numeric" />
-              </label>
-              <label>
-                Small ml
-                <input value={smallMl} onChange={(event) => setSmallMl(event.target.value)} inputMode="numeric" />
-              </label>
-              <label>
-                Open large ml
-                <input value={openMl} onChange={(event) => setOpenMl(event.target.value)} inputMode="numeric" />
-              </label>
-            </div>
-            <div className="three-col">
+          <div className="alcohol-form-groups">
+            <fieldset>
+              <legend>Bottle sizes</legend>
+              <AlcoholNumberField label="Large" unit="ml" value={largeMl} onChange={(event) => setLargeMl(event.target.value)} inputMode="numeric" aria-label="Large ml" />
+              <AlcoholNumberField label="Small" unit="ml" value={smallMl} onChange={(event) => setSmallMl(event.target.value)} inputMode="numeric" aria-label="Small ml" />
+            </fieldset>
+            <fieldset>
+              <legend>Opening stock</legend>
               <label>
                 Large bottles
                 <input value={sealedLarge} onChange={(event) => setSealedLarge(event.target.value)} inputMode="numeric" />
@@ -214,26 +207,18 @@ function AlcoholItemCreatePanel({
                 Small bottles
                 <input value={sealedSmall} onChange={(event) => setSealedSmall(event.target.value)} inputMode="numeric" />
               </label>
-              <span />
-            </div>
-            <div className="three-col">
-              <label>
-                30 ml price
-                <input value={shotPrice} onChange={(event) => setShotPrice(event.target.value)} inputMode="decimal" placeholder="120" />
-              </label>
-              <label>
-                Small bottle price
-                <input value={smallPrice} onChange={(event) => setSmallPrice(event.target.value)} inputMode="decimal" placeholder="480" />
-              </label>
-              <label>
-                Large bottle price
-                <input value={largePrice} onChange={(event) => setLargePrice(event.target.value)} inputMode="decimal" placeholder="1800" />
-              </label>
-            </div>
-          </>
+              <AlcoholNumberField label="Open large" unit="ml" value={openMl} onChange={(event) => setOpenMl(event.target.value)} inputMode="numeric" aria-label="Open large ml" />
+            </fieldset>
+            <fieldset>
+              <legend>Menu prices</legend>
+              <AlcoholNumberField label="30 ml peg" unit="₹" value={shotPrice} onChange={(event) => setShotPrice(event.target.value)} inputMode="decimal" placeholder="120" aria-label="30 ml price" />
+              <AlcoholNumberField label="Small bottle" unit="₹" value={smallPrice} onChange={(event) => setSmallPrice(event.target.value)} inputMode="decimal" placeholder="480" aria-label="Small bottle price" />
+              <AlcoholNumberField label="Large bottle" unit="₹" value={largePrice} onChange={(event) => setLargePrice(event.target.value)} inputMode="decimal" placeholder="1800" aria-label="Large bottle price" />
+            </fieldset>
+          </div>
         ) : (
           <>
-            <label>
+            <label className="alcohol-product-price">
               Price
               <input value={productPrice} onChange={(event) => setProductPrice(event.target.value)} inputMode="decimal" placeholder="350" />
             </label>

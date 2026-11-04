@@ -199,7 +199,7 @@ export function PrinterSetupCard({
                       </div>
                       <div>
                         <dt>Roll</dt>
-                        <dd>{profile.paperWidthMm ? `${profile.paperWidthMm} mm` : `Layout${receiptLayoutWidth ? ` (${paperLabelForChars(receiptLayoutWidth)})` : ""}`}</dd>
+                        <dd>{profile.paperWidthMm ? `${profile.paperWidthMm} mm` : `Uses layout width${receiptLayoutWidth ? ` (${paperLabelForChars(receiptLayoutWidth)})` : ""}`}</dd>
                       </div>
                       <div>
                         <dt>Payment QR</dt>

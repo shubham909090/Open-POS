@@ -143,11 +143,11 @@ function OnboardingScreen({
           <Button label="Pair" tone="secondary" onPress={onPair} />
         </View>
       </Section>
-      <CollapsibleSection title="Manual connection" expanded={manualOpen} onToggle={() => setManualOpen((value) => !value)}>
+      <View style={styles.onboardingCardClip}><CollapsibleSection title="Manual connection" expanded={manualOpen} onToggle={() => setManualOpen((value) => !value)}>
         <UncontrolledInput inputKey={`payload-${formRevision}`} label="Pairing QR text" defaultValue={pairingPayload} onChangeText={onPairingPayloadChange} autoCapitalize="none" autoCorrect={false} multiline placeholder="Paste from the hub" />
         <UncontrolledInput inputKey={`token-${formRevision}`} label="Device password" defaultValue={deviceToken} onChangeText={onDeviceTokenChange} autoCapitalize="none" autoCorrect={false} secureTextEntry />
         <Button label={pairingPayload.trim() ? "Pair" : "Save connection"} tone="secondary" onPress={pairingPayload.trim() ? onPair : onSaveConnection} disabled={loading} />
-      </CollapsibleSection>
+      </CollapsibleSection></View>
     </>
   );
   return (
@@ -155,7 +155,7 @@ function OnboardingScreen({
       {isReady ? <>
         <View style={styles.connectionSummary}>
           <View style={styles.flexText}><Text style={styles.sectionTitle}>{deviceName || "This phone"}</Text><Text style={styles.muted}>{roleLabel(deviceRole)}</Text><Text style={styles.smallMuted} numberOfLines={1}>{savedHubUrl}</Text></View>
-          <Button label="Edit" tone="quiet" onPress={() => setPairingOpen((value) => !value)} accessibilityLabel="Change hub or re-pair" />
+          <Button label={pairingOpen ? "Done" : "Edit"} tone="secondary" onPress={() => setPairingOpen((value) => !value)} accessibilityLabel={pairingOpen ? "Close hub and pairing" : "Change hub or re-pair"} style={{ minHeight: 40, paddingVertical: 8 }} />
         </View>
         {pairingOpen ? pairingSteps : null}
       </> : pairingSteps}
@@ -180,7 +180,7 @@ function ConnectionBanner({ message, savingDraft, onDismiss }: { message: string
         {message ? <Text style={styles.bannerText}>{message}</Text> : null}
         {savingDraft ? <Text style={styles.bannerMeta}>Saving draft...</Text> : null}
       </View>
-      {message && onDismiss ? <Pressable accessibilityLabel="Dismiss message" style={styles.searchClear} onPress={onDismiss}><X size={16} color={palette.muted} /></Pressable> : null}
+      {message && onDismiss ? <Pressable accessibilityLabel="Dismiss message" style={styles.searchClear} onPress={onDismiss}><X size={16} color={palette.chromeMuted} /></Pressable> : null}
     </View>
   );
 }
@@ -201,7 +201,7 @@ function ModeTabs({
     <View style={styles.modeTabs}>
       {tabs.map((entry) => (
         <Pressable key={entry} accessibilityRole="tab" accessibilityState={{ selected: mode === entry }} style={[styles.modeTab, mode === entry && styles.modeTabActive]} onPress={() => onModeChange(entry)}>
-          {(() => { const Icon = entry === "tables" ? Table2 : entry === "menu" ? Utensils : entry === "ticket" ? ReceiptText : History; return <Icon size={20} strokeWidth={1.8} color={mode === entry ? palette.greenBold : palette.muted} />; })()}
+          {(() => { const Icon = entry === "tables" ? Table2 : entry === "menu" ? Utensils : entry === "ticket" ? ReceiptText : History; return <Icon size={20} strokeWidth={1.8} color={mode === entry ? palette.ink : palette.muted} />; })()}
           <Text style={[styles.modeTabText, mode === entry && styles.modeTabTextActive]}>
             {entry === "tables" ? "Tables" : entry === "menu" ? "Menu" : entry === "ticket" ? "Check" : "History"}
           </Text>
@@ -282,7 +282,7 @@ function DraftBar({ count, total, onReview }: { count: number; total: number; on
     <Animated.View style={[styles.draftBar, { transform: [{ translateY: slideAnim }] }]}>
       <View style={styles.draftBarMain}>
         <View style={styles.draftBarText}>
-          <Text style={styles.draftBarTitle}>{count} new · Rs {formatRupees(total)}</Text>
+          <Text style={styles.draftBarTitle}>{count} new · ₹{formatRupees(total)}</Text>
         </View>
       </View>
       <Pressable style={styles.draftBarButton} onPress={onReview}>

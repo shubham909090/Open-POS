@@ -1,14 +1,16 @@
 /* Composed controls: one visual rule for every workflow. */
-.dialog-overlay { position: fixed; inset: 0; z-index: var(--layer-dialog); background: color-mix(in srgb, var(--ink) 32%, transparent); }
-.dialog-surface { position: fixed; top: 50%; left: 50%; z-index: var(--layer-nested); display: grid; gap: 16px; width: min(480px, calc(100vw - 32px)); max-height: calc(100dvh - 48px); padding: 24px; overflow: auto; transform: translate(-50%, -50%); outline: none; border: 1px solid var(--line); border-radius: var(--dialog-radius); background: var(--panel); box-shadow: var(--shadow-lg); }
+.dialog-overlay { position: fixed; inset: 0; z-index: var(--layer-dialog); background: color-mix(in srgb, var(--chrome) 55%, transparent); backdrop-filter: blur(2px); animation: overlay-in var(--motion-enter) ease-out; }
+@keyframes overlay-in { from { opacity: 0; } }
+@keyframes surface-in { from { opacity: 0; transform: translate(-50%, calc(-50% + 6px)) scale(.985); } }
+.dialog-surface { position: fixed; top: 50%; left: 50%; z-index: var(--layer-nested); display: grid; gap: 14px; width: min(440px, calc(100vw - 32px)); max-height: calc(100dvh - 48px); padding: 18px 20px 20px; overflow: auto; transform: translate(-50%, -50%); outline: none; border: 0; border-radius: var(--dialog-radius); background: var(--panel); box-shadow: var(--shadow-lg); animation: surface-in var(--motion-enter) ease-out; }
 .dialog-wide { width: min(980px, calc(100vw - 32px)); }
 .dialog-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
-.dialog-title { margin: 0; font-size: 18px; font-weight: 600; line-height: 26px; }
+.dialog-title { margin: 0; font-size: 16px; font-weight: 700; line-height: 22px; letter-spacing: -.01em; }
 .dialog-heading > button { margin-right: -8px; }
-.approval-dialog { width: min(400px, calc(100vw - 32px)); gap: 16px; }
+.approval-dialog { width: min(360px, calc(100vw - 32px)); gap: 14px; }
 .approval-dialog .dialog-heading { justify-content: center; position: relative; padding-right: 24px; }
 .approval-dialog .dialog-heading > button { position: absolute; right: 0; top: -4px; }
-.approval-dialog .dialog-title { text-align: center; font-size: 18px; }
+.approval-dialog .dialog-title { text-align: center; font-size: 16px; }
 .approval-access-note { display: flex; justify-content: center; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
 .approval-dialog > p { margin: 0; text-align: center; font-size: 13px; line-height: 20px; }
 .approval-dialog form { gap: 12px; }
@@ -20,9 +22,10 @@
 .compact-menu-card .menu-card-main span { font-size: 11px; font-weight: 400; color: var(--muted); }
 .compact-menu-card footer { min-width: 0; }
 .menu-card-icon { display: none; }
-.compact-menu-card.keyboard-active, .state-search-row.keyboard-active { background: var(--accent-soft); box-shadow: inset 3px 0 var(--accent); }
+.compact-menu-card.keyboard-active, .state-search-row.keyboard-active { background: var(--wash); box-shadow: inset 0 0 0 2px var(--focus-ring); }
 .csv-import-details, .setup-subdetails { padding: 0; border: 0; border-top: 1px solid var(--line); border-radius: 0; background: transparent; }
 .setup-subdetails > summary, .csv-import-details > summary { min-height: 40px; padding: 8px 0; font-size: 13px; font-weight: 600; }
+.catalog-create-actions > .csv-import-details > summary { min-height: var(--control-height); padding: 0 12px; font-weight: 500; }
 .setup-subdetails > summary > small, .csv-import-details > summary > small { display: none; }
 .setup-subdetails > :not(summary) { margin: 0 0 12px; }
 .csv-import-details[open] .csv-import-grid { display: grid; gap: 16px; padding: 12px 0; }
@@ -35,7 +38,7 @@
 .quiet-button { border-color: transparent; color: var(--muted); background: transparent; }
 .segmented { display: inline-flex; flex-wrap: wrap; gap: 4px; padding: 0; border: 0; background: transparent; }
 .segmented button { min-height: var(--control-height); padding: 0 12px; border: 1px solid transparent; background: transparent; color: var(--muted); box-shadow: none; }
-.segmented button.active { border-color: var(--accent-line); color: var(--accent-dark); background: var(--accent-soft); }
+.segmented button.active { border-color: var(--line); color: var(--ink); background: var(--panel); box-shadow: var(--shadow); }
 .manager-pin-form { display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; gap: 12px; width: min(400px, 100%); }
 .manager-pin-form button { justify-self: start; width: fit-content; margin: 0; }
 .manager-pin-form .soft-note { margin: 0; }
@@ -46,13 +49,13 @@
 @media (pointer: coarse) { .compact-menu-card { min-height: 64px; } }
 
 .ui-select-trigger { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; min-width: 0; height: var(--control-height); border: 1px solid var(--line-strong); border-radius: var(--control-radius); padding: 0 12px; background: var(--panel); color: var(--ink); text-align: left; font-size: 13px; }
-.ui-select-content { z-index: var(--layer-nested); max-height: 288px; min-width: var(--radix-select-trigger-width); overflow: hidden; border: 1px solid var(--line); border-radius: var(--control-radius); background: var(--panel); box-shadow: var(--shadow-lg); }
-.ui-tooltip { z-index: calc(var(--layer-nested) + 1); max-width: 280px; padding: 6px 10px; border-radius: var(--control-radius); background: var(--ink); color: var(--panel); font-size: 12px; }
+.ui-select-content { z-index: var(--layer-nested); max-height: 288px; min-width: var(--radix-select-trigger-width); overflow: hidden; border: 0; border-radius: 9px; background: var(--panel); box-shadow: var(--shadow-md); }
+.ui-tooltip { z-index: calc(var(--layer-nested) + 1); max-width: 280px; padding: 5px 9px; border-radius: 6px; background: var(--chrome); color: var(--chrome-text); font-size: 12px; box-shadow: var(--shadow-md); }
 
-.ui-segmented { display: inline-flex; max-width: 100%; gap: 4px; padding: 4px; border-radius: var(--control-radius); background: var(--wash); }
-.ui-segmented-item { min-height: 32px; padding: 0 12px; background: transparent; border-color: transparent; color: var(--muted); font-size: 12px; font-weight: 600; }
+.ui-segmented { display: inline-flex; max-width: 100%; gap: 2px; padding: 3px; border-radius: calc(var(--control-radius) + 2px); background: var(--sunken); }
+.ui-segmented-item { min-height: 26px; padding: 0 10px; background: transparent; border-color: transparent; color: var(--ink-2); font-size: 12px; font-weight: 600; box-shadow: none; }
 .ui-segmented-item:hover:not(:disabled) { background: var(--panel); color: var(--ink); }
-.ui-segmented-item.active { background: var(--accent-soft); color: var(--accent-dark); }
+.ui-segmented-item.active { background: var(--panel); color: var(--ink); box-shadow: var(--shadow); }
 
 .ui-metric { display: grid; gap: 4px; min-width: 0; }
 .ui-metric-label, .ui-metric-sub { color: var(--muted); font-size: 12px; font-weight: 400; }
@@ -60,3 +63,5 @@
 
 .approval-optional-reason > summary { min-height: 24px; justify-content: flex-start; padding: 0; font-size: 12px; color: var(--muted); font-weight: 400; }
 .approval-optional-reason[open] > summary { margin-bottom: 8px; }
+.approval-dialog input[type="password"], .pin-setup-input { height: 42px; text-align: center; font-size: 20px; font-weight: 700; letter-spacing: .35em; }
+.dialog-danger .dialog-title { color: var(--danger); }
