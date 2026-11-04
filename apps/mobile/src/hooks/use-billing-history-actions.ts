@@ -1,5 +1,5 @@
 import type { Dispatch, SetStateAction } from "react";
-import type { HistoryEditSaveMode } from "@gaurav-pos/shared";
+import type { HistoryEditBillInput, HistoryEditSaveMode } from "@gaurav-pos/shared";
 
 import type { DailyReportDetail, HubClient } from "../lib/hub-client";
 import type { BillPrinterSlot } from "../lib/mobile-types";
@@ -56,7 +56,8 @@ export function useBillingHistoryActions({
     items: HistoryEditPayloadItem[],
     customerName: string,
     masterPin: string,
-    saveMode: HistoryEditSaveMode = "save_print"
+    saveMode: HistoryEditSaveMode = "save_print",
+    payments?: HistoryEditBillInput["payments"],
   ): Promise<boolean> {
     try {
       setSending(true);
@@ -66,7 +67,8 @@ export function useBillingHistoryActions({
         saveMode,
         customerName: customerName.trim(),
         masterApproval: { pin: masterPin, reason: "Owner history edit", approvedBy: deviceName || "owner" },
-        items
+        items,
+        ...(payments === undefined ? {} : { payments }),
       };
       const scope = { billId, payload, printerSlot: printerSlot ?? "default" };
       await client.historyEditBill(billId, payload, { idempotencyKey: operationKey("mobile-history-edit", scope), ...(printerSlot ? { printerSlot } : {}) });

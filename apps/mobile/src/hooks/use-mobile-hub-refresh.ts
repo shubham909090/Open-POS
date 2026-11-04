@@ -92,6 +92,16 @@ export function useMobileHubRefresh({
 }: UseMobileHubRefreshInput) {
   const refreshInFlightRef = useRef(false);
   const refreshQueuedRef = useRef(false);
+  const connectionMessageRef = useRef("Checking hub connection...");
+  const currentClient = useRef(client);
+  currentClient.current = client;
+  const latestRefresh = useRef(refresh);
+  latestRefresh.current = refresh;
+
+  function showConnectionMessage(message: string) {
+    connectionMessageRef.current = message;
+    setMessage(message);
+  }
 
   useEffect(() => {
     let alive = true;
@@ -135,7 +145,7 @@ export function useMobileHubRefresh({
       if (refreshTimer) return;
       refreshTimer = setTimeout(() => {
         refreshTimer = null;
-        void refresh(false);
+        void latestRefresh.current(false);
       }, MOBILE_REALTIME_REFRESH_DEBOUNCE_MS);
     });
     return () => {
@@ -163,19 +173,21 @@ export function useMobileHubRefresh({
       refreshInFlightRef.current = false;
       if (refreshQueuedRef.current) {
         refreshQueuedRef.current = false;
-        void refresh(false);
+        void latestRefresh.current(false);
       }
     }
   }
 
   async function runRefresh(showSpinner = true) {
+    if (currentClient.current !== client) return;
     if (showSpinner) setLoading(true);
     if (showSpinner && !bootstrap) setConnection("checking");
     try {
       if (!deviceToken) {
         const isOnline = await client.health();
+        if (currentClient.current !== client) return;
         setConnection(isOnline ? "online" : "offline");
-        setMessage(
+        showConnectionMessage(
           isOnline
             ? "Hub connected. Pair this phone to start service."
             : "Hub is not reachable. Check Wi-Fi and hub address. Drafts stay on this phone.",
@@ -187,6 +199,7 @@ export function useMobileHubRefresh({
         client.bootstrap(),
         client.me(),
       ]);
+      if (currentClient.current !== client) return;
       const healthy = nextConnectionAfterRefresh({
         success: true,
         previous: connection,
@@ -203,6 +216,7 @@ export function useMobileHubRefresh({
         const { kdsEnabled, kitchenUnits, nextUnitId } =
           getKitchenRefreshTarget(nextBootstrap, kitchenUnitId);
         const nextTickets = nextUnitId ? await client.kds(nextUnitId) : [];
+        if (currentClient.current !== client) return;
         chimeForNewKdsTickets(nextUnitId, nextTickets);
         setKitchenUnitId(nextUnitId);
         setCurrentSummary(null);
@@ -225,14 +239,16 @@ export function useMobileHubRefresh({
             client.currentBusinessDaySummary(),
             client.dailyReports(),
           ]);
+          if (currentClient.current !== client) return;
           setCurrentSummary(summary);
           setDailyReports(reports);
           if (selectedHistoryDayId) {
             try {
-              setSelectedHistoryDetail(
-                await client.dailyReport(selectedHistoryDayId),
-              );
+              const detail = await client.dailyReport(selectedHistoryDayId);
+              if (currentClient.current !== client) return;
+              setSelectedHistoryDetail(detail);
             } catch {
+              if (currentClient.current !== client) return;
               setSelectedHistoryDayId(null);
               setSelectedHistoryDetail(null);
             }
@@ -240,6 +256,7 @@ export function useMobileHubRefresh({
             setSelectedHistoryDetail(null);
           }
         } catch {
+          if (currentClient.current !== client) return;
           setCurrentSummary(null);
           setDailyReports([]);
           setSelectedHistoryDetail(null);
@@ -250,10 +267,14 @@ export function useMobileHubRefresh({
         setSelectedHistoryDetail(null);
       }
       await checkReadyNotifications();
-      // Online state already lives in the header; reserve the banner for actionable feedback.
-      setMessage("");
+      if (currentClient.current !== client) return;
+      // A background poll must not erase an action error (for example, an incorrect PIN).
+      const connectionMessage = connectionMessageRef.current;
+      setMessage((current) => current === connectionMessage ? "" : current);
+      connectionMessageRef.current = "";
       if (selectedTableId) await loadTableOrder(selectedTableId);
     } catch (error) {
+      if (currentClient.current !== client) return;
       const next = nextConnectionAfterRefresh({
         success: false,
         previous: connection,
@@ -263,7 +284,7 @@ export function useMobileHubRefresh({
       });
       connectionFailuresRef.current = next.failures;
       setConnection(next.connection);
-      setMessage(
+      showConnectionMessage(
         next.shouldShowOfflineMessage
           ? error instanceof Error
             ? error.message
@@ -271,7 +292,7 @@ export function useMobileHubRefresh({
           : "Connection hiccup. Keeping latest hub data while the phone reconnects.",
       );
     } finally {
-      if (showSpinner) setLoading(false);
+      if (showSpinner && currentClient.current === client) setLoading(false);
     }
   }
 
@@ -279,16 +300,16 @@ export function useMobileHubRefresh({
     if (!deviceToken) return;
     try {
       const ready = await client.readyNotifications();
-      for (const notification of ready) {
-        const itemText = notification.items
-          .map((item) => `${item.quantity} x ${item.name}`)
-          .join(", ");
-        notifyChime();
-        Alert.alert(
-          "Order ready",
-          `${notification.productionUnitName} says Table ${notification.tableName} is ready.\n${itemText}`,
-        );
-      }
+      if (currentClient.current !== client) return;
+      if (ready.length === 0) return;
+      notifyChime();
+      Alert.alert(
+        ready.length === 1 ? "Order ready" : `${ready.length} orders ready`,
+        ready.map((notification) => {
+          const items = notification.items.map((item) => `${item.quantity} x ${item.name}`).join(", ");
+          return `Table ${notification.tableName} · ${notification.productionUnitName}\n${items}`;
+        }).join("\n\n"),
+      );
     } catch {
       // Non-captain devices or older hubs may not expose ready alerts; the main refresh still works.
     }

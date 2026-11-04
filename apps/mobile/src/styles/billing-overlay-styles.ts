@@ -17,23 +17,17 @@ export const billingOverlayStyles = {
   summaryBox: {
     minWidth: 140,
     flex: 1,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: palette.lineSoft,
+    borderRadius: 10,
     backgroundColor: palette.white,
-    padding: 10,
+    padding: 12,
     gap: 3
   },
   summaryValue: { color: palette.ink, fontWeight: "600", fontSize: 18, fontVariant: tabularFigures },
-  billTotals: {
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: palette.line,
-    backgroundColor: palette.wash,
-    padding: 10,
-    gap: 4
-  },
-  historyScreenPanel: { gap: 14 },
+  billTotals: { gap: 4, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: palette.lineSoft },
+  billAmountRow: { flexDirection: "row", alignItems: "baseline", justifyContent: "space-between", gap: 12 },
+  billAdjustmentToggle: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12, borderBottomWidth: 1, borderBottomColor: palette.lineSoft },
+  // History is a full screen, so it sits directly on the page instead of inside a panel.
+  historyScreenPanel: { gap: 14, borderWidth: 0, backgroundColor: "transparent", padding: 0 },
   historyBox: {
     borderRadius: 8,
     borderWidth: 1,
@@ -41,6 +35,7 @@ export const billingOverlayStyles = {
     backgroundColor: palette.white,
     overflow: "hidden"
   },
+  historyEmpty: { padding: 14 },
   historyDayChips: {
     gap: 8,
     paddingVertical: 2
@@ -88,6 +83,7 @@ export const billingOverlayStyles = {
     paddingVertical: 2
   },
   historyActionStack: { gap: 8, alignItems: "stretch" },
+  historyPaymentRow: { gap: 8, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: palette.lineSoft },
   historyItemLines: { gap: 2, paddingVertical: 2 },
   historyPrintButton: {
     minHeight: 44,
@@ -174,6 +170,7 @@ export const billingOverlayStyles = {
   },
   popupCard: {
     maxHeight: "86%",
+    flexGrow: 0,
     borderRadius: 16,
     borderWidth: 1,
     borderColor: palette.line,
@@ -248,7 +245,7 @@ export const billingOverlayStyles = {
     padding: 24,
     gap: 6
   },
-  emptyCompact: { minHeight: 78, alignItems: "flex-start" },
+  emptyCompact: { minHeight: 0, alignItems: "flex-start", backgroundColor: "transparent", padding: 0, gap: 2 },
   emptyTitle: { color: palette.ink, fontWeight: "600", fontSize: 15 },
   scannerShell: { flex: 1, backgroundColor: palette.scanner, paddingTop: androidStatusBarTopInset },
   scannerHeader: {

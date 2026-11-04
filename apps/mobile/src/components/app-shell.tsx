@@ -7,6 +7,8 @@ import type { ConnectionState, ViewMode } from "../lib/mobile-types";
 import { palette, styles } from "../styles/app-styles";
 import { useReducedMotion } from "../hooks/use-reduced-motion";
 import { QrCode, Settings2, X } from "lucide-react-native";
+import type { RestaurantBranding } from "@gaurav-pos/shared";
+import { BrandMark, brandDisplayName } from "./brand-mark";
 
 function AppHeader({
   connection,
@@ -16,7 +18,9 @@ function AppHeader({
   onPaymentQrPress,
   onBackPress,
   setupVisible = false,
+  branding,
 }: {
+  branding: RestaurantBranding | null;
   connection: ConnectionState;
   title: string;
   subtitle: string;
@@ -28,9 +32,10 @@ function AppHeader({
   return (
     <View>
       <View style={styles.header}>
+        <BrandMark branding={branding} size={40} />
         <View style={styles.headerText}>
           <View style={styles.headerBrandRow}>
-            <Text style={styles.kicker}>Gaurav POS</Text>
+            <Text style={[styles.kicker, styles.headerBrandName]} numberOfLines={1}>{brandDisplayName(branding)}</Text>
             <StatusPill connection={connection} />
           </View>
           <Text style={styles.title} numberOfLines={1}>{title}</Text>
@@ -74,12 +79,17 @@ function OnboardingScreen({
   connection,
   formRevision,
   hubUrl,
+  savedHubUrl,
   deviceToken,
   pairingCode,
   pairingPayload,
   hasSavedToken,
+  deviceName,
+  deviceRole,
+  branding,
   loading,
   message,
+  extraSections,
   onHubUrlChange,
   onDeviceTokenChange,
   onPairingCodeChange,
@@ -93,12 +103,17 @@ function OnboardingScreen({
   connection: ConnectionState;
   formRevision: number;
   hubUrl: string;
+  savedHubUrl: string;
   deviceToken: string;
   pairingCode: string;
   pairingPayload: string;
   hasSavedToken: boolean;
+  deviceName: string;
+  deviceRole: string;
+  branding: RestaurantBranding | null;
   loading: boolean;
   message: string;
+  extraSections?: ReactNode;
   onHubUrlChange: (value: string) => void;
   onDeviceTokenChange: (value: string) => void;
   onPairingCodeChange: (value: string) => void;
@@ -110,20 +125,15 @@ function OnboardingScreen({
   onStart: () => void;
 }) {
   const [manualOpen, setManualOpen] = useState(false);
-  // Exactly one solid action at a time: connect while offline, scan while online but unpaired,
-  // otherwise return to service. Everything else stays outlined.
   const isOnline = connection === "online";
   const isReady = isOnline && hasSavedToken;
+  const [pairingOpen, setPairingOpen] = useState(!isReady);
+  // Exactly one solid action at a time: connect while offline, scan while online but unpaired,
+  // otherwise return to service. Everything else stays outlined.
   const connectIsPrimary = !isOnline;
   const scanIsPrimary = isOnline && !hasSavedToken;
-  return (
-    <ScrollView style={styles.screen} contentContainerStyle={styles.onboardingContent} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
-      <View style={styles.heroPanel}>
-        <Text style={styles.kicker}>Connection settings</Text>
-        <Text style={styles.heroTitle}>{isReady ? "Connected to your hub." : "Connect to your hub."}</Text>
-        <Text style={styles.heroCopy}>Join the same Wi-Fi as the hub PC, then scan its pairing QR to start service.</Text>
-      </View>
-
+  const pairingSteps = (
+    <>
       <View style={styles.stepCard}>
         <StepNumber value="1" label="Hub connection" />
         <Text style={styles.muted}>{message}</Text>
@@ -138,12 +148,12 @@ function OnboardingScreen({
           returnKeyType="done"
           placeholder="http://192.168.1.202:3737"
         />
-        <View style={styles.buttonStack}>
-          <Pressable style={[connectIsPrimary ? styles.primaryButton : styles.secondaryButton, loading && styles.buttonDisabled]} onPress={onSaveConnection} disabled={loading}>
-            <Text style={connectIsPrimary ? styles.primaryButtonText : styles.secondaryButtonText}>{loading ? "Checking connection…" : "Save and connect"}</Text>
-          </Pressable>
-          <Pressable style={styles.secondaryButton} onPress={onRetry} disabled={loading}>
+        <View style={styles.sendButtonRow}>
+          <Pressable style={[styles.secondaryButton, styles.sendButton]} onPress={onRetry} disabled={loading}>
             <Text style={styles.secondaryButtonText}>Retry</Text>
+          </Pressable>
+          <Pressable style={[connectIsPrimary ? styles.primaryButton : styles.secondaryButton, styles.sendButton, loading && styles.buttonDisabled]} onPress={onSaveConnection} disabled={loading}>
+            <Text style={connectIsPrimary ? styles.primaryButtonText : styles.secondaryButtonText}>{loading ? "Checking…" : "Save and connect"}</Text>
           </Pressable>
         </View>
       </View>
@@ -153,35 +163,24 @@ function OnboardingScreen({
         <Pressable style={scanIsPrimary ? styles.scanButton : styles.secondaryButton} onPress={onScan}>
           <Text style={scanIsPrimary ? styles.scanButtonText : styles.secondaryButtonText}>Scan pairing QR</Text>
         </Pressable>
-        <UncontrolledInput
-          inputKey={`pair-code-${formRevision}`}
-          label="Or enter the six-digit pairing code"
-          defaultValue={pairingCode}
-          onChangeText={onPairingCodeChange}
-          keyboardType="number-pad"
-          returnKeyType="done"
-          placeholder="Six digits"
-        />
-        <Pressable style={styles.secondaryButton} onPress={onPair}>
-          <Text style={styles.secondaryButtonText}>Pair with code</Text>
-        </Pressable>
+        <View style={styles.pairCodeRow}>
+          <View style={styles.flexText}>
+            <UncontrolledInput
+              inputKey={`pair-code-${formRevision}`}
+              label="Or enter the six-digit code"
+              defaultValue={pairingCode}
+              onChangeText={onPairingCodeChange}
+              keyboardType="number-pad"
+              returnKeyType="done"
+              placeholder="Six digits"
+            />
+          </View>
+          <Pressable style={[styles.secondaryButton, styles.pairCodeButton]} onPress={onPair}>
+            <Text style={styles.secondaryButtonText}>Pair</Text>
+          </Pressable>
+        </View>
       </View>
 
-      <View style={styles.stepCard}>
-        <StepNumber value="3" label="Ready for service" />
-        <Text style={styles.muted}>
-          {isReady
-            ? "This phone is connected. Start taking table orders."
-            : "Once the phone is paired and the hub is online, orders can be sent to the kitchen."}
-        </Text>
-        <Pressable
-          style={[styles.primaryButton, !isReady && styles.buttonDisabled]}
-          onPress={onStart}
-          disabled={!isReady}
-        >
-          <Text style={styles.primaryButtonText}>{hasSavedToken ? "Return to service" : "Start taking orders"}</Text>
-        </Pressable>
-      </View>
       <CollapsibleSection title="Manual connection" subtitle="QR text and device password" expanded={manualOpen} onToggle={() => setManualOpen((value) => !value)}>
         <Text style={styles.muted}>Use these fields only if QR scanning or code pairing is unavailable.</Text>
         <UncontrolledInput inputKey={`payload-${formRevision}`} label="Pairing QR text" defaultValue={pairingPayload} onChangeText={onPairingPayloadChange} autoCapitalize="none" autoCorrect={false} multiline placeholder="Paste the pairing text from the hub" />
@@ -190,8 +189,52 @@ function OnboardingScreen({
           <Text style={styles.secondaryButtonText}>{pairingPayload.trim() ? "Pair with QR text" : "Save manual connection"}</Text>
         </Pressable>
       </CollapsibleSection>
+    </>
+  );
+  return (
+    <ScrollView style={styles.screen} contentContainerStyle={styles.onboardingContent} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
+      {isReady ? (
+        <>
+          <View style={styles.connectedHero}>
+            <BrandMark branding={branding} size={56} />
+            <View style={styles.flexText}>
+              <Text style={styles.connectedTitle} numberOfLines={2}>{deviceName || "This phone"}</Text>
+              <Text style={styles.muted} numberOfLines={1}>{roleLabel(deviceRole)} · paired with {brandDisplayName(branding)}</Text>
+              <Text style={styles.smallMuted} numberOfLines={1}>Connected to {savedHubUrl}</Text>
+            </View>
+          </View>
+          <Pressable style={styles.primaryButton} onPress={onStart}>
+            <Text style={styles.primaryButtonText}>Return to service</Text>
+          </Pressable>
+          <Pressable accessibilityState={{ expanded: pairingOpen }} style={styles.disclosureRow} onPress={() => setPairingOpen((value) => !value)}>
+            <View style={styles.flexText}>
+              <Text style={styles.collapsibleTitle}>Change hub or re-pair</Text>
+              <Text style={styles.muted}>Only needed when moving this phone to another hub.</Text>
+            </View>
+            <Text style={styles.collapsibleChevron} importantForAccessibility="no">{pairingOpen ? "−" : "+"}</Text>
+          </Pressable>
+          {pairingOpen ? pairingSteps : null}
+        </>
+      ) : (
+        <>
+          <View style={styles.heroPanel}>
+            <Text style={styles.heroTitle}>Connect to your hub</Text>
+            <Text style={styles.heroCopy}>Join the same Wi-Fi as the hub PC, then scan its pairing QR to start service.</Text>
+          </View>
+          {pairingSteps}
+        </>
+      )}
+      {extraSections}
     </ScrollView>
   );
+}
+
+function roleLabel(role: string): string {
+  if (role === "admin") return "Admin";
+  if (role === "captain") return "Captain";
+  if (role === "kitchen") return "Kitchen";
+  if (role === "waiter") return "Waiter";
+  return role ? role.charAt(0).toUpperCase() + role.slice(1) : "Paired";
 }
 
 function StepNumber({ value, label }: { value: string; label: string }) {
@@ -205,12 +248,15 @@ function StepNumber({ value, label }: { value: string; label: string }) {
   );
 }
 
-function ConnectionBanner({ message, savingDraft }: { message: string; savingDraft: boolean }) {
+function ConnectionBanner({ message, savingDraft, onDismiss }: { message: string; savingDraft: boolean; onDismiss?: () => void }) {
   if (!message && !savingDraft) return null;
   return (
     <View style={styles.banner}>
-      {message ? <Text style={styles.bannerText}>{message}</Text> : null}
-      {savingDraft ? <Text style={styles.bannerMeta}>Saving draft...</Text> : null}
+      <View style={styles.flexText} accessibilityLiveRegion="polite">
+        {message ? <Text style={styles.bannerText}>{message}</Text> : null}
+        {savingDraft ? <Text style={styles.bannerMeta}>Saving draft...</Text> : null}
+      </View>
+      {message && onDismiss ? <Pressable accessibilityLabel="Dismiss message" style={styles.searchClear} onPress={onDismiss}><X size={16} color={palette.muted} /></Pressable> : null}
     </View>
   );
 }
@@ -250,18 +296,16 @@ function CollapsibleSection({
   subtitle,
   expanded,
   onToggle,
-  accentColor,
   children
 }: {
   title: string;
   subtitle?: string;
   expanded: boolean;
   onToggle: () => void;
-  accentColor?: string;
   children: ReactNode;
 }) {
   return (
-    <View style={[styles.collapsibleWrap, accentColor ? { borderLeftWidth: 4, borderLeftColor: accentColor } : undefined]}>
+    <View style={styles.collapsibleWrap}>
       <Pressable accessibilityState={{ expanded }} style={[styles.collapsibleHeader, expanded && styles.collapsibleHeaderExpanded]} onPress={onToggle}>
         <View style={styles.flexText}>
           <Text style={styles.collapsibleTitle}>{title}</Text>

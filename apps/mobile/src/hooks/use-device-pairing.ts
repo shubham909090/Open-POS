@@ -61,7 +61,7 @@ export function useDevicePairing({
     setHubUrlDraft(cleanHubUrl);
     setDeviceTokenState(cleanToken);
     setDeviceTokenDraft(cleanToken);
-    setMessage("Connection saved. Checking hub...");
+    setMessage("");
   }
 
   async function pairDevice() {
@@ -77,7 +77,7 @@ export function useDevicePairing({
       Alert.alert("Pairing URL needs hub IP", localOnlyMessage);
       return;
     }
-    await exchangePairingCode(pairHubUrl, pairCode, payload?.deviceName || "Captain phone");
+    await exchangePairingCode(pairHubUrl, pairCode, payload?.deviceName || "POS phone");
   }
 
   async function openScanner() {
@@ -103,7 +103,7 @@ export function useDevicePairing({
     setPairingCode(payload.code);
     setHubUrlDraft(normaliseHubUrl(payload.hubUrl));
     setFormRevision((value) => value + 1);
-    Alert.alert("Pair this phone?", `${payload.deviceName ?? "Captain phone"} as ${payload.role ?? "captain"}`, [
+    Alert.alert("Pair this phone?", `${payload.deviceName ?? "POS phone"} as ${payload.role ?? "captain"}`, [
       { text: "Later", style: "cancel" },
       { text: "Pair Now", onPress: () => void pairDeviceFromPayload(payload) },
     ]);
@@ -116,7 +116,7 @@ export function useDevicePairing({
       Alert.alert("Pairing URL needs hub IP", localOnlyMessage);
       return;
     }
-    await exchangePairingCode(pairHubUrl, payload.code, payload.deviceName || "Captain phone");
+    await exchangePairingCode(pairHubUrl, payload.code, payload.deviceName || "POS phone");
   }
 
   async function exchangePairingCode(pairHubUrl: string, code: string, deviceName: string) {
@@ -136,7 +136,6 @@ export function useDevicePairing({
       setPairingPayload("");
       setSetupOpen(false);
       setMessage(`${result.deviceName} is paired and ready.`);
-      Alert.alert("Device paired", `${result.deviceName} is ready as ${result.role}.`);
     } catch (error) {
       const alert = getPairingFailureAlert(pairHubUrl, error);
       Alert.alert(alert.title, alert.message);

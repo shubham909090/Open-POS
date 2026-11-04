@@ -28,10 +28,15 @@ import { useMobileHubRefresh } from "./hooks/use-mobile-hub-refresh";
 import { useOperationKeys } from "./hooks/use-operation-keys";
 import { useOrderDraft } from "./hooks/use-order-draft";
 import { useTableServiceActions } from "./hooks/use-table-service-actions";
+import { useMobileUpdate } from "./hooks/use-mobile-update";
+import { useRestaurantBranding } from "./hooks/use-restaurant-branding";
+import { useTableOrderPreference } from "./components/table-screen";
+import { BrandingSettings, MobileUpdatePanel } from "./components/settings-panels";
 import {
   nextConnectionAfterDevicePairing,
   shouldShowMobileOnboarding
 } from "./lib/connection-health";
+import { orderMatchesTable } from "./lib/table-selection";
 
 export default function App() {
   const { width } = useWindowDimensions();
@@ -81,7 +86,7 @@ export default function App() {
     },
   });
   const [bootstrap, setBootstrap] = useState<HubBootstrap | null>(null);
-  const [currentOrder, setCurrentOrder] = useState<HubOrder | null>(null);
+  const [loadedOrder, setCurrentOrder] = useState<HubOrder | null>(null);
   const [currentSummary, setCurrentSummary] = useState<CurrentDaySummary | null>(null);
   const [dailyReports, setDailyReports] = useState<DailyReportRow[]>([]);
   const [selectedHistoryDayId, setSelectedHistoryDayId] = useState<string | null>(null);
@@ -101,6 +106,9 @@ export default function App() {
     setPax,
     items,
     savingDraft,
+    draftLoading,
+    isCurrentSelection,
+    loadTableOrder,
     selectTable,
     persistDraft,
     addItem,
@@ -110,11 +118,12 @@ export default function App() {
     clearSelectedTableDraft,
   } = useOrderDraft({
     connection,
-    loadTableOrder,
+    client,
     setCurrentOrder,
     setMode,
     setMessage,
   });
+  const currentOrder = isCurrentSelection() && orderMatchesTable(loadedOrder, selectedTableId) ? loadedOrder : null;
   const { refresh } = useMobileHubRefresh({
     client,
     initializing,
@@ -148,6 +157,9 @@ export default function App() {
     setKdsTickets,
   });
 
+  const { tableOrder, setTableOrder } = useTableOrderPreference();
+  const mobileUpdate = useMobileUpdate();
+  const restaurantBranding = useRestaurantBranding({ client, hubUrl, online: Boolean(deviceToken) && connection === "online", deviceName });
   const { chooseBillPrinter } = useBillPrinterChooser({ client, setMessage });
   const {
     printHistoryBill,
@@ -234,6 +246,8 @@ export default function App() {
     loadTableOrder,
     chooseBillPrinter,
     selectedTableId,
+    selectedTableName: selectedTable?.name ?? null,
+    isCurrentSelection,
     sentItems,
     sending,
     setMessage,
@@ -250,29 +264,25 @@ export default function App() {
     if (shouldShowOnboarding) setPaymentQrOpen(false);
   }, [shouldShowOnboarding]);
 
-  async function loadTableOrder(tableId: string) {
-    try {
-      setCurrentOrder(await client.tableOrder(tableId));
-    } catch (error) {
-      setCurrentOrder(null);
-      setMessage(error instanceof Error ? error.message : "Could not load table order.");
-    }
-  }
-
-  if (initializing) {
+  if (initializing || (deviceToken && !bootstrap && connection === "checking")) {
     return (
       <SafeAreaProvider>
         <SafeAreaView style={styles.safe}>
           <View style={styles.loadingShell}>
             <ActivityIndicator size="large" color={palette.green} />
-            <Text style={styles.loadingText}>Opening POS app...</Text>
+            <Text style={styles.loadingText}>{initializing ? "Opening POS app…" : "Connecting to your hub…"}</Text>
           </View>
         </SafeAreaView>
       </SafeAreaProvider>
     );
   }
 
-  const workArea = (
+  const workArea = draftLoading && mode !== "tables" ? (
+    <View style={styles.loadingShell} accessibilityRole="progressbar">
+      <ActivityIndicator color={palette.green} />
+      <Text style={styles.muted}>Loading this table…</Text>
+    </View>
+  ) : (
     <View style={[styles.workArea, isWide && !historyMode && styles.workAreaWide, useVirtualMenu && styles.workAreaMenuOnly]}>
       {!historyMode && (mode === "tables" || isWide) && (
         <TablePicker
@@ -280,6 +290,8 @@ export default function App() {
           floors={bootstrap?.floors ?? []}
           selectedTableId={selectedTableId}
           loading={loading}
+          tableOrder={tableOrder}
+          onTableOrderChange={setTableOrder}
           onSelectTable={(tableId) => void selectTable(tableId)}
         />
       )}
@@ -314,6 +326,7 @@ export default function App() {
           menuItems={bootstrap?.menuItems ?? []}
           tables={activeTables}
           floors={bootstrap?.floors ?? []}
+          tableOrder={tableOrder}
           selectedTableId={selectedTableId}
           draftTotal={draftTotal}
           tableTotal={tableTotal}
@@ -342,6 +355,7 @@ export default function App() {
       )}
       {historyMode ? (
         <BillingHistoryPanel
+          actionMessage={message}
           currentSummary={currentSummary}
           dailyReports={dailyReports}
           selectedHistoryDayId={selectedHistoryDayId}
@@ -349,7 +363,7 @@ export default function App() {
           menuItems={bootstrap?.menuItems ?? []}
           sending={sending}
           onHistoryPrint={(billId) => void printHistoryBill(billId)}
-          onHistoryEdit={(billId, historyItems, customerName, masterPin, saveMode) => editHistoryBill(billId, historyItems, customerName, masterPin, saveMode)}
+          onHistoryEdit={(billId, historyItems, customerName, masterPin, saveMode, payments) => editHistoryBill(billId, historyItems, customerName, masterPin, saveMode, payments)}
           onSelectHistoryDay={(posDayId) => void selectHistoryDay(posDayId)}
         />
       ) : null}
@@ -373,7 +387,6 @@ export default function App() {
 
   const serviceContent = licenseBlocked ? licenseBlockContent : isKitchenDevice ? (
     <>
-      <ConnectionBanner message={message} savingDraft={false} />
       <KitchenScreen
         units={activeKdsUnits}
         selectedUnitId={kitchenUnitId}
@@ -386,7 +399,6 @@ export default function App() {
     </>
   ) : (
     <>
-      <ConnectionBanner message={licenseWarning ? license.message : message} savingDraft={savingDraft} />
       {workArea}
     </>
   );
@@ -397,9 +409,10 @@ export default function App() {
         <StatusBar barStyle="dark-content" backgroundColor={palette.wash} />
         <KeyboardAvoidingView style={styles.keyboardShell} behavior={Platform.OS === "ios" ? "padding" : undefined}>
           <AppHeader
+            branding={restaurantBranding.branding}
             connection={connection}
-            title={shouldShowOnboarding ? "Connection" : isKitchenDevice ? "Kitchen" : selectedTable ? `Table ${selectedTable.name}` : canBill ? "Captain POS" : "Waiter"}
-            subtitle={shouldShowOnboarding ? "Connect and manage this phone" : isKitchenDevice ? deviceName || "Kitchen device" : selectedTable ? "Add dishes or review sent items" : "Pick a table to start"}
+            title={shouldShowOnboarding ? (setupOpen ? "Settings" : !deviceToken ? "Connect this phone" : "Hub offline") : isKitchenDevice ? "Kitchen" : historyMode ? "Billing history" : selectedTable ? `Table ${selectedTable.name}` : canBill ? "Captain POS" : "Waiter"}
+            subtitle={shouldShowOnboarding ? (setupOpen ? "Connection, restaurant and app update" : !deviceToken ? "Pair with the hub to start service" : "Check Wi-Fi and the hub PC") : isKitchenDevice ? deviceName || "Kitchen device" : historyMode ? "Reprint or correct settled bills" : selectedTable ? "Add dishes or review sent items" : "Pick a table to start"}
             onSetupPress={() => openSetup(hubUrl, deviceToken)}
             onPaymentQrPress={deviceToken && !shouldShowOnboarding ? () => setPaymentQrOpen(true) : undefined}
             setupVisible={shouldShowOnboarding}
@@ -410,11 +423,37 @@ export default function App() {
             <ModeTabs mode={mode} onModeChange={setMode} newItemCount={items.reduce((total, item) => total + item.quantity, 0)} showHistory={canBill} />
           ) : null}
 
+          {!shouldShowOnboarding && !licenseBlocked && (message || savingDraft || licenseWarning) ? (
+            <View style={styles.serviceFeedback}>
+              <ConnectionBanner message={licenseWarning ? license.message : message} savingDraft={!isKitchenDevice && savingDraft} onDismiss={licenseWarning ? undefined : () => setMessage("")} />
+            </View>
+          ) : null}
+
           {shouldShowOnboarding ? (
             <OnboardingScreen
               connection={connection}
               formRevision={formRevision}
               hubUrl={hubUrlDraft}
+              savedHubUrl={hubUrl}
+              deviceName={deviceName}
+              deviceRole={deviceRole}
+              branding={restaurantBranding.branding}
+              extraSections={
+                <>
+                  {deviceToken && canBill ? (
+                    <BrandingSettings
+                      branding={restaurantBranding.branding}
+                      online={connection === "online"}
+                      busy={restaurantBranding.busy}
+                      error={restaurantBranding.error}
+                      notice={restaurantBranding.notice}
+                      onPickLogo={restaurantBranding.pickLogo}
+                      onSave={restaurantBranding.save}
+                    />
+                  ) : null}
+                  <MobileUpdatePanel update={mobileUpdate} />
+                </>
+              }
               deviceToken={deviceTokenDraft}
               pairingCode={pairingCode}
               pairingPayload={pairingPayload}
@@ -440,7 +479,7 @@ export default function App() {
                   </View>
                 </View>
               ) : (
-                <ScrollView style={styles.screen} contentContainerStyle={[styles.screenContent, hasNewItems && mode !== "ticket" && !isKitchenDevice && styles.screenContentWithDraft]} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
+                <ScrollView key={`${mode}:${selectedTableId ?? ""}:${selectedHistoryDayId ?? ""}`} style={styles.screen} contentContainerStyle={[styles.screenContent, hasNewItems && mode !== "ticket" && !isKitchenDevice && styles.screenContentWithDraft]} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
                   {serviceContent}
                 </ScrollView>
               )}

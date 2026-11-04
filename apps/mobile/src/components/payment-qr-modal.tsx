@@ -106,9 +106,7 @@ export function PaymentQrModal({
                   <Text style={s.formTitle}>
                     {change.kind === "remove"
                       ? "Remove payment QR?"
-                      : change.kind === "resize"
-                        ? "Bill QR size"
-                        : qr
+                      : qr
                           ? "Replace payment QR"
                           : "Add payment QR"}
                   </Text>
@@ -125,56 +123,7 @@ export function PaymentQrModal({
                         resizeMode="contain"
                         accessibilityLabel="Selected payment QR image"
                       />
-                      <View style={s.field}>
-                        <Text style={s.inputLabel}>Print size</Text>
-                        <View style={s.sizeRow}>
-                          <Pressable
-                            accessibilityRole="button"
-                            accessibilityLabel="Decrease QR print size"
-                            disabled={busy || change.sizeMm <= 20}
-                            style={[
-                              s.sizeButton,
-                              (busy || change.sizeMm <= 20) && s.disabled,
-                            ]}
-                            onPress={() =>
-                              setChange({
-                                ...change,
-                                sizeMm: change.sizeMm - 1,
-                              })
-                            }
-                          >
-                            <Text style={s.sizeButtonText}>−</Text>
-                          </Pressable>
-                          <Text
-                            style={s.sizeValue}
-                            accessibilityLiveRegion="polite"
-                          >
-                            {change.sizeMm} mm
-                          </Text>
-                          <Pressable
-                            accessibilityRole="button"
-                            accessibilityLabel="Increase QR print size"
-                            disabled={busy || change.sizeMm >= 45}
-                            style={[
-                              s.sizeButton,
-                              (busy || change.sizeMm >= 45) && s.disabled,
-                            ]}
-                            onPress={() =>
-                              setChange({
-                                ...change,
-                                sizeMm: change.sizeMm + 1,
-                              })
-                            }
-                          >
-                            <Text style={s.sizeButtonText}>+</Text>
-                          </Pressable>
-                        </View>
-                        <Text style={s.sizeHelp}>
-                          20–45 mm. Fits the roll; dense QR codes may print
-                          larger to stay scannable. Appears before the bill
-                          footer.
-                        </Text>
-                      </View>
+
                     </>
                   ) : null}
                   <View style={s.field}>
@@ -233,9 +182,7 @@ export function PaymentQrModal({
                         ? "Saving…"
                         : change.kind === "remove"
                           ? "Remove QR"
-                          : change.kind === "resize"
-                            ? "Save print size"
-                            : "Save payment QR"}
+                          : "Save payment QR"}
                     </Text>
                   </Pressable>
                   <Pressable
@@ -419,26 +366,7 @@ export function PaymentQrModal({
                                 stackActions && s.toolbarStack,
                               ]}
                             >
-                              <Pressable
-                                accessibilityRole="button"
-                                style={[
-                                  s.action,
-                                  !stackActions && s.toolbarAction,
-                                ]}
-                                onPress={() => {
-                                  setPin("");
-                                  setChange({
-                                    kind: "resize",
-                                    imageDataUrl: qr.imageDataUrl,
-                                    sizeMm: qr.sizeMm,
-                                    expectedUpdatedAt: qr.updatedAt,
-                                  });
-                                }}
-                              >
-                                <Text style={s.actionText}>
-                                  Print size · {qr.sizeMm} mm
-                                </Text>
-                              </Pressable>
+
                               <Pressable
                                 accessibilityRole="button"
                                 style={[s.action, s.danger]}
@@ -457,8 +385,7 @@ export function PaymentQrModal({
                             </View>
                           ) : null}
                           <Text style={s.note}>
-                            PNG or JPEG, up to 2 MB. Saved changes apply to
-                            newly printed bills.
+                            PNG or JPEG, up to 2 MB. Set each printer’s QR size in the hub’s Printers settings. Changes apply to new bills; kitchen tickets never include the QR.
                           </Text>
                         </>
                       ) : null}

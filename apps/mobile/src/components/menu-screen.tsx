@@ -67,10 +67,9 @@ function MenuScreen({
     <>
       <View style={styles.cardHeader}>
         <View style={styles.flexText}>
-          <Text style={styles.sectionTitle}>Menu</Text>
-          <Text style={styles.muted}>{selectedTableName ? `Adding for Table ${selectedTableName}` : "Choose a table first"}</Text>
+          <Text style={styles.muted}>{selectedTableName ? `Add dishes to ${selectedTableName}` : "Choose a table first"}</Text>
         </View>
-        <Text style={styles.totalText}>Rs {formatRupees(draftTotal)}</Text>
+        {hasNewItems ? <Text style={styles.totalText}>New · Rs {formatRupees(draftTotal)}</Text> : null}
       </View>
       <View style={styles.menuSearch}>
         <Search size={18} strokeWidth={1.7} color={palette.muted} />
@@ -99,7 +98,7 @@ function MenuScreen({
       <View style={styles.openItemLaunchRow}>
         <Pressable
           accessibilityLabel="Add open item"
-          style={[styles.secondaryButton, styles.openItemLaunchButton, !selectedTableName && styles.buttonDisabled]}
+          style={[styles.openItemLaunchButton, !selectedTableName && styles.buttonDisabled]}
           disabled={!selectedTableName}
           onPress={() => {
             setOpenItemGroupId(defaultSaleGroupId);
@@ -108,9 +107,8 @@ function MenuScreen({
             setOpenItemVisible(true);
           }}
         >
-          <Text style={styles.secondaryButtonText}>+ Open item</Text>
+          <Text style={styles.secondaryButtonText}>+ Item not on the menu</Text>
         </Pressable>
-        <Text style={styles.smallMuted}>Add an item that is not in the menu.</Text>
       </View>
     </>
   );
@@ -142,7 +140,7 @@ function MenuScreen({
           <View style={styles.sectionHeaderRow}>
             <View style={styles.flexText}>
               <Text style={styles.sectionTitle}>Open item</Text>
-              <Text style={styles.muted}>Add an ad-hoc item to Table {selectedTableName}</Text>
+              <Text style={styles.muted}>Add an item to {selectedTableName}</Text>
             </View>
             <Pressable style={styles.secondaryButton} onPress={closeOpenItem}>
               <Text style={styles.secondaryButtonText}>Close</Text>
@@ -226,7 +224,7 @@ function MenuScreen({
               onAddItem={onAddItem}
             />
           )}
-          renderSectionHeader={({ section }) => <Text style={[styles.subhead, styles.menuSectionHeader]}>{section.title}</Text>}
+          renderSectionHeader={() => null}
           ListHeaderComponent={header}
           ListEmptyComponent={
             !selectedTableName ? (
@@ -355,7 +353,7 @@ function MenuItemRow({
           </ScrollView>
         )}
       </View>
-      {draftSelectionLabel ? (
+      {hasMultipleVariants && draftSelectionLabel ? (
         <View style={styles.draftSelectionPill}>
           <Text style={styles.draftSelectionText} numberOfLines={1}>Added {draftSelectionLabel}</Text>
         </View>

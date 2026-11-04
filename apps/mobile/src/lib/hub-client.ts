@@ -1,4 +1,4 @@
-import type { HistoryEditBillInput, PaymentQr, SubmitOrderInput } from "@gaurav-pos/shared";
+import type { HistoryEditBillInput, PaymentQr, RestaurantBranding, SubmitOrderInput } from "@gaurav-pos/shared";
 import { MOBILE_HEALTH_TIMEOUT_MS } from "./connection-health";
 import { buildRealtimeUrl, createIdempotencyKey, HubHttpError } from "./hub-client-helpers";
 import type {
@@ -85,6 +85,25 @@ export class HubClient {
 
   async removePaymentQr(approval: MasterApprovalPayload, expectedUpdatedAt?: string | null): Promise<{ qr: PaymentQr | null }> {
     return this.request("/settings/payment-qr", {
+      method: "DELETE",
+      body: JSON.stringify({ ...approval, ...(expectedUpdatedAt === undefined ? {} : { expectedUpdatedAt }) })
+    });
+  }
+
+  async restaurantBranding(signal?: AbortSignal): Promise<{ branding: RestaurantBranding }> {
+    return this.request("/settings/restaurant-branding", { signal, cache: "no-store" });
+  }
+
+  /** `imageDataUrl` undefined keeps the current logo, null removes it. */
+  async updateRestaurantBranding(
+    input: { restaurantName: string; imageDataUrl?: string | null; expectedUpdatedAt?: string | null },
+    approval: MasterApprovalPayload
+  ): Promise<{ branding: RestaurantBranding }> {
+    return this.request("/settings/restaurant-branding", { method: "PUT", body: JSON.stringify({ ...input, ...approval }) });
+  }
+
+  async removeRestaurantLogo(approval: MasterApprovalPayload, expectedUpdatedAt?: string | null): Promise<{ branding: RestaurantBranding }> {
+    return this.request("/settings/restaurant-branding", {
       method: "DELETE",
       body: JSON.stringify({ ...approval, ...(expectedUpdatedAt === undefined ? {} : { expectedUpdatedAt }) })
     });

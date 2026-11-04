@@ -54,6 +54,7 @@ function CaptainBillingPanel({
   const [tipValue, setTipValue] = useState("0");
   const [reference, setReference] = useState("");
   const [customerName, setCustomerName] = useState("");
+  const [adjustmentsOpen, setAdjustmentsOpen] = useState(false);
   const [paymentInputs, setPaymentInputs] = useState<
     Record<PaymentMethod, string>
   >({ cash: "0", upi: "0", card: "0", online: "0" });
@@ -71,6 +72,7 @@ function CaptainBillingPanel({
     setTipValue(paiseToRupeeInput(bill.tip_paise ?? 0));
     setPaymentInputs({ cash: "0", upi: "0", card: "0", online: "0" });
     setApprovalAction(null);
+    setAdjustmentsOpen(false);
     setManagerPin("");
     setManagerReason("");
   }, [currentOrder?.order?.id, bill?.id]);
@@ -102,7 +104,7 @@ function CaptainBillingPanel({
     bill && newPaymentPaise > 0 && remainingPaise === 0 && !sending,
   );
   const hasApproval =
-    managerPin.trim().length > 0 && managerReason.trim().length > 0;
+    managerPin.trim().length >= 4 && managerReason.trim().length >= 3;
   const approvalTitle =
     approvalAction === "reprint"
       ? "Reprint bill"
@@ -143,13 +145,6 @@ function CaptainBillingPanel({
 
   return (
     <View style={styles.billingStack}>
-      <View>
-        <Text style={styles.actionTitle}>Billing</Text>
-        <Text style={styles.actionMeta}>
-          Settle the selected table. History is in its own tab.
-        </Text>
-      </View>
-
       {!currentOrder?.order ? (
         <Text style={styles.smallMuted}>
           Send items for this table before billing.
@@ -176,7 +171,7 @@ function CaptainBillingPanel({
             onPress={() => onGenerateBill(customerName)}
           >
             <Text style={styles.primaryButtonText}>
-              {sending ? "Working..." : "Generate and Print Bill"}
+              {sending ? "Working..." : "Generate and print bill"}
             </Text>
           </Pressable>
         </>
@@ -189,15 +184,11 @@ function CaptainBillingPanel({
             {bill.customer_name ? (
               <Text style={styles.muted}>Name: {bill.customer_name}</Text>
             ) : null}
-            <Text style={styles.muted}>
-              Items Rs {formatRupees(bill.total_paise)}
-            </Text>
-            <Text style={styles.muted}>
-              Already paid Rs {formatRupees(existingPaidPaise)}
-            </Text>
-            <Text style={[styles.totalText, { fontSize: 20 }]}>
-              Balance Rs {formatRupees(balancePaise)}
-            </Text>
+            <View style={styles.billAmountRow}><Text style={styles.muted}>Items</Text><Text style={styles.muted}>Rs {formatRupees(bill.total_paise)}</Text></View>
+            {discountPaise > 0 ? <View style={styles.billAmountRow}><Text style={styles.muted}>Discount</Text><Text style={styles.muted}>− Rs {formatRupees(discountPaise)}</Text></View> : null}
+            {tipPaise > 0 ? <View style={styles.billAmountRow}><Text style={styles.muted}>Tip</Text><Text style={styles.muted}>Rs {formatRupees(tipPaise)}</Text></View> : null}
+            {existingPaidPaise > 0 ? <View style={styles.billAmountRow}><Text style={styles.muted}>Already paid</Text><Text style={styles.muted}>Rs {formatRupees(existingPaidPaise)}</Text></View> : null}
+            <View style={styles.billAmountRow}><Text style={styles.sectionTitle}>Balance</Text><Text style={styles.sectionTitle}>Rs {formatRupees(balancePaise)}</Text></View>
           </View>
 
           <View style={styles.quickPayGrid}>
@@ -209,13 +200,17 @@ function CaptainBillingPanel({
                   onPress={() => fillFullPayment(method)}
                 >
                   <Text style={styles.quickPayText}>
-                    Full {method.toUpperCase()}
+                    {method === "upi" ? "UPI" : method.charAt(0).toUpperCase() + method.slice(1)} · full
                   </Text>
                 </Pressable>
               ),
             )}
           </View>
 
+          <Pressable accessibilityState={{ expanded: adjustmentsOpen }} style={styles.billAdjustmentToggle} onPress={() => setAdjustmentsOpen((open) => !open)}>
+            <Text style={styles.secondaryButtonText}>Discount and tip</Text><Text style={styles.muted}>{adjustmentsOpen ? "−" : "+"}</Text>
+          </Pressable>
+          {adjustmentsOpen ? <>
           <View style={styles.segmentedRow}>
             <Pressable
               style={[
@@ -263,7 +258,9 @@ function CaptainBillingPanel({
               onChange={setTipValue}
             />
           </View>
+          </> : null}
 
+          <Text style={styles.inputLabel}>Payment amounts</Text>
           <View style={styles.paymentGrid}>
             {(["cash", "upi", "card", "online"] as PaymentMethod[]).map(
               (method) => (
@@ -325,7 +322,7 @@ function CaptainBillingPanel({
                 })
               }
             >
-              <Text style={styles.primaryButtonText}>Punch Bill</Text>
+              <Text style={styles.primaryButtonText}>{sending ? "Saving payment…" : "Punch bill"}</Text>
             </Pressable>
           </View>
 
@@ -344,9 +341,9 @@ function CaptainBillingPanel({
             <Pressable
               style={[
                 styles.dangerSmallButton,
-                sending && styles.buttonDisabled,
+                (sending || existingPaidPaise > 0) && styles.buttonDisabled,
               ]}
-              disabled={sending}
+              disabled={sending || existingPaidPaise > 0}
               onPress={() => selectApprovalAction("nc")}
             >
               <Text style={styles.dangerSmallButtonText}>NC bill</Text>
@@ -355,14 +352,16 @@ function CaptainBillingPanel({
               style={[
                 styles.secondaryButton,
                 approvalAction === "revise" && styles.approvalActionActive,
-                (!hasNewItems || sending) && styles.buttonDisabled,
+                (!hasNewItems || sending || existingPaidPaise > 0) && styles.buttonDisabled,
               ]}
-              disabled={!hasNewItems || sending}
+              disabled={!hasNewItems || sending || existingPaidPaise > 0}
               onPress={() => selectApprovalAction("revise")}
             >
               <Text style={styles.secondaryButtonText}>Revise</Text>
             </Pressable>
           </View>
+
+          {existingPaidPaise > 0 ? <Text style={styles.smallMuted}>Recorded payments must be reversed on the hub before revising or marking this bill NC.</Text> : null}
 
           <FormModal
             visible={Boolean(approvalAction)}
@@ -379,6 +378,7 @@ function CaptainBillingPanel({
                 <View>
                   <Text style={styles.actionTitle}>{approvalTitle}</Text>
                   <Text style={styles.actionMeta}>
+                    {approvalAction === "nc" ? "Make this bill non-chargeable. " : approvalAction === "revise" ? "Add the new dishes to a revised bill. " : "Print another copy of this bill. "}
                     Manager PIN and reason required.
                   </Text>
                 </View>

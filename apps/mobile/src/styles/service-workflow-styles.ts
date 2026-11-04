@@ -1,14 +1,23 @@
 import { palette, tabularFigures } from "./app-style-tokens";
 
 export const serviceWorkflowStyles = {
-  floorTableStack: { gap: 12 },
+  floorTableStack: { gap: 16 },
+  orderSegmented: { flexDirection: "row", padding: 2, borderRadius: 8, backgroundColor: palette.lineSoft },
+  orderSegment: { minHeight: 40, minWidth: 64, paddingHorizontal: 10, borderRadius: 6, alignItems: "center", justifyContent: "center" },
+  orderSegmentActive: { backgroundColor: palette.white },
+  orderSegmentText: { color: palette.muted, fontSize: 13, fontWeight: "500" },
+  orderSegmentTextActive: { color: palette.ink, fontWeight: "600" },
   floorTableGroup: { gap: 8 },
   floorTableHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 },
-  tableGrid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", rowGap: 10 },
+  tableSection: { gap: 14 },
+  tableHeaderStack: { flexDirection: "column", alignItems: "flex-start" },
+  tableCount: { color: palette.ink, fontSize: 15, fontWeight: "500" },
+  tableGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   tableTile: {
-    width: "48%",
-    minHeight: 84,
-    padding: 14,
+    width: "31%",
+    minHeight: 72,
+    paddingHorizontal: 12,
+    paddingVertical: 11,
     gap: 2,
     borderWidth: 1,
     borderColor: palette.line,
@@ -23,13 +32,13 @@ export const serviceWorkflowStyles = {
   },
   busyTable: { borderColor: "#e8d9bb", backgroundColor: "#fffcf5" },
   billedTable: { borderColor: "#cdd9ed", backgroundColor: "#f7faff" },
-  selectedTable: { borderColor: palette.green, backgroundColor: palette.greenSoft, borderWidth: 2, padding: 13 },
+  selectedTable: { borderColor: palette.green, backgroundColor: palette.greenSoft, borderWidth: 2, paddingHorizontal: 11, paddingVertical: 10 },
   tableName: { fontSize: 20, lineHeight: 26, fontWeight: "600", color: palette.ink, fontVariant: tabularFigures },
   // Status colors match the hub table map: free neutral, running amber, bill printed blue.
   tableStatus: { color: palette.muted, fontWeight: "500", fontSize: 13, lineHeight: 18 },
   tableStatusBusy: { color: palette.amberBold },
   tableStatusBilled: { color: palette.blueBill },
-  kitchenPanel: { gap: 14 },
+  kitchenPanel: { gap: 14, borderWidth: 0, backgroundColor: "transparent", padding: 0 },
   kotList: { gap: 10 },
   kotCard: {
     borderWidth: 1,
@@ -50,6 +59,11 @@ export const serviceWorkflowStyles = {
   kotCardPreparing: { borderTopColor: palette.amber },
   kotCardReady: { borderTopColor: palette.green, backgroundColor: palette.greenSoft },
   kotCardServed: { borderColor: palette.line, backgroundColor: palette.wash, opacity: 0.7 },
+  kotCardCancellation: { borderColor: palette.redLine, borderTopColor: palette.red, backgroundColor: palette.redSoft },
+  kotType: { color: palette.ink, fontSize: 13, fontWeight: "600", marginTop: 4 },
+  kotRemovalText: { color: palette.red },
+  kotChangeQuantity: { minWidth: 54, alignItems: "flex-start", gap: 2 },
+  kotChangeAction: { color: palette.muted, fontSize: 11, fontWeight: "600" },
   kotHeader: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: 10 },
   kotTable: { color: palette.ink, fontSize: 21, fontWeight: "600", lineHeight: 28 },
   kotStatusPill: {
@@ -83,11 +97,9 @@ export const serviceWorkflowStyles = {
   kotActionButton: { flex: 1, minHeight: 54 },
   shiftGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   shiftActionCard: {
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: palette.lineSoft,
-    backgroundColor: palette.white,
-    padding: 10,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: palette.lineSoft,
     gap: 10
   },
   shiftButton: {
@@ -106,12 +118,12 @@ export const serviceWorkflowStyles = {
   shiftButtonMeta: { color: palette.muted, fontWeight: "500", fontSize: 11 },
   fieldBlock: { gap: 8 },
   actionSection: {
-    borderRadius: 8,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: palette.line,
-    backgroundColor: palette.wash,
-    padding: 12,
-    gap: 10
+    borderColor: palette.greenLine,
+    backgroundColor: palette.paper,
+    padding: 14,
+    gap: 12
   },
   sectionHeaderRow: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: 10 },
   actionTitle: { color: palette.ink, fontSize: 17, fontWeight: "600", lineHeight: 22 },
@@ -119,13 +131,12 @@ export const serviceWorkflowStyles = {
   actionAmount: { color: palette.green, fontSize: 16, fontWeight: "600" },
   sendButtonRow: { flexDirection: "row", gap: 8 },
   heroSendButton: { minHeight: 52 },
+  itemShiftMove: { flexGrow: 1 },
   itemShiftRow: {
     minHeight: 52,
-    borderWidth: 1,
-    borderColor: palette.lineSoft,
-    backgroundColor: palette.white,
-    borderRadius: 8,
-    padding: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: palette.lineSoft,
+    paddingVertical: 8,
     flexDirection: "row",
     flexWrap: "wrap",
     alignItems: "center",
@@ -172,14 +183,7 @@ export const serviceWorkflowStyles = {
     borderColor: palette.redLine,
     backgroundColor: palette.redSoft
   },
-  stateEditor: {
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: palette.line,
-    backgroundColor: palette.white,
-    padding: 10,
-    gap: 10
-  },
+  stateEditor: { gap: 10 },
   stateSearchResults: {
     gap: 8,
     maxHeight: 360

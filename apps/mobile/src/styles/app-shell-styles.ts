@@ -25,7 +25,8 @@ export const appShellStyles = {
     elevation: 0
   },
   headerText: { flex: 1, minWidth: 0 },
-  headerBrandRow: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", columnGap: 10 },
+  headerBrandRow: { flexDirection: "row", alignItems: "center", columnGap: 10 },
+  headerBrandName: { flexShrink: 1 },
   headerActions: { flexDirection: "row", alignItems: "center", gap: 6, flexShrink: 0 },
   flexText: { flex: 1, minWidth: 0 },
   kicker: { color: palette.muted, fontWeight: "500", fontSize: 11, letterSpacing: 0.2 },
@@ -52,6 +53,11 @@ export const appShellStyles = {
     borderRadius: 12,
     elevation: 0
   },
+  connectedHero: { flexDirection: "row", alignItems: "center", gap: 14, paddingVertical: 8 },
+  connectedTitle: { color: palette.ink, fontSize: 22, lineHeight: 28, fontWeight: "600", letterSpacing: -0.4 },
+  disclosureRow: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 12, borderTopWidth: 1, borderTopColor: palette.line },
+  pairCodeRow: { flexDirection: "row", alignItems: "flex-end", gap: 8 },
+  pairCodeButton: { minHeight: 48, minWidth: 88 },
   stepHeader: { flexDirection: "row", alignItems: "center", gap: 10 },
   stepCircle: {
     width: 28,
@@ -63,6 +69,8 @@ export const appShellStyles = {
   },
   stepCircleText: { color: palette.muted, fontWeight: "600", fontSize: 13, fontVariant: tabularFigures },
   banner: {
+    flexDirection: "row",
+    alignItems: "center",
     borderWidth: 1,
     borderColor: palette.line,
     backgroundColor: palette.paper,
@@ -72,6 +80,7 @@ export const appShellStyles = {
     gap: 3
   },
   bannerWarning: { borderColor: palette.amberLine, backgroundColor: palette.amberSoft },
+  serviceFeedback: { marginHorizontal: 16, marginTop: 12 },
   bannerText: { color: palette.muted, fontSize: 12, fontWeight: "400", lineHeight: 18 },
   bannerMeta: { color: palette.green, fontSize: 12, fontWeight: "500" },
   dot: { width: 6, height: 6, borderRadius: 3 },
@@ -219,6 +228,6 @@ export const appShellStyles = {
     padding: 14,
     gap: 12
   },
-  menuPanel: { flex: 1 },
+  menuPanel: { flex: 1, borderWidth: 0, backgroundColor: "transparent", padding: 0 },
   virtualMenuPanel: { padding: 0, overflow: "hidden" },
 } as const;

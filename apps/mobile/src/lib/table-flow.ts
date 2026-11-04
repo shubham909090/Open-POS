@@ -1,3 +1,8 @@
+import { compareNaturalNames } from "@gaurav-pos/shared";
+
+/** "name" sorts tables naturally (T2 before T10); "custom" keeps the hub's manual positions. */
+export type TableOrder = "name" | "custom";
+
 type TableLike = {
   id: string;
   name?: string | null;
@@ -13,7 +18,8 @@ type FloorLike = {
 
 export function groupTablesByFloor<TTable extends TableLike>(
   tables: TTable[],
-  floors: FloorLike[] = []
+  floors: FloorLike[] = [],
+  order: TableOrder = "name"
 ): Array<{ floorId: string; floorName: string; tables: TTable[] }> {
   const activeFloors = floors.filter((floor) => floor.active !== false && floor.active !== 0);
   const groups = new Map<string, { floorId: string; floorName: string; tables: TTable[] }>();
@@ -36,7 +42,12 @@ export function groupTablesByFloor<TTable extends TableLike>(
     });
   }
 
-  return Array.from(groups.values()).filter((group) => group.tables.length > 0);
+  const result = Array.from(groups.values()).filter((group) => group.tables.length > 0);
+  // Custom order relies on the hub already returning tables by floor and table position.
+  if (order === "name") {
+    for (const group of result) group.tables.sort((left, right) => compareNaturalNames(left.name ?? "", right.name ?? ""));
+  }
+  return result;
 }
 
 export function clampTransferQuantity(value: string | number | undefined, max: number): number {

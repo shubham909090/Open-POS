@@ -5,7 +5,7 @@ import { Pressable } from "./pressable";
 import { getTableDisplayState, isTransferTargetTable, tableDisplayLabel } from "@gaurav-pos/shared";
 
 import type { HubBootstrap, HubOrder } from "../lib/hub-client";
-import { clampTransferQuantity, filterTablesForSearch, groupTablesByFloor, normaliseTransferQuantityInput, stepTransferQuantity } from "../lib/table-flow";
+import { clampTransferQuantity, filterTablesForSearch, groupTablesByFloor, normaliseTransferQuantityInput, stepTransferQuantity, type TableOrder } from "../lib/table-flow";
 import { palette, styles } from "../styles/app-styles";
 import { CollapsibleSection, EmptyState } from "./app-shell";
 
@@ -14,6 +14,7 @@ function TicketTransferSection({
   sentItems,
   tables,
   floors,
+  tableOrder,
   sending,
   expanded,
   onToggle,
@@ -24,6 +25,7 @@ function TicketTransferSection({
   sentItems: HubOrder["items"];
   tables: HubBootstrap["tables"];
   floors: HubBootstrap["floors"];
+  tableOrder: TableOrder;
   sending: boolean;
   expanded: boolean;
   onToggle: () => void;
@@ -41,7 +43,7 @@ function TicketTransferSection({
     [selectedTableId, tables]
   );
   const visibleShiftTargets = useMemo(() => filterTablesForSearch(shiftTargets, targetSearch), [shiftTargets, targetSearch]);
-  const visibleShiftTargetGroups = useMemo(() => groupTablesByFloor(visibleShiftTargets, floors), [floors, visibleShiftTargets]);
+  const visibleShiftTargetGroups = useMemo(() => groupTablesByFloor(visibleShiftTargets, floors, tableOrder), [floors, tableOrder, visibleShiftTargets]);
   const selectedFullShiftTarget = shiftTargets.find((table) => table.id === fullShiftTargetId) ?? null;
   const selectedItemShiftTarget = shiftTargets.find((table) => table.id === itemShiftTargetId) ?? null;
 
@@ -67,7 +69,7 @@ function TicketTransferSection({
 
   return (
     <>
-      <CollapsibleSection title="Shift Table Or Items" subtitle="Captain-only movement tools" expanded={expanded} onToggle={onToggle} accentColor={palette.blueBill}>
+      <CollapsibleSection title="Move table or items" subtitle="Transfer to another table" expanded={expanded} onToggle={onToggle}>
         {shiftTargets.length === 0 ? (
           <Text style={styles.smallMuted}>No other active table is available for transfer.</Text>
         ) : (
@@ -135,7 +137,7 @@ function TicketTransferSection({
                     </Pressable>
                   </View>
                   <Pressable
-                    style={[styles.shiftButton, !canTransferItem && styles.buttonDisabled]}
+                    style={[styles.shiftButton, styles.itemShiftMove, !canTransferItem && styles.buttonDisabled]}
                     disabled={!canTransferItem}
                     onPress={() => onShiftItem(item.id, quantity, itemShiftTargetId)}
                   >
@@ -181,10 +183,7 @@ function TicketTransferSection({
                         const selected = table.id === (targetPickerMode === "full" ? fullShiftTargetId : itemShiftTargetId);
                         return (
                           <Pressable key={table.id} style={[styles.targetPickerRow, selected && styles.shiftButtonActive]} onPress={() => selectShiftTarget(table.id)}>
-                            <View style={styles.flexText}>
-                              <Text style={styles.shiftButtonText}>{table.name}</Text>
-                              <Text style={styles.shiftButtonMeta}>{table.floor_name}</Text>
-                            </View>
+                            <Text style={[styles.shiftButtonText, styles.flexText]}>{table.name}</Text>
                             <Text style={[styles.shiftButtonMeta, state === "running" && styles.tableStatusBusy, state === "bill_printed" && styles.tableStatusBilled]}>
                               {tableDisplayLabel(state)}
                             </Text>

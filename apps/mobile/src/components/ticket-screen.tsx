@@ -11,6 +11,7 @@ import { Pressable } from "./pressable";
 import { formatItemPunch, type OrderItemInput } from "@gaurav-pos/shared";
 
 import type { HubBootstrap, HubOrder } from "../lib/hub-client";
+import type { TableOrder } from "../lib/table-flow";
 import { findMenuVariant, formatRupees } from "../lib/mobile-format";
 import type {
   ConnectionState,
@@ -21,7 +22,7 @@ import type {
 } from "../lib/mobile-types";
 import { useTicketStateEditor } from "../hooks/use-ticket-state-editor";
 import { palette, styles } from "../styles/app-styles";
-import { CollapsibleSection, EmptyState, UncontrolledInput } from "./app-shell";
+import { CollapsibleSection, UncontrolledInput } from "./app-shell";
 import { CaptainBillingPanel } from "./billing-panel";
 import { MenuItemRow } from "./menu-screen";
 import { TicketTransferSection } from "./ticket-transfer-section";
@@ -37,6 +38,7 @@ function TicketScreen({
   menuItems,
   tables,
   floors,
+  tableOrder,
   draftTotal,
   tableTotal,
   currentOrder,
@@ -66,6 +68,7 @@ function TicketScreen({
   menuItems: HubBootstrap["menuItems"];
   tables: HubBootstrap["tables"];
   floors: HubBootstrap["floors"];
+  tableOrder: TableOrder;
   draftTotal: number;
   tableTotal: number;
   currentOrder: HubOrder | null;
@@ -137,8 +140,9 @@ function TicketScreen({
     onSaveOrderState,
   });
   const sentById = new Map(sentItems.map((item) => [item.id, item]));
+  // Open the section holding the next likely action: new dishes to send, otherwise billing.
   const [expandedSections, setExpandedSections] = useState<Set<string>>(
-    new Set(["new"]),
+    () => new Set([items.length === 0 && sentItems.length > 0 ? canBill ? "billing" : "sent" : "new"]),
   );
   const toggleSection = (id: string) => {
     if (!reducedMotion)
@@ -161,61 +165,29 @@ function TicketScreen({
     <View style={[styles.panel, styles.ticketPanel]}>
       <View style={styles.cardHeader}>
         <View style={styles.flexText}>
-          <Text style={styles.sectionTitle}>Check</Text>
+          <Text style={styles.inputLabel}>
+            {selectedTableName ? "Table total" : "No table selected"}
+          </Text>
           <Text style={styles.muted}>
             {selectedTableName
-              ? `Table ${selectedTableName}`
-              : "Choose table before sending"}
+              ? `${sentCount} sent${newCount ? ` · ${newCount} new` : ""}${pax ? ` · ${pax} pax` : ""}`
+              : "Choose a table before sending."}
           </Text>
         </View>
         <Text style={styles.totalText}>Rs {formatRupees(tableTotal)}</Text>
       </View>
 
-      <CollapsibleSection
-        title="Service details"
-        subtitle={`Pax / ${deviceName || "device"}`}
-        expanded={expandedSections.has("stats")}
-        onToggle={() => toggleSection("stats")}
-      >
-        <View style={styles.serviceStats}>
-          <View style={styles.serviceStat}>
-            <Text style={styles.inputLabel}>New</Text>
-            <Text style={styles.serviceStatValue}>{newCount}</Text>
-          </View>
-          <View style={styles.serviceStat}>
-            <Text style={styles.inputLabel}>Sent</Text>
-            <Text style={styles.serviceStatValue}>{sentCount}</Text>
-          </View>
-          <View style={styles.serviceStatWide}>
-            <Text style={styles.inputLabel}>Table total</Text>
-            <Text style={styles.serviceStatValue}>
-              Rs {formatRupees(tableTotal)}
-            </Text>
-          </View>
-        </View>
-        <View style={styles.formStack}>
-          <Text style={styles.smallMuted}>
-            Device: {deviceName || "paired waiter phone"}
-          </Text>
-          <UncontrolledInput
-            inputKey={`pax-${selectedTableName ?? "none"}`}
-            label="Pax"
-            defaultValue={pax}
-            onChangeText={onPaxChange}
-            keyboardType="number-pad"
-            returnKeyType="done"
-          />
-        </View>
-      </CollapsibleSection>
-
+      {items.length > 0 ? (
       <View style={styles.actionSection}>
         <View style={styles.sectionHeaderRow}>
-          <View>
-            <Text style={styles.actionTitle}>Send order</Text>
+          <View style={styles.flexText}>
+            <Text style={styles.actionTitle}>
+              Send {newCount} new item{newCount === 1 ? "" : "s"}
+            </Text>
             <Text style={styles.actionMeta}>
-              {items.length
-                ? `${newCount} new item${newCount === 1 ? "" : "s"} ready`
-                : "Add dishes from Menu"}
+              {connection === "online"
+                ? "KOT goes to the kitchen; Print and KOT also prints it."
+                : "Offline: the order is saved on this phone until the hub returns."}
             </Text>
           </View>
           <Text style={styles.actionAmount}>Rs {formatRupees(draftTotal)}</Text>
@@ -248,26 +220,23 @@ function TicketScreen({
                 ? "Sending..."
                 : connection === "online"
                   ? "Print and KOT"
-                  : "Save Draft"}
+                  : "Save draft"}
             </Text>
           </Pressable>
         </View>
       </View>
+      ) : (
+        <Text style={styles.smallMuted}>
+          No new dishes. Add them from Menu; sent items stay below.
+        </Text>
+      )}
 
+      {items.length > 0 ? (
       <CollapsibleSection
         title={`New items (${newCount})`}
-        subtitle={newCount > 0 ? `Rs ${formatRupees(draftTotal)}` : undefined}
         expanded={expandedSections.has("new")}
         onToggle={() => toggleSection("new")}
-        accentColor={newCount > 0 ? palette.green : undefined}
       >
-        {items.length === 0 ? (
-          <EmptyState
-            title="No new dishes"
-            text="Add dishes from the menu. Sent items stay below."
-            compact
-          />
-        ) : (
           <View style={styles.ticketList}>
             {items.map((item, index) => {
               const menuItem = menuItems.find(
@@ -334,19 +303,52 @@ function TicketScreen({
               );
             })}
           </View>
-        )}
+      </CollapsibleSection>
+      ) : null}
+
+      {canBill ? (
+        <CollapsibleSection
+          title="Billing"
+          subtitle={currentOrder?.bill ? "Bill printed · settle payment" : "Generate bill, settle, reprint, NC"}
+          expanded={expandedSections.has("billing")}
+          onToggle={() => toggleSection("billing")}
+        >
+          <CaptainBillingPanel
+            canBill={canBill}
+            currentOrder={currentOrder}
+            hasNewItems={items.length > 0}
+            sending={sending}
+            onGenerateBill={onGenerateBill}
+            onReprintBill={onReprintBill}
+            onMarkNc={onMarkNc}
+            onReviseBill={onReviseBill}
+            onSettleBill={onSettleBill}
+          />
+        </CollapsibleSection>
+      ) : null}
+
+      <CollapsibleSection
+        title="Guests and device"
+        subtitle={`${pax ? `${pax} pax` : "Pax not set"} · ${deviceName || "this phone"}`}
+        expanded={expandedSections.has("stats")}
+        onToggle={() => toggleSection("stats")}
+      >
+        <View style={styles.formStack}>
+          <UncontrolledInput
+            inputKey={`pax-${selectedTableName ?? "none"}`}
+            label="Pax"
+            defaultValue={pax}
+            onChangeText={onPaxChange}
+            keyboardType="number-pad"
+            returnKeyType="done"
+          />
+        </View>
       </CollapsibleSection>
 
       <CollapsibleSection
         title={`Sent items (${sentCount})`}
-        subtitle={
-          sentCount > 0
-            ? `Rs ${formatRupees(sentItems.reduce((t, i) => t + i.unit_price_paise * i.quantity, 0))}`
-            : undefined
-        }
         expanded={expandedSections.has("sent")}
         onToggle={() => toggleSection("sent")}
-        accentColor={sentCount > 0 ? palette.amber : undefined}
       >
         {sentItems.length === 0 ? (
           <Text style={styles.smallMuted}>
@@ -378,7 +380,7 @@ function TicketScreen({
             <View style={styles.sectionHeaderRow}>
               <View style={styles.flexText}>
                 <Text style={styles.actionTitle}>
-                  {isBilledState ? "Edit Billed Table" : "Edit Table State"}
+                  {isBilledState ? "Edit billed table" : "Edit sent items"}
                 </Text>
                 <Text style={styles.actionMeta}>
                   {isBilledState
@@ -386,9 +388,11 @@ function TicketScreen({
                     : "Save quietly or save and print modification tickets."}
                 </Text>
               </View>
-              <Text style={styles.actionAmount}>
-                Rs {formatRupees(stateTotal)}
-              </Text>
+              {hasStateChanges ? (
+                <Text style={styles.actionAmount}>
+                  Rs {formatRupees(stateTotal)}
+                </Text>
+              ) : null}
             </View>
 
             <TextInput
@@ -544,39 +548,15 @@ function TicketScreen({
           sentItems={sentItems}
           tables={tables}
           floors={floors}
+          tableOrder={tableOrder}
           sending={sending}
           expanded={expandedSections.has("shift")}
           onToggle={() => toggleSection("shift")}
           onShiftTable={onShiftTable}
           onShiftItem={onShiftItem}
         />
-      ) : selectedTableId && sentItems.length > 0 ? (
-        <Text style={styles.smallMuted}>
-          Only captain devices can shift tables or items.
-        </Text>
       ) : null}
 
-      {canBill ? (
-        <CollapsibleSection
-          title="Billing"
-          subtitle="Bill, pay, print, NC, revise"
-          expanded={expandedSections.has("billing")}
-          onToggle={() => toggleSection("billing")}
-          accentColor={palette.greenBold}
-        >
-          <CaptainBillingPanel
-            canBill={canBill}
-            currentOrder={currentOrder}
-            hasNewItems={items.length > 0}
-            sending={sending}
-            onGenerateBill={onGenerateBill}
-            onReprintBill={onReprintBill}
-            onMarkNc={onMarkNc}
-            onReviseBill={onReviseBill}
-            onSettleBill={onSettleBill}
-          />
-        </CollapsibleSection>
-      ) : null}
 
       <FormModal
         visible={Boolean(stateApprovalMode)}
@@ -627,9 +607,9 @@ function TicketScreen({
                 style={[
                   styles.primaryButton,
                   styles.sendButton,
-                  sending && styles.buttonDisabled,
+                  (sending || approvalPin.trim().length < 4) && styles.buttonDisabled,
                 ]}
-                disabled={sending}
+                disabled={sending || approvalPin.trim().length < 4}
                 onPress={confirmStateSave}
               >
                 <Text style={styles.primaryButtonText}>
