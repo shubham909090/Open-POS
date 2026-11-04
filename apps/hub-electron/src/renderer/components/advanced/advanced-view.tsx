@@ -197,7 +197,7 @@ export function AdvancedView({
                 </button>
               </form>
               <form
-                className="manager-pin-form"
+                className="manager-pin-form master-pin-form"
                 onSubmit={(event) => {
                   event.preventDefault();
                   if (
@@ -219,7 +219,7 @@ export function AdvancedView({
                   aria-hidden="true"
                 />
                 {masterPinConfigured ? (
-                  <label>
+                  <label className="current-master-pin-field">
                     Current Master PIN
                     <input
                       value={currentMasterPin}

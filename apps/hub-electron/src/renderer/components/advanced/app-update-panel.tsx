@@ -6,17 +6,27 @@ import { hubApi } from "../../hub-api.js";
 import type { OnlineUpdateStateStatus } from "../../hub-api-types.js";
 import { messageOf, type NoticeSetter } from "../../lib/format.js";
 import { SettingsPageActiveContext } from "../setup/setup-card.js";
+import { useHubStore } from "../../store.js";
+
+const unsentUpdateMessage = "Send or discard unsent items before updating.";
+function unsentQuantity(drafts: ReturnType<typeof useHubStore.getState>["drafts"]) {
+  return Object.values(drafts).reduce((total, items) => total + Object.values(items).reduce((count, item) => count + Math.max(0, item.quantity), 0), 0);
+}
 
 export function AppUpdatePanel({ setNotice }: { setNotice: NoticeSetter }) {
   const queryClient = useQueryClient();
   const active = useContext(SettingsPageActiveContext);
+  const unsentItems = useHubStore((state) => unsentQuantity(state.drafts));
   const updateStatus = useQuery({
     queryKey: ["app-update-status"],
     queryFn: hubApi.updateStatus,
     enabled: active,
   });
   const installOnlineUpdate = useMutation({
-    mutationFn: hubApi.installOnlineUpdate,
+    mutationFn: () => {
+      if (unsentQuantity(useHubStore.getState().drafts) > 0) throw new Error(unsentUpdateMessage);
+      return hubApi.installOnlineUpdate();
+    },
     onSuccess: async (result) => {
       await queryClient.invalidateQueries({ queryKey: ["app-update-status"] });
       if ("installing" in result) {
@@ -42,7 +52,7 @@ export function AppUpdatePanel({ setNotice }: { setNotice: NoticeSetter }) {
     online?.status === "checking" ||
     online?.status === "downloading" ||
     online?.status === "installing";
-  const updateDisabled = busy || !status || online?.enabled === false;
+  const updateDisabled = busy || !status || online?.enabled === false || unsentItems > 0;
   const rollbackReady = Boolean(
     status && (status.rollbackAvailable || status.baselineRegistered),
   );
@@ -131,12 +141,18 @@ export function AppUpdatePanel({ setNotice }: { setNotice: NoticeSetter }) {
         </article>
       </div>
       <div className="update-action-card github-update-card">
+        {unsentItems > 0 ? <p className="warning-text" role="status">{unsentUpdateMessage} {unsentItems} unsent item{unsentItems === 1 ? "" : "s"}.</p> : null}
         <div className="update-action-row">
           <button
             type="button"
             className="primary-button"
             disabled={updateDisabled}
             onClick={() => {
+              if (unsentQuantity(useHubStore.getState().drafts) > 0) {
+                setNotice({ tone: "bad", text: unsentUpdateMessage });
+                return;
+              }
+              if (updateDisabled) return;
               if (activeOrderCount > 0) {
                 setNotice({
                   tone: "bad",

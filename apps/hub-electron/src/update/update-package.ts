@@ -15,7 +15,10 @@ export const UPDATE_ARCH = "x64";
 export const PACKAGED_SQLITE_NATIVE_PATH = "win-unpacked/resources/app.asar.unpacked/node_modules/better-sqlite3/build/Release/better_sqlite3.node";
 const INSTALLER_SQLITE_NATIVE_SUFFIX = "resources/app.asar.unpacked/node_modules/better-sqlite3/build/Release/better_sqlite3.node";
 const require = createRequire(import.meta.url);
-const { path7za } = require("7zip-bin") as { path7za?: string };
+const { path7za: bundled7zipPath } = require("7zip-bin") as { path7za?: string };
+// spawnSync cannot execute an ASAR virtual path. The builder unpacks 7zip-bin;
+// invoke that physical executable instead of the require-resolved archive path.
+const path7za = bundled7zipPath?.replace(/([\\/])app\.asar([\\/])/, "$1app.asar.unpacked$2");
 
 const safeVersionSchema = z.string().trim().regex(/^[0-9A-Za-z.-]+$/);
 const safeInstallerFileNameSchema = z
@@ -178,7 +181,7 @@ function extractArchive(archivePath: string, destination: string): void {
     windowsHide: true
   });
   if (result.status !== 0) {
-    const detail = (result.stderr || result.stdout || "").trim();
+    const detail = (result.error?.message || result.stderr || result.stdout || "").trim();
     throw new Error(`Could not inspect installer contents${detail ? `: ${detail}` : ""}`);
   }
 }

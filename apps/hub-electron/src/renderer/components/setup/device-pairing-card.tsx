@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { QrCode } from "lucide-react";
 import { formatPosDateTime } from "@gaurav-pos/shared";
@@ -58,6 +58,8 @@ export function DevicePairingCard({
   const [pairing, setPairing] = useState<PairingCodeResult | null>(null);
   const [deviceSearch, setDeviceSearch] = useState("");
   const [revoking, setRevoking] = useState<LocalDevice | null>(null);
+  const createButton = useRef<HTMLButtonElement>(null);
+  const restoreCreateFocus = useRef(false);
 
   const activeDevices = devices.filter(
     (device) =>
@@ -81,7 +83,11 @@ export function DevicePairingCard({
             : "This creates a one-time QR code that lets a phone join this hub.",
         defaultReason: `Pair ${deviceName.trim() || `${role} device`}`,
         confirmLabel: "Create QR",
-      });
+      }).catch(() => null);
+      if (!managerApproval) {
+        restoreCreateFocus.current = true;
+        return null;
+      }
       return hubApi.createPairingCode({
         deviceName: deviceName.trim() || `${role} device`,
         role,
@@ -90,6 +96,7 @@ export function DevicePairingCard({
       });
     },
     onSuccess: async (result) => {
+      if (!result) return;
       setPairing(result);
       setNotice({
         tone: "good",
@@ -99,6 +106,12 @@ export function DevicePairingCard({
     },
     onError: (error) => setNotice({ tone: "bad", text: messageOf(error) }),
   });
+
+  useEffect(() => {
+    if (createPairing.isPending || !restoreCreateFocus.current) return;
+    restoreCreateFocus.current = false;
+    createButton.current?.focus();
+  }, [createPairing.isPending]);
 
   const revoke = useMutation({
     mutationFn: hubApi.revokeDevice,
@@ -155,7 +168,7 @@ export function DevicePairingCard({
             placeholder={`${roleOptions.find((option) => option.role === role)?.title} phone 1`}
           />
         </label>
-        <button type="submit" disabled={createPairing.isPending}>
+        <button ref={createButton} type="submit" disabled={createPairing.isPending}>
           {createPairing.isPending ? "Creating..." : "Create QR code"}
         </button>
       </form>

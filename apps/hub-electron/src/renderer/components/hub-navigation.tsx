@@ -236,7 +236,7 @@ function WorkspaceSearch({
     onChange(item.view);
     onClose();
   };
-  const { activeIndex, onKeyDown, setActiveIndex } = useKeyboardListNavigation({
+  const { activeIndex, onKeyDown, setActiveIndex, setItemElement } = useKeyboardListNavigation({
     items: results,
     resetKey: query,
     onCommit: navigate,
@@ -281,6 +281,7 @@ function WorkspaceSearch({
             role="option"
             aria-selected={index === activeIndex}
             key={item.view}
+            ref={(element) => setItemElement(index, element)}
             className={`workspace-result${index === activeIndex ? " selected" : ""}`}
             onMouseEnter={() => setActiveIndex(index)}
             onClick={() => navigate(item)}

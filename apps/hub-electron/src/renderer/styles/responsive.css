@@ -8,6 +8,8 @@
   .manager-pin-form {
     grid-template-columns: 1fr;
   }
+
+  .manager-pin-form > button { margin-top: 0; }
 }
 
 @media (max-width: 760px) {

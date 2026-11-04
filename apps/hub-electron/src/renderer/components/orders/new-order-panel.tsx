@@ -142,6 +142,7 @@ export function NewOrderPanel({
                 return (
                   <div
                     key={item.id}
+                    ref={(element) => draftKeyboard.setItemElement(index, element)}
                     className={`state-search-row menu-card compact-menu-card category-${item.sale_group_kind ?? "other"}${draftKeyboard.activeIndex === index ? " keyboard-active" : ""}`}
                     onMouseEnter={() => draftKeyboard.setActiveIndex(index)}
                   >

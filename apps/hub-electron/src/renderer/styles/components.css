@@ -163,13 +163,17 @@
 }
 
 .manager-pin-form {
-  @apply grid items-end gap-3;
+  @apply grid items-start gap-3;
   grid-template-columns: minmax(240px, 420px) auto;
 }
 
 .manager-pin-form button {
   @apply w-fit min-w-40 justify-self-start;
+  margin-top: 23px;
 }
+
+.master-pin-form > button { grid-column: 1 / -1; margin-top: 0; }
+.master-pin-form > .current-master-pin-field { grid-column: 1 / -1; max-width: 420px; width: 100%; }
 
 .setup-subdetails > :not(summary),
 .csv-import-box,

@@ -140,6 +140,7 @@ export function SentOrderPanel({
                   return (
                     <div
                       key={item.id}
+                      ref={(element) => orderStateKeyboard.setItemElement(index, element)}
                       className={`state-search-row menu-card compact-menu-card category-${item.sale_group_kind ?? "other"}${orderStateKeyboard.activeIndex === index ? " keyboard-active" : ""}`}
                       onMouseEnter={() => orderStateKeyboard.setActiveIndex(index)}
                     >

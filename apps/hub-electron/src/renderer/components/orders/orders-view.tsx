@@ -216,6 +216,7 @@ export function OrdersView({ bootstrap, setNotice, requestManagerApproval }: { b
                     onAdd={addDraftItem}
                     activeItemId={activeKeyboardItemId}
                     onActiveItemIndexChange={menuKeyboard.setActiveIndex}
+                    setItemElement={menuKeyboard.setItemElement}
                     emptyText={hasSearch ? "No dishes found. Check spelling or clear filters." : "No dishes found. Add active dishes in setup."}
                   />
                 </section>

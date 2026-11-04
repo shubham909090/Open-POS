@@ -28,17 +28,38 @@ export function PaymentQrPanel({
     enabled: active,
     refetchInterval: active ? 30_000 : false,
   });
-  const qr = current.isError ? null : current.data?.qr;
+  const [loaded, setLoaded] = useState<typeof current.data>();
+  const qr = loaded?.qr;
   const [image, setImage] = useState("");
+  const [conflict, setConflict] = useState(false);
   const [reading, setReading] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
-  const originalVersion = useRef<string | undefined>(undefined);
+  const originalVersion = useRef<string | null | undefined>(undefined);
+  const dirty = useRef(false);
+  dirty.current = Boolean(image) || reading;
   useEffect(() => {
-    if (originalVersion.current !== qr?.updatedAt) {
-      originalVersion.current = qr?.updatedAt;
-      setImage("");
+    if (!current.data) return;
+    const version = current.data.qr?.updatedAt ?? null;
+    if (originalVersion.current === version) return;
+    if (dirty.current) {
+      setConflict(true);
+      return;
     }
-  }, [qr]);
+    originalVersion.current = version;
+    setLoaded(current.data);
+    setConflict(false);
+  }, [current.data]);
+  const acceptSaved = (result: NonNullable<typeof current.data>) => {
+    dirty.current = false;
+    originalVersion.current = result.qr?.updatedAt ?? null;
+    setLoaded(result);
+    setImage("");
+    setConflict(false);
+  };
+  const discardChanges = () => {
+    const latest = current.data ?? loaded;
+    if (latest) acceptSaved(latest);
+  };
   // Printed size belongs to each bill printer; this panel only shows it.
   const billPrinters = useQuery({ queryKey: ["bill-printers"], queryFn: hubApi.billPrinters, enabled: active });
 
@@ -55,8 +76,8 @@ export function PaymentQrPanel({
       version: string | null;
     }) => hubApi.updatePaymentQr(imageDataUrl, size, approval, version),
     onSuccess: (result) => {
+      acceptSaved(result);
       queryClient.setQueryData(["payment-qr"], result);
-      setImage("");
       setNotice({
         tone: "good",
         text: "Payment QR saved for both bill printers and staff phones.",
@@ -73,8 +94,8 @@ export function PaymentQrPanel({
       version: string | null;
     }) => hubApi.removePaymentQr(approval, version),
     onSuccess: (result) => {
+      acceptSaved(result);
       queryClient.setQueryData(["payment-qr"], result);
-      setImage("");
       setNotice({
         tone: "good",
         text: "Payment QR removed from new bills and staff phones.",
@@ -107,8 +128,9 @@ export function PaymentQrPanel({
     }
   };
   const saveWithApproval = async () => {
-    const imageDataUrl = image || qr?.imageDataUrl;
-    if (!imageDataUrl) return;
+    const imageDataUrl = image;
+    if (!imageDataUrl || busy || conflict) return;
+    const version = originalVersion.current ?? null;
     const approval = await requestManagerApproval({
       title: qr ? "Update payment QR" : "Add payment QR",
       message:
@@ -125,10 +147,12 @@ export function PaymentQrPanel({
         // Legacy shared size, kept only as the fallback for printers without their own size.
         size: qr?.sizeMm ?? 32,
         approval,
-        version: qr?.updatedAt ?? null,
+        version,
       });
   };
   const removeWithApproval = async () => {
+    if (!qr || busy || conflict) return;
+    const version = originalVersion.current ?? null;
     const approval = await requestManagerApproval({
       title: "Remove payment QR",
       pinLabel: "Master PIN",
@@ -140,7 +164,7 @@ export function PaymentQrPanel({
       confirmLabel: "Remove QR",
       danger: true,
     }).catch(() => null);
-    if (approval) remove.mutate({ approval, version: qr?.updatedAt ?? null });
+    if (approval) remove.mutate({ approval, version });
   };
   return (
     <section className="payment-qr-panel" aria-labelledby="payment-qr-title">
@@ -158,16 +182,19 @@ export function PaymentQrPanel({
           <LockKeyhole size={13} /> Master PIN to change
         </span>
       </div>
-      {current.isPending ? (
+      {current.isPending && !loaded ? (
         <p role="status">Loading payment QR…</p>
-      ) : current.isError ? (
+      ) : null}
+      {current.isError ? (
         <div role="alert">
           <p>{messageOf(current.error)}</p>
-          <button type="button" onClick={() => void current.refetch()}>
-            Retry
+          {loaded ? <p>The last saved QR and your changes are still shown.</p> : null}
+          <button type="button" className="secondary-button" disabled={current.isFetching} onClick={() => void current.refetch()}>
+            {current.isFetching ? "Retrying…" : "Retry"}
           </button>
         </div>
-      ) : (
+      ) : null}
+      {loaded ? (
         <div className="payment-qr-content">
           <div className="payment-qr-paper">
             {image || qr ? (
@@ -190,6 +217,7 @@ export function PaymentQrPanel({
             </small>
           </div>
           <div className="payment-qr-options">
+            {conflict ? <div className="branding-conflict" role="alert"><p>The payment QR changed on another device. Your replacement is still here. Load the current QR before making another change.</p><button type="button" className="secondary-button compact" disabled={busy} onClick={discardChanges}>Load current QR</button></div> : null}
             <p>
               Upload a reusable UPI QR from Google Pay, PhonePe or your bank. We
               prepare a crisp, scannable copy and place it above the bill
@@ -236,14 +264,14 @@ export function PaymentQrPanel({
             </p>
             {!masterPinConfigured && (
               <p role="status">
-                Set a Master PIN in Advanced settings to upload or change the
+                Set a Master PIN in Administration › Security to upload or change the
                 payment QR.
               </p>
             )}
             <div className="payment-qr-actions">
               <button
                 type="button"
-                disabled={busy || !changed || !masterPinConfigured}
+                disabled={busy || conflict || !changed || !masterPinConfigured}
                 onClick={() => void saveWithApproval()}
               >
                 {save.isPending ? "Saving…" : "Save payment QR"}
@@ -253,9 +281,7 @@ export function PaymentQrPanel({
                   type="button"
                   className="secondary-button"
                   disabled={busy}
-                  onClick={() => {
-                    setImage("");
-                  }}
+                  onClick={discardChanges}
                 >
                   Cancel changes
                 </button>
@@ -264,7 +290,7 @@ export function PaymentQrPanel({
                 <button
                   type="button"
                   className="payment-qr-remove"
-                  disabled={busy || !masterPinConfigured}
+                  disabled={busy || conflict || !masterPinConfigured}
                   onClick={() => void removeWithApproval()}
                 >
                   Remove QR
@@ -273,7 +299,7 @@ export function PaymentQrPanel({
             </div>
           </div>
         </div>
-      )}
+      ) : null}
     </section>
   );
 }

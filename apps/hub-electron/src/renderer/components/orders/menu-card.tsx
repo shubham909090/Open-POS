@@ -18,6 +18,7 @@ export function MenuResultSection({
   onAdd,
   activeItemId,
   onActiveItemIndexChange,
+  setItemElement,
   emptyText
 }: {
   title: string;
@@ -26,6 +27,7 @@ export function MenuResultSection({
   onAdd: (tableId: string, item: MenuItem, variantId?: string) => void;
   activeItemId?: string;
   onActiveItemIndexChange?: (index: number) => void;
+  setItemElement?: (index: number, element: HTMLElement | null) => void;
   emptyText?: string;
 }) {
   return (
@@ -36,6 +38,7 @@ export function MenuResultSection({
           {items.map((item, index) => (
             <MenuCard
               key={item.id}
+              rowRef={(element) => setItemElement?.(index, element)}
               active={activeItemId === item.id}
               item={item}
               onActive={() => onActiveItemIndexChange?.(index)}
@@ -54,16 +57,18 @@ export function MenuCard({
   item,
   active = false,
   onActive,
+  rowRef,
   onAdd
 }: {
   item: MenuItem;
   active?: boolean;
   onActive?: () => void;
+  rowRef?: (element: HTMLElement | null) => void;
   onAdd: (variantId?: string) => void;
 }) {
   const variants = getMenuActionVariants(item);
   return (
-    <article className={`menu-card compact-menu-card category-${item.sale_group_kind ?? "other"}${active ? " keyboard-active" : ""}`} onMouseEnter={onActive}>
+    <article ref={rowRef} className={`menu-card compact-menu-card category-${item.sale_group_kind ?? "other"}${active ? " keyboard-active" : ""}`} onMouseEnter={onActive}>
       <CategoryBadge kind={item.sale_group_kind} />
       <div className="menu-card-main">
         <strong>{item.name}</strong>

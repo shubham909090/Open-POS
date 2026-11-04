@@ -217,6 +217,7 @@ function BillRevisionEditor({
           {searchItems.map((item, index) => (
             <button
               key={item.id}
+              ref={(element) => keyboard.setItemElement(index, element)}
               type="button"
               className={`revision-search-result${keyboard.activeIndex === index ? " keyboard-active" : ""}`}
               onMouseEnter={() => keyboard.setActiveIndex(index)}

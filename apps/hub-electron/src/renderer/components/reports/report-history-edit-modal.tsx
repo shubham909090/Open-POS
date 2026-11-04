@@ -29,6 +29,7 @@ type HistorySearchKeyboard = {
   activeIndex: number;
   onKeyDown: KeyboardEventHandler<HTMLInputElement>;
   setActiveIndex: (index: number) => void;
+  setItemElement: (index: number, element: HTMLElement | null) => void;
 };
 
 function ReportHistoryEditModal({
@@ -242,6 +243,7 @@ function ReportHistoryEditModal({
                   return (
                     <div
                       key={item.id}
+                      ref={(element) => historySearchKeyboard.setItemElement(index, element)}
                       className={`history-edit-search-row${historySearchKeyboard.activeIndex === index ? " keyboard-active" : ""}`}
                       onMouseEnter={() => historySearchKeyboard.setActiveIndex(index)}
                     >
