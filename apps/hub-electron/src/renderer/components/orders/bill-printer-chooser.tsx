@@ -72,10 +72,6 @@ export function BillPrinterChooser({
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!next) onClose(); }} title={title} onKeyDown={handleKeyDown}>
       <div className="printer-choice-panel">
-        <div className="printer-choice-intro">
-          <strong>Select bill printer</strong>
-          <span>Choose where this bill print should go.</span>
-        </div>
         {billPrinters.isLoading ? <p className="plain-state" role="status">Loading bill printers…</p> : null}
         {billPrinters.isError ? <div className="printer-choice-note" role="alert"><p>Bill printers could not load. Try again before printing.</p><button type="button" className="secondary-button compact" onClick={() => void billPrinters.refetch()} disabled={billPrinters.isFetching}>{billPrinters.isFetching ? "Retrying…" : "Retry"}</button></div> : null}
         <div className="printer-choice-list">

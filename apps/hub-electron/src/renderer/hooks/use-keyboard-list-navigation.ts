@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 
 export function useKeyboardListNavigation<T>({
   items,
@@ -22,6 +22,10 @@ export function useKeyboardListNavigation<T>({
     keyboardMove.current = false;
     setActiveIndex(index);
   }, []);
+  const onPointerMove = useCallback((index: number, event: PointerEvent<HTMLElement>) => {
+    if (!event.movementX && !event.movementY) return;
+    selectIndex(index);
+  }, [selectIndex]);
 
   useEffect(() => {
     keyboardMove.current = false;
@@ -72,5 +76,5 @@ export function useKeyboardListNavigation<T>({
     [activeIndex, enabled, items, onCommit]
   );
 
-  return { activeIndex, onKeyDown, setActiveIndex: selectIndex, setItemElement };
+  return { activeIndex, onKeyDown, setActiveIndex: selectIndex, setItemElement, onPointerMove };
 }

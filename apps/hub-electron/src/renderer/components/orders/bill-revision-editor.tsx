@@ -1,6 +1,6 @@
 import { formatInr, searchMenuItems } from "@gaurav-pos/shared";
 import { useMutation } from "@tanstack/react-query";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { hubApi, type MenuItem, type TableOrder } from "../../hub-api.js";
 import type { ManagerApprovalRequest } from "../../hooks/use-manager-approval.js";
 import { useKeyboardListNavigation } from "../../hooks/use-keyboard-list-navigation.js";
@@ -39,6 +39,15 @@ function BillRevisionEditor({
   onEditingChange?: (editing: boolean) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const wasEditing = useRef(false);
+  useEffect(() => {
+    if (open) { wasEditing.current = true; return; }
+    if (!wasEditing.current) return;
+    wasEditing.current = false;
+    const frame = window.requestAnimationFrame(() => triggerRef.current?.focus({ preventScroll: true }));
+    return () => window.cancelAnimationFrame(frame);
+  }, [open]);
   const [items, setItems] = useState<RevisionItem[]>([]);
   const [addMenuItemId, setAddMenuItemId] = useState("");
   const [addVariantId, setAddVariantId] = useState("");
@@ -165,7 +174,7 @@ function BillRevisionEditor({
 
   if (!open) {
     return (
-      <button type="button" className="secondary-button revision-trigger" title={bill.is_nc ? "NC bills cannot be revised here" : existingPaid > 0 ? "Bills with recorded payments cannot be revised here" : undefined} disabled={Boolean(bill.is_nc) || existingPaid > 0} onClick={openEditor}>
+      <button ref={triggerRef} type="button" className="secondary-button revision-trigger" title={bill.is_nc ? "NC bills cannot be revised here" : existingPaid > 0 ? "Bills with recorded payments cannot be revised here" : undefined} disabled={Boolean(bill.is_nc) || existingPaid > 0} onClick={openEditor}>
         Revise printed bill
       </button>
     );
@@ -182,7 +191,7 @@ function BillRevisionEditor({
           value={search}
           onChange={(event) => setSearch(event.target.value)}
           onKeyDown={keyboard.onKeyDown}
-          placeholder="Search dish to add"
+          placeholder="Search dish to add" autoFocus
           aria-label="Search dishes for bill revision"
         />
         <select
@@ -220,7 +229,7 @@ function BillRevisionEditor({
               ref={(element) => keyboard.setItemElement(index, element)}
               type="button"
               className={`revision-search-result${keyboard.activeIndex === index ? " keyboard-active" : ""}`}
-              onMouseEnter={() => keyboard.setActiveIndex(index)}
+              onPointerMove={(event) => keyboard.onPointerMove(index, event)}
               onClick={() => addKeyboardItem(item)}
             >
               <span>

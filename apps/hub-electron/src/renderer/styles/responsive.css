@@ -71,3 +71,13 @@
 
 
 }
+
+/* One touch target rule survives compact desktop button variants. */
+@media (pointer: coarse) {
+  button, summary, .payment-qr-download { min-height: 48px !important; }
+  .ui-button-icon, .ui-button-icon-small, .order-icon-button, .qty-cluster button, .transfer-qty-control button { min-width: 48px; width: 48px; }
+  .ticket-body .qty-cluster, .qty-cluster { grid-template-columns: 48px minmax(40px, auto) 48px; }
+  .qty-cluster.qty-readonly { grid-template-columns: auto; }
+  .transfer-qty-control { grid-template-columns: 48px 72px 48px; }
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select { min-height: 48px !important; }
+}

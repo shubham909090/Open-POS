@@ -66,7 +66,7 @@
   }
 
   .guest-row {
-    @apply grid items-end gap-3 rounded-lg border border-line bg-panel p-3;
+    display: grid; align-items: end; gap: 12px; padding-block: 12px;
     grid-template-columns: minmax(92px, 112px) minmax(0, 1fr);
   }
 
@@ -89,7 +89,7 @@
   }
 
   .send-action-row button {
-    @apply min-h-11 min-w-0 bg-ink px-3 text-sm font-semibold leading-5 text-white hover:bg-accent-dark disabled:bg-muted disabled:text-white disabled:opacity-70;
+    min-height: var(--control-height); min-width: 0; padding-inline: 12px; font-size: 13px; font-weight: 600;
   }
 
   .send-action-row kbd {
@@ -110,7 +110,7 @@
 
   .order-menu-panel .compact-menu-card {
     @apply items-center gap-3 p-2.5;
-    grid-template-columns: auto minmax(0, 1fr) minmax(120px, auto);
+    grid-template-columns: minmax(0, 1fr) auto;
   }
 
   .order-menu-panel .compact-menu-card footer {
@@ -118,7 +118,7 @@
   }
 
   .order-menu-panel .compact-menu-card footer:has(.menu-variant-buttons button:nth-child(2)) {
-    @apply col-start-2 col-end-4 w-full;
+    grid-column: 1 / -1; width: 100%;
   }
 
   .order-menu-panel .menu-variant-buttons {
@@ -127,7 +127,7 @@
 
   .order-menu-panel .compact-menu-card footer:has(.menu-variant-buttons button:nth-child(2)) .menu-variant-buttons {
     @apply grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
   }
 
   .order-menu-panel .menu-variant-buttons button {
@@ -140,75 +140,6 @@
 
   .menu-rail-button {
     @apply h-full min-h-56 w-full flex-col;
-  }
-
-  .order-modal-backdrop {
-    @apply backdrop-blur-sm;
-    background: color-mix(in srgb, var(--ink) 35%, transparent);
-  }
-
-  .order-modal-card {
-    @apply fixed left-1/2 top-1/2 z-50 grid w-[min(1180px,calc(100vw-32px))] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl border border-line bg-panel p-5 shadow-2xl outline-none;
-    max-height: calc(100dvh - 2rem);
-    overflow: auto;
-  }
-
-  .order-modal-header {
-    @apply sticky top-0 z-10 flex min-w-0 items-center justify-between gap-3 border-b border-line bg-panel pb-3;
-  }
-
-  .order-modal-header span {
-    @apply text-xs font-medium text-muted;
-  }
-
-  .order-modal-kicker {
-    @apply flex min-w-0 flex-wrap items-center gap-2;
-  }
-
-  .order-modal-header .order-modal-duration {
-    @apply inline-flex min-h-6 items-center gap-1 rounded-full border border-line bg-white px-2 text-xs font-semibold normal-case text-ink;
-  }
-
-  .order-modal-header h2 {
-    @apply m-0 text-xl font-semibold leading-7 tracking-tight text-ink;
-  }
-
-  .order-modal-actions {
-    @apply flex shrink-0 flex-wrap items-center justify-end gap-2;
-  }
-
-  .order-modal-layout {
-    @apply grid min-w-0 gap-3;
-  }
-
-  .order-modal-layout.menu-open {
-    grid-template-columns: minmax(280px, 380px) minmax(0, 1fr);
-  }
-
-  .order-modal-layout.menu-closed {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .order-modal-layout > .ticket-workspace {
-    @apply rounded-none border-0 bg-transparent p-0 shadow-none;
-  }
-
-  .order-modal-card[data-state="open"] {
-    animation: order-workspace-enter 120ms ease-out;
-  }
-
-  @keyframes order-workspace-enter {
-    from { opacity: 0; }
-    to { opacity: 1; }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .order-modal-card[data-state="open"] { animation: none; }
-  }
-
-  .order-menu-panel {
-    @apply max-h-[calc(100dvh-9rem)] overflow-auto rounded-lg border border-line bg-panel p-3;
-    scrollbar-gutter: stable;
   }
 
   .line-note-field {

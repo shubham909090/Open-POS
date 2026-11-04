@@ -62,7 +62,7 @@
 }
 
 .bill-status.paid {
-  @apply border-accent bg-accent-soft text-accent-dark;
+  @apply border-success bg-success-soft text-success;
 }
 
 .bill-status.pending {
@@ -90,7 +90,7 @@
 }
 
 .bill-history-meta span {
-  @apply rounded-full border border-line bg-wash px-2 py-1 text-xs font-medium text-muted;
+  @apply text-xs font-medium text-muted;
 }
 
 .history-actions {
@@ -98,21 +98,15 @@
 }
 
 .modified-pill {
-  border-color: #bfdbfe;
-  background: #eff6ff;
-  color: #1d4ed8;
+  color: var(--muted);
 }
 
 .discount-pill {
-  border-color: #bbf7d0;
-  background: #f0fdf4;
-  color: #15803d;
+  color: var(--success);
 }
 
 .nc-pill {
-  border-color: #fecaca;
-  background: #fef2f2;
-  color: #b91c1c;
+  color: var(--danger);
 }
 
 .history-discount-text {
@@ -221,13 +215,13 @@
 }
 
 .history-money-status.good {
-  @apply border-emerald-200 bg-emerald-50 text-emerald-800;
+  @apply border-success bg-success-soft text-success;
 }
 
 .history-money-status.bad {
-  border-color: rgb(185 28 28 / 0.3);
-  background: rgb(254 242 242);
-  color: #b91c1c;
+  border-color: var(--danger-line);
+  background: var(--danger-soft);
+  color: var(--danger);
 }
 
 .history-edit-items,

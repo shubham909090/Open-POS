@@ -16,7 +16,7 @@
   /* Keep tile geometry in step with enlarged interface text. */
   --table-tile-height: 6.875rem;
   @apply grid gap-2;
-  grid-template-columns: repeat(auto-fill, minmax(10.5rem, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(10.5rem, 10.5rem));
   grid-auto-rows: var(--table-tile-height);
 }
 
@@ -55,7 +55,7 @@
 }
 
 .table-tile-duration {
-  @apply inline-flex h-6 shrink-0 items-center gap-1 rounded-md border border-line bg-panel px-1.5 text-xs font-medium leading-none text-muted;
+  @apply inline-flex h-6 shrink-0 items-center gap-1 text-xs font-medium leading-none text-muted;
   font-variant-numeric: tabular-nums;
 }
 
@@ -82,7 +82,7 @@
 .table-tile.occupied .table-tile-state,
 .table-tile.running .table-tile-duration,
 .table-tile.occupied .table-tile-duration {
-  color: #92400e;
+  color: var(--warning);
 }
 
 /* Bill printed */
@@ -191,5 +191,5 @@
 
 @media (pointer: coarse) {
   .table-list { --table-tile-height: 7.75rem; }
-  .table-tile-shortcut { min-height: 44px; }
+  .table-tile-shortcut { min-height: 48px; }
 }

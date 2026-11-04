@@ -61,8 +61,11 @@ describe("hub billing shortcuts", () => {
     expect(settleBillMock).not.toHaveBeenCalled();
     expect(requestManagerApprovalMock).not.toHaveBeenCalled();
     expect(screen.queryByRole("button", { name: /Punch bill/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Full cash" })).toBeNull();
+    expect(document.activeElement).toBe(screen.getByPlaceholderText("Search dish to add"));
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(screen.getByRole("button", { name: /Punch bill/ })).toBeTruthy();
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: "Revise printed bill" })));
   });
 
   it("renders Rest buttons for each payment method", async () => {

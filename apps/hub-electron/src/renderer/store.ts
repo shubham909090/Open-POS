@@ -29,6 +29,8 @@ interface HubUiState {
   recentMenuItemIds: string[];
   selectedKdsUnitId: string | null;
   drafts: Record<string, Record<string, DraftItem>>;
+  updating: boolean;
+  setUpdating: (updating: boolean) => void;
   tableOrderMode: TableOrderMode;
   setTableOrderMode: (mode: TableOrderMode) => void;
   setView: (view: HubView) => void;
@@ -52,6 +54,8 @@ export const useHubStore = create<HubUiState>((set) => ({
   recentMenuItemIds: [],
   selectedKdsUnitId: null,
   drafts: {},
+  updating: false,
+  setUpdating: (updating) => set({ updating }),
   tableOrderMode: readTableOrderMode(),
   setTableOrderMode: (tableOrderMode) => {
     writeTableOrderMode(tableOrderMode);
@@ -65,6 +69,7 @@ export const useHubStore = create<HubUiState>((set) => ({
   setSelectedKdsUnitId: (selectedKdsUnitId) => set({ selectedKdsUnitId }),
   addDraftItem: (tableId, item, variantId) =>
     set((state) => {
+      if (state.updating) return state;
       const tableDraft = state.drafts[tableId] ?? {};
       const variant = item.variants?.find((entry) => entry.id === variantId && Boolean(entry.active)) ?? item.variants?.find((entry) => Boolean(entry.active));
       if (!variant && item.sale_group_kind === "alcohol") return state;
@@ -94,6 +99,7 @@ export const useHubStore = create<HubUiState>((set) => ({
     }),
   addOpenDraftItem: (tableId, item) =>
     set((state) => {
+      if (state.updating) return state;
       const tableDraft = state.drafts[tableId] ?? {};
       const id = `open-${Date.now()}-${Math.random().toString(36).slice(2)}`;
       return {
@@ -119,6 +125,7 @@ export const useHubStore = create<HubUiState>((set) => ({
     }),
   changeDraftQty: (tableId, menuItemId, delta) =>
     set((state) => {
+      if (state.updating) return state;
       const tableDraft = state.drafts[tableId] ?? {};
       const current = tableDraft[menuItemId];
       if (!current) return state;
@@ -130,6 +137,7 @@ export const useHubStore = create<HubUiState>((set) => ({
     }),
   setDraftItemNote: (tableId, lineKey, note) =>
     set((state) => {
+      if (state.updating) return state;
       const tableDraft = state.drafts[tableId] ?? {};
       const current = tableDraft[lineKey];
       if (!current) return state;

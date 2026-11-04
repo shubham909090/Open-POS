@@ -154,7 +154,6 @@ export function PrinterSetupCard({
         <header className="printer-overview-head">
           <div>
             <h3 id="bill-printers-title">Bill printers</h3>
-            <p>Staff choose one of these when printing a bill. Roll width and QR size are set for each printer.</p>
           </div>
           <div className="printer-output" role="radiogroup" aria-label="Printer output">
             <span className={printerOutputMode === "live" ? "printer-output-state live" : "printer-output-state"}>

@@ -19,8 +19,8 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
         aria-describedby={error || hint ? descriptionId : undefined}
         ref={ref}
         className={cn(
-          "h-9 w-full min-w-0 rounded-md border border-line-strong bg-panel px-3 text-sm text-ink outline-none transition-colors placeholder:text-muted focus:border-accent focus:ring-2 focus:ring-accent/15 disabled:cursor-not-allowed disabled:bg-wash disabled:text-muted",
-          error && "border-danger focus:border-danger focus:ring-danger",
+          "ui-input",
+          error && "ui-input-invalid",
           className
         )}
         {...props}
@@ -30,10 +30,10 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
     if (!label && !hint && !error) return input;
 
     return (
-      <label htmlFor={inputId} className="grid min-w-0 gap-1.5 text-sm font-medium text-ink">
+      <label htmlFor={inputId} className="ui-field">
         {label ? <span>{label}</span> : null}
         {input}
-        {error ? <span id={descriptionId} className="text-xs font-normal text-danger">{error}</span> : hint ? <span id={descriptionId} className="text-xs font-normal text-muted">{hint}</span> : null}
+        {error ? <span id={descriptionId} className="ui-field-error">{error}</span> : hint ? <span id={descriptionId} className="ui-field-help">{hint}</span> : null}
       </label>
     );
   }

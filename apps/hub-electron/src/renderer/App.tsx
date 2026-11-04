@@ -5,7 +5,9 @@ import {
   useQuery,
 } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import { RefreshCw, Save, Settings, X } from "lucide-react";
+import { RefreshCw, X } from "lucide-react";
+import { feedbackTiming } from "@gaurav-pos/shared";
+import { DEFAULT_BRAND_MARK_URL } from "./lib/branding.js";
 import { Button } from "./components/ui/button.js";
 import { Badge } from "./components/ui/badge.js";
 import {
@@ -16,6 +18,7 @@ import {
 import { Dialog } from "./components/ui/dialog.js";
 import { Input } from "./components/ui/input.js";
 import { Notice } from "./components/ui/notice.js";
+import { UpdateProgressOverlay } from "./components/advanced/update-progress-overlay.js";
 import {
   clearAuthToken,
   getAuthToken,
@@ -91,9 +94,18 @@ function HubShell() {
     tone: "good" | "bad";
     text: string;
   } | null>(null);
+  useEffect(() => {
+    if (notice?.tone !== "good") return;
+    const timer = setTimeout(() => {
+      setNotice((current) => current === notice ? null : current);
+    }, feedbackTiming.successNoticeMs);
+    return () => clearTimeout(timer);
+  }, [notice]);
   const managerApproval = useManagerApproval();
   const view = useHubStore((s) => s.view);
   const setView = useHubStore((s) => s.setView);
+  const selectedTableId = useHubStore((s) => s.selectedTableId);
+  const updating = useHubStore((s) => s.updating);
   const sessionStatus = useQuery({
     queryKey: ["admin-session-status"],
     queryFn: hubApi.adminSessionStatus,
@@ -191,20 +203,12 @@ function HubShell() {
   /* ─── First run: create PIN ─── */
   if (firstRunNeedsPin) {
     return (
-      <main className="grid min-h-screen place-items-center bg-paper p-6">
-        <section className="grid w-[min(520px,100%)] gap-4 rounded-lg border border-line bg-panel p-8 shadow-pos">
-          <div className="grid h-14 w-14 place-items-center rounded-lg bg-accent-soft text-accent-dark">
-            <Settings size={28} />
-          </div>
-          <p className="text-xs font-medium text-muted">First setup</p>
-          <h1 className="m-0 text-2xl font-semibold leading-[1.05] text-ink">
-            Create Manager PIN
-          </h1>
-          <p className="m-0 text-[1.04rem] text-muted">
-            This PIN unlocks setup on the hub PC and approves sensitive actions
-            like bill reprints, NC bills, cancellations, and printer layout
-            changes.
-          </p>
+      <main className="pin-setup">
+        <section className="pin-setup-content" aria-labelledby="pin-setup-title">
+          <header className="pin-setup-heading">
+            <img src={DEFAULT_BRAND_MARK_URL} alt="" />
+            <h1 id="pin-setup-title">Create manager PIN</h1>
+          </header>
           {notice ? (
             <Notice variant={notice.tone === "good" ? "success" : "error"}>
               <span className="flex-1">{notice.text}</span>
@@ -219,10 +223,10 @@ function HubShell() {
             </Notice>
           ) : null}
           <form
-            className="grid gap-3"
+            className="pin-setup-form"
             onSubmit={(e) => {
               e.preventDefault();
-              createPin.mutate();
+              if (newPin.length >= 4 && !createPin.isPending) createPin.mutate();
             }}
           >
             <input
@@ -235,13 +239,16 @@ function HubShell() {
               aria-hidden="true"
             />
             <Input
-              label="Manager PIN"
+              aria-label="Manager PIN"
+              className="pin-setup-input"
               value={newPin}
               onChange={(e) => setNewPin(e.target.value)}
               type="password"
               autoComplete="new-password"
               autoFocus
-              placeholder="4 digits or more"
+              placeholder="4+ characters"
+              minLength={4}
+              required
             />
             <Button
               type="submit"
@@ -249,13 +256,9 @@ function HubShell() {
               size="touch"
               disabled={newPin.length < 4 || createPin.isPending}
             >
-              <Save size={16} />
-              Create PIN
+              {createPin.isPending ? "Creating…" : "Create PIN"}
             </Button>
           </form>
-          <span className="text-sm font-semibold text-muted">
-            For safety, the first PIN can only be created from this hub PC.
-          </span>
         </section>
       </main>
     );
@@ -280,10 +283,6 @@ function HubShell() {
       <section className="hub-main" id="workspace-content" tabIndex={-1}>
         <header className="topbar">
           <div>
-            <p className="workspace-breadcrumb">
-              Workspace <span>/</span>{" "}
-              {hubNavigation.find((item) => item.view === view)?.label}
-            </p>
             <h1 className="workspace-page-title">
               {hubNavigation.find((item) => item.view === view)?.label}
             </h1>
@@ -300,8 +299,8 @@ function HubShell() {
               }
             >
               {bootstrap.data?.setup?.printerOutputMode === "live"
-                ? "Printers live"
-                : "Printer test mode"}
+                ? "Live printing"
+                : "Test printing"}
             </Badge>
             {Boolean(bootstrap.data?.syncStatus?.counts?.pending) && (
               <Badge>
@@ -327,7 +326,7 @@ function HubShell() {
           </div>
         </header>
 
-        {notice ? (
+        {notice && !(view === "orders" && selectedTableId) ? (
           <Notice variant={notice.tone === "good" ? "success" : "error"}>
             <span className="flex-1">{notice.text}</span>
             <Button
@@ -358,6 +357,7 @@ function HubShell() {
               <OrdersView
                 bootstrap={bootstrap.data}
                 setNotice={setNotice}
+                operationNotice={notice?.tone === "bad" ? notice : null}
                 requestManagerApproval={managerApproval.request}
               />
             ) : null}
@@ -403,6 +403,7 @@ function HubShell() {
         state={managerApproval.state}
         setState={managerApproval.setState}
       />
+      <UpdateProgressOverlay open={updating} />
     </main>
   );
 }
@@ -433,10 +434,6 @@ function UnlockSetupModal({
       }}
       title="Unlock setup"
     >
-      <p className="text-sm text-muted">
-        Enter the Manager PIN for this hub. This unlocks setup tools on this
-        screen only.
-      </p>
       <form
         className="grid gap-3"
         onSubmit={(e) => {

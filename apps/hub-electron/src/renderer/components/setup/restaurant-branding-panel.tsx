@@ -185,9 +185,7 @@ export function RestaurantBrandingPanel({
                 onChange={(event) => setName(event.target.value)}
                 disabled={busy || locked}
                 placeholder="As printed on bills"
-                aria-describedby="branding-name-hint"
               />
-              <small id="branding-name-hint">Shown in the app and printed at the top of every bill.</small>
             </label>
             <div className="branding-logo-field">
               <span>Logo</span>
@@ -213,7 +211,7 @@ export function RestaurantBrandingPanel({
                   </button>
                 ) : null}
               </div>
-              <small>PNG or JPG, up to 2 MB. A simple dark mark on a light or clear background prints best. Kitchen tickets never print the logo.</small>
+              <small>PNG or JPG · up to 2 MB · customer bills only</small>
               {imageError ? <p className="branding-image-error" role="alert">{imageError}</p> : null}
             </div>
             {locked ? (

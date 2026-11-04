@@ -218,11 +218,7 @@ export function PaymentQrPanel({
           </div>
           <div className="payment-qr-options">
             {conflict ? <div className="branding-conflict" role="alert"><p>The payment QR changed on another device. Your replacement is still here. Load the current QR before making another change.</p><button type="button" className="secondary-button compact" disabled={busy} onClick={discardChanges}>Load current QR</button></div> : null}
-            <p>
-              Upload a reusable UPI QR from Google Pay, PhonePe or your bank. We
-              prepare a crisp, scannable copy and place it above the bill
-              footer.
-            </p>
+
             <input
               ref={fileInput}
               type="file"
@@ -256,11 +252,11 @@ export function PaymentQrPanel({
             </div>
             <small>PNG or JPG · up to 2 MB · no fixed payment amount</small>
             <p className="payment-qr-hint">
-              Printed size is set for each bill printer in Printers &amp; receipts
+              Bill printer sizes
               {billPrinters.data
                 ? `: ${billPrinters.data.default.label} ${billPrinters.data.default.paymentQrSizeMm} mm${billPrinters.data.alternate.configured ? `, ${billPrinters.data.alternate.label} ${billPrinters.data.alternate.paymentQrSizeMm} mm` : ""}.`
                 : "."}{" "}
-              Confirm each payment in your UPI app.
+
             </p>
             {!masterPinConfigured && (
               <p role="status">

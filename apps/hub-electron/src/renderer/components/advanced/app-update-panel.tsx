@@ -27,6 +27,7 @@ export function AppUpdatePanel({ setNotice }: { setNotice: NoticeSetter }) {
       if (unsentQuantity(useHubStore.getState().drafts) > 0) throw new Error(unsentUpdateMessage);
       return hubApi.installOnlineUpdate();
     },
+    onMutate: () => useHubStore.getState().setUpdating(true),
     onSuccess: async (result) => {
       await queryClient.invalidateQueries({ queryKey: ["app-update-status"] });
       if ("installing" in result) {
@@ -35,13 +36,17 @@ export function AppUpdatePanel({ setNotice }: { setNotice: NoticeSetter }) {
           text: `Update downloaded. Backup created: ${result.backup.fileName}. Installing now.`,
         });
       } else {
+        useHubStore.getState().setUpdating(false);
         setNotice({
           tone: "good",
           text: `Hub is up to date: ${result.currentVersion}`,
         });
       }
     },
-    onError: (error) => setNotice({ tone: "bad", text: messageOf(error) }),
+    onError: (error) => {
+      useHubStore.getState().setUpdating(false);
+      setNotice({ tone: "bad", text: messageOf(error) });
+    },
   });
 
   const status = updateStatus.data;
@@ -71,17 +76,8 @@ export function AppUpdatePanel({ setNotice }: { setNotice: NoticeSetter }) {
 
   return (
     <section className="panel app-update-panel">
-      <div className="panel-title">
-        <div>
-          <h2>App updates</h2>
-          <span>
-            {status
-              ? `App ${status.appVersion} · DB ${status.dbSchemaVersion}`
-              : unavailable ? "Update status unavailable" : "Loading update status…"}
-          </span>
-        </div>
-      </div>
-      <div className="update-status-grid">
+      <p className="update-version">{status ? `App ${status.appVersion} · DB ${status.dbSchemaVersion}` : unavailable ? "Update status unavailable" : "Loading update status…"}</p>
+      {!unavailable ? <div className="update-status-grid">
         <article
           className={
             online?.enabled
@@ -139,13 +135,14 @@ export function AppUpdatePanel({ setNotice }: { setNotice: NoticeSetter }) {
             {status ? (rollbackReady ? "Ready" : "Backup only") : pendingLabel}
           </span>
         </article>
-      </div>
+      </div> : null}
       <div className="update-action-card github-update-card">
         {unsentItems > 0 ? <p className="warning-text" role="status">{unsentUpdateMessage} {unsentItems} unsent item{unsentItems === 1 ? "" : "s"}.</p> : null}
         <div className="update-action-row">
           <button
             type="button"
             className="primary-button"
+            data-update-trigger
             disabled={updateDisabled}
             onClick={() => {
               if (unsentQuantity(useHubStore.getState().drafts) > 0) {

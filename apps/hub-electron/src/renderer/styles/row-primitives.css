@@ -1,30 +1,15 @@
-.menu-card,
-.kot-card,
-.line-row,
-.report-row,
-.stock-row,
-.compact-row,
-.report-detail-card,
-.summary-box,
-.saved-settings-card,
-.payment-summary-grid span,
-.setup-subdetails,
-.csv-import-box,
-.csv-import-result,
-.revision-box,
-.action-section,
-.transfer-panel,
-.manager-box,
-.history-row,
-.bill-totals,
-.split-summary,
-.total-strip {
-  @apply min-w-0 rounded-lg border border-line bg-white p-3;
+/* Records use dividers; independently actionable kitchen tickets retain a surface. */
+.menu-card, .line-row, .report-row, .stock-row, .compact-row, .history-row {
+  min-width: 0; padding: 12px 0; border: 0; border-bottom: 1px solid var(--line); background: transparent; border-radius: 0;
 }
-
+.report-detail-card, .summary-box, .saved-settings-card, .payment-summary-grid span,
+.setup-subdetails, .csv-import-box, .csv-import-result, .revision-box, .action-section,
+.transfer-panel, .manager-box, .bill-totals, .split-summary, .total-strip {
+  min-width: 0; padding: 12px 0; border: 0; background: transparent; border-radius: 0;
+}
 .danger-zone,
 .cancel-panel {
-  @apply border-danger bg-danger-soft;
+  border-top: 1px solid var(--danger-line); padding-top: 16px;
 }
 
 .saved-settings-card {
@@ -96,7 +81,7 @@
 }
 
 .line-category-icon {
-  @apply h-8 w-8;
+  display: none;
 }
 
 .line-main strong,
@@ -117,7 +102,7 @@
 .qty-cluster {
   @apply grid items-center justify-end gap-2;
   grid-area: qty;
-  grid-template-columns: 40px minmax(48px, auto) 40px;
+  grid-template-columns: 36px minmax(36px, auto) 36px;
 }
 
 .qty-cluster.qty-readonly {
@@ -125,11 +110,11 @@
 }
 
 .qty-cluster button {
-  @apply h-10 min-h-10 w-10 rounded-md p-0 text-lg font-semibold;
+  min-height: var(--control-height); height: var(--control-height); width: var(--control-height); padding: 0; border: 1px solid var(--line-strong); background: var(--panel); color: var(--ink); font-size: 16px;
 }
 
 .qty-cluster b {
-  @apply min-w-12 whitespace-nowrap text-center text-base font-semibold leading-10 text-ink;
+  min-width: 36px; text-align: center; font-size: 14px; line-height: 36px; font-variant-numeric: tabular-nums;
 }
 
 .line-row-action {

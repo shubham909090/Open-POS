@@ -1,4 +1,4 @@
-import { type Dispatch, type KeyboardEventHandler, type SetStateAction } from "react";
+import { type Dispatch, type KeyboardEventHandler, type SetStateAction, type PointerEvent } from "react";
 import { formatInr } from "@gaurav-pos/shared";
 import { type MenuItem } from "../../hub-api.js";
 import { Dialog } from "../ui/dialog.js";
@@ -30,6 +30,7 @@ type HistorySearchKeyboard = {
   onKeyDown: KeyboardEventHandler<HTMLInputElement>;
   setActiveIndex: (index: number) => void;
   setItemElement: (index: number, element: HTMLElement | null) => void;
+  onPointerMove: (index: number, event: PointerEvent<HTMLElement>) => void;
 };
 
 function ReportHistoryEditModal({
@@ -245,7 +246,7 @@ function ReportHistoryEditModal({
                       key={item.id}
                       ref={(element) => historySearchKeyboard.setItemElement(index, element)}
                       className={`history-edit-search-row${historySearchKeyboard.activeIndex === index ? " keyboard-active" : ""}`}
-                      onMouseEnter={() => historySearchKeyboard.setActiveIndex(index)}
+                      onPointerMove={(event) => historySearchKeyboard.onPointerMove(index, event)}
                     >
                       <strong>{item.name}</strong>
                       <div className="history-edit-actions">

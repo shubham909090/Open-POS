@@ -7,10 +7,10 @@
 .printer-output-state { font-size: 12px; font-weight: 600; color: var(--warning); }
 .printer-output-state.live { color: var(--accent-dark); }
 
-.bill-printer-list { display: grid; min-width: 0; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
+.bill-printer-list { display: grid; min-width: 0; border: 0; border-block: 1px solid var(--line); background: var(--panel); }
 .bill-printer-row + .bill-printer-row { border-top: 1px solid var(--line); }
 .bill-printer-row.editing { background: var(--wash); }
-.bill-printer-summary { display: grid; grid-template-columns: minmax(150px, 1.1fr) minmax(0, 2.4fr) auto; align-items: center; gap: 16px; min-height: 60px; padding: 10px 14px; }
+.bill-printer-summary { display: grid; grid-template-columns: minmax(150px, 1.1fr) minmax(0, 2.4fr) auto; align-items: center; gap: 16px; min-height: 60px; padding: 12px 0; }
 .bill-printer-name { display: grid; gap: 1px; min-width: 0; }
 .bill-printer-name strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 600; }
 .bill-printer-name span, .bill-printer-note { font-size: 12px; color: var(--muted); }
@@ -23,7 +23,7 @@
 .bill-printer-actions { display: flex; justify-content: flex-end; gap: 6px; }
 .bill-printer-actions button { min-height: 32px; gap: 6px; padding: 0 10px; font-size: 12px; }
 
-.bill-printer-editor { padding: 4px 14px 14px; }
+.bill-printer-editor { padding: 4px 16px 16px; }
 .bill-printer-editor fieldset { display: grid; gap: 14px; margin: 0; padding: 14px 0 0; border: 0; border-top: 1px solid var(--line); min-width: 0; }
 .bill-printer-editor-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 16px; align-items: start; }
 .bill-printer-editor-grid label, .bill-printer-editor-grid .field-group { display: grid; gap: 6px; min-width: 0; font-size: 12px; font-weight: 600; }

@@ -105,7 +105,6 @@ export function ReportsView({ requestManagerApproval }: { requestManagerApproval
     <div className="reports-layout">
       <section className="panel reports-wide">
         <div className="panel-title">
-          <h2>Reports</h2>
           <div className="report-tabs" role="tablist" aria-label="Report views" onKeyDown={handleReportTabKeyDown}>
             <button
               id="report-tab-daily"

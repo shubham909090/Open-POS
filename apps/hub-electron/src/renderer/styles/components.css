@@ -1,200 +1,62 @@
-.checkbox-row {
-  @apply flex min-h-10 flex-row items-center gap-2 rounded-md border border-line bg-panel px-3 text-sm font-medium text-ink;
-}
+/* Composed controls: one visual rule for every workflow. */
+.dialog-overlay { position: fixed; inset: 0; z-index: var(--layer-dialog); background: color-mix(in srgb, var(--ink) 32%, transparent); }
+.dialog-surface { position: fixed; top: 50%; left: 50%; z-index: var(--layer-nested); display: grid; gap: 16px; width: min(480px, calc(100vw - 32px)); max-height: calc(100dvh - 48px); padding: 24px; overflow: auto; transform: translate(-50%, -50%); outline: none; border: 1px solid var(--line); border-radius: var(--dialog-radius); background: var(--panel); box-shadow: var(--shadow-lg); }
+.dialog-wide { width: min(980px, calc(100vw - 32px)); }
+.dialog-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.dialog-title { margin: 0; font-size: 18px; font-weight: 600; line-height: 26px; }
+.dialog-heading > button { margin-right: -8px; }
+.approval-dialog { width: min(400px, calc(100vw - 32px)); gap: 16px; }
+.approval-dialog .dialog-heading { justify-content: center; position: relative; padding-right: 24px; }
+.approval-dialog .dialog-heading > button { position: absolute; right: 0; top: -4px; }
+.approval-dialog .dialog-title { text-align: center; font-size: 18px; }
+.approval-access-note { display: flex; justify-content: center; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+.approval-dialog > p { margin: 0; text-align: center; font-size: 13px; line-height: 20px; }
+.approval-dialog form { gap: 12px; }
+.checkbox-row { display: flex; align-items: center; gap: 8px; min-height: var(--control-height); padding: 0; border: 0; background: transparent; font-size: 13px; }
+.checkbox-row input { flex-shrink: 0; }
+.compact-menu-card { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px 12px; padding: 12px; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: var(--panel); }
+.compact-menu-card .menu-card-main { display: grid; gap: 4px; min-width: 0; }
+.compact-menu-card .menu-card-main strong { font-size: 13px; font-weight: 600; line-height: 20px; overflow-wrap: anywhere; }
+.compact-menu-card .menu-card-main span { font-size: 11px; font-weight: 400; color: var(--muted); }
+.compact-menu-card footer { min-width: 0; }
+.menu-card-icon { display: none; }
+.compact-menu-card.keyboard-active, .state-search-row.keyboard-active { background: var(--accent-soft); box-shadow: inset 3px 0 var(--accent); }
+.csv-import-details, .setup-subdetails { padding: 0; border: 0; border-top: 1px solid var(--line); border-radius: 0; background: transparent; }
+.setup-subdetails > summary, .csv-import-details > summary { min-height: 40px; padding: 8px 0; font-size: 13px; font-weight: 600; }
+.setup-subdetails > summary > small, .csv-import-details > summary > small { display: none; }
+.setup-subdetails > :not(summary) { margin: 0 0 12px; }
+.csv-import-details[open] .csv-import-grid { display: grid; gap: 16px; padding: 12px 0; }
+.csv-import-box { display: grid; gap: 12px; margin: 0; padding: 12px 0; border: 0; background: transparent; }
+.csv-import-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.payment-summary-grid span { display: grid; gap: 4px; }
+.payment-summary-grid small { color: var(--muted); font-size: 12px; }
+.payment-summary-grid b { font-size: 16px; font-weight: 600; }
+.compact-row small { grid-column: 1 / -1; color: var(--muted); font-size: 12px; }
+.quiet-button { border-color: transparent; color: var(--muted); background: transparent; }
+.segmented { display: inline-flex; flex-wrap: wrap; gap: 4px; padding: 0; border: 0; background: transparent; }
+.segmented button { min-height: var(--control-height); padding: 0 12px; border: 1px solid transparent; background: transparent; color: var(--muted); box-shadow: none; }
+.segmented button.active { border-color: var(--accent-line); color: var(--accent-dark); background: var(--accent-soft); }
+.manager-pin-form { display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; gap: 12px; width: min(400px, 100%); }
+.manager-pin-form button { justify-self: start; width: fit-content; margin: 0; }
+.manager-pin-form .soft-note { margin: 0; }
+.kot-note-field { display: grid; gap: 4px; color: var(--muted); font-size: 12px; }
+.secondary-inline.danger { border-color: var(--danger-line); background: transparent; color: var(--danger); }
+.ui-input { width: 100%; }
+.ui-input-invalid { border-color: var(--danger); }
+@media (pointer: coarse) { .compact-menu-card { min-height: 64px; } }
 
-.checkbox-row input[type="checkbox"] {
-  @apply h-4 w-4 shrink-0 accent-accent;
-}
+.ui-select-trigger { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; min-width: 0; height: var(--control-height); border: 1px solid var(--line-strong); border-radius: var(--control-radius); padding: 0 12px; background: var(--panel); color: var(--ink); text-align: left; font-size: 13px; }
+.ui-select-content { z-index: var(--layer-nested); max-height: 288px; min-width: var(--radix-select-trigger-width); overflow: hidden; border: 1px solid var(--line); border-radius: var(--control-radius); background: var(--panel); box-shadow: var(--shadow-lg); }
+.ui-tooltip { z-index: calc(var(--layer-nested) + 1); max-width: 280px; padding: 6px 10px; border-radius: var(--control-radius); background: var(--ink); color: var(--panel); font-size: 12px; }
 
-.compact-menu-card {
-  @apply items-start gap-3;
-  grid-template-columns: auto minmax(0, 1fr);
-}
+.ui-segmented { display: inline-flex; max-width: 100%; gap: 4px; padding: 4px; border-radius: var(--control-radius); background: var(--wash); }
+.ui-segmented-item { min-height: 32px; padding: 0 12px; background: transparent; border-color: transparent; color: var(--muted); font-size: 12px; font-weight: 600; }
+.ui-segmented-item:hover:not(:disabled) { background: var(--panel); color: var(--ink); }
+.ui-segmented-item.active { background: var(--accent-soft); color: var(--accent-dark); }
 
-.compact-menu-card .menu-card-main {
-  @apply min-w-0 content-start gap-1;
-  grid-template-columns: minmax(0, 1fr);
-}
+.ui-metric { display: grid; gap: 4px; min-width: 0; }
+.ui-metric-label, .ui-metric-sub { color: var(--muted); font-size: 12px; font-weight: 400; }
+.ui-metric-value { color: var(--ink); font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; }
 
-.compact-menu-card .menu-card-main strong {
-  @apply min-w-0 text-base font-semibold leading-5 text-ink;
-  overflow-wrap: anywhere;
-}
-
-.compact-menu-card .menu-card-main span {
-  @apply min-w-0 text-sm font-semibold leading-5 text-muted;
-}
-
-.compact-menu-card footer {
-  @apply col-start-2 w-full min-w-0;
-}
-
-.menu-card-icon {
-  @apply grid h-9 w-9 shrink-0 place-items-center rounded-md border border-line bg-wash text-muted;
-}
-
-.category-food .menu-card-icon {
-  @apply border-accent bg-accent-soft text-accent-dark;
-}
-
-.category-beverage .menu-card-icon {
-  @apply border-blue bg-blue-soft text-blue;
-}
-
-.category-alcohol .menu-card-icon {
-  @apply border-danger bg-danger-soft text-danger;
-}
-
-.compact-menu-card.keyboard-active,
-.state-search-row.keyboard-active {
-  @apply border-accent bg-accent-soft shadow-none;
-}
-
-.compact-menu-card.keyboard-active .menu-card-icon,
-.state-search-row.keyboard-active .menu-card-icon {
-  @apply border-accent bg-white text-accent-dark;
-}
-
-.csv-import-details {
-  @apply mt-3 overflow-hidden rounded-lg border border-line-strong bg-panel p-0 shadow-none;
-}
-
-.setup-subdetails {
-  @apply overflow-hidden border-line-strong p-0;
-}
-
-.setup-subdetails summary,
-.csv-import-details summary {
-  @apply relative grid min-h-16 cursor-pointer list-none items-center gap-3 px-4 py-3 text-sm font-semibold text-ink transition;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  padding-left: 1.25rem;
-  background: var(--panel);
-}
-
-.setup-subdetails summary::before,
-.csv-import-details summary::before {
-  content: "";
-  display: none;
-}
-
-.setup-subdetails summary::-webkit-details-marker,
-.csv-import-details summary::-webkit-details-marker {
-  display: none;
-}
-
-.setup-subdetails summary::after,
-.csv-import-details summary::after {
-  content: "⌄";
-  @apply grid h-9 w-9 shrink-0 place-items-center rounded-md border border-line bg-panel text-base text-muted shadow-none transition-transform;
-}
-
-.setup-subdetails summary:hover,
-.csv-import-details summary:hover {
-  background: var(--wash);
-}
-
-.setup-subdetails[open] summary,
-.csv-import-details[open] summary {
-  @apply border-b border-line;
-  background: var(--wash);
-}
-
-.setup-subdetails[open] summary::after,
-.csv-import-details[open] summary::after {
-  transform: rotate(180deg);
-}
-
-.setup-subdetails summary span,
-.csv-import-details summary span {
-  @apply min-w-0 text-base font-semibold leading-5 text-ink;
-}
-
-.setup-subdetails summary small,
-.csv-import-details summary small {
-  @apply max-w-[240px] truncate rounded-full border border-line bg-panel px-3 py-1 text-xs font-medium text-muted shadow-none;
-}
-
-.csv-import-details:not([open]) .csv-import-grid {
-  @apply hidden;
-}
-
-.csv-import-details[open] .csv-import-grid {
-  @apply grid gap-3 bg-white p-4;
-}
-
-.csv-import-box {
-  @apply m-0 grid gap-3 rounded-md border-line bg-wash;
-}
-
-.csv-import-actions {
-  @apply flex flex-wrap items-center gap-2;
-}
-
-.payment-summary-grid span {
-  @apply grid gap-1;
-}
-
-.payment-summary-grid small {
-  @apply text-xs font-medium text-muted;
-}
-
-.payment-summary-grid b {
-  @apply text-base font-semibold text-ink;
-}
-
-.compact-row small {
-  @apply col-span-full text-sm font-medium leading-5 text-muted;
-}
-
-.quiet-button {
-  @apply border-line bg-panel text-ink hover:bg-wash;
-}
-
-.segmented {
-  @apply grid grid-cols-3 gap-1 rounded-lg border border-line bg-wash p-1;
-}
-
-.segmented button {
-  @apply min-h-10 rounded-md border-0 bg-transparent px-3 text-sm font-semibold text-muted shadow-none hover:bg-white hover:text-ink;
-}
-
-.segmented button.active {
-  @apply bg-ink text-white;
-}
-
-.manager-pin-form {
-  @apply grid items-start gap-3;
-  grid-template-columns: minmax(240px, 420px) auto;
-}
-
-.manager-pin-form button {
-  @apply w-fit min-w-40 justify-self-start;
-  margin-top: 23px;
-}
-
-.master-pin-form > button { grid-column: 1 / -1; margin-top: 0; }
-.master-pin-form > .current-master-pin-field { grid-column: 1 / -1; max-width: 420px; width: 100%; }
-
-.setup-subdetails > :not(summary),
-.csv-import-box,
-.manager-box,
-.history-box {
-  @apply m-3;
-}
-
-.kot-note-field {
-  @apply grid gap-1 text-sm font-semibold text-muted;
-}
-
-.kot-note-field input {
-  @apply min-h-11 rounded-md border border-line bg-white px-3 text-left text-base font-semibold text-ink outline-none focus:border-accent focus:ring-2 focus:ring-accent-soft;
-}
-
-.secondary-inline.danger {
-  @apply border-danger bg-danger-soft text-danger hover:bg-danger hover:text-white;
-}
-
-.csv-import-details > :not(summary),
-.csv-import-details .csv-import-box {
-  @apply m-0;
-}
+.approval-optional-reason > summary { min-height: 24px; justify-content: flex-start; padding: 0; font-size: 12px; color: var(--muted); font-weight: 400; }
+.approval-optional-reason[open] > summary { margin-bottom: 8px; }

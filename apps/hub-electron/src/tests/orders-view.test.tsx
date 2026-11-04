@@ -23,13 +23,11 @@ describe("hub orders view layout", () => {
     expect(screen.queryByPlaceholderText("Search dish")).toBeNull();
   });
 
-  it("expands and closes the menu browser from the compact menu rail", async () => {
+  it("opens the catalog for a new order and allows hiding and reopening it", async () => {
     const { OrdersView, useHubStore } = await importOrdersView();
     useHubStore.setState({ selectedTableId: "table-t1", orderPanel: "new", menuSearch: "", drafts: {} });
 
     const { baseElement } = render(<OrdersView bootstrap={bootstrap()} setNotice={vi.fn()} requestManagerApproval={vi.fn()} />);
-
-    fireEvent.click(screen.getByRole("button", { name: "Open menu" }));
 
     expect(baseElement.querySelector(".order-modal-layout.menu-open")).not.toBeNull();
     expect(screen.getByPlaceholderText("Search dish")).not.toBeNull();
@@ -39,6 +37,8 @@ describe("hub orders view layout", () => {
 
     expect(baseElement.querySelector(".order-modal-layout.menu-closed")).not.toBeNull();
     expect(screen.queryByPlaceholderText("Search dish")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Open menu" }));
+    expect(screen.getByPlaceholderText("Search dish")).not.toBeNull();
   });
 
   it("shows a live table timer in hours and minutes", async () => {

@@ -24,7 +24,7 @@ describe("AppUpdatePanel", () => {
     cleanup();
     vi.restoreAllMocks();
     vi.clearAllMocks();
-    useHubStore.setState({ drafts: {} });
+    useHubStore.setState({ drafts: {}, updating: false });
     delete window.gauravPos;
   });
 
@@ -56,6 +56,25 @@ describe("AppUpdatePanel", () => {
         text: "Update downloaded. Backup created: pre-update.sqlite. Installing now."
       })
     );
+    expect(useHubStore.getState().updating).toBe(true);
+  });
+
+  it("blocks service throughout the request and releases it when download fails", async () => {
+    updateStatusMock.mockResolvedValue(updateStatus());
+    let rejectDownload!: (error: Error) => void;
+    installOnlineUpdateMock.mockReturnValue(new Promise((_resolve, reject) => { rejectDownload = reject; }));
+    const { AppUpdatePanel } = await import("../renderer/components/advanced/advanced-view.js");
+    renderAppUpdatePanel(AppUpdatePanel);
+    await screen.findByText("App 0.1.0 · DB 10");
+    fireEvent.click(screen.getByRole("button", { name: "Update app" }));
+    await waitFor(() => expect(installOnlineUpdateMock).toHaveBeenCalledOnce());
+    expect(useHubStore.getState().updating).toBe(true);
+    useHubStore.getState().addOpenDraftItem("table-t1", { name: "Tea", pricePaise: 4000 });
+    expect(useHubStore.getState().drafts).toEqual({});
+    await act(async () => { rejectDownload(new Error("Download failed")); });
+    await waitFor(() => expect(useHubStore.getState().updating).toBe(false));
+    act(() => useHubStore.getState().addOpenDraftItem("table-t1", { name: "Tea", pricePaise: 4000 }));
+    expect(Object.values(useHubStore.getState().drafts["table-t1"] ?? {})).toHaveLength(1);
   });
 
   it("does not start an online update while orders are running", async () => {
@@ -120,6 +139,7 @@ describe("AppUpdatePanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "Update app" }));
 
     await waitFor(() => expect(setNotice).toHaveBeenCalledWith({ tone: "good", text: "Hub is up to date: 0.1.0" }));
+    expect(useHubStore.getState().updating).toBe(false);
   });
 
   it("shows exact online update errors", async () => {

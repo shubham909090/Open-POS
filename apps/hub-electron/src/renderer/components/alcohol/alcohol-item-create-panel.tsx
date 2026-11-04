@@ -156,11 +156,8 @@ function AlcoholItemCreatePanel({
       : rupeesToPaise(productPrice) > 0);
 
   return (
-    <details className="panel alcohol-form-panel alcohol-create-details">
-      <summary className="panel-title">
-        <h2>Add alcohol item</h2>
-        <span>Liquor stock or cocktail recipe</span>
-      </summary>
+    <details className="create-disclosure alcohol-form-panel alcohol-create-details">
+      <summary>Add alcohol item</summary>
       <form
         className="alcohol-form"
         onSubmit={(event) => {

@@ -5,7 +5,6 @@ import {
   useId,
   useState,
 } from "react";
-import { Badge } from "../ui/badge.js";
 
 export const SettingsPageContext = createContext(false);
 export const SettingsPageActiveContext = createContext(true);
@@ -28,6 +27,7 @@ export function SetupCard({
   const [open, setOpen] = useState(defaultOpen ?? !done);
   const embedded = useContext(SettingsPageContext);
   const contentId = useId();
+  if (embedded) return <section className="setup-section" aria-label={title}>{children}</section>;
   const heading = (
     <>
       <div className="setup-heading">
@@ -38,9 +38,6 @@ export function SetupCard({
         </div>
       </div>
       <div className="setup-card-meta">
-        <Badge className={done ? "setup-status ready" : "setup-status"}>
-          {done ? "Configured" : "Not configured"}
-        </Badge>
         {!embedded && children ? (
           <span className="setup-card-toggle">{open ? "Hide" : "Open"}</span>
         ) : null}

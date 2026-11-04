@@ -94,7 +94,7 @@ export function SentOrderPanel({
     <div className="ticket-section">
       {data?.order ? (
         <section className="state-editor">
-          <div className="state-editor-head">
+          {hasOrderStateChanges ? <div className="state-editor-head">
             <div className="state-editor-total">
               <small>Edited total</small>
               <strong>{formatInr(editableTotal)}</strong>
@@ -120,7 +120,7 @@ export function SentOrderPanel({
             ) : (
               <span className="state-editor-status">Saved</span>
             )}
-          </div>
+          </div> : null}
           {orderStateGuardMessage ? <p className="state-editor-warning">{orderStateGuardMessage}</p> : null}
           {managerApprovalRequired ? <p className="state-editor-warning">Manager PIN will be required to reduce or remove sent items.</p> : null}
           <div className="state-search">
@@ -142,7 +142,7 @@ export function SentOrderPanel({
                       key={item.id}
                       ref={(element) => orderStateKeyboard.setItemElement(index, element)}
                       className={`state-search-row menu-card compact-menu-card category-${item.sale_group_kind ?? "other"}${orderStateKeyboard.activeIndex === index ? " keyboard-active" : ""}`}
-                      onMouseEnter={() => orderStateKeyboard.setActiveIndex(index)}
+                      onPointerMove={(event) => orderStateKeyboard.onPointerMove(index, event)}
                     >
                       <CategoryBadge kind={item.sale_group_kind} className="state-search-icon" />
                       <div className="menu-card-main">

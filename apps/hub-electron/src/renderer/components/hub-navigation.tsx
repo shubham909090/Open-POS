@@ -236,7 +236,7 @@ function WorkspaceSearch({
     onChange(item.view);
     onClose();
   };
-  const { activeIndex, onKeyDown, setActiveIndex, setItemElement } = useKeyboardListNavigation({
+  const { activeIndex, onKeyDown, onPointerMove, setItemElement } = useKeyboardListNavigation({
     items: results,
     resetKey: query,
     onCommit: navigate,
@@ -283,7 +283,7 @@ function WorkspaceSearch({
             key={item.view}
             ref={(element) => setItemElement(index, element)}
             className={`workspace-result${index === activeIndex ? " selected" : ""}`}
-            onMouseEnter={() => setActiveIndex(index)}
+            onPointerMove={(event) => onPointerMove(index, event)}
             onClick={() => navigate(item)}
           >
             <item.icon size={19} />

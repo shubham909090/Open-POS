@@ -18,12 +18,14 @@ export function NewOrderPanel({
   draft,
   setNotice,
   refreshTable,
+  showSearch = true,
 }: {
   tableId: string;
   bootstrap: Bootstrap;
   draft: DraftItem[];
   setNotice: NoticeSetter;
   refreshTable: () => Promise<void>;
+  showSearch?: boolean;
 }) {
   const setOrderPanel = useHubStore((state) => state.setOrderPanel);
   const addDraftItem = useHubStore((state) => state.addDraftItem);
@@ -123,7 +125,7 @@ export function NewOrderPanel({
 
   return (
     <div className="ticket-section new-order-section">
-      <section className="state-editor draft-menu-search">
+      {showSearch ? <section className="state-editor draft-menu-search">
         <div className="state-search">
           <label className="state-search-field">
             <span>Add dish</span>
@@ -144,7 +146,7 @@ export function NewOrderPanel({
                     key={item.id}
                     ref={(element) => draftKeyboard.setItemElement(index, element)}
                     className={`state-search-row menu-card compact-menu-card category-${item.sale_group_kind ?? "other"}${draftKeyboard.activeIndex === index ? " keyboard-active" : ""}`}
-                    onMouseEnter={() => draftKeyboard.setActiveIndex(index)}
+                    onPointerMove={(event) => draftKeyboard.onPointerMove(index, event)}
                   >
                     <CategoryBadge kind={item.sale_group_kind} className="state-search-icon" />
                     <div className="menu-card-main">
@@ -168,10 +170,10 @@ export function NewOrderPanel({
             </div>
           ) : null}
         </div>
-      </section>
+      </section> : null}
       <LineItems
-        emptyTitle="No new dishes selected"
-        emptyText="Tap dishes from the menu. This list is only new items not sent yet."
+        emptyTitle="Choose items"
+        emptyText=""
         rows={draft.map((item) => ({
           id: item.lineKey,
           title: item.variantLabel ? `${item.name} ${item.variantLabel}` : item.name,
@@ -187,7 +189,7 @@ export function NewOrderPanel({
         }))}
       />
       <details className="open-item-details">
-        <summary>Add an item that is not on the menu</summary>
+        <summary>Custom item</summary>
       <form
         className="open-item-form"
         onSubmit={(event) => {

@@ -31,6 +31,20 @@ describe("hub table workspace send actions", () => {
     await waitFor(() => expect(submitOrderMock).toHaveBeenCalledWith(expect.objectContaining({ printMode: "kot" }), expect.any(String)));
   });
 
+  it("shows a failed operation inside the workspace and restores its action focus", async () => {
+    const { TableWorkspace, useHubStore } = await importWorkspace();
+    submitOrderMock.mockRejectedValue(new Error("Manager PIN is incorrect"));
+    seedDraft(useHubStore);
+    const notice = vi.fn();
+    renderWorkspace(TableWorkspace, notice);
+    const trigger = await screen.findByRole("button", { name: "KOT F3" });
+    trigger.focus();
+    fireEvent.click(trigger);
+    expect(await screen.findByRole("alert")).toHaveProperty("textContent", "Manager PIN is incorrectDismiss");
+    await waitFor(() => expect(document.activeElement).toBe(trigger));
+    expect(notice).toHaveBeenCalledWith({ tone: "bad", text: "Manager PIN is incorrect" });
+  });
+
   it("focuses the inline add-dish search when a table opens on new order", async () => {
     const { TableWorkspace, useHubStore } = await importWorkspace();
     useHubStore.setState({ selectedTableId: "table-t1", orderPanel: "new", drafts: {} });
@@ -69,7 +83,7 @@ describe("hub table workspace send actions", () => {
 
     renderWorkspace(TableWorkspace);
 
-    await screen.findByText("Edited total");
+    await screen.findByPlaceholderText("Search menu item");
     expect(document.activeElement).not.toBe(screen.getByPlaceholderText("Search menu item"));
     expect(screen.getByText(/KOT #42/)).toBeTruthy();
   });
@@ -107,9 +121,9 @@ describe("hub table workspace send actions", () => {
 
     const { container } = renderWorkspace(TableWorkspace);
 
-    await screen.findByText("Edited total");
+    await screen.findByPlaceholderText("Search menu item");
     expect(screen.queryByRole("button", { name: /^Save$/ })).toBeNull();
-    expect(screen.queryByText("Saved")).not.toBeNull();
+    expect(screen.queryByText("Edited total")).toBeNull();
 
     fireEvent.change(screen.getByPlaceholderText("Search menu item"), { target: { value: "whisky" } });
     expect(await screen.findByText("30 ml ₹40")).not.toBeNull();
@@ -141,7 +155,7 @@ describe("hub table workspace send actions", () => {
 
     renderWorkspace(TableWorkspace);
 
-    await screen.findByText("Edited total");
+    await screen.findByPlaceholderText("Search menu item");
     fireEvent.change(screen.getByPlaceholderText("Search menu item"), { target: { value: "whisky" } });
     fireEvent.click(await screen.findByText("30 ml ₹40"));
     fireEvent.click(await screen.findByRole("button", { name: /^Save$/ }));
@@ -161,7 +175,7 @@ describe("hub table workspace send actions", () => {
 
     renderWorkspace(TableWorkspace);
 
-    await screen.findByText("Edited total");
+    await screen.findByPlaceholderText("Search menu item");
     fireEvent.change(screen.getByPlaceholderText("Search menu item"), { target: { value: "whisky" } });
     fireEvent.click(await screen.findByText("30 ml ₹40"));
 
@@ -173,7 +187,7 @@ describe("hub table workspace send actions", () => {
 
     expect(screen.queryByText("Imported Whisky 30 ml")).toBeNull();
     expect(screen.queryByRole("button", { name: /^Save$/ })).toBeNull();
-    expect(screen.queryByText("Saved")).not.toBeNull();
+    expect(screen.queryByText("Edited total")).toBeNull();
   });
 
   it("does not allow saving a running table edit with zero active items", async () => {
@@ -184,7 +198,7 @@ describe("hub table workspace send actions", () => {
 
     renderWorkspace(TableWorkspace, setNotice);
 
-    await screen.findByText("Edited total");
+    await screen.findByPlaceholderText("Search menu item");
     const row = screen.getByText("bhaji").closest(".line-row");
     const minus = row?.querySelector("button");
     expect(minus).not.toBeNull();

@@ -1,7 +1,7 @@
 .bill-adjustments,
 .bill-payment-section,
 .change-helper {
-  @apply grid gap-3 rounded-lg border border-line bg-white p-3;
+  @apply grid gap-3 border-0 border-t border-line bg-transparent py-4;
 }
 
 .bill-adjustments {
@@ -49,17 +49,15 @@
 }
 
 .change-helper.good {
-  @apply border-emerald-200 bg-emerald-50 text-emerald-800;
+  border-color: var(--success); color: var(--success);
 }
 
 .change-helper.good .change-helper-row strong {
-  @apply border-emerald-200 bg-white text-emerald-800;
+  border-color: var(--success); color: var(--success);
 }
 
 .change-helper.bad {
-  border-color: rgb(185 28 28 / 0.3);
-  background: rgb(254 242 242);
-  color: #b91c1c;
+  border-color: var(--danger-line); color: var(--danger);
 }
 
 @media (max-width: 720px) {
@@ -97,5 +95,5 @@
 .bill-settle-bar > div { display: grid; gap: 2px; text-align: right; }
 .bill-settle-bar > div span { font-size: 12px; color: var(--muted); }
 .bill-settle-bar strong { font-size: 20px; font-weight: 650; font-variant-numeric: tabular-nums; }
-.bill-settle-bar .punch-button { min-height: 44px; min-width: 230px; }
+.bill-settle-bar .punch-button { min-height: var(--control-height); min-width: 230px; }
 @media (max-width: 720px) { .bill-settle-bar { margin-inline: -12px; padding-inline: 12px; } .bill-settle-bar .punch-button { flex: 1; min-width: 180px; } }

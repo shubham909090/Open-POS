@@ -14,7 +14,7 @@ describe("Hub shell PIN flow", () => {
 
     render(<App />);
 
-    expect(await screen.findByRole("heading", { name: "Create Manager PIN" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "Create manager PIN" })).toBeTruthy();
     expect(screen.getByLabelText("Manager PIN")).toBeTruthy();
     expect(screen.queryByText("Gaurav POS")).toBeNull();
     expect(screen.queryByRole("button", { name: "Unlock setup" })).toBeNull();

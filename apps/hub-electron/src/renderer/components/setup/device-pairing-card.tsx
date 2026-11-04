@@ -130,10 +130,6 @@ export function DevicePairingCard({
       icon={<QrCode size={20} />}
       summary={`${activeDevices.length} paired devices`}
     >
-      <p className="pairing-copy">
-        Create a QR for each phone or kitchen screen. Open the Android app,
-        choose pair by QR, and scan this code.
-      </p>
       <div
         className="role-card-grid"
         role="group"

@@ -1,50 +1,26 @@
-.payment-qr-panel {
-  @apply grid gap-5 rounded-xl border border-line bg-wash p-5;
-}
-.payment-qr-heading {
-  @apply flex flex-wrap items-center gap-3;
-}
-.payment-qr-heading h3 { @apply text-xl font-semibold text-ink; }
-.payment-qr-heading p { @apply mt-1 text-sm text-muted; }
-.payment-qr-icon { @apply rounded-xl bg-accent-soft p-3 text-accent-dark; }
-.payment-qr-lock { @apply ml-auto inline-flex items-center gap-1.5 rounded-full border border-line bg-white px-3 py-1 text-xs font-medium text-muted; }
-.payment-qr-content { @apply grid items-start gap-6; grid-template-columns: 230px minmax(0,1fr); }
-.payment-qr-paper { @apply grid justify-items-center gap-2 rounded-xl border border-line bg-white p-4 text-center; }
-.payment-qr-paper > svg { @apply my-10 text-muted; }
-.payment-qr-paper img { width: 198px; max-width: 100%; aspect-ratio: 1; object-fit: contain; image-rendering: pixelated; }
-.payment-qr-paper strong { @apply text-base font-semibold; }
-.payment-qr-paper small { @apply break-all text-xs text-muted; }
-.payment-qr-options { @apply grid min-w-0 gap-3; }
-.payment-qr-options > p { @apply text-sm leading-6; }
-.payment-qr-options > small { @apply text-xs text-muted; }
-.payment-qr-actions { @apply flex flex-wrap items-center gap-2; }
-.payment-qr-actions > button,
-.payment-qr-download { @apply inline-flex items-center justify-center gap-2; }
-.payment-qr-download { @apply rounded-lg border border-line px-3 py-2 text-sm font-medium no-underline; }
-.payment-qr-size { @apply grid gap-2 rounded-lg border border-line bg-white p-3; }
-.payment-qr-size > span { @apply flex items-center justify-between text-sm font-medium; }
-.payment-qr-size output { @apply rounded-md bg-accent-soft px-2 py-1 text-accent-dark; font-variant-numeric: tabular-nums; }
-.payment-qr-size input { @apply w-full; accent-color: var(--accent); }
-.payment-qr-size > small { @apply flex justify-between text-xs text-muted; }
-.payment-qr-hint { @apply text-muted; }
-.payment-qr-actions .payment-qr-remove { @apply ml-auto border-transparent bg-transparent text-danger; }@media (max-width: 700px) {
-  .payment-qr-panel { @apply p-3; }
-  .payment-qr-content { grid-template-columns: minmax(0,1fr); }
-  .payment-qr-paper { @apply mx-auto w-full; max-width: 260px; }
-  .payment-qr-lock { @apply ml-0; }
-}
+/* Shared payment destination: centered presentation, one change toolbar. */
+.payment-qr-panel { display: grid; gap: 24px; }
+.payment-qr-heading { display: flex; align-items: center; justify-content: flex-end; }
+.payment-qr-heading > div { display: none; }
+.payment-qr-lock { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; }
+.payment-qr-content { display: grid; grid-template-columns: 240px minmax(0, 1fr); align-items: center; gap: 32px; }
+.payment-qr-paper { display: grid; justify-items: center; gap: 8px; text-align: center; }
+.payment-qr-paper img { width: 224px; max-width: 100%; aspect-ratio: 1; object-fit: contain; image-rendering: pixelated; }
+.payment-qr-paper > svg { margin-block: 40px; color: var(--muted); }
+.payment-qr-paper strong { font-size: 16px; font-weight: 600; }
+.payment-qr-paper small { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.payment-qr-options { display: grid; min-width: 0; gap: 16px; }
+.payment-qr-options > small, .payment-qr-hint { font-size: 12px; color: var(--muted); }
+.payment-qr-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.payment-qr-actions > button, .payment-qr-download { display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+.payment-qr-download { min-height: var(--control-height); padding: 8px 12px; border: 1px solid var(--line-strong); border-radius: var(--control-radius); text-decoration: none; font-size: 13px; color: var(--ink); }
+.payment-qr-remove { margin-left: auto; background: transparent; color: var(--danger); }
+@media(max-width: 760px) { .payment-qr-content { grid-template-columns: 1fr; gap: 24px; } .payment-qr-options { justify-items: center; text-align: center; } }
 .printer-choice-panel {
   @apply grid gap-3;
 }
-.printer-choice-intro {
-  @apply grid gap-1 rounded-lg border border-line bg-wash p-3;
-}
-.printer-choice-intro strong {
-  @apply text-base font-semibold leading-5 text-ink;
-}
-.printer-choice-intro span,
 .printer-choice-note {
-  @apply text-sm font-semibold leading-5 text-muted;
+  font-size: 13px; color: var(--muted);
 }
 .printer-choice-list {
   @apply grid gap-3;
@@ -55,7 +31,7 @@
 }
 .printer-choice-button.active {
   @apply border-accent bg-accent-soft shadow-md;
-  box-shadow: 0 0 0 1px rgb(47 125 116 / 0.28), 0 8px 20px rgb(20 28 45 / 0.08);
+  box-shadow: inset 3px 0 var(--accent);
 }
 .printer-choice-icon {
   @apply grid h-11 w-11 shrink-0 place-items-center rounded-md border border-line bg-panel text-muted;
@@ -88,7 +64,7 @@
   @apply min-h-10 flex-1 rounded-md bg-transparent px-3 text-sm font-medium text-muted shadow-none hover:bg-white hover:text-ink;
 }
 .printer-mode-tabs button.active {
-  @apply bg-ink text-white;
+  @apply bg-accent-soft text-accent-dark;
 }
 .printer-fields-grid {
   @apply grid items-end gap-3;
@@ -97,10 +73,3 @@
 .printer-fields-grid.network {
   grid-template-columns: minmax(240px, 1fr) minmax(110px, 160px);
 }
-.settings-workspace .payment-qr-panel { border: 1px solid var(--line); border-radius: 8px; background: var(--panel); padding: 20px; }
-.settings-workspace .payment-qr-heading h3 { font-size: 15px; font-weight: 600; }
-.settings-workspace .payment-qr-heading p { font-size: 12px; line-height: 1.6; }
-.settings-workspace .payment-qr-icon { padding: 0; color: var(--muted); background: transparent; }
-.settings-workspace .payment-qr-icon svg { width: 20px; height: 20px; stroke-width: 1.6; }
-.settings-workspace .payment-qr-lock { border-radius: 5px; font-size: 10px; font-weight: 400; }
-.settings-workspace .payment-qr-options > p { margin: 0; font-size: 12px; line-height: 1.7; }

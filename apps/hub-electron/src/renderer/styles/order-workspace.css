@@ -4,20 +4,22 @@
  * New order / Sent items / Bill, so nothing jumps. Header and tabs stay put; only
  * the panel body scrolls, and the send action bar stays pinned at its bottom.
  */
+.order-modal-backdrop { position: fixed; inset: 0; z-index: var(--layer-overlay); background: color-mix(in srgb, var(--ink) 38%, transparent); }
 .order-modal-card {
+  position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: var(--layer-dialog); background: var(--panel); border: 1px solid var(--line); box-shadow: var(--shadow-lg); outline: none;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   gap: 0;
   width: min(1240px, calc(100vw - 32px));
-  height: min(880px, calc(100dvh - 32px));
+  height: min(760px, calc(100dvh - 32px));
   max-height: none;
   padding: 0;
   overflow: hidden;
-  border-radius: 10px;
+  border-radius: var(--dialog-radius);
 }
 
 .order-modal-header {
-  position: static;
+  display: flex; align-items: center; justify-content: space-between; gap: 16px; position: static;
   min-height: 60px;
   padding: 10px 16px 10px 20px;
   border-bottom: 1px solid var(--line);
@@ -29,7 +31,8 @@
 .order-modal-meta > span + span::before { content: "·"; margin-right: 8px; color: var(--line-strong); }
 .order-modal-header .order-modal-duration { display: inline-flex; align-items: center; gap: 4px; min-height: 0; padding: 0; border: 0; background: none; font-variant-numeric: tabular-nums; }
 
-.order-modal-layout { height: 100%; min-height: 0; gap: 0; }
+.order-modal-actions { display: flex; gap: 8px; align-items: center; }
+.order-modal-layout { display: grid; height: 100%; min-height: 0; gap: 0; }
 .order-modal-layout.menu-open { grid-template-columns: minmax(300px, 380px) minmax(0, 1fr); }
 .order-modal-layout > .order-menu-panel { max-height: none; min-height: 0; overflow: auto; border: 0; border-right: 1px solid var(--line); border-radius: 0; padding: 14px 16px; }
 
@@ -39,12 +42,13 @@
   gap: 0;
   min-height: 0;
   overflow: hidden;
+  padding: 0; border: 0; border-radius: 0;
 }
 
 /* Tabs read as a pivot: one underline marks the open panel; the table total sits on the same line. */
 .order-modal-layout .ticket-header { min-height: 52px; padding: 0 20px; border-bottom: 1px solid var(--line); align-items: stretch; flex-wrap: nowrap; }
 .order-modal-layout .ticket-header .segmented { display: flex; flex: 0 1 auto; gap: 4px; max-width: none; padding: 0; border: 0; border-radius: 0; background: none; }
-.order-modal-layout .ticket-header .segmented button { min-height: 52px; padding: 0 14px; border-radius: 0; border-bottom: 2px solid transparent; background: none; color: var(--muted); font-size: 14px; font-weight: 600; }
+.order-modal-layout .ticket-header .segmented button { min-height: 52px; padding: 0 14px; border: 0; border-radius: 0; border-bottom: 2px solid transparent; background: none; color: var(--muted); font-size: 14px; font-weight: 600; }
 .order-modal-layout .ticket-header .segmented button:hover { background: var(--wash); color: var(--ink); }
 .order-modal-layout .ticket-header .segmented button.active { border-bottom-color: var(--accent); background: none; color: var(--ink); }
 .order-modal-layout .ticket-header-actions { align-items: center; }
@@ -58,7 +62,7 @@
 /* ---------- New order: find → review → send ---------- */
 .ticket-body > .new-order-section { display: flex; flex: 1 0 auto; flex-direction: column; gap: 12px; padding-bottom: 0; }
 .new-order-section .draft-menu-search { padding: 0; border: 0; background: none; }
-.new-order-section .state-search-field input { max-width: none; height: 44px; font-size: 15px; }
+.new-order-section .state-search-field input { max-width: none; height: var(--control-height); font-size: 15px; }
 .open-item-details { margin: 0; padding: 10px 0 0; border: 0; border-top: 1px solid var(--line); border-radius: 0; background: none; }
 .open-item-details > summary { width: max-content; cursor: pointer; font-size: 13px; font-weight: 600; color: var(--accent-dark); }
 .open-item-details[open] > summary { margin-bottom: 10px; }
@@ -78,12 +82,12 @@
   border-radius: 0;
   background: var(--panel);
 }
-.order-action-bar .guest-count-field input { height: 44px; }
+.order-action-bar .guest-count-field input { height: var(--control-height); }
 .order-action-total { display: grid; justify-items: end; align-self: center; line-height: 1.2; }
 .order-action-total span { font-size: 12px; color: var(--muted); }
 .order-action-total strong { font-size: 20px; font-weight: 650; font-variant-numeric: tabular-nums; }
 .order-action-bar .send-action-row { grid-template-columns: 112px 196px; justify-self: end; }
-.order-action-bar .send-action-row button { min-height: 44px; }
+.order-action-bar .send-action-row button { min-height: var(--control-height); }
 /* KOT is the everyday action; Print and KOT stays available but quieter. */
 .order-action-bar .send-action-row button:first-child { background: var(--accent); }
 .order-action-bar .send-action-row button:first-child:hover:not(:disabled) { background: var(--accent-dark); }
@@ -93,8 +97,8 @@
 .order-action-bar .send-action-row button:disabled { opacity: 0.5; }
 
 /* ---------- Line rows: dense, quantity controls quiet until used ---------- */
-.ticket-body .line-list { display: grid; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
-.ticket-body .line-row { gap: 6px 16px; padding: 10px 14px; border: 0; border-radius: 0; }
+.ticket-body .line-list { display: grid; border: 0; border-radius: 0; overflow: hidden; }
+.ticket-body .line-row { gap: 6px 16px; padding: 12px 0; border: 0; border-radius: 0; }
 .ticket-body .line-row + .line-row { border-top: 1px solid var(--line); }
 .ticket-body .line-main span { font-size: 12px; }
 .ticket-body .line-category-icon { width: 28px; height: 28px; }
@@ -106,9 +110,9 @@
 .ticket-body .line-note-field { gap: 6px; padding: 0; border: 0; background: none; }
 .ticket-body .line-row { grid-template-areas: "main amount qty" "note note note" "action action action"; row-gap: 2px; }
 .ticket-body .line-note-field summary { width: max-content; min-height: 24px; padding: 0; font-size: 12px; font-weight: 500; color: var(--accent-dark); }
-.ticket-body .line-note-field:not([open]) { margin-left: 38px; }
+.ticket-body .line-note-field:not([open]) { margin-left: 0; }
 .ticket-body .line-note-field input { max-width: 480px; min-height: 36px; background: var(--panel); font-weight: 500; }
-.ticket-body .line-note-text { padding: 4px 8px; font-size: 12px; }
+.ticket-body .line-note-text { padding: 4px 0; font-size: 12px; }
 
 /* ---------- Sent items ---------- */
 .ticket-body .state-editor { background: var(--panel); }
@@ -138,5 +142,7 @@
 .bill-action-bar { position: sticky; bottom: 0; z-index: 2; display: flex; align-items: center; justify-content: flex-end; gap: 16px; margin: auto -20px 0; padding: 12px 20px 14px; border-top: 1px solid var(--line); background: var(--panel); }
 .bill-action-bar strong { font-size: 20px; font-weight: 650; font-variant-numeric: tabular-nums; }
 .bill-action-bar span { font-size: 12px; color: var(--muted); }
-.bill-action-bar button { min-width: 196px; min-height: 44px; background: var(--accent); }
+.bill-action-bar button { min-width: 196px; min-height: var(--control-height); background: var(--accent); }
 .bill-action-bar button:hover:not(:disabled) { background: var(--accent-dark); }
+
+.workspace-operation-error { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; margin-bottom: 12px; padding: 8px 12px; }

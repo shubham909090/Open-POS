@@ -41,15 +41,13 @@ export function Dialog({
   return (
     <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
       <DialogPrimitive.Portal>
-        <DialogPrimitive.Overlay className="dialog-overlay fixed inset-0 z-[60] bg-ink/30 backdrop-blur-[2px]" />
+        <DialogPrimitive.Overlay className="dialog-overlay" />
         <DialogPrimitive.Content
           ref={content}
           className={cn(
-            "dialog-surface fixed left-1/2 top-1/2 z-[70] grid max-h-[86dvh] -translate-x-1/2 -translate-y-1/2 gap-4 overflow-auto rounded-xl border bg-panel p-6 shadow-pos-lg outline-none",
-            size === "wide"
-              ? "w-[min(980px,calc(100vw-32px))]"
-              : "w-[min(560px,calc(100vw-32px))]",
-            danger ? "border-danger/30" : "border-line",
+            "dialog-surface",
+            size === "wide" && "dialog-wide",
+            danger && "dialog-danger",
             className,
           )}
           onKeyDown={onKeyDown}
@@ -62,8 +60,8 @@ export function Dialog({
             }
           }}
         >
-          <div className="flex items-center justify-between gap-4">
-            <DialogPrimitive.Title className="text-lg font-semibold text-ink">
+          <div className="dialog-heading">
+            <DialogPrimitive.Title className="dialog-title">
               {title}
             </DialogPrimitive.Title>
             <DialogPrimitive.Description className="sr-only">

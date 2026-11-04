@@ -77,11 +77,7 @@ export function EditableRecordList({
           <div className="record-row-main">
             <div className="record-row-title">
               <strong>{row.title}</strong>
-              <span
-                className={`record-status${row.active ? " active" : " disabled"}`}
-              >
-                {row.active ? "Active" : "Disabled"}
-              </span>
+              {!row.active ? <span className="record-status disabled">Disabled</span> : null}
             </div>
             <span>{row.meta}</span>
           </div>

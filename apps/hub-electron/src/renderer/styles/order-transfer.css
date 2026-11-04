@@ -11,7 +11,7 @@
 }
 
 .transfer-panel-toggle span {
-  @apply rounded-md bg-wash px-2.5 py-1 text-xs font-semibold text-muted;
+  @apply text-xs font-medium text-muted;
 }
 
 .transfer-panel-body {
@@ -32,7 +32,7 @@
 }
 
 .transfer-mode-toggle button.active {
-  @apply bg-ink text-white;
+  @apply bg-accent-soft text-accent-dark;
 }
 
 .transfer-target-field {
@@ -52,7 +52,7 @@
 }
 
 .transfer-submit-button {
-  @apply inline-flex min-h-11 w-fit min-w-64 items-center justify-center rounded-md bg-ink px-4 text-sm font-semibold text-white hover:bg-accent-dark disabled:bg-wash disabled:text-muted disabled:opacity-100;
+  @apply inline-flex min-h-11 w-fit min-w-64 items-center justify-center rounded-md bg-accent px-4 text-sm font-semibold text-white hover:bg-accent-dark disabled:bg-wash disabled:text-muted disabled:opacity-100;
 }
 
 .transfer-item-list {
@@ -60,7 +60,7 @@
 }
 
 .transfer-item-row {
-  @apply grid items-center gap-3 rounded-md border border-line bg-panel p-3;
+  @apply grid items-center gap-3 border-0 border-b border-line bg-transparent py-3;
   grid-template-columns: minmax(0, 1fr) auto;
 }
 

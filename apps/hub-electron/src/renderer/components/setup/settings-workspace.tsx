@@ -174,19 +174,10 @@ export function SettingsWorkspace<Id extends string>({
             </p>
           )}
         </nav>
-        <p className="settings-nav-footnote">
-          Changes apply to this restaurant hub.
-        </p>
       </aside>
       <div className="settings-content">
         <header className="settings-page-heading">
-          <div className="settings-breadcrumb">
-            <span>{title}</span>
-            <span aria-hidden="true">/</span>
-            <span>{current.title}</span>
-          </div>
           <h2>{current.title}</h2>
-          <p>{current.description}</p>
         </header>
         <SettingsPageContext.Provider value>
           {visited.map((id) => (

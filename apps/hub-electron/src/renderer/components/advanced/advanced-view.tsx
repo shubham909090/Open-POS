@@ -273,11 +273,7 @@ export function AdvancedView({
                       ? "Change Master PIN"
                       : "Create Master PIN"}
                 </button>
-                <p className="soft-note">
-                  Protects payment QR changes, historical bill edits and stock
-                  corrections. Keep the Master PIN with the owner. Changing it
-                  requires the current Master PIN.
-                </p>
+
               </form>
             </section>
           ) : null}

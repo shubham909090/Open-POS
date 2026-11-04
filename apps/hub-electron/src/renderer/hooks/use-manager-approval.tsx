@@ -108,6 +108,7 @@ export function ManagerApprovalModal({
       }}
       title={state.title}
       danger={state.danger}
+      className="approval-dialog"
     >
       <div className="approval-access-note">
         {ownerApproval ? (
@@ -150,15 +151,15 @@ export function ManagerApprovalModal({
           readOnly
           aria-hidden="true"
         />
-        <Input
+        {state.requireReason ? <Input
           label={state.reasonLabel}
           value={state.reason}
           onChange={(event) =>
             setState((current) => ({ ...current, reason: event.target.value }))
           }
-          placeholder={state.requireReason ? "Required" : "Optional"}
+          placeholder="Required"
           autoComplete="off"
-        />
+        /> : <details className="approval-optional-reason"><summary>{state.reasonLabel} (optional)</summary><Input label={state.reasonLabel} value={state.reason} onChange={(event) => setState((current) => ({ ...current, reason: event.target.value }))} placeholder="Optional" autoComplete="off" /></details>}
         <Input
           label={state.pinLabel}
           value={state.pin}

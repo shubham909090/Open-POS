@@ -12,10 +12,11 @@ import { EmptyState } from "../ui/empty-state.js";
 import { getMenuActionVariants, MenuResultSection } from "./menu-card.js";
 import { TableWorkspace } from "./table-workspace.js";
 
-export function OrdersView({ bootstrap, setNotice, requestManagerApproval }: { bootstrap: Bootstrap; setNotice: NoticeSetter; requestManagerApproval: ManagerApprovalRequest }) {
+export function OrdersView({ bootstrap, setNotice, requestManagerApproval, operationNotice }: { bootstrap: Bootstrap; setNotice: NoticeSetter; requestManagerApproval: ManagerApprovalRequest; operationNotice?: Parameters<NoticeSetter>[0] | null }) {
   const selectedTableId = useHubStore((state) => state.selectedTableId);
   const selectTable = useHubStore((state) => state.selectTable);
   const clearSelectedTable = useHubStore((state) => state.clearSelectedTable);
+  const orderPanel = useHubStore((state) => state.orderPanel);
   const setOrderPanel = useHubStore((state) => state.setOrderPanel);
   const search = useHubStore((state) => state.menuSearch);
   const setSearch = useHubStore((state) => state.setMenuSearch);
@@ -23,7 +24,7 @@ export function OrdersView({ bootstrap, setNotice, requestManagerApproval }: { b
   const drafts = useHubStore((state) => state.drafts);
   const tableOrderMode = useHubStore((state) => state.tableOrderMode);
   const [saleGroupFilter, setSaleGroupFilter] = useState<SaleGroupKind | null>(null);
-  const [menuOpen, setMenuOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(true);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const tableTriggerRef = useRef<HTMLElement | null>(null);
   const activeTables = bootstrap.tables.filter((table) => table.active);
@@ -62,8 +63,8 @@ export function OrdersView({ bootstrap, setNotice, requestManagerApproval }: { b
   };
 
   useEffect(() => {
-    if (selectedTable) setMenuOpen(false);
-  }, [selectedTable?.id]);
+    if (selectedTable) setMenuOpen(orderPanel === "new");
+  }, [selectedTable?.id, orderPanel]);
 
   useEffect(() => {
     const interval = window.setInterval(() => setNowMs(Date.now()), 60_000);
@@ -76,7 +77,6 @@ export function OrdersView({ bootstrap, setNotice, requestManagerApproval }: { b
         <div className="panel-title">
           <div>
             <h2>Tables</h2>
-            <span>Tap a table to open its order workspace</span>
           </div>
           <div className="table-map-counts" aria-label="Table state counts">
             <span className="state-dot free">{activeTables.filter((table) => getTableDisplayState(table) === "free").length} free</span>
@@ -194,6 +194,7 @@ export function OrdersView({ bootstrap, setNotice, requestManagerApproval }: { b
                     <h2>Menu</h2>
                     <div className="menu-browser-title-actions">
                       <input
+                        autoFocus
                         aria-label="Search dishes"
                         value={search}
                         onChange={(event) => setSearch(event.target.value)}
@@ -215,7 +216,7 @@ export function OrdersView({ bootstrap, setNotice, requestManagerApproval }: { b
                     selectedTableId={selectedTable.id}
                     onAdd={addDraftItem}
                     activeItemId={activeKeyboardItemId}
-                    onActiveItemIndexChange={menuKeyboard.setActiveIndex}
+                    onItemPointerMove={menuKeyboard.onPointerMove}
                     setItemElement={menuKeyboard.setItemElement}
                     emptyText={hasSearch ? "No dishes found. Check spelling or clear filters." : "No dishes found. Add active dishes in setup."}
                   />
@@ -227,6 +228,8 @@ export function OrdersView({ bootstrap, setNotice, requestManagerApproval }: { b
                 bootstrap={bootstrap}
                 setNotice={setNotice}
                 requestManagerApproval={requestManagerApproval}
+                operationNotice={operationNotice}
+                menuVisible={menuOpen}
               />
             </div>
           </DialogPrimitive.Content>

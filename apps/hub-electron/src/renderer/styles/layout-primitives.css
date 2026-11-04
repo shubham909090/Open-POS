@@ -1,11 +1,11 @@
 .panel,
 .sub-panel {
-  @apply rounded-lg border border-line bg-panel;
+  min-width: 0; background: var(--panel); border: 0; border-radius: var(--surface-radius);
 }
 
 .panel,
 .sub-panel {
-  @apply p-4;
+  padding: 24px;
 }
 
 .panel-title,
@@ -38,7 +38,7 @@
 }
 
 .catalog-status-filter button.active {
-  @apply bg-ink text-white;
+  background: var(--accent-soft); color: var(--accent-dark);
 }
 
 .panel-title span,
@@ -80,7 +80,7 @@
 
 .hub-connection-form {
   @apply items-start;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .hub-connection-actions {
@@ -185,7 +185,7 @@
 .segment-row,
 .alcohol-tabs,
 .segmented-row {
-  @apply flex flex-wrap gap-1 rounded-lg border border-line bg-wash p-1;
+  display: flex; flex-wrap: wrap; gap: 4px; padding: 4px; background: var(--wash); border-radius: var(--control-radius);
 }
 
 .menu-filter-row button,
@@ -199,5 +199,5 @@
 .segment-row button.active,
 .alcohol-tabs button.active,
 .segmented-row button.active {
-  @apply bg-ink text-white;
+  background: var(--accent-soft); color: var(--accent-dark);
 }

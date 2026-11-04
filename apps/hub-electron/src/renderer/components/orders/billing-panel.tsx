@@ -286,10 +286,11 @@ export function BillingPanel({
 
   return (
     <div className="billing-panel">
+      {!revisionEditing ? <>
       <div className="bill-metrics">
         <Metric label="Bill total" value={formatInr(finalTotal)} />
-        <Metric label="Already paid" value={formatInr(existingPaid)} />
-        <Metric label="Balance" value={formatInr(Math.max(0, finalTotal - existingPaid))} />
+        {existingPaid > 0 ? <Metric label="Already paid" value={formatInr(existingPaid)} /> : null}
+        {existingPaid > 0 ? <Metric label="Balance" value={formatInr(Math.max(0, finalTotal - existingPaid))} /> : null}
       </div>
       {bill.customer_name ? <p className="text-sm text-muted">Name: {bill.customer_name}</p> : null}
       {bill.revision_number ? <p className="text-sm text-muted">Bill revision {bill.revision_number}{bill.is_nc ? ` · NC: ${bill.nc_reason ?? ""}` : ""}</p> : null}
@@ -351,6 +352,7 @@ export function BillingPanel({
           <kbd>Enter</kbd>
         </button>
       </div> : null}
+      </> : null}
       <BillRevisionEditor
         tableOrder={tableOrder}
         menuItems={menuItems}

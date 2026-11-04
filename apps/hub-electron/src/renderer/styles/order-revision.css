@@ -1,9 +1,9 @@
 .revision-search-results {
-  @apply grid max-h-56 gap-2 overflow-auto rounded-lg border border-line bg-wash p-2;
+  @apply grid max-h-56 gap-0 overflow-auto border-0 border-b border-line;
 }
 
 .revision-search-result {
-  @apply flex min-w-0 items-center justify-between gap-3 rounded-md border border-line bg-white p-2 text-left text-ink hover:bg-accent-soft;
+  @apply flex min-w-0 items-center justify-between gap-3 rounded-none border-0 border-b border-line bg-white px-2 py-3 text-left text-ink hover:bg-accent-soft;
 }
 
 .revision-search-result span {
@@ -29,6 +29,9 @@
 .revision-actions > div { display: grid; gap: 2px; text-align: right; }
 .revision-actions span { font-size: 12px; color: var(--muted); }
 .revision-actions strong { font-size: 18px; font-variant-numeric: tabular-nums; }
-.revision-actions button { min-height: 44px; }
+.revision-actions button { min-height: var(--control-height); }
 .revision-add-row { display: grid; grid-template-columns: minmax(160px, 1fr) minmax(180px, 1.4fr) auto; gap: 8px; }
 @media (max-width: 720px) { .revision-add-row { grid-template-columns: minmax(0, 1fr); } }
+
+.billing-panel > .revision-box { display: flex; flex: 1 0 auto; flex-direction: column; }
+.billing-panel > .revision-box > .revision-actions { margin-top: auto; }

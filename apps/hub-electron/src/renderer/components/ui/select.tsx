@@ -22,7 +22,7 @@ export function Select({
     <SelectPrimitive.Root value={value} onValueChange={onValueChange}>
       <SelectPrimitive.Trigger
         className={cn(
-          "flex h-10 w-full min-w-0 items-center justify-between gap-2 rounded-md border border-line bg-panel px-3 text-left text-sm text-ink shadow-sm outline-none focus:border-accent focus:ring-2 focus:ring-accent",
+          "ui-select-trigger",
           className
         )}
       >
@@ -32,7 +32,7 @@ export function Select({
         </SelectPrimitive.Icon>
       </SelectPrimitive.Trigger>
       <SelectPrimitive.Portal>
-        <SelectPrimitive.Content className="z-[80] max-h-72 min-w-[var(--radix-select-trigger-width)] overflow-hidden rounded-md border border-line bg-panel shadow-xl">
+        <SelectPrimitive.Content className="ui-select-content">
           <SelectPrimitive.Viewport className="p-1">{children}</SelectPrimitive.Viewport>
         </SelectPrimitive.Content>
       </SelectPrimitive.Portal>

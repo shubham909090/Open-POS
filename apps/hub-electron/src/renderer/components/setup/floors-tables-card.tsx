@@ -104,21 +104,8 @@ export function FloorsTablesCard({
       icon={<Users size={20} />}
       summary={`${bootstrap.tables.filter((table) => table.active).length} active tables`}
     >
-      <form
-        className="flex flex-wrap items-end gap-3"
-        onSubmit={(event) => {
-          event.preventDefault();
-          onCreateFloor();
-        }}
-      >
-        <label>
-          Floor name
-          <input value={floorName} onChange={(event) => setFloorName(event.target.value)} placeholder="Main hall" />
-        </label>
-        <button disabled={!floorName.trim() || createFloorPending} type="submit">
-          Add floor
-        </button>
-      </form>
+      <div className="catalog-create-actions">
+        <details className="create-disclosure"><summary>Add table</summary>
       <form
         className="flex flex-wrap items-end gap-3"
         onSubmit={(event) => {
@@ -144,14 +131,29 @@ export function FloorsTablesCard({
           Add table
         </button>
       </form>
+        </details>
+        <details className="create-disclosure"><summary>Add floor</summary>
+      <form
+        className="flex flex-wrap items-end gap-3"
+        onSubmit={(event) => {
+          event.preventDefault();
+          onCreateFloor();
+        }}
+      >
+        <label>
+          Floor name
+          <input value={floorName} onChange={(event) => setFloorName(event.target.value)} placeholder="Main hall" />
+        </label>
+        <button disabled={!floorName.trim() || createFloorPending} type="submit">
+          Add floor
+        </button>
+      </form>
+        </details>
+      </div>
       <div className="table-order-bar">
         <div>
           <h3 id="table-order-label">Table order</h3>
-          <p>
-            {tableOrderMode === "name"
-              ? "Listed by name on this hub: T2 comes before T10."
-              : "Listed by the positions you set below."}
-          </p>
+
         </div>
         <div className="segmented-row" role="radiogroup" aria-labelledby="table-order-label">
           {(["name", "custom"] as const).map((mode) => (

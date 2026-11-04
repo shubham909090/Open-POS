@@ -20,16 +20,13 @@
   @apply border-0 border-t border-line bg-transparent pt-3;
 }
 
-.alcohol-create-details > summary {
-  @apply m-0 cursor-pointer list-none;
-}
+.alcohol-create-details > summary { margin: 0; cursor: pointer; }
 .alcohol-create-details > summary::-webkit-details-marker { display: none; }
 .alcohol-create-details > summary::after {
   content: "+";
   @apply ml-2 text-lg font-normal text-muted;
 }
 .alcohol-create-details[open] > summary::after { content: "−"; transform: none; }
-.alcohol-create-details > summary span { @apply ml-auto; }
 .alcohol-create-details[open] > .alcohol-form { @apply mt-4; }
 .alcohol-create-details > .alcohol-import-details { @apply mt-4; }
 
@@ -76,7 +73,7 @@
 }
 
 .alcohol-catalog-table .variant-price-list span {
-  @apply rounded-md border border-line bg-wash px-2 py-1 text-xs font-medium text-ink;
+  @apply px-2 py-1 text-xs font-medium text-ink;
   font-variant-numeric: tabular-nums;
 }
 
@@ -124,7 +121,7 @@
 }
 
 .stock-metrics span {
-  @apply grid gap-1 rounded-md border border-line bg-panel px-3 py-3 text-xs font-medium text-muted;
+  @apply grid gap-1 border-0 border-l border-line px-4 py-2 text-xs font-medium text-muted;
 }
 
 .stock-metrics b {
@@ -138,7 +135,7 @@
 .stock-reset-button { @apply border-danger/20 text-danger hover:bg-danger-soft hover:text-danger; }
 
 .stock-adjust-form {
-  @apply items-end rounded-lg border border-line bg-panel p-3;
+  @apply items-end border-0 border-t border-line py-4;
   grid-template-columns: minmax(150px, 190px) repeat(3, minmax(140px, 1fr)) minmax(120px, auto);
 }
 

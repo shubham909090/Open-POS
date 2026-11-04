@@ -34,7 +34,7 @@
 }
 
 .kot-card header span {
-  @apply rounded-md border border-line bg-wash px-2 py-1 text-xs font-medium capitalize text-muted;
+  @apply text-xs font-medium capitalize text-muted;
 }
 
 .kot-card ul {
@@ -55,15 +55,15 @@
 }
 
 .kot-status-button {
-  @apply min-h-11 w-full border px-2 text-sm font-medium capitalize;
+  min-height: var(--control-height); width: 100%; padding-inline: 8px; font-size: 13px; font-weight: 500; border: 1px solid;
 }
 
 .kot-status-button.preparing {
-  @apply border-warning/40 bg-warning-soft text-[#92400e] hover:border-warning hover:bg-warning hover:text-white;
+  @apply border-warning/40 bg-warning-soft text-warning hover:border-warning hover:bg-warning hover:text-white;
 }
 
 .kot-status-button.ready {
-  @apply border-accent/40 bg-accent-soft text-accent-dark hover:border-accent hover:bg-accent hover:text-white;
+  @apply border-success/40 bg-success-soft text-success hover:border-success hover:bg-success hover:text-white;
 }
 
 .kot-status-button.served {
@@ -71,7 +71,7 @@
 }
 
 .kot-note {
-  @apply rounded-md border border-accent/20 bg-accent-soft px-2 py-1 font-medium text-accent-dark;
+  @apply font-medium text-muted;
 }
 
 .kitchen-queue-summary { @apply mt-1 block text-sm font-normal text-muted; }

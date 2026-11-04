@@ -94,25 +94,13 @@ export function DishesCard({
       icon={<ClipboardList size={20} />}
       summary={`${rawSetupDishItems.filter((item) => item.active).length} active dishes`}
     >
-      <details className="setup-subdetails csv-import-details">
-        <summary>
-          <span>Import dishes from CSV</span>
-          <small>Bulk menu setup</small>
-        </summary>
-        <CsvImportBox
-          title="Dish menu CSV"
-          templateName="dish-menu-template.csv"
-          templateCsv={DISH_IMPORT_TEMPLATE}
-          busy={importDishesPending}
-          result={dishImportResult}
-          onImport={onImportDishes}
-        />
-      </details>
+      <div className="catalog-create-actions">
+      <details className="create-disclosure"><summary>Add dish</summary>
       <form
         className="dish-form"
         onSubmit={(event) => {
           event.preventDefault();
-          onCreateDish();
+          if (!createDishPending) onCreateDish();
         }}
       >
         <label>
@@ -150,6 +138,21 @@ export function DishesCard({
           Add dish
         </button>
       </form>
+      </details>
+      <details className="create-disclosure csv-import-details">
+        <summary>
+          <span>Import dishes from CSV</span>
+        </summary>
+        <CsvImportBox
+          title="Dish menu CSV"
+          templateName="dish-menu-template.csv"
+          templateCsv={DISH_IMPORT_TEMPLATE}
+          busy={importDishesPending}
+          result={dishImportResult}
+          onImport={onImportDishes}
+        />
+      </details>
+      </div>
       <div className="setup-search-row">
         <input aria-label="Search saved dishes" value={dishListSearch} onChange={(event) => setDishListSearch(event.target.value)} placeholder="Search saved dishes" />
         <button type="button" className="danger-link" disabled={rawSetupDishItems.length === 0} onClick={() => void deleteAllDishes()}>
@@ -173,7 +176,7 @@ export function DishesCard({
         rows={visibleItems.map((item) => ({
           id: item.id,
           title: item.name,
-          meta: `${formatInr(item.price_paise)} · ${item.sale_group_name} · ${item.production_unit_name ?? "No kitchen assigned"} · ${item.active ? "active" : "disabled"}`,
+          meta: `${formatInr(item.price_paise)} · ${item.sale_group_name} · ${item.production_unit_name ?? "No kitchen assigned"}`,
           active: item.active,
           deleteApproval: true,
           onToggle: () => hubApi.updateDish(item.id, { active: !item.active }).then(invalidate),
