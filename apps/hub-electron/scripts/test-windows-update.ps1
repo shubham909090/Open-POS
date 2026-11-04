@@ -117,8 +117,14 @@ console.log(JSON.stringify(plan));
   $plan = $planJson | ConvertFrom-Json
   $quotedArgs = $plan.args | ForEach-Object { '"' + $_ + '"' }
   $handoff = Start-Process $plan.filePath -ArgumentList $quotedArgs -PassThru
-  Start-Sleep -Seconds 3
+  $readyDeadline = (Get-Date).AddSeconds(15)
+  while (!(Test-Path $plan.handoff.readyPath) -and (Get-Date) -lt $readyDeadline) { Start-Sleep -Milliseconds 100 }
+  if (!(Test-Path $plan.handoff.readyPath)) {
+    Set-Content -NoNewline $plan.handoff.decisionPath 'cancel'
+    throw 'Update helper did not become ready'
+  }
   if ((Get-HubVersion $appPath) -ne $PreviousVersion) { throw "Installer ran before the old app exited" }
+  Set-Content -NoNewline $plan.handoff.decisionPath 'go'
   if (!$oldApp.CloseMainWindow()) { throw "Could not request a graceful Hub shutdown" }
   if (!$oldApp.WaitForExit(120000)) { throw "Old Hub did not exit cleanly" }
   if (!$handoff.WaitForExit(180000)) { throw "Update handoff timed out" }

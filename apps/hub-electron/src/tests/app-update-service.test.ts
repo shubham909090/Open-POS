@@ -47,7 +47,7 @@ describe("AppUpdateService", () => {
     expect(existsSync(result.backup.path)).toBe(true);
     expect(onlineUpdater.checkForUpdates).toHaveBeenCalledTimes(1);
     expect(onlineUpdater.downloadUpdate).toHaveBeenCalledTimes(1);
-    expect(launchInstaller).toHaveBeenCalledWith({ filePath: "powershell.exe", args: expect.arrayContaining(["-File", expect.stringContaining("Install Gaurav POS Update.ps1")]) });
+    expect(launchInstaller).toHaveBeenCalledWith(expect.objectContaining({ filePath: "powershell.exe", args: expect.arrayContaining(["-File", expect.stringContaining("Install Gaurav POS Update.ps1")]) }));
     expect(service.status().online.status).toBe("installing");
 
     fixture.close();
@@ -211,10 +211,10 @@ describe("AppUpdateService", () => {
 
     expect(existsSync(result.backup.path)).toBe(true);
     expect(existsSync(result.recoveryScriptPath)).toBe(true);
-    expect(launchInstaller).toHaveBeenCalledWith({
+    expect(launchInstaller).toHaveBeenCalledWith(expect.objectContaining({
       filePath: "powershell.exe",
       args: expect.arrayContaining(["-File", expect.stringContaining("Install Gaurav POS Update.ps1")])
-    });
+    }));
     expect(service.status().rollbackAvailable).toBe(true);
 
     fixture.close();
@@ -393,10 +393,10 @@ describe("AppUpdateService", () => {
     });
 
     expect(existsSync(result.backup.path)).toBe(true);
-    expect(launchInstaller).toHaveBeenCalledWith({
+    expect(launchInstaller).toHaveBeenCalledWith(expect.objectContaining({
       filePath: "powershell.exe",
       args: expect.arrayContaining(["-File", expect.stringContaining("Install Gaurav POS Update.ps1")])
-    });
+    }));
     expect(service.status().rollbackAvailable).toBe(true);
 
     fixture.close();
