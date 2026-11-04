@@ -66,6 +66,7 @@ export function ReportsView({ requestManagerApproval }: { requestManagerApproval
   const defaultRangeTo = latestClosedDate ?? previousBusinessDate(currentBusinessDate ?? new Date().toISOString().slice(0, 10));
   const defaultRangeFrom = monthStart(defaultRangeTo);
   const maxRangeDate = defaultRangeTo;
+  const invalidRange = !rangeFrom || !rangeTo || rangeFrom > rangeTo || rangeTo > maxRangeDate;
   useEffect(() => {
     if (rangeTouched) return;
     setRangeFrom(defaultRangeFrom);
@@ -273,22 +274,24 @@ export function ReportsView({ requestManagerApproval }: { requestManagerApproval
             className="range-report-controls"
             onSubmit={(event) => {
               event.preventDefault();
+              if (invalidRange || rangeReport.isFetching) return;
               setRangeTouched(true);
               setRangeRequest({ from: rangeFrom, to: rangeTo, includeBills: false });
             }}
           >
             <label>
               From
-              <input type="date" value={rangeFrom} max={maxRangeDate} onChange={(event) => { setRangeTouched(true); setRangeFrom(event.target.value); }} />
+              <input type="date" required value={rangeFrom} max={rangeTo || maxRangeDate} onChange={(event) => { setRangeTouched(true); setRangeFrom(event.target.value); }} />
             </label>
             <label>
               To
-              <input type="date" value={rangeTo} max={maxRangeDate} onChange={(event) => { setRangeTouched(true); setRangeTo(event.target.value); }} />
+              <input type="date" required value={rangeTo} min={rangeFrom} max={maxRangeDate} onChange={(event) => { setRangeTouched(true); setRangeTo(event.target.value); }} />
             </label>
-            <button type="submit" className="secondary-button" disabled={rangeReport.isFetching}>
+            <button type="submit" className="secondary-button" disabled={rangeReport.isFetching || invalidRange}>
               {rangeReport.isFetching ? "Loading..." : "Apply"}
             </button>
           </form>
+          {rangeFrom && rangeTo && rangeFrom > rangeTo ? <p className="field-error" role="status">The end date must be on or after the start date.</p> : null}
           {rangeReport.isError ? <ReportQueryError error={rangeReport.error} busy={rangeReport.isFetching} onRetry={() => void rangeReport.refetch()} /> : null}
           {rangeReport.data ? (
             <RangeReportSummary
@@ -316,7 +319,7 @@ export function ReportsView({ requestManagerApproval }: { requestManagerApproval
         ) : (
           <section id="report-panel-modified" role="tabpanel" aria-labelledby="report-tab-modified" className="panel reports-wide modified-bills-panel">
             <div className="panel-title">
-              <h2>Modified Bills</h2>
+              <h2>Modified bills</h2>
               <span>Loading business day</span>
             </div>
             {currentSummary.isError ? <ReportQueryError error={currentSummary.error} busy={currentSummary.isFetching} onRetry={() => void currentSummary.refetch()} /> : <div className="report-load-state" role="status">Loading the active business day…</div>}

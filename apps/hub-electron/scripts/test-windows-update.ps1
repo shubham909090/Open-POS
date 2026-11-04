@@ -197,11 +197,15 @@ console.log(JSON.stringify(plan));
   $readyDeadline = (Get-Date).AddSeconds(15)
   while (!(Test-Path $plan.handoff.readyPath) -and (Get-Date) -lt $readyDeadline) { Start-Sleep -Milliseconds 100 }
   if (!(Test-Path $plan.handoff.readyPath)) {
-    Set-Content -NoNewline $plan.handoff.decisionPath 'cancel'
+    Set-Content -LiteralPath $plan.handoff.decisionPath -Value 'cancel' -NoNewline
     throw 'Update helper did not become ready'
   }
   if ((Get-HubVersion $appPath) -ne $PreviousVersion) { throw "Installer ran before the old app exited" }
-  Set-Content -NoNewline $plan.handoff.decisionPath 'go'
+  # Name Path/Value explicitly: PowerShell's dynamic -NoNewline parameter can
+  # reverse positional binding and create a file named "go" in the current dir.
+  Set-Content -LiteralPath $plan.handoff.decisionPath -Value 'go' -NoNewline
+  if ([System.IO.File]::ReadAllText($plan.handoff.decisionPath) -ne 'go') { throw 'Smoke helper authorization was not written correctly' }
+  Write-Host "Authorized smoke helper via $($plan.handoff.decisionPath)"
   if (!$oldApp.CloseMainWindow()) { throw "Could not request a graceful Hub shutdown" }
   if (!$oldApp.WaitForExit(120000)) { throw "Old Hub did not exit cleanly" }
   if (!$handoff.WaitForExit(180000)) { throw "Update handoff timed out" }
@@ -223,6 +227,8 @@ console.log(JSON.stringify(plan));
   Invoke-RestMethod "http://127.0.0.1:43737/admin/session/unlock" -Method Post -Headers $headers -ContentType "application/json" -Body '{"pin":"4321"}' | Out-Null
   $packagedUpdate = Test-PackagedHubUpdate
   Stop-HubGracefully
+  node (Join-Path $PSScriptRoot "test-windows-ui.cjs") $appPath $root
+  if ($LASTEXITCODE -ne 0) { throw "Packaged Windows UI audit failed" }
   $selfTest = Start-Process $appPath -ArgumentList "--self-test-sqlite" -PassThru -Wait
   if ($selfTest.ExitCode -ne 0) { throw "Installed SQLite self-test failed" }
   @{ previousVersion = $PreviousVersion; installedVersion = $version; legacyUninstallerIntegrity = $legacyIntegrity; normalReinstall = "passed"; packagedUpdate = $packagedUpdate; databasePreserved = $true; sqliteSelfTest = "passed" } |

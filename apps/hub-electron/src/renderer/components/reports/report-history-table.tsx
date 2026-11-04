@@ -26,7 +26,7 @@ function ReportHistoryTable({
   return (
     <section className="report-detail-card report-history-panel">
       <div className="mini-title">
-        <strong>Order History</strong>
+        <strong>Order history</strong>
         <span>
           showing {Math.min(billLimit, bills.length)} of {bills.length} bills
         </span>
@@ -44,7 +44,6 @@ function ReportHistoryTable({
                 <th>Items</th>
                 <th className="numeric-cell">Total</th>
                 <th className="numeric-cell">Paid</th>
-                <th>Breakup</th>
                 <th>Settled</th>
                 <th aria-label="Actions" />
               </tr>
@@ -54,20 +53,18 @@ function ReportHistoryTable({
                 <tr key={bill.billId}>
                   <td className="strong-cell">
                     #{bill.billNumber ?? bill.billId}
-                    {bill.customerName ? <small>{bill.customerName}</small> : null}
+                    {bill.customerName ? <small className="history-customer-name">{bill.customerName}</small> : null}
                     {bill.modified ? <small className="modified-pill">Modified</small> : bill.revisionNumber ? <small>rev {bill.revisionNumber}</small> : null}
                     {bill.isNc ? <small className="nc-pill">NC</small> : null}
                     {bill.discountPaise > 0 ? <small className="discount-pill">Discount</small> : null}
                   </td>
                   <td>{bill.tableName}</td>
                   <td><span className={`bill-status ${bill.status}`}>{bill.status}</span></td>
-                  <td className="wrap-cell history-item-lines">{bill.items?.length ? bill.items.map((item) => <span key={item.orderItemId}>{item.quantity} x {item.name}</span>) : "No item detail"}</td>
+                  <td className="wrap-cell history-item-lines">{bill.items?.length ? <details className="history-items-details"><summary>{bill.items.length} item{bill.items.length === 1 ? "" : "s"}</summary>{bill.items.map((item) => <span key={item.orderItemId}>{item.quantity} x {item.name}</span>)}</details> : "No item detail"}</td>
                   <td className="numeric-cell">
                     <strong>{formatInr(bill.finalTotalPaise)}</strong>
                     {bill.discountPaise > 0 ? <small className="history-discount-text">Discount {formatInr(bill.discountPaise)}</small> : null}
-                  </td>
-                  <td className="numeric-cell">{formatInr(bill.paidPaise)}</td>
-                  <td className="wrap-cell">
+                    <details className="history-breakup-details"><summary>Breakup</summary>
                     <div className="history-breakup">
                       <span>Subtotal {formatInr(bill.subtotalPaise ?? Math.max(0, bill.totalPaise - (bill.taxPaise ?? 0)))}</span>
                       <span>Tax {formatInr(bill.taxPaise ?? 0)}</span>
@@ -75,7 +72,9 @@ function ReportHistoryTable({
                       <span>Tip {formatInr(bill.tipPaise)}</span>
                       {bill.payments.length ? <span>{bill.payments.map((payment) => payment.method).join(", ")}</span> : null}
                     </div>
+                    </details>
                   </td>
+                  <td className="numeric-cell">{formatInr(bill.paidPaise)}</td>
                   <td>{bill.settledAt ? formatPosDateTime(bill.settledAt) : "Not settled"}</td>
                   <td className="action-cell">
                     <div className="history-actions">

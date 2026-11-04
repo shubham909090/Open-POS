@@ -122,31 +122,8 @@ export function NewOrderPanel({
   };
 
   return (
-    <div className="ticket-section">
-      <div className="guest-row">
-        <label className="guest-count-field">
-          Guests
-          <input value={guests} onChange={(event) => setGuests(event.target.value)} inputMode="numeric" />
-        </label>
-        <div className="send-action-row">
-          <button type="button" aria-label="KOT F3" disabled={!canSendDraft} onClick={() => sendDraft("kot")}>
-            <span>KOT</span>
-            <kbd>F3</kbd>
-          </button>
-          <button type="button" aria-label="Print and KOT F6" disabled={!canSendDraft} onClick={() => sendDraft("kot_print")}>
-            <span>{submitOrder.isPending ? "Sending..." : "Print and KOT"}</span>
-            <kbd>F6</kbd>
-          </button>
-        </div>
-      </div>
+    <div className="ticket-section new-order-section">
       <section className="state-editor draft-menu-search">
-        <div className="state-editor-head">
-          <div className="state-editor-total">
-            <small>New order</small>
-            <strong>{formatInr(draftTotal)}</strong>
-          </div>
-          <span className="state-editor-status">{draft.length} {draft.length === 1 ? "item" : "items"}</span>
-        </div>
         <div className="state-search">
           <label className="state-search-field">
             <span>Add dish</span>
@@ -191,6 +168,25 @@ export function NewOrderPanel({
           ) : null}
         </div>
       </section>
+      <LineItems
+        emptyTitle="No new dishes selected"
+        emptyText="Tap dishes from the menu. This list is only new items not sent yet."
+        rows={draft.map((item) => ({
+          id: item.lineKey,
+          title: item.variantLabel ? `${item.name} ${item.variantLabel}` : item.name,
+          meta: `${formatInr(item.pricePaise)} each`,
+          saleGroupKind: item.saleGroupKind ?? menuById.get(item.menuItemId)?.sale_group_kind ?? saleGroupById.get(item.saleGroupId ?? "")?.kind,
+          saleGroupName: item.saleGroupName ?? menuById.get(item.menuItemId)?.sale_group_name ?? saleGroupById.get(item.saleGroupId ?? "")?.name,
+          quantity: item.quantity,
+          amount: item.pricePaise * item.quantity,
+          onMinus: () => changeDraftQty(tableId, item.lineKey, -1),
+          onPlus: () => changeDraftQty(tableId, item.lineKey, 1),
+          note: item.note ?? "",
+          onNoteChange: (note) => setDraftItemNote(tableId, item.lineKey, note)
+        }))}
+      />
+      <details className="open-item-details">
+        <summary>Add an item that is not on the menu</summary>
       <form
         className="open-item-form"
         onSubmit={(event) => {
@@ -239,23 +235,27 @@ export function NewOrderPanel({
         </label>
         <button type="submit">Add open item</button>
       </form>
-      <LineItems
-        emptyTitle="No new dishes selected"
-        emptyText="Tap dishes from the menu. This list is only new items not sent yet."
-        rows={draft.map((item) => ({
-          id: item.lineKey,
-          title: item.variantLabel ? `${item.name} ${item.variantLabel}` : item.name,
-          meta: `${formatInr(item.pricePaise)} each`,
-          saleGroupKind: item.saleGroupKind ?? menuById.get(item.menuItemId)?.sale_group_kind ?? saleGroupById.get(item.saleGroupId ?? "")?.kind,
-          saleGroupName: item.saleGroupName ?? menuById.get(item.menuItemId)?.sale_group_name ?? saleGroupById.get(item.saleGroupId ?? "")?.name,
-          quantity: item.quantity,
-          amount: item.pricePaise * item.quantity,
-          onMinus: () => changeDraftQty(tableId, item.lineKey, -1),
-          onPlus: () => changeDraftQty(tableId, item.lineKey, 1),
-          note: item.note ?? "",
-          onNoteChange: (note) => setDraftItemNote(tableId, item.lineKey, note)
-        }))}
-      />
+      </details>
+      <div className="order-action-bar guest-row">
+        <label className="guest-count-field">
+          Guests
+          <input value={guests} onChange={(event) => setGuests(event.target.value)} inputMode="numeric" />
+        </label>
+        <div className="order-action-total" aria-live="polite">
+          <span>New items · {draft.length} {draft.length === 1 ? "line" : "lines"}</span>
+          <strong>{formatInr(draftTotal)}</strong>
+        </div>
+        <div className="send-action-row">
+          <button type="button" aria-label="KOT F3" disabled={!canSendDraft} onClick={() => sendDraft("kot")}>
+            <span>KOT</span>
+            <kbd>F3</kbd>
+          </button>
+          <button type="button" aria-label="Print and KOT F6" disabled={!canSendDraft} onClick={() => sendDraft("kot_print")}>
+            <span>{submitOrder.isPending ? "Sending..." : "Print and KOT"}</span>
+            <kbd>F6</kbd>
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

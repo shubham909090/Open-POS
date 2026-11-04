@@ -126,7 +126,7 @@ export function DishesCard({
         <label>
           Kitchen
           <select value={dishUnit} onChange={(event) => setDishUnit(event.target.value)}>
-            <option value="">No kitchen yet</option>
+            <option value="">Use category default</option>
             {bootstrap.productionUnits
               .filter((unit) => unit.active)
               .map((unit) => (
@@ -151,7 +151,7 @@ export function DishesCard({
         </button>
       </form>
       <div className="setup-search-row">
-        <input value={dishListSearch} onChange={(event) => setDishListSearch(event.target.value)} placeholder="Search saved dishes" />
+        <input aria-label="Search saved dishes" value={dishListSearch} onChange={(event) => setDishListSearch(event.target.value)} placeholder="Search saved dishes" />
         <button type="button" className="danger-link" disabled={rawSetupDishItems.length === 0} onClick={() => void deleteAllDishes()}>
           Delete all dishes
         </button>
@@ -175,6 +175,7 @@ export function DishesCard({
           title: item.name,
           meta: `${formatInr(item.price_paise)} · ${item.sale_group_name} · ${item.production_unit_name ?? "No kitchen assigned"} · ${item.active ? "active" : "disabled"}`,
           active: item.active,
+          deleteApproval: true,
           onToggle: () => hubApi.updateDish(item.id, { active: !item.active }).then(invalidate),
           onDelete: async () => {
             const approval = await requestManagerApproval({

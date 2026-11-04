@@ -172,7 +172,9 @@ export function AdvancedView({
                     onChange={(event) => setNewPin(event.target.value)}
                     type="password"
                     autoComplete="new-password"
+                    aria-describedby="manager-pin-help"
                   />
+                  <small id="manager-pin-help" className="field-help">Use at least 4 characters.</small>
                 </label>
                 <button
                   type="button"
@@ -191,7 +193,7 @@ export function AdvancedView({
                     if (approval) savePin.mutate(approval.pin);
                   }}
                 >
-                  Save PIN
+                  {savePin.isPending ? "Saving…" : "Save PIN"}
                 </button>
               </form>
               <form
@@ -199,6 +201,7 @@ export function AdvancedView({
                 onSubmit={(event) => {
                   event.preventDefault();
                   if (
+                    !saveMasterPin.isPending &&
                     (!masterPinConfigured || currentMasterPin.length >= 4) &&
                     newMasterPin.length >= 4 &&
                     newMasterPin === confirmMasterPin
@@ -237,7 +240,9 @@ export function AdvancedView({
                     type="password"
                     autoComplete="new-password"
                     placeholder="Owner-only PIN"
+                    aria-describedby="master-pin-help"
                   />
+                  <small id="master-pin-help" className="field-help">Use at least 4 characters.</small>
                 </label>
                 <label>
                   Confirm Master PIN
@@ -248,7 +253,10 @@ export function AdvancedView({
                     }
                     type="password"
                     autoComplete="new-password"
+                    aria-invalid={Boolean(confirmMasterPin && newMasterPin !== confirmMasterPin)}
+                    aria-describedby={confirmMasterPin && newMasterPin !== confirmMasterPin ? "master-pin-mismatch" : undefined}
                   />
+                  {confirmMasterPin && newMasterPin !== confirmMasterPin ? <small id="master-pin-mismatch" className="field-error" role="status">The PINs do not match.</small> : null}
                 </label>
                 <button
                   type="submit"
@@ -382,16 +390,15 @@ export function AdvancedView({
                   check the connection.
                 </p>
               ) : null}
-              <div className="record-list">
+              <div className="record-list print-job-list">
                 {bootstrap.printJobs.map((job) => (
-                  <article key={job.id} className="record-row">
-                    <div>
-                      <strong>{job.target_type}</strong>
-                      <span>
-                        {job.status} · attempts {job.attempts}
-                        {job.last_error ? ` · ${job.last_error}` : ""}
-                      </span>
+                  <article key={job.id} className="record-row print-job-row">
+                    <div className="print-job-description">
+                      <strong>{job.target_type} {job.printer_name ? <small>· {job.printer_name}</small> : null}</strong>
+                      <span>{formatPosDateTime(job.created_at)} · {job.attempts} attempt{job.attempts === 1 ? "" : "s"}</span>
+                      {job.last_error ? <span className="print-job-error">{job.last_error}</span> : null}
                     </div>
+                    <span className={`record-status ${job.status === "failed" ? "warning" : job.status === "printed" ? "active" : "disabled"}`}>{job.status}</span>
                   </article>
                 ))}
               </div>

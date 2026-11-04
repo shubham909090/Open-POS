@@ -18,6 +18,8 @@ export function EditableRecordList({
     active: boolean;
     onToggle: () => Promise<unknown>;
     onDelete: () => Promise<unknown>;
+    /** The action already opens its own approval dialog. */
+    deleteApproval?: boolean;
     onMoveUp?: () => Promise<unknown>;
     onMoveDown?: () => Promise<unknown>;
     moveUpDisabled?: boolean;
@@ -30,6 +32,7 @@ export function EditableRecordList({
   const [busyId, setBusyId] = useState("");
   const [editingId, setEditingId] = useState("");
   const [search, setSearch] = useState("");
+  const [limit, setLimit] = useState(60);
   const [deleting, setDeleting] = useState<(typeof rows)[number] | null>(null);
   const needle = search.trim().toLowerCase();
   const matchedRows = rows.filter((row) => {
@@ -38,10 +41,7 @@ export function EditableRecordList({
       part.toLowerCase().includes(needle),
     );
   });
-  const visibleRows = needle ? matchedRows.slice(0, 150) : matchedRows;
-  const searchCapped = Boolean(
-    needle && matchedRows.length > visibleRows.length,
-  );
+  const visibleRows = matchedRows.slice(0, limit);
 
   async function run(id: string, action: () => Promise<unknown>) {
     setBusyId(id);
@@ -50,7 +50,7 @@ export function EditableRecordList({
       setNotice({ tone: "good", text: "Saved." });
       return true;
     } catch (error) {
-      setNotice({ tone: "bad", text: messageOf(error) });
+      if (error !== undefined) setNotice({ tone: "bad", text: messageOf(error) });
       return false;
     } finally {
       setBusyId("");
@@ -63,14 +63,10 @@ export function EditableRecordList({
         <div className="setup-search-row">
           <input
             value={search}
-            onChange={(event) => setSearch(event.target.value)}
+            onChange={(event) => { setSearch(event.target.value); setLimit(60); }}
+            aria-label="Search saved records"
             placeholder="Search saved records"
           />
-          {searchCapped ? (
-            <small>
-              Showing first {visibleRows.length} matches. Keep typing to narrow.
-            </small>
-          ) : null}
         </div>
       ) : null}
       {visibleRows.map((row) => (
@@ -144,7 +140,7 @@ export function EditableRecordList({
               type="button"
               className="record-action danger icon-only"
               disabled={busyId === row.id}
-              onClick={() => setDeleting(row)}
+              onClick={() => row.deleteApproval ? void run(row.id, row.onDelete) : setDeleting(row)}
               aria-label={`Delete ${row.title}`}
             >
               <Trash2 size={16} />
@@ -153,6 +149,7 @@ export function EditableRecordList({
           {editingId === row.id ? row.editForm(() => setEditingId("")) : null}
         </article>
       ))}
+      {matchedRows.length > visibleRows.length ? <div className="record-pagination"><span>Showing {visibleRows.length} of {matchedRows.length} records</span><button type="button" className="secondary-button compact" onClick={() => setLimit((current) => current + 60)}>Show {Math.min(60, matchedRows.length - visibleRows.length)} more</button></div> : null}
       {!rows.length ? (
         <EmptyState
           title={emptyMessage ?? "Nothing added yet"}

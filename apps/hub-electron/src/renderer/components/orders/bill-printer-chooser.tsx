@@ -84,7 +84,7 @@ export function BillPrinterChooser({
               key={slot}
               type="button"
               className={`printer-choice-button ${slot}${activeSlot === slot && profile.configured ? " active" : ""}`}
-              aria-selected={activeSlot === slot && profile.configured}
+              aria-pressed={activeSlot === slot && profile.configured}
               disabled={busy || !profile.configured}
               onMouseEnter={() => {
                 if (profile.configured) setActiveSlot(slot);
@@ -105,6 +105,7 @@ export function BillPrinterChooser({
                 <span>{slotLabel(slot)}</span>
                 <strong>{profile.label}</strong>
                 <small>{profile.printerMode === "system" ? "PC printer" : "LAN printer"} · {printerTarget(profile)}</small>
+                <small>{profile.paperWidthMm ? `${profile.paperWidthMm} mm roll` : "Bill layout roll width"} · Payment QR {profile.paymentQrSizeMm} mm</small>
               </span>
               <b>{profile.configured ? "Select" : "Not set"}</b>
             </button>

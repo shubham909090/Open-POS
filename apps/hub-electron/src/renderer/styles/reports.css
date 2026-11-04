@@ -2,6 +2,7 @@
   @apply grid items-end gap-3;
   grid-template-columns: repeat(2, minmax(180px, 260px)) auto;
 }
+.range-report-controls > button { justify-self: start; min-width: 96px; }
 
 .report-tabs {
   @apply inline-flex max-w-full items-center gap-1 rounded-lg border border-line bg-wash p-1;
@@ -370,8 +371,12 @@
 }
 
 .modified-bills-table {
-  @apply min-w-[1120px];
+  @apply min-w-[960px];
 }
+.modified-bills-table .wrap-cell { min-width: 140px; }
+.modified-bills-table .audit-money-cell strong { white-space: nowrap; }
+.modified-bills-table td.action-cell { position: sticky; right: 0; z-index: 2; background: var(--panel); border-left: 1px solid var(--line); }
+.modified-bills-table th:last-child { position: sticky; right: 0; z-index: 3; background: var(--wash); }
 
 .modified-bill-detail-grid {
   @apply grid min-w-0 gap-3;

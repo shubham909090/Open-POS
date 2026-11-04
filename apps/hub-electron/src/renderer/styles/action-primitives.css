@@ -72,14 +72,6 @@
   @apply sr-only;
 }
 
-.print-preview {
-  @apply max-w-full overflow-auto whitespace-pre-wrap rounded-lg border border-line bg-white p-3 font-mono text-xs;
-}
-
-.print-preview-styled {
-  @apply whitespace-pre bg-white;
-}
-
 .empty,
 .empty-state {
   @apply rounded-lg border border-dashed border-line p-6 text-center text-sm font-semibold text-muted;

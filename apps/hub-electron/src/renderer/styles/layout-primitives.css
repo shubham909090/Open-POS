@@ -88,10 +88,6 @@
   grid-column: 1 / -1;
 }
 
-.layout-editor {
-  @apply grid gap-4;
-  grid-template-columns: minmax(0, 1fr) minmax(320px, 520px);
-}
 
 .three-col,
 .adjust-grid,
@@ -104,7 +100,6 @@
 .report-detail-grid,
 .quick-pay,
 .quick-pay-grid,
-.printer-test-actions,
 .utility-actions,
 .reset-options,
 .action-strip,
@@ -125,7 +120,6 @@
 .action-strip,
 .form-actions,
 .modal-actions,
-.printer-test-actions,
 .utility-actions,
 .topbar-actions,
 .row-actions,
@@ -139,10 +133,6 @@
   @apply justify-end;
 }
 
-.printer-test-actions {
-  @apply grid gap-2;
-  grid-template-columns: minmax(0, 1fr);
-}
 
 .floor-table-list,
 .floor-group,

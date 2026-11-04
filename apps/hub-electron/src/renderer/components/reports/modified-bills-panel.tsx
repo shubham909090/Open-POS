@@ -90,7 +90,7 @@ export function ModifiedBillsPanel({
     return (
       <section className="panel reports-wide modified-bills-panel">
         <div className="panel-title">
-          <h2>Modified Bills</h2>
+          <h2>Modified bills</h2>
           <span>Master PIN required</span>
         </div>
         <EmptyState title="Create Master PIN first" description="Modified bill audit is owner-only." />
@@ -102,7 +102,7 @@ export function ModifiedBillsPanel({
     return (
       <section className="panel reports-wide modified-bills-panel">
         <div className="panel-title">
-          <h2>Modified Bills</h2>
+          <h2>Modified bills</h2>
           <span>Owner audit</span>
         </div>
         <div className="modified-bill-unlock">
@@ -122,7 +122,7 @@ export function ModifiedBillsPanel({
   return (
     <section id="report-panel-modified" role="tabpanel" aria-labelledby="report-tab-modified" className="panel reports-wide modified-bills-panel">
       <div className="panel-title">
-        <h2>Modified Bills</h2>
+        <h2>Modified bills</h2>
         <button
           type="button"
           className="secondary-button compact"
@@ -194,7 +194,7 @@ export function ModifiedBillsPanel({
               <th>Table</th>
               <th>Changed by</th>
               <th>Approval</th>
-              <th>Change</th>
+              <th className="numeric-cell">Change</th>
               <th>Reason</th>
               <th>Time</th>
               <th aria-label="Actions" />
@@ -207,19 +207,17 @@ export function ModifiedBillsPanel({
                   <td className="strong-cell">
                     #{row.billNumber}
                     <small>rev {row.fromRevisionNumber} - {row.toRevisionNumber}</small>
-                    <small>{row.billId}</small>
-                    <small>{row.orderId}</small>
                   </td>
                   <td>{row.tableName}</td>
                   <td className="wrap-cell">
                     <strong>{row.actor.name}</strong>
-                    <span className="audit-subtext">{row.actor.role} · {row.actor.deviceId}</span>
+                    <span className="audit-subtext" title={row.actor.deviceId}>{row.actor.role}</span>
                   </td>
                   <td className="wrap-cell">
                     <strong>{approvalLabel(row)}</strong>
                     <span className="audit-subtext">{row.approvedBy}</span>
                   </td>
-                  <td>
+                  <td className="numeric-cell audit-money-cell">
                     <strong>{formatSignedInr(row.after.finalTotalPaise - row.before.finalTotalPaise)}</strong>
                     <span className="audit-subtext">{changeTypeLabel(row.changeType)}</span>
                   </td>

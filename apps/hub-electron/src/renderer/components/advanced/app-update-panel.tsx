@@ -46,6 +46,8 @@ export function AppUpdatePanel({ setNotice }: { setNotice: NoticeSetter }) {
   const rollbackReady = Boolean(
     status && (status.rollbackAvailable || status.baselineRegistered),
   );
+  const unavailable = updateStatus.isError && !status;
+  const pendingLabel = unavailable ? "Status unavailable" : "Loading";
   const rollbackCardClass = status
     ? rollbackReady
       ? "update-status-card ready"
@@ -65,7 +67,7 @@ export function AppUpdatePanel({ setNotice }: { setNotice: NoticeSetter }) {
           <span>
             {status
               ? `App ${status.appVersion} · DB ${status.dbSchemaVersion}`
-              : "Loading update status"}
+              : unavailable ? "Update status unavailable" : "Loading update status…"}
           </span>
         </div>
       </div>
@@ -86,7 +88,7 @@ export function AppUpdatePanel({ setNotice }: { setNotice: NoticeSetter }) {
                     online.availableVersion,
                     online.downloadPercent,
                   )
-                : "Loading"}
+                : pendingLabel}
             </span>
           </div>
           <span
@@ -94,37 +96,37 @@ export function AppUpdatePanel({ setNotice }: { setNotice: NoticeSetter }) {
               online?.enabled ? "record-status active" : "record-status warning"
             }
           >
-            {online?.enabled ? "Ready" : "Unavailable"}
+            {online ? online.status === "error" ? "Needs attention" : online.enabled ? "Ready" : "Unavailable" : pendingLabel}
           </span>
         </article>
         <article
           className={
-            activeOrderCount === 0
+            !status ? "update-status-card" : activeOrderCount === 0
               ? "update-status-card ready"
               : "update-status-card warning"
           }
         >
           <div>
             <strong>Running orders</strong>
-            <span>{activeOrderCount} must be closed before update install</span>
+            <span>{status ? `${activeOrderCount} must be closed before update install` : "Waiting for the hub status"}</span>
           </div>
           <span
             className={
-              activeOrderCount === 0
+              !status ? "record-status disabled" : activeOrderCount === 0
                 ? "record-status active"
                 : "record-status warning"
             }
           >
-            {activeOrderCount === 0 ? "Clear" : "Blocked"}
+            {status ? activeOrderCount === 0 ? "Clear" : "Blocked" : pendingLabel}
           </span>
         </article>
         <article className={rollbackCardClass}>
           <div>
             <strong>Rollback</strong>
-            <span>{rollbackStatusText(status)}</span>
+            <span>{status ? rollbackStatusText(status) : pendingLabel}</span>
           </div>
           <span className={rollbackBadgeClass}>
-            {status ? (rollbackReady ? "Ready" : "Backup only") : "Loading"}
+            {status ? (rollbackReady ? "Ready" : "Backup only") : pendingLabel}
           </span>
         </article>
       </div>

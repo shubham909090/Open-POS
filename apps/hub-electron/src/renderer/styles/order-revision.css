@@ -25,3 +25,10 @@
 .revision-search-result.keyboard-active {
   @apply border-accent bg-accent-soft;
 }
+.revision-actions { position: sticky; bottom: 0; z-index: 2; display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 16px; padding: 12px 0 0; border-top: 1px solid var(--line); background: var(--panel); }
+.revision-actions > div { display: grid; gap: 2px; text-align: right; }
+.revision-actions span { font-size: 12px; color: var(--muted); }
+.revision-actions strong { font-size: 18px; font-variant-numeric: tabular-nums; }
+.revision-actions button { min-height: 44px; }
+.revision-add-row { display: grid; grid-template-columns: minmax(160px, 1fr) minmax(180px, 1.4fr) auto; gap: 8px; }
+@media (max-width: 720px) { .revision-add-row { grid-template-columns: minmax(0, 1fr); } }

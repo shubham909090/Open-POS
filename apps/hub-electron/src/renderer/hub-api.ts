@@ -1,4 +1,4 @@
-import type { HistoryEditBillInput, ResetAlcoholStockInput } from "@gaurav-pos/shared";
+import type { HistoryEditBillInput, RemoveRestaurantLogoInput, ResetAlcoholStockInput, RestaurantBranding, UpdateBillPrintersInput, UpdateRestaurantBrandingInput } from "@gaurav-pos/shared";
 import type { resetAlcoholStock } from "../domain/order-service/alcohol-actions.js";
 
 import type {
@@ -109,6 +109,11 @@ function fileNameFromContentDisposition(value: string | null) {
 }
 
 export const hubApi = {
+  restaurantBranding: () => apiFetch<{ branding: RestaurantBranding }>("/settings/restaurant-branding"),
+  updateRestaurantBranding: (payload: UpdateRestaurantBrandingInput) =>
+    apiFetch<{ branding: RestaurantBranding }>("/settings/restaurant-branding", { method: "PUT", body: JSON.stringify(payload) }),
+  removeRestaurantLogo: (payload: RemoveRestaurantLogoInput) =>
+    apiFetch<{ branding: RestaurantBranding }>("/settings/restaurant-branding", { method: "DELETE", body: JSON.stringify(payload) }),
   paymentQr: () => apiFetch<{ qr: import("@gaurav-pos/shared").PaymentQr | null }>("/settings/payment-qr"),
   updatePaymentQr: (imageDataUrl: string, sizeMm: number, masterApproval: MasterApprovalPayload["masterApproval"], expectedUpdatedAt: string | null) =>
     apiFetch<{ qr: import("@gaurav-pos/shared").PaymentQr }>("/settings/payment-qr", { method: "PUT", body: JSON.stringify({ imageDataUrl, sizeMm, masterApproval, expectedUpdatedAt }) }),
@@ -290,7 +295,7 @@ export const hubApi = {
     apiFetch<{ id: string }>(`/sale-groups/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
   systemPrinters: (options: { refresh?: boolean } = {}) => apiFetch<SystemPrinterInfo[]>(`/system-printers${options.refresh ? "?refresh=1" : ""}`),
   billPrinters: () => apiFetch<BillPrinters>("/settings/bill-printers"),
-  updateBillPrinters: (payload: { default: { label: string; printerMode: "system" | "network"; printerName?: string; printerHost?: string; printerPort: number }; alternate: { label: string; printerMode: "system" | "network"; printerName?: string; printerHost?: string; printerPort: number } }) =>
+  updateBillPrinters: (payload: UpdateBillPrintersInput) =>
     apiFetch<BillPrinters>("/settings/bill-printers", { method: "PUT", body: JSON.stringify(payload) }),
   receiptPrinter: () => apiFetch<{ printerMode?: "system" | "network"; printerHost: string | null; printerPort: number | null; printerName: string | null }>("/settings/receipt-printer"),
   updateReceiptPrinter: (payload: { printerMode: "system" | "network"; printerName?: string; printerHost?: string; printerPort: number }) =>

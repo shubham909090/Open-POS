@@ -156,11 +156,11 @@ function AlcoholItemCreatePanel({
       : rupeesToPaise(productPrice) > 0);
 
   return (
-    <section className="panel alcohol-form-panel">
-      <div className="panel-title">
+    <details className="panel alcohol-form-panel alcohol-create-details">
+      <summary className="panel-title">
         <h2>Add alcohol item</h2>
-        <span>{type === "plain_liquor" ? "Liquor stock" : "Cocktail recipe"}</span>
-      </div>
+        <span>Liquor stock or cocktail recipe</span>
+      </summary>
       <form
         className="alcohol-form"
         onSubmit={(event) => {
@@ -289,7 +289,7 @@ function AlcoholItemCreatePanel({
           </>
         )}
         <button type="submit" disabled={!canSubmit || create.isPending}>
-          Add alcohol item
+          {create.isPending ? "Adding…" : "Add alcohol item"}
         </button>
       </form>
       <details className="setup-subdetails csv-import-details alcohol-import-details">
@@ -316,7 +316,7 @@ function AlcoholItemCreatePanel({
           />
         </div>
       </details>
-    </section>
+    </details>
   );
 }
 

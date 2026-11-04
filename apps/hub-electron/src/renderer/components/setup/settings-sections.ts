@@ -21,9 +21,9 @@ export const setupSections = [
     id: "general",
     title: "General",
     description:
-      "Business day and kitchen display preferences for this restaurant.",
+      "Restaurant name and logo, business day and kitchen display preferences.",
     group: "Restaurant",
-    keywords: "business day date rollover kds served kitchen operation",
+    keywords: "restaurant name logo brand identity bill header business day date rollover kds served kitchen operation",
     icon: CalendarDays,
   },
   {

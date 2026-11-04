@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { MenuItem } from "./hub-api.js";
+import { readTableOrderMode, writeTableOrderMode, type TableOrderMode } from "./lib/table-order.js";
 
 export type HubView = "setup" | "orders" | "alcohol" | "kitchen" | "reports" | "advanced";
 export type OrderPanel = "new" | "sent" | "bill";
@@ -28,6 +29,8 @@ interface HubUiState {
   recentMenuItemIds: string[];
   selectedKdsUnitId: string | null;
   drafts: Record<string, Record<string, DraftItem>>;
+  tableOrderMode: TableOrderMode;
+  setTableOrderMode: (mode: TableOrderMode) => void;
   setView: (view: HubView) => void;
   selectTable: (tableId: string) => void;
   clearSelectedTable: () => void;
@@ -49,6 +52,11 @@ export const useHubStore = create<HubUiState>((set) => ({
   recentMenuItemIds: [],
   selectedKdsUnitId: null,
   drafts: {},
+  tableOrderMode: readTableOrderMode(),
+  setTableOrderMode: (tableOrderMode) => {
+    writeTableOrderMode(tableOrderMode);
+    set({ tableOrderMode });
+  },
   setView: (view) => set({ view }),
   selectTable: (tableId) => set({ selectedTableId: tableId, orderPanel: "new" }),
   clearSelectedTable: () => set({ selectedTableId: null, orderPanel: "new" }),

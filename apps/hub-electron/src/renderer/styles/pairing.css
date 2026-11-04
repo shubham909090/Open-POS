@@ -90,4 +90,10 @@
 .settings-workspace .role-card.active strong { color: var(--accent-dark); }
 .settings-workspace .role-card.active span, .settings-workspace .role-card.active small { color: var(--muted); }
 .settings-workspace .role-card small { font-size: 11px; line-height: 1.6; }
+.settings-workspace .role-card { text-align: left; justify-items: start; align-content: start; }
+.settings-workspace .pairing-create-form { grid-template-columns: minmax(0, 1fr) auto; }
+.pairing-revoke-button { color: var(--danger); }
+.pairing-payload-panel summary { cursor: pointer; font-size: 13px; font-weight: 500; }
+.pairing-payload-panel[open] > span { display: block; margin-top: 10px; }
+@media (max-width: 720px) { .settings-workspace .pairing-create-form { grid-template-columns: minmax(0, 1fr); } }
 @container (max-width: 680px) { .role-card-grid { grid-template-columns: minmax(0, 1fr); } .role-card { min-height: 80px; } }

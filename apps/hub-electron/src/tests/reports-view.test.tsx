@@ -239,8 +239,6 @@ describe("reports history payment edit", () => {
       masterApproval: approval
     }));
     expect(screen.getByText("#7")).toBeTruthy();
-    expect(screen.getByText("bill-1")).toBeTruthy();
-    expect(screen.getByText("order-1")).toBeTruthy();
     expect(screen.getByText("Local Admin")).toBeTruthy();
     expect(screen.getAllByText("+₹180.00").length).toBeGreaterThan(0);
 

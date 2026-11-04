@@ -146,19 +146,6 @@
   @apply col-span-full text-sm font-medium leading-5 text-muted;
 }
 
-.printer-test-actions {
-  @apply grid min-w-0 gap-2;
-  grid-template-columns: minmax(0, 1fr);
-}
-
-.printer-test-actions .utility-action {
-  @apply min-h-11 w-full min-w-0 justify-start px-3 text-left;
-}
-
-.printer-test-actions .utility-action svg {
-  @apply shrink-0;
-}
-
 .quiet-button {
   @apply border-line bg-panel text-ink hover:bg-wash;
 }

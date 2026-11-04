@@ -17,6 +17,7 @@ import type { HubView } from "../store.js";
 import { useKeyboardListNavigation } from "../hooks/use-keyboard-list-navigation.js";
 import { Button } from "./ui/button.js";
 import { Dialog } from "./ui/dialog.js";
+import { useRestaurantBranding } from "../lib/branding.js";
 
 export const hubNavigation = [
   {
@@ -95,6 +96,7 @@ export function HubNavigation({
     () => localStorage.getItem("hub-sidebar-collapsed") === "true",
   );
   const [searchOpen, setSearchOpen] = useState(false);
+  const brand = useRestaurantBranding();
   const searchOpener = useRef<HTMLElement | null>(null);
   const openSearch = () => {
     searchOpener.current =
@@ -121,12 +123,12 @@ export function HubNavigation({
         aria-label="Main navigation"
       >
         <div className="workspace-brand">
-          <span className="workspace-monogram" aria-hidden="true">
-            g.
+          <span className={`workspace-mark${brand.hasCustomLogo ? " custom" : ""}`} aria-hidden="true">
+            <img src={brand.logoUrl} alt="" />
           </span>
           <div className="workspace-brand-copy">
-            <strong>Gaurav</strong>
-            <span>Restaurant workspace</span>
+            <strong title={brand.name ?? undefined}>{brand.name ?? "Gaurav POS"}</strong>
+            <span>{brand.name ? "Gaurav POS hub" : "Restaurant hub"}</span>
           </div>
           <Button
             variant="ghost"

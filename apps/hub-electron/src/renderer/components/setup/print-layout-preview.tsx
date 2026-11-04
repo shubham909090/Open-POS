@@ -1,118 +1,118 @@
 import { printFontPoints } from "@gaurav-pos/shared";
 import type { CSSProperties } from "react";
 
-import {
-  parsePrintStyleLine,
-  renderBillTicketForPrint,
-  renderKotTicketForPrint
-} from "../../../domain/tickets.js";
-import type { PrintLayoutSettings, ProductionUnit } from "../../hub-api.js";
+import { parsePrintStyleLine, renderBillTicketForPrint, renderKotTicketForPrint } from "../../../domain/tickets.js";
+import type { PrintLayoutSettings } from "../../hub-api.js";
+
+type PreviewQr = { imageDataUrl: string; upiUri: string; sizeMm?: number } | null;
+
+/** Printable width in mm for each characters-per-line preset, used to scale images like the printer does. */
+function printableWidthMm(lineWidthChars: number) {
+  if (lineWidthChars <= 25) return 40;
+  if (lineWidthChars <= 28) return 45;
+  if (lineWidthChars <= 32) return 48;
+  return 72;
+}
 
 export function PrintLayoutPreview({
   draft,
   scope,
-  selectedUnitId,
-  units,
+  unitName,
   paymentQr,
+  restaurantName,
+  restaurantLogo,
 }: {
   draft: PrintLayoutSettings;
   scope: "receipt" | "unit";
-  selectedUnitId: string;
-  units: ProductionUnit[];
-  paymentQr?: { imageDataUrl: string; upiUri: string; sizeMm?: number } | null;
+  unitName: string;
+  paymentQr?: PreviewQr;
+  restaurantName: string;
+  restaurantLogo: string | null;
 }) {
-  const preview = scope === "receipt"
-    ? renderReceiptPreview(draft, paymentQr)
-    : renderKotPreview(draft, selectedUnitId, units);
-  const previewLines = preview.split(/\r?\n/).map((line) =>
-    parsePrintStyleLine(line) ?? {
-      text: line,
-      size: "normal" as const,
-      bold: false,
-      align: "left" as const,
-      graphicLine: false
-    }
-  ).filter((line) => !("paperWidthChars" in line && line.paperWidthChars));
+  const preview = scope === "receipt" ? renderReceiptPreview(draft, paymentQr ?? null, restaurantName, restaurantLogo) : renderKotPreview(draft, unitName);
+  const lines = preview
+    .split(/\r?\n/)
+    .map((line) => parsePrintStyleLine(line) ?? { text: line, size: "normal" as const, bold: false, align: "left" as const, graphicLine: false })
+    .filter((line) => !("paperWidthChars" in line && line.paperWidthChars));
+  const printableMm = printableWidthMm(draft.lineWidthChars);
+  const imageWidth = (mm: number) => `${Math.min(100, (mm / printableMm) * 100)}%`;
 
   return (
-    <div className="print-preview print-preview-styled">
-      {previewLines.map((line, index) => (
-        "qrImageDataUrl" in line && line.qrImageDataUrl ? (
-          <div key={`qr-${index}`} style={{ textAlign: "center", padding: "8px 0" }}>
-            <img src={line.qrImageDataUrl} alt="Payment QR" style={{ display: "inline-block", width: `${Math.min(100, ((line.qrSizeMm ?? 32) / (draft.lineWidthChars <= 25 ? 40 : draft.lineWidthChars <= 28 ? 45 : draft.lineWidthChars <= 32 ? 48 : 72)) * 100)}%`, imageRendering: "pixelated" }} />
+    <div className="print-paper" style={{ "--paper-chars": draft.lineWidthChars } as CSSProperties}>
+      {lines.map((line, index) =>
+        "logoImageDataUrl" in line && line.logoImageDataUrl ? (
+          <div key={`logo-${index}`} className="print-paper-image">
+            <img src={line.logoImageDataUrl} alt="Restaurant logo" style={{ width: imageWidth(line.logoWidthMm ?? 32) }} />
+          </div>
+        ) : "qrImageDataUrl" in line && line.qrImageDataUrl ? (
+          <div key={`qr-${index}`} className="print-paper-image">
+            <img src={line.qrImageDataUrl} alt={`Payment QR, ${line.qrSizeMm ?? 32} mm`} className="qr" style={{ width: imageWidth(line.qrSizeMm ?? 32) }} />
           </div>
         ) : (
           <div key={`${index}-${line.text}`} style={previewLineStyle(line)}>
-            {line.graphicLine ? "\u00a0" : line.text || "\u00a0"}
+            {line.graphicLine ? " " : line.text || " "}
           </div>
-        )
-      ))}
+        ),
+      )}
     </div>
   );
 }
 
-function renderReceiptPreview(draft: PrintLayoutSettings, paymentQr?: { imageDataUrl: string; upiUri: string; sizeMm?: number } | null): string {
+function renderReceiptPreview(draft: PrintLayoutSettings, paymentQr: PreviewQr, restaurantName: string, restaurantLogo: string | null): string {
   return renderBillTicketForPrint({
     ...draft,
     paymentQr,
+    restaurantLogo: restaurantLogo ? { imageDataUrl: restaurantLogo } : null,
     tableName: "T1",
     billId: "TEST-BILL",
     createdAt: "2026-05-15T15:00:00.000Z",
-    restaurantName: draft.restaurantName,
+    restaurantName,
     restaurantAddress: draft.restaurantAddress,
     taxRegistrationText: draft.taxRegistrationText,
     header: draft.billHeader,
     footer: draft.billFooter,
-    items: [{ name: "Paneer Tikka", quantity: 2, unitPricePaise: 22000, lineTotalPaise: 44000 }],
-    subtotalPaise: 44000,
-    taxPaise: draft.showTaxBreakup ? 2200 : 0,
-    totalPaise: 44000,
+    items: [
+      { name: "Paneer Tikka", quantity: 2, unitPricePaise: 22000, lineTotalPaise: 44000 },
+      { name: "Butter Naan", quantity: 3, unitPricePaise: 5500, lineTotalPaise: 16500 },
+    ],
+    subtotalPaise: 60500,
+    taxPaise: draft.showTaxBreakup ? 3025 : 0,
+    totalPaise: 60500,
     taxBreakdown: draft.showTaxBreakup
       ? [
-          { name: "CGST", rateBps: 250, amountPaise: 1100 },
-          { name: "SGST", rateBps: 250, amountPaise: 1100 },
+          { name: "CGST", rateBps: 250, amountPaise: 1513 },
+          { name: "SGST", rateBps: 250, amountPaise: 1512 },
         ]
       : [],
-    payments: draft.showPaymentSplit ? [{ method: "cash", amountPaise: 44000 }] : []
+    payments: draft.showPaymentSplit ? [{ method: "cash", amountPaise: 60500 }] : [],
   });
 }
 
-function renderKotPreview(draft: PrintLayoutSettings, selectedUnitId: string, units: ProductionUnit[]): string {
+function renderKotPreview(draft: PrintLayoutSettings, unitName: string): string {
   return renderKotTicketForPrint({
     sequence: 1,
     type: "new",
     tableName: "T1",
-    productionUnitName: units.find((unit) => unit.id === selectedUnitId)?.name ?? "Kitchen",
+    productionUnitName: unitName,
     ticketLabel: "KOT",
     captainId: "Captain",
     createdAt: "2026-05-15T15:00:00.000Z",
     items: [{ name: "Paneer Tikka", quantityDelta: 2, note: "No onion" }],
     header: draft.kotHeader,
     footer: draft.kotFooter,
-    ...draft
+    ...draft,
   });
 }
 
-function previewLineStyle(line: {
-  size: "small" | "normal" | "large";
-  sizeLevel?: number;
-  bold: boolean;
-  align: "left" | "center" | "right";
-  graphicLine?: boolean;
-}): CSSProperties {
-  if (line.graphicLine) {
-    return {
-      borderTop: "1px solid currentColor",
-      height: 10,
-      margin: "4px 0",
-      opacity: 0.9
-    };
-  }
+function previewLineStyle(line: { size: "small" | "normal" | "large"; sizeLevel?: number; bold: boolean; align: "left" | "center" | "right"; graphicLine?: boolean }): CSSProperties {
+  if (line.graphicLine) return { borderTop: "1px solid currentColor", height: 10, margin: "4px 0", opacity: 0.9 };
+  const points = line.sizeLevel === undefined ? (line.size === "large" ? 14 : line.size === "small" ? 9 : 11) : printFontPoints(line.size, line.sizeLevel);
+  // 11pt is the printer's normal size; scale relative to the paper's 1ch so wide text still fits the roll.
   return {
-    fontSize: line.sizeLevel === undefined ? line.size === "large" ? 16 : line.size === "small" ? 11 : 13 : printFontPoints(line.size, line.sizeLevel) * 13 / 11,
-    fontWeight: line.bold ? 800 : 500,
-    lineHeight: line.sizeLevel === undefined ? line.size === "large" ? "22px" : line.size === "small" ? "15px" : "18px" : `${Math.ceil(printFontPoints(line.size, line.sizeLevel) * 18 / 11)}px`,
+    fontSize: `${points / 11}em`,
+    fontWeight: line.bold ? 700 : 400,
+    lineHeight: 1.35,
     textAlign: line.align,
-    whiteSpace: "pre"
+    whiteSpace: "pre",
   };
 }

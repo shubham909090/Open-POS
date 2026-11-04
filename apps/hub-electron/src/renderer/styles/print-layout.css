@@ -1,115 +1,118 @@
-.print-style-grid {
-  @apply grid gap-2;
+/* ---------- Bill printers overview ---------- */
+.printer-overview { display: grid; gap: 12px; min-width: 0; }
+.printer-overview-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px 24px; }
+.printer-overview-head h3, .layout-studio-head h3 { margin: 0; font-size: 14px; font-weight: 600; }
+.printer-overview-head p, .layout-studio-head p { margin: 2px 0 0; max-width: 60ch; font-size: 12px; color: var(--muted); }
+.printer-output { display: flex; align-items: center; gap: 10px; }
+.printer-output-state { font-size: 12px; font-weight: 600; color: var(--warning); }
+.printer-output-state.live { color: var(--accent-dark); }
+
+.bill-printer-list { display: grid; min-width: 0; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
+.bill-printer-row + .bill-printer-row { border-top: 1px solid var(--line); }
+.bill-printer-row.editing { background: var(--wash); }
+.bill-printer-summary { display: grid; grid-template-columns: minmax(150px, 1.1fr) minmax(0, 2.4fr) auto; align-items: center; gap: 16px; min-height: 60px; padding: 10px 14px; }
+.bill-printer-name { display: grid; gap: 1px; min-width: 0; }
+.bill-printer-name strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 600; }
+.bill-printer-name span, .bill-printer-note { font-size: 12px; color: var(--muted); }
+.bill-printer-note { margin: 0; }
+.bill-printer-facts { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) minmax(0, 0.8fr); gap: 12px; margin: 0; min-width: 0; }
+.bill-printer-facts div { display: grid; gap: 1px; min-width: 0; }
+.bill-printer-facts dt { font-size: 11px; color: var(--muted); }
+.bill-printer-facts dd { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-variant-numeric: tabular-nums; }
+.bill-printer-facts dd.missing { color: var(--warning); font-weight: 600; }
+.bill-printer-actions { display: flex; justify-content: flex-end; gap: 6px; }
+.bill-printer-actions button { min-height: 32px; gap: 6px; padding: 0 10px; font-size: 12px; }
+
+.bill-printer-editor { padding: 4px 14px 14px; }
+.bill-printer-editor fieldset { display: grid; gap: 14px; margin: 0; padding: 14px 0 0; border: 0; border-top: 1px solid var(--line); min-width: 0; }
+.bill-printer-editor-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 16px; align-items: start; }
+.bill-printer-editor-grid label, .bill-printer-editor-grid .field-group { display: grid; gap: 6px; min-width: 0; font-size: 12px; font-weight: 600; }
+.bill-printer-editor-grid small { font-size: 11px; font-weight: 400; color: var(--muted); }
+.bill-printer-editor .span-2, .layout-fields .span-2 { grid-column: 1 / -1; }
+.field-with-action { display: flex; gap: 8px; min-width: 0; }
+.field-with-action select { flex: 1; min-width: 0; }
+.field-with-action button { flex-shrink: 0; }
+.form-actions.start { justify-content: flex-start; }
+.form-actions small { font-size: 12px; color: var(--muted); }
+
+/* ---------- Layout studio: controls scroll with the page, preview stays in view ---------- */
+.layout-studio { display: grid; gap: 14px; min-width: 0; }
+.layout-studio-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px 24px; }
+.layout-target { display: grid; gap: 4px; min-width: 240px; font-size: 12px; font-weight: 600; }
+.layout-studio-body { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 24px; }
+
+.layout-controls { min-width: 0; }
+.layout-controls > fieldset { display: grid; gap: 0; margin: 0; padding: 0; border: 0; min-width: 0; }
+.layout-group { display: grid; gap: 10px; margin: 0; padding: 16px 0; border: 0; border-top: 1px solid var(--line); min-width: 0; }
+.layout-group:first-child { border-top: 0; padding-top: 0; }
+.layout-group h4, .layout-group legend { margin: 0; padding: 0; font-size: 12px; font-weight: 600; color: var(--ink); }
+.layout-fields { display: grid; gap: 10px 14px; }
+.layout-fields.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.layout-fields.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.layout-fields label { display: grid; gap: 4px; min-width: 0; font-size: 12px; font-weight: 500; }
+.layout-fields textarea { min-height: 0; resize: vertical; }
+.layout-hint { margin: 0; font-size: 11px; color: var(--muted); }
+.layout-identity { display: grid; grid-template-columns: auto 1fr; gap: 0 12px; margin: 0; padding: 8px 10px; border-radius: 6px; background: var(--wash); font-size: 12px; }
+.layout-identity span { color: var(--muted); }
+.layout-identity strong { font-weight: 600; }
+.layout-identity small { grid-column: 1 / -1; color: var(--muted); }
+.layout-checks legend { float: left; width: 100%; margin-bottom: 4px; }
+.layout-check-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 2px 14px; }
+.layout-checks label { display: flex; align-items: center; gap: 8px; min-height: 32px; font-size: 12px; cursor: pointer; }
+.layout-checks input { width: 16px; height: 16px; flex-shrink: 0; }
+.layout-actions { position: sticky; bottom: 0; z-index: 1; display: flex; align-items: center; gap: 12px; margin-top: 4px; padding: 12px 0; border-top: 1px solid var(--line); background: var(--panel); }
+.layout-actions small { font-size: 12px; color: var(--muted); }
+
+.layout-preview-pane { position: sticky; top: 16px; display: grid; gap: 6px; align-content: start; width: max-content; max-width: 100%; max-height: calc(100dvh - 32px); overflow: auto; padding: 12px; border-radius: 8px; background: var(--wash); }
+.layout-preview-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; }
+.layout-preview-head strong { font-size: 12px; font-weight: 600; }
+.layout-preview-head span { font-size: 12px; color: var(--muted); }
+.layout-preview-head select { min-height: 30px; max-width: 200px; padding-block: 0; font-size: 12px; }
+.layout-preview-meta { margin: 0; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+/* 1ch ≈ one printed character, so the paper is as wide as the configured line width. */
+.print-paper { box-sizing: content-box; width: calc(var(--paper-chars, 42) * 1ch); padding: 14px 12px 20px; border: 1px solid var(--line); background: #fff; color: #111; box-shadow: 0 1px 2px rgb(24 24 27 / 0.06); font-family: ui-monospace, "Cascadia Mono", Consolas, "Courier New", monospace; font-size: 12px; overflow: hidden; }
+.print-paper-image { padding: 6px 0; text-align: center; }
+.print-paper-image img { display: inline-block; max-width: 100%; filter: grayscale(1); }
+.print-paper-image img.qr { image-rendering: pixelated; }
+
+/* ---------- Section text style controls ---------- */
+.print-style-panel { margin-top: 0; }
+.print-style-grid { display: grid; }
+.print-style-row { display: grid; grid-template-columns: minmax(110px, 0.6fr) minmax(0, 2fr); align-items: center; gap: 12px; padding: 6px 0; border-bottom: 1px solid var(--line); }
+.print-style-row:last-child { border-bottom: 0; }
+.print-style-row > strong { font-size: 12px; font-weight: 500; }
+.print-style-fields { display: grid; grid-template-columns: minmax(140px, 1.4fr) minmax(90px, 0.8fr) auto; align-items: end; gap: 10px; min-width: 0; }
+.print-style-fields label { display: grid; gap: 2px; min-width: 0; font-size: 11px; color: var(--muted); }
+.print-style-fields select { min-height: 32px; font-size: 12px; }
+.print-size-control > span, .print-size-control > small { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.print-size-control output { padding: 0 6px; border-radius: 4px; background: var(--accent-soft); color: var(--accent-dark); font-variant-numeric: tabular-nums; }
+.print-size-control input[type="range"] { width: 100%; min-height: 24px; cursor: pointer; }
+.print-size-control small { font-size: 10px; color: var(--muted); }
+.print-style-fields input[type="checkbox"] { width: 16px; height: 16px; }
+.inline-check { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; font-size: 12px; color: var(--ink); }
+
+@media (max-width: 1180px) {
+  .bill-printer-summary { grid-template-columns: minmax(0, 1fr) auto; }
+  .bill-printer-facts { grid-column: 1 / -1; grid-row: 2; }
+}
+@media (max-width: 1020px) {
+  .layout-studio-body { grid-template-columns: minmax(0, 1fr); }
+  .layout-preview-pane { position: static; width: auto; max-height: none; justify-items: center; }
+}
+@media (max-width: 720px) {
+  .bill-printer-editor-grid, .layout-fields.two, .layout-fields.three, .print-style-row, .print-style-fields { grid-template-columns: minmax(0, 1fr); }
+  .bill-printer-facts { grid-template-columns: minmax(0, 1fr); }
 }
 
-.print-layout-form {
-  @apply content-start;
+/* Respond to the space left by both navigation rails, including Windows scaling. */
+@container (max-width: 760px) {
+  .layout-studio-body { grid-template-columns: minmax(0, 1fr); }
+  .layout-preview-pane { position: static; width: auto; max-height: none; justify-items: center; }
+  .layout-fields.three { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .layout-fields.three > label:first-child { grid-column: 1 / -1; }
+  .print-style-row { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+  .bill-printer-summary { grid-template-columns: minmax(0, 1fr) auto; }
+  .bill-printer-summary > .bill-printer-note { grid-column: 1 / -1; grid-row: 2; }
+  .bill-printer-name strong { white-space: normal; overflow-wrap: anywhere; }
 }
-
-.print-layout-scope-card {
-  @apply col-span-full grid gap-1 rounded-lg border border-accent bg-accent-soft p-3;
-}
-
-.print-layout-scope-card span {
-  @apply text-xs font-semibold normal-case tracking-normal text-accent-dark;
-}
-
-.print-layout-scope-card strong {
-  @apply text-base font-semibold leading-5 text-ink;
-}
-
-.print-layout-scope-card small {
-  @apply text-sm font-semibold leading-5 text-muted;
-}
-
-.print-toggle-grid {
-  @apply col-span-full grid gap-2 rounded-lg border border-line bg-wash p-2;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-}
-
-.print-toggle-card {
-  @apply flex min-h-11 cursor-pointer items-center gap-2 rounded-md border border-line bg-white px-3 py-2 text-sm font-medium text-ink shadow-sm;
-}
-
-.print-toggle-card input[type="checkbox"],
-.print-bold-check input[type="checkbox"] {
-  @apply h-4 w-4 shrink-0 accent-accent;
-}
-
-.print-toggle-card span {
-  @apply min-w-0 leading-5;
-}
-
-.print-style-panel {
-  @apply col-span-full;
-}
-
-.print-style-row {
-  @apply grid items-start gap-3 rounded-md border border-line bg-panel p-3;
-  grid-template-columns: minmax(160px, 0.8fr) minmax(280px, 1.2fr);
-}
-
-.print-style-row > strong {
-  @apply min-w-0 text-sm font-semibold leading-5 text-ink;
-}
-
-.print-style-fields {
-  @apply grid min-w-0 items-end gap-2;
-  grid-template-columns: minmax(96px, 1fr) minmax(96px, 1fr) minmax(88px, auto);
-}
-
-.print-style-fields label {
-  @apply grid min-w-0 gap-1 text-xs font-semibold normal-case tracking-normal text-muted;
-}
-
-.print-style-fields select {
-  @apply min-h-10 w-full rounded-md border border-line bg-white px-2 text-sm font-semibold normal-case text-ink;
-}
-
-.print-size-control > span, .print-size-control > small {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 8px;
-}
-
-.print-size-control output {
-  @apply rounded bg-accent-soft px-2 py-1 text-accent-dark;
-  font-variant-numeric: tabular-nums;
-}
-
-.print-size-control input[type="range"] {
-  @apply w-full cursor-pointer accent-accent;
-  min-height: 28px;
-}
-
-.print-size-control small {
-  @apply text-muted;
-  font-size: 10px;
-  text-transform: none;
-}
-
-.inline-check {
-  @apply inline-flex min-h-10 items-center gap-2 rounded-md border border-line bg-white px-3 text-sm font-medium normal-case text-ink;
-}
-
-@media (max-width: 980px) {
-  .print-style-row,
-  .print-style-fields {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .print-style-fields .inline-check {
-    @apply w-full;
-  }
-}
-.print-layout-fields { display: contents; }
-.print-layout-draft-note { grid-column: 1 / -1; color: var(--muted); font-size: 11px; }
-.settings-workspace .print-layout-scope-card { background: var(--wash); border-color: var(--line); }
-.settings-workspace .print-layout-scope-card strong { font-size: 13px; font-weight: 500; }
-.settings-workspace .print-layout-scope-card small { font-size: 12px; font-weight: 400; }
-.settings-workspace .print-style-row { border-width: 0 0 1px; border-radius: 0; padding: 14px 0; }
-.settings-workspace .print-style-row:last-child { border-bottom: 0; }
-.settings-workspace .print-style-row > strong { font-size: 12px; font-weight: 500; }
-.settings-workspace .print-toggle-card { box-shadow: none; font-size: 12px; font-weight: 400; }
-.settings-workspace .inline-check { font-size: 12px; font-weight: 400; }

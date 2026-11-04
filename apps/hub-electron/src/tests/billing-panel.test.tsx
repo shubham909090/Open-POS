@@ -51,6 +51,20 @@ describe("hub billing shortcuts", () => {
     expect(settleBillMock).not.toHaveBeenCalled();
   });
 
+  it("does not punch or reprint the old bill while a revision is being edited", async () => {
+    const { BillingPanel } = await importBillingPanel();
+    renderBillingPanel(BillingPanel);
+    fireEvent.click(screen.getByRole("button", { name: "Full cash" }));
+    fireEvent.click(screen.getByRole("button", { name: "Revise printed bill" }));
+    fireEvent.keyDown(window, { key: "F8" });
+    fireEvent.keyDown(window, { key: "Enter" });
+    expect(settleBillMock).not.toHaveBeenCalled();
+    expect(requestManagerApprovalMock).not.toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: /Punch bill/ })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.getByRole("button", { name: /Punch bill/ })).toBeTruthy();
+  });
+
   it("renders Rest buttons for each payment method", async () => {
     const { BillingPanel } = await importBillingPanel();
     renderBillingPanel(BillingPanel);

@@ -39,7 +39,7 @@ it("preserves separate bill and kitchen drafts across layout switches and backgr
     screen.getByRole<HTMLInputElement>("textbox", { name: "Footer text" });
   fireEvent.change(footer(), { target: { value: "Visit again soon" } });
   fireEvent.change(screen.getByRole("combobox", { name: "Layout for" }), {
-    target: { value: "unit" },
+    target: { value: "kitchen" },
   });
   expect(footer().value).toBe("Kitchen copy");
   fireEvent.change(footer(), { target: { value: "Kitchen draft" } });
@@ -60,7 +60,7 @@ it("preserves separate bill and kitchen drafts across layout switches and backgr
   );
   expect(footer().value).toBe("Visit again soon");
   fireEvent.change(screen.getByRole("combobox", { name: "Layout for" }), {
-    target: { value: "unit" },
+    target: { value: "kitchen" },
   });
   expect(footer().value).toBe("Kitchen draft");
 });

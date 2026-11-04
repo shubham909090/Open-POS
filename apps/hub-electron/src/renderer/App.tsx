@@ -52,6 +52,7 @@ import "./styles/order-billing.css";
 import "./styles/order-revision.css";
 import "./styles/order-state-editor.css";
 import "./styles/order-transfer.css";
+import "./styles/order-workspace.css";
 import "./styles/printer.css";
 import "./styles/print-layout.css";
 import "./styles/pairing.css";
@@ -107,6 +108,10 @@ function HubShell() {
     sessionStatus.data?.managerPinConfigured ??
     true;
   const firstRunNeedsPin = sessionStatus.data?.managerPinConfigured === false;
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: "instant" });
+  }, [view]);
 
   useEffect(() => {
     const handleFocusRepair = (event: KeyboardEvent) => {

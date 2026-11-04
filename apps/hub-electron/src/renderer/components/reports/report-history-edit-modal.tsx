@@ -113,21 +113,21 @@ function ReportHistoryEditModal({
   fillHistoryPaymentRemainingOnFocus: (method: HistoryPaymentMethod) => void;
 }) {
   return (
-    <Dialog open onOpenChange={(open) => { if (!open) onClose(); }} title={`Edit Bill #${bill.billNumber ?? bill.billId}`} size="wide">
+    <Dialog open onOpenChange={(open) => { if (!open) onClose(); }} title={`Edit bill #${bill.billNumber ?? bill.billId}`} size="wide" className="history-edit-dialog">
       <div className="history-edit-modal">
         <div className="history-edit-summary" aria-label="Edited bill summary">
           <div>
             <span>Subtotal</span>
             <strong>{formatInr(editTotal)}</strong>
           </div>
-          <div>
+          {editDiscountPaise > 0 ? <div>
             <span>Discount</span>
             <strong>{formatInr(editDiscountPaise)}</strong>
-          </div>
-          <div>
+          </div> : null}
+          {editTipPaise > 0 ? <div>
             <span>Tip</span>
             <strong>{formatInr(editTipPaise)}</strong>
-          </div>
+          </div> : null}
           <div className="final">
             <span>Final total</span>
             <strong>{formatInr(editFinalTotal)}</strong>
@@ -136,8 +136,7 @@ function ReportHistoryEditModal({
         <div className="history-edit-workbench">
           <section className="history-edit-money">
             <div className="mini-title">
-              <strong>Money</strong>
-              <span>Payment total {formatInr(editPaymentTotalPaise)}</span>
+              <strong>Payment and adjustments</strong>
             </div>
             <label>
               Bill name
@@ -177,7 +176,7 @@ function ReportHistoryEditModal({
                   {PAYMENT_METHODS.map((method) => (
                     <label key={method}>
                       <span>{PAYMENT_METHOD_LABELS[method]}</span>
-                      <div className="payment-field-row">
+                      <div className="payment-input-row">
                         <input
                           aria-label={`History ${PAYMENT_METHOD_LABELS[method]} amount`}
                           value={editPayments[method]}
@@ -224,9 +223,9 @@ function ReportHistoryEditModal({
                     <span>{formatInr(item.unitPricePaise)} each</span>
                   </div>
                   <div className="history-edit-qty">
-                    <button type="button" className="secondary-button compact" onClick={() => updateEditQty(item.key, -1)}>-</button>
+                    <button type="button" className="secondary-button compact" aria-label={`Reduce ${item.name}`} onClick={() => updateEditQty(item.key, -1)}>-</button>
                     <strong>{item.quantity}</strong>
-                    <button type="button" className="secondary-button compact" onClick={() => updateEditQty(item.key, 1)}>+</button>
+                    <button type="button" className="secondary-button compact" aria-label={`Add ${item.name}`} onClick={() => updateEditQty(item.key, 1)}>+</button>
                   </div>
                 </div>
               ))}
@@ -271,7 +270,7 @@ function ReportHistoryEditModal({
           Master PIN
           <input value={masterPin} onChange={(event) => setMasterPin(event.target.value)} type="password" autoComplete="current-password" />
         </label>
-        {editError ? <p className="warning-text">{editError}</p> : null}
+        {editError ? <p className="warning-text" role="alert">{editError}</p> : null}
         <div className="history-edit-footer">
           <button type="button" className="secondary-button" onClick={onClose}>Cancel</button>
           <button type="button" className="secondary-button" disabled={!canSaveEdit} onClick={onSavePrint}>

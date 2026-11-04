@@ -1,35 +1,30 @@
 .bill-history-table {
-  @apply min-w-[1040px];
+  @apply min-w-[860px];
 }
 
 .bill-history-table th:nth-child(1),
 .bill-history-table td:nth-child(1) {
-  @apply min-w-32 whitespace-nowrap;
+  @apply min-w-28;
 }
 
 .bill-history-table th:nth-child(2),
 .bill-history-table td:nth-child(2) {
-  @apply min-w-20 whitespace-nowrap;
+  @apply min-w-16 whitespace-nowrap;
 }
 
 .bill-history-table th:nth-child(3),
 .bill-history-table td:nth-child(3) {
-  @apply min-w-28 whitespace-nowrap;
+  @apply min-w-20 whitespace-nowrap;
 }
 
 .bill-history-table th:nth-child(4),
 .bill-history-table td:nth-child(4) {
-  @apply min-w-56;
+  @apply min-w-40;
 }
 
 .bill-history-table th:nth-child(7),
 .bill-history-table td:nth-child(7) {
-  @apply min-w-64;
-}
-
-.bill-history-table th:nth-child(8),
-.bill-history-table td:nth-child(8) {
-  @apply min-w-44 whitespace-nowrap;
+  @apply min-w-32;
 }
 
 .reports-layout .report-history-panel {
@@ -139,18 +134,33 @@
 .history-item-lines span {
   @apply block;
 }
+.history-items-details > summary { min-height: 24px; padding: 0; border: 0; background: transparent; color: var(--ink); font-size: 13px; cursor: pointer; }
+.history-items-details > summary::after { width: auto; height: auto; padding: 0; border: 0; background: transparent; }
+.history-items-details[open] > summary { margin-bottom: 8px; }
+.history-items-details, .history-breakup-details { border: 0; border-radius: 0; background: transparent; }
+.history-breakup-details { margin-top: 4px; text-align: left; }
+.history-breakup-details > summary { min-height: 20px; padding: 0; border: 0; font-size: 12px; font-weight: 400; color: var(--muted); }
+.history-breakup-details .history-breakup { display: grid; gap: 0; min-width: 120px; padding-top: 4px; }
+.bill-history-table .wrap-cell { min-width: 160px; }
+.bill-history-table .strong-cell small.history-customer-name { display: block; margin: 4px 0 0; padding: 0; border: 0; border-radius: 0; white-space: normal; font-weight: 400; background: transparent; }
+.bill-history-table th:last-child, .bill-history-table td:last-child { position: sticky; right: 0; z-index: 2; background: var(--panel); border-left: 1px solid var(--line); }
+.bill-history-table th:last-child { z-index: 3; background: var(--wash); }
 
 .history-edit-modal {
   @apply grid gap-3;
+  min-height: 0;
+  overflow: auto;
+  scroll-padding-block: 12px 90px;
 }
+.history-edit-dialog { overflow: hidden; grid-template-rows: auto minmax(0, 1fr); }
 
 .history-edit-summary {
-  @apply grid gap-2 rounded-lg border border-line bg-wash p-3;
+  @apply grid gap-4 border-0 border-b border-line bg-transparent pb-3;
   grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
 }
 
 .history-edit-summary > div {
-  @apply grid gap-1 px-3 py-2;
+  @apply grid gap-1;
 }
 
 .history-edit-summary span {
@@ -162,7 +172,7 @@
 }
 
 .history-edit-summary .final {
-  @apply rounded-md bg-accent-soft;
+  @apply bg-transparent;
 }
 
 .history-edit-summary strong,
@@ -179,7 +189,7 @@
 
 .history-edit-money,
 .history-edit-items-panel {
-  @apply grid content-start gap-3 rounded-lg border border-line bg-white p-3;
+  @apply grid content-start gap-3;
 }
 
 .history-payment-actions {
@@ -257,7 +267,15 @@
 
 .history-edit-footer {
   @apply flex-wrap justify-end border-t border-line pt-3;
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  padding-bottom: 4px;
+  background: var(--panel);
 }
+.history-edit-items { gap: 0; padding: 0; background: var(--panel); }
+.history-edit-items .history-edit-row { border: 0; border-radius: 0; padding: 10px; }
+.history-edit-items .history-edit-row + .history-edit-row { border-top: 1px solid var(--line); }
 
 @media (max-width: 980px) {
   .reports-layout .bill-history-row {

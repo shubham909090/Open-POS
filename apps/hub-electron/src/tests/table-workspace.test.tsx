@@ -40,6 +40,17 @@ describe("hub table workspace send actions", () => {
     await waitFor(() => expect(document.activeElement).toBe(screen.getByPlaceholderText("Search menu item")));
   });
 
+  it("shows only sent items in the bill total and explains any unsent draft", async () => {
+    const { TableWorkspace, useHubStore } = await importWorkspace();
+    tableOrderMock.mockResolvedValue(tableOrder(1));
+    seedDraft(useHubStore);
+    useHubStore.setState({ orderPanel: "bill" });
+    const { container } = renderWorkspace(TableWorkspace);
+    await screen.findByText(/unsent items are not included in this bill/);
+    expect(container.querySelector('.ticket-total')?.textContent).toBe('Sent total₹300.00');
+    expect(screen.queryByText("Table + draft")).toBeNull();
+  });
+
   it("requires a table request to recover before showing bill controls", async () => {
     const { TableWorkspace, useHubStore } = await importWorkspace();
     tableOrderMock.mockRejectedValueOnce(new Error("Hub is unavailable")).mockResolvedValue(null);

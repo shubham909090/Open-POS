@@ -27,7 +27,7 @@ export function KitchensCountersCard({
 }) {
   return (
     <SetupCard
-      title="Kitchens And Counters"
+      title="Kitchens and counters"
       done={bootstrap.productionUnits.some((unit) => unit.active)}
       icon={<ChefHat size={20} />}
       summary={`${bootstrap.productionUnits.filter((unit) => unit.active).length} active kitchens/counters`}

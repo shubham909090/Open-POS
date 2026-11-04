@@ -27,7 +27,8 @@ function BillRevisionEditor({
   existingPaid,
   onSettled,
   setNotice,
-  requestManagerApproval
+  requestManagerApproval,
+  onEditingChange,
 }: {
   tableOrder: TableOrder;
   menuItems: MenuItem[];
@@ -35,6 +36,7 @@ function BillRevisionEditor({
   onSettled: () => Promise<void>;
   setNotice: NoticeSetter;
   requestManagerApproval: ManagerApprovalRequest;
+  onEditingChange?: (editing: boolean) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<RevisionItem[]>([]);
@@ -83,6 +85,7 @@ function BillRevisionEditor({
       if (!result) return;
       if (pendingScopes.current["bill-revise"]) operationKeys.clear("bill-revise", pendingScopes.current["bill-revise"]);
       setOpen(false);
+      onEditingChange?.(false);
       await onSettled();
       setNotice({ tone: "good", text: "Bill revised and totals refreshed." });
     },
@@ -106,6 +109,7 @@ function BillRevisionEditor({
       }));
     setItems(rows);
     setOpen(true);
+    onEditingChange?.(true);
   }
 
   function changeQty(key: string, delta: number) {
@@ -161,7 +165,7 @@ function BillRevisionEditor({
 
   if (!open) {
     return (
-      <button type="button" className="secondary-button" disabled={Boolean(bill.is_nc) || existingPaid > 0} onClick={openEditor}>
+      <button type="button" className="secondary-button revision-trigger" title={bill.is_nc ? "NC bills cannot be revised here" : existingPaid > 0 ? "Bills with recorded payments cannot be revised here" : undefined} disabled={Boolean(bill.is_nc) || existingPaid > 0} onClick={openEditor}>
         Revise printed bill
       </button>
     );
@@ -171,7 +175,7 @@ function BillRevisionEditor({
     <div className="revision-box">
       <div className="revision-head">
         <strong>Revise bill items</strong>
-        <button type="button" onClick={() => setOpen(false)}>Cancel</button>
+        <button type="button" className="secondary-button" onClick={() => { setOpen(false); onEditingChange?.(false); }}>Cancel</button>
       </div>
       <div className="revision-add-row">
         <input
@@ -179,8 +183,10 @@ function BillRevisionEditor({
           onChange={(event) => setSearch(event.target.value)}
           onKeyDown={keyboard.onKeyDown}
           placeholder="Search dish to add"
+          aria-label="Search dishes for bill revision"
         />
         <select
+          aria-label="Dish to add to revision"
           value={addMenuItemId}
           onChange={(event) => {
             const nextItemId = event.target.value;
@@ -196,7 +202,7 @@ function BillRevisionEditor({
           ))}
         </select>
         {addVariants.length > 1 ? (
-          <select value={addVariantId} onChange={(event) => setAddVariantId(event.target.value)}>
+          <select aria-label="Variant to add to revision" value={addVariantId} onChange={(event) => setAddVariantId(event.target.value)}>
             {addVariants.map((variant) => (
               <option key={variant.id ?? "default"} value={variant.id ?? ""}>
                 {variant.kind === "default" ? "Regular" : variant.label} · {formatInr(variant.price_paise)}
@@ -238,14 +244,14 @@ function BillRevisionEditor({
           onPlus: () => changeQty(item.key, 1)
         }))}
       />
-      <button
+      <div className="revision-actions"><div><span>Revised items total</span><strong>{formatInr(items.reduce((total, item) => total + item.quantity * item.pricePaise, 0))}</strong></div><button
         type="button"
-        className="secondary-button"
+        className="primary-button"
         disabled={reviseBill.isPending || items.every((item) => item.quantity <= 0)}
         onClick={() => reviseBill.mutate()}
       >
         {reviseBill.isPending ? "Saving revision..." : "Save revised bill"}
-      </button>
+      </button></div>
     </div>
   );
 }

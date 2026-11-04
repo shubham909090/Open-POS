@@ -121,7 +121,7 @@ export function HubConnectionCard({
 
   return (
     <SetupCard
-      title="Hub Connection And Security"
+      title="Hub connection and security"
       done={connectionConfigured}
       icon={<Settings size={20} />}
       summary={connectionConfigured ? "Cloud connection saved" : "Add cloud connection"}
@@ -168,13 +168,14 @@ export function HubConnectionCard({
               </button>
               <button
                 type="button"
+                className="secondary-button"
                 onClick={async () => {
                   const approval = await approveConnectionAction("Test cloud connection", "Test hub cloud connection");
                   if (approval) testHubConnection.mutate(approval.pin);
                 }}
                 disabled={testHubConnection.isPending}
               >
-                Test cloud connection
+                {testHubConnection.isPending ? "Testing…" : "Test cloud connection"}
               </button>
               <button type="button" className="secondary-button" onClick={() => checkLicense.mutate()} disabled={checkLicense.isPending}>
                 Check license
@@ -219,13 +220,13 @@ export function HubConnectionCard({
               </button>
               <button
                 type="button"
-                disabled={saveHubConnection.isPending}
+                disabled={saveHubConnection.isPending || (!connectionConfigured && !cloudUrl.trim() && !installationId.trim() && !syncSecret.trim())}
                 onClick={async () => {
                   const approval = await approveConnectionAction("Save cloud connection", "Save hub cloud connection");
                   if (approval) saveHubConnection.mutate(approval.pin);
                 }}
               >
-                Save connection
+                {saveHubConnection.isPending ? "Saving…" : "Save connection"}
               </button>
               {connectionConfigured ? (
                 <button type="button" className="secondary-button" onClick={() => {
@@ -252,7 +253,7 @@ export function HubConnectionCard({
                 }}
                 disabled={testHubConnection.isPending}
               >
-                Test cloud connection
+                {testHubConnection.isPending ? "Testing…" : "Test cloud connection"}
               </button>
             </div>
           </form>

@@ -1,9 +1,11 @@
 .hub-shell { display: grid; grid-template-columns: auto minmax(0, 1fr); min-height: 100dvh; background: var(--panel); color: var(--ink); }
 .side-rail { position: sticky; top: 0; display: flex; flex-direction: column; width: 216px; height: 100dvh; padding: 20px 12px 12px; background: var(--sidebar); border-right: 1px solid var(--line); gap: 18px; }
 .workspace-brand { display: flex; align-items: center; gap: 10px; padding: 0 4px; min-height: 36px; }
-.workspace-monogram { display: grid; place-items: center; flex-shrink: 0; width: 32px; height: 32px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); color: var(--ink); font-size: 23px; font-weight: 600; line-height: 1; letter-spacing: -.1em; padding-right: 3px; }
+.workspace-mark { display: grid; place-items: center; flex-shrink: 0; width: 32px; height: 32px; overflow: hidden; border-radius: 8px; }
+.workspace-mark img { width: 100%; height: 100%; object-fit: contain; }
+.workspace-mark.custom { border: 1px solid var(--line); background: var(--panel); padding: 2px; }
 .workspace-brand-copy { display: grid; flex: 1; gap: 1px; white-space: nowrap; min-width: 0; }
-.workspace-brand-copy strong { font-size: 14px; font-weight: 600; letter-spacing: -.025em; }
+.workspace-brand-copy strong { overflow: hidden; text-overflow: ellipsis; font-size: 14px; font-weight: 600; letter-spacing: -.025em; }
 .workspace-brand-copy span { font-size: 10px; color: var(--muted); }
 .rail-collapse { color: var(--muted); background: transparent; margin-left: auto; }
 .workspace-search { display: flex; justify-content: flex-start; gap: 8px; background: transparent; border: 1px solid var(--line); color: var(--muted); padding: 0 10px; min-height: 34px; font-size: 12px; }

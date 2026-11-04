@@ -73,6 +73,7 @@ export function SettingsWorkspace<Id extends string>({
   }, []);
 
   function select(id: Id) {
+    if (id !== selected) window.scrollTo({ top: 0, behavior: "instant" });
     setSelected(id);
     setVisited((value) => (value.includes(id) ? value : [...value, id]));
     window.localStorage.setItem(storageKey, id);

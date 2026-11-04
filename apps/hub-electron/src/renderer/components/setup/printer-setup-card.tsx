@@ -1,12 +1,21 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChefHat, Printer } from "lucide-react";
-import { useContext, useEffect, useState } from "react";
+import { ChefHat, Pencil, Printer } from "lucide-react";
+import { useContext, useState } from "react";
 
-import { hubApi, type Bootstrap } from "../../hub-api.js";
+import { hubApi, type BillPrinterProfile, type BillPrinterSlot, type Bootstrap } from "../../hub-api.js";
 import type { ManagerApprovalRequest } from "../../hooks/use-manager-approval.js";
 import { messageOf, type NoticeSetter } from "../../lib/format.js";
+import {
+  BillPrinterEditor,
+  billPrinterConnectionPayload,
+  billPrinterDraft,
+  defaultBillPrinterLabel,
+  type BillPrinterDraft,
+} from "./bill-printer-editor.js";
 import { PrintLayoutEditor } from "./print-layout-editor.js";
 import { SettingsPageActiveContext, SetupCard } from "./setup-card.js";
+
+const BILL_PRINTER_SLOTS: BillPrinterSlot[] = ["default", "alternate"];
 
 export function PrinterSetupCard({
   bootstrap,
@@ -21,199 +30,87 @@ export function PrinterSetupCard({
 }) {
   const queryClient = useQueryClient();
   const active = useContext(SettingsPageActiveContext);
-  const [receiptLabel, setReceiptLabel] = useState("Main bill printer");
-  const [receiptPrinterMode, setReceiptPrinterMode] = useState<
-    "system" | "network"
-  >("system");
-  const [receiptPrinterName, setReceiptPrinterName] = useState("");
-  const [receiptHost, setReceiptHost] = useState("");
-  const [receiptPort, setReceiptPort] = useState("9100");
-  const [alternateLabel, setAlternateLabel] = useState("Second bill printer");
-  const [alternatePrinterMode, setAlternatePrinterMode] = useState<
-    "system" | "network"
-  >("system");
-  const [alternatePrinterName, setAlternatePrinterName] = useState("");
-  const [alternateHost, setAlternateHost] = useState("");
-  const [alternatePort, setAlternatePort] = useState("9100");
-  const [printerEditing, setPrinterEditing] = useState(false);
-  const [printerDirty, setPrinterDirty] = useState(false);
+  const [editingSlot, setEditingSlot] = useState<BillPrinterSlot | null>(null);
   const [systemPrintersLoading, setSystemPrintersLoading] = useState(false);
   const printerOutputMode = bootstrap.setup?.printerOutputMode ?? "test";
-  const billPrinters = useQuery({
-    queryKey: ["bill-printers"],
-    queryFn: hubApi.billPrinters,
-    enabled: active,
-  });
-  const systemPrinters = useQuery({
-    queryKey: ["system-printers"],
-    queryFn: () => hubApi.systemPrinters(),
-    enabled: false,
-  });
-  const printLayouts = useQuery({
-    queryKey: ["print-layouts"],
-    queryFn: hubApi.printLayouts,
-    enabled: active,
-  });
+  const billPrinters = useQuery({ queryKey: ["bill-printers"], queryFn: hubApi.billPrinters, enabled: active });
+  const systemPrinters = useQuery({ queryKey: ["system-printers"], queryFn: () => hubApi.systemPrinters(), enabled: false });
+  const printLayouts = useQuery({ queryKey: ["print-layouts"], queryFn: hubApi.printLayouts, enabled: active });
   const paymentQr = useQuery({
     queryKey: ["payment-qr"],
     queryFn: hubApi.paymentQr,
     enabled: active,
     refetchInterval: active ? 30_000 : false,
   });
-  const defaultBillPrinter = billPrinters.data?.default;
-  const alternateBillPrinter = billPrinters.data?.alternate;
-  const savedReceiptMode =
-    defaultBillPrinter?.printerMode ??
-    (defaultBillPrinter?.printerName ? "system" : "network");
-  const receiptPrinterConfigured = Boolean(defaultBillPrinter?.configured);
-  const alternatePrinterConfigured = Boolean(alternateBillPrinter?.configured);
-  const receiptPrinterTarget =
-    savedReceiptMode === "system"
-      ? defaultBillPrinter?.printerName
-      : defaultBillPrinter?.printerHost
-        ? `${defaultBillPrinter.printerHost}:${defaultBillPrinter.printerPort ?? 9100}`
-        : "";
-  const alternatePrinterTarget =
-    alternateBillPrinter?.printerMode === "system"
-      ? alternateBillPrinter.printerName
-      : alternateBillPrinter?.printerHost
-        ? `${alternateBillPrinter.printerHost}:${alternateBillPrinter.printerPort ?? 9100}`
-        : "";
-  const receiptPrinterReady = receiptPrinterConfigured
-    ? receiptPrinterTarget
-    : "No cash counter printer selected";
-  const printerCardSummary = `${printerOutputMode === "live" ? "Live" : "Test"} · ${receiptPrinterConfigured ? receiptPrinterReady : "cash counter not set"}${alternatePrinterConfigured ? ` · ${alternateBillPrinter?.label}` : ""}`;
-  const canSaveReceiptPrinter =
-    receiptPrinterMode === "system"
-      ? Boolean(receiptPrinterName)
-      : Boolean(receiptHost.trim());
-  const systemPrinterLabel = (printerName: string) =>
-    systemPrinters.data?.find((printer) => printer.name === printerName)
-      ?.displayName ?? printerName;
-  const draftReceiptTarget =
-    receiptPrinterMode === "system"
-      ? receiptPrinterName
-        ? systemPrinterLabel(receiptPrinterName)
-        : "Choose a PC printer"
-      : receiptHost.trim()
-        ? `${receiptHost.trim()}:${receiptPort || 9100}`
-        : "Enter LAN printer IP";
-  const draftAlternateTarget =
-    alternatePrinterMode === "system"
-      ? alternatePrinterName
-        ? systemPrinterLabel(alternatePrinterName)
-        : "Not selected"
-      : alternateHost.trim()
-        ? `${alternateHost.trim()}:${alternatePort || 9100}`
-        : "Not selected";
-  const printerSummaryDefault =
-    printerEditing || !receiptPrinterConfigured
-      ? draftReceiptTarget
-      : receiptPrinterReady;
-  const printerSummaryAlternate =
-    printerEditing || !receiptPrinterConfigured
-      ? draftAlternateTarget
-      : alternatePrinterConfigured
-        ? alternatePrinterTarget
-        : "Not configured";
-
-  useEffect(() => {
-    if (!billPrinters.data || printerDirty) return;
-    setReceiptLabel(billPrinters.data.default.label);
-    setReceiptPrinterMode(billPrinters.data.default.printerMode);
-    setReceiptPrinterName(billPrinters.data.default.printerName ?? "");
-    setReceiptHost(billPrinters.data.default.printerHost ?? "");
-    setReceiptPort(String(billPrinters.data.default.printerPort ?? 9100));
-    setAlternateLabel(billPrinters.data.alternate.label);
-    setAlternatePrinterMode(billPrinters.data.alternate.printerMode);
-    setAlternatePrinterName(billPrinters.data.alternate.printerName ?? "");
-    setAlternateHost(billPrinters.data.alternate.printerHost ?? "");
-    setAlternatePort(String(billPrinters.data.alternate.printerPort ?? 9100));
-  }, [billPrinters.data, printerDirty]);
+  const printers = billPrinters.data;
+  const mainConfigured = Boolean(printers?.default.configured);
+  const receiptLayoutWidth = printLayouts.data?.receipt.lineWidthChars;
+  const systemPrinterLabel = (name: string) => systemPrinters.data?.find((printer) => printer.name === name)?.displayName ?? name;
+  const cardSummary = `${printerOutputMode === "live" ? "Live" : "Test mode"} · ${
+    printers ? (mainConfigured ? printers.default.label : "main bill printer not set") : "loading printers"
+  }${printers?.alternate.configured ? ` + ${printers.alternate.label}` : ""}`;
 
   const invalidate = () => onChanged();
   const refreshSystemPrinters = async () => {
     if (systemPrintersLoading) return;
     setSystemPrintersLoading(true);
     try {
-      const printers = await hubApi.systemPrinters({ refresh: true });
-      queryClient.setQueryData(["system-printers"], printers);
-      setNotice({
-        tone: "good",
-        text: `${printers.length} PC printers loaded.`,
-      });
+      const list = await hubApi.systemPrinters({ refresh: true });
+      queryClient.setQueryData(["system-printers"], list);
+      setNotice({ tone: "good", text: `${list.length} PC printers found.` });
     } catch (error) {
       setNotice({ tone: "bad", text: messageOf(error) });
     } finally {
       setSystemPrintersLoading(false);
     }
   };
-  const invalidatePrinter = async () => {
-    await queryClient.invalidateQueries({ queryKey: ["bill-printers"] });
-    await invalidate();
-  };
+
   const updatePrinterMode = useMutation({
     mutationFn: (mode: "test" | "live") => hubApi.updatePrinterMode(mode),
     onSuccess: async (result) => {
       await invalidate();
       setNotice({
         tone: "good",
-        text:
-          result.mode === "live"
-            ? "Printers are live. Real tickets will print."
-            : "Printer Test Mode is on. Tickets are logged without real printing.",
+        text: result.mode === "live" ? "Printers are live. Real tickets will print." : "Printer test mode is on. Tickets are logged without printing.",
       });
     },
     onError: (error) => setNotice({ tone: "bad", text: messageOf(error) }),
   });
   const requestPrinterMode = async (mode: "test" | "live") => {
-    if (mode === "live" && printerOutputMode !== "live") {
+    if (mode === printerOutputMode) return;
+    if (mode === "live") {
       const approval = await requestManagerApproval({
         title: "Turn on live printing",
-        message:
-          "Live Mode sends real bills and kitchen tickets to connected printers. Run test prints first.",
+        message: "Live mode sends real bills and kitchen tickets to connected printers. Run test prints first.",
         defaultReason: "Enable live printer output",
         requireReason: false,
-        confirmLabel: "Turn on Live Mode",
+        confirmLabel: "Turn on live mode",
       }).catch(() => null);
       if (!approval) return;
     }
     updatePrinterMode.mutate(mode);
   };
-  const saveReceiptPrinter = useMutation({
-    mutationFn: () =>
-      hubApi.updateBillPrinters({
-        default: {
-          label: receiptLabel.trim() || "Main bill printer",
-          printerMode: receiptPrinterMode,
-          printerName:
-            receiptPrinterMode === "system"
-              ? receiptPrinterName || undefined
-              : undefined,
-          printerHost:
-            receiptPrinterMode === "network" ? receiptHost.trim() : "",
-          printerPort: Number(receiptPort || 9100),
-        },
-        alternate: {
-          label: alternateLabel.trim() || "Second bill printer",
-          printerMode: alternatePrinterMode,
-          printerName:
-            alternatePrinterMode === "system"
-              ? alternatePrinterName || undefined
-              : undefined,
-          printerHost:
-            alternatePrinterMode === "network" ? alternateHost.trim() : "",
-          printerPort: Number(alternatePort || 9100),
-        },
-      }),
-    onSuccess: async () => {
-      setPrinterEditing(false);
-      await invalidatePrinter();
-      setPrinterDirty(false);
-      setNotice({ tone: "good", text: "Bill printers saved." });
+
+  const savePrinter = useMutation({
+    mutationFn: ({ slot, draft }: { slot: BillPrinterSlot; draft: BillPrinterDraft }) => {
+      if (!printers) throw new Error("Printer settings are still loading.");
+      // The PUT replaces both connections; the untouched printer is resent as saved,
+      // and its roll/QR sizes are omitted so the hub keeps them.
+      const payloadFor = (target: BillPrinterSlot) =>
+        target === slot
+          ? { ...billPrinterConnectionPayload(draft, slot), paperWidthMm: draft.paperWidthMm, paymentQrSizeMm: draft.paymentQrSizeMm }
+          : billPrinterConnectionPayload(billPrinterDraft(printers[target], target), target);
+      return hubApi.updateBillPrinters({ default: payloadFor("default"), alternate: payloadFor("alternate") });
+    },
+    onSuccess: async (saved) => {
+      queryClient.setQueryData(["bill-printers"], saved);
+      setEditingSlot(null);
+      await invalidate();
+      setNotice({ tone: "good", text: "Bill printer saved." });
     },
     onError: (error) => setNotice({ tone: "bad", text: messageOf(error) }),
   });
+
   const testBillPrint = useMutation({
     mutationFn: hubApi.testBillPrint,
     onSuccess: async (result) => {
@@ -221,8 +118,8 @@ export function PrinterSetupCard({
       setNotice({
         tone: result.processed.failed ? "bad" : "good",
         text: result.processed.failed
-          ? `Test bill print failed: ${result.processed.error ?? "Check Recent print jobs."}`
-          : "Test bill print queued successfully.",
+          ? `Test bill failed: ${result.processed.error ?? "check the print queue in Administration."}`
+          : printerOutputMode === "live" ? "Test bill sent to the printer." : "Test bill logged (test mode, nothing printed).",
       });
     },
     onError: (error) => setNotice({ tone: "bad", text: messageOf(error) }),
@@ -234,411 +131,151 @@ export function PrinterSetupCard({
       setNotice({
         tone: result.processed.failed ? "bad" : "good",
         text: result.processed.failed
-          ? "Test kitchen ticket failed. Check Recent print jobs."
-          : "Test kitchen ticket queued successfully.",
+          ? "Test kitchen ticket failed. Check the print queue in Administration."
+          : printerOutputMode === "live" ? "Test kitchen ticket sent." : "Test kitchen ticket logged (test mode, nothing printed).",
       });
     },
     onError: (error) => setNotice({ tone: "bad", text: messageOf(error) }),
   });
 
+  const targetText = (profile: BillPrinterProfile) =>
+    profile.printerMode === "system"
+      ? profile.printerName ? systemPrinterLabel(profile.printerName) : ""
+      : profile.printerHost ? `${profile.printerHost}:${profile.printerPort ?? 9100}` : "";
+
   return (
     <SetupCard
       title="Printing"
-      done={printerOutputMode === "test" || receiptPrinterConfigured}
+      done={printerOutputMode === "test" || mainConfigured}
       icon={<Printer size={20} />}
-      summary={printerCardSummary}
+      summary={cardSummary}
     >
-      {billPrinters.data ? (
-        <div className="printer-console">
-          <div className="printer-config-main">
-            <div className="printer-section-header">
-              <div>
-                <span>Bill printers</span>
-                <strong>
-                  {receiptPrinterConfigured
-                    ? receiptPrinterReady
-                    : "Choose where bills print"}
-                </strong>
-              </div>
-              {receiptPrinterConfigured && !printerEditing ? (
-                <button
-                  type="button"
-                  className="secondary-button"
-                  onClick={() => setPrinterEditing(true)}
-                >
-                  Edit bill printers
-                </button>
-              ) : null}
-            </div>
-            {receiptPrinterConfigured && !printerEditing ? (
-              <div className="printer-saved-panel">
-                <span>
-                  {defaultBillPrinter?.label ?? "Main bill printer"} ·{" "}
-                  {savedReceiptMode === "system" ? "PC printer" : "LAN printer"}
-                </span>
-                <strong>{receiptPrinterReady}</strong>
-                <p>
-                  {alternatePrinterConfigured
-                    ? `${alternateBillPrinter?.label}: ${alternatePrinterTarget}`
-                    : "Second bill printer is not configured yet."}
-                </p>
-              </div>
-            ) : (
-              <form
-                className="printer-form printer-setup-form"
-                onChange={() => setPrinterDirty(true)}
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  saveReceiptPrinter.mutate();
-                }}
-              >
-                {receiptPrinterMode === "system" ||
-                alternatePrinterMode === "system" ? (
-                  <div className="printer-pc-toolbar">
-                    <div>
-                      <strong>PC printer list</strong>
-                      <span>
-                        {systemPrinters.data?.length
-                          ? `${systemPrinters.data.length} printers loaded`
-                          : "Load installed Windows printers once, then choose below."}
-                      </span>
-                    </div>
-                    <button
-                      type="button"
-                      className="secondary-button"
-                      onClick={() => void refreshSystemPrinters()}
-                      disabled={systemPrintersLoading}
-                      aria-busy={systemPrintersLoading}
-                    >
-                      {systemPrintersLoading
-                        ? "Loading PC printers..."
-                        : "Load PC printers"}
-                    </button>
-                  </div>
-                ) : null}
-
-                <div className="printer-slot-card primary">
-                  <div className="printer-slot-head">
-                    <div>
-                      <span>Default bill printer</span>
-                      <strong>{draftReceiptTarget}</strong>
-                    </div>
-                    <span className="printer-slot-required">Required</span>
-                  </div>
-                  <label>
-                    Printer label
-                    <input
-                      value={receiptLabel}
-                      onChange={(event) => setReceiptLabel(event.target.value)}
-                      placeholder="Main bill printer"
-                    />
-                  </label>
-                  <div className="printer-mode-tabs">
-                    <button
-                      type="button"
-                      className={
-                        receiptPrinterMode === "system" ? "active" : ""
-                      }
-                      onClick={() => {
-                        setPrinterDirty(true);
-                        setReceiptPrinterMode("system");
-                      }}
-                    >
-                      PC printer
-                    </button>
-                    <button
-                      type="button"
-                      className={
-                        receiptPrinterMode === "network" ? "active" : ""
-                      }
-                      onClick={() => {
-                        setPrinterDirty(true);
-                        setReceiptPrinterMode("network");
-                      }}
-                    >
-                      LAN printer
-                    </button>
-                  </div>
-                  {receiptPrinterMode === "system" ? (
-                    <div className="printer-fields-grid">
-                      <label>
-                        Installed printer
-                        <select
-                          value={receiptPrinterName}
-                          onChange={(event) =>
-                            setReceiptPrinterName(event.target.value)
-                          }
-                        >
-                          <option value="">
-                            {systemPrinters.data?.length
-                              ? "Choose PC printer"
-                              : "Load PC printers first"}
-                          </option>
-                          {(systemPrinters.data ?? []).map((printer) => (
-                            <option key={printer.name} value={printer.name}>
-                              {printer.displayName}
-                              {printer.isDefault ? " (default)" : ""}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                    </div>
-                  ) : (
-                    <div className="printer-fields-grid network">
-                      <label>
-                        Printer IP
-                        <input
-                          value={receiptHost}
-                          onChange={(event) =>
-                            setReceiptHost(event.target.value)
-                          }
-                          placeholder="192.168.1.50"
-                        />
-                      </label>
-                      <label>
-                        Port
-                        <input
-                          value={receiptPort}
-                          onChange={(event) =>
-                            setReceiptPort(event.target.value)
-                          }
-                          inputMode="numeric"
-                          placeholder="9100"
-                        />
-                      </label>
-                    </div>
-                  )}
-                </div>
-
-                <div className="printer-slot-card">
-                  <div className="printer-slot-head">
-                    <div>
-                      <span>Optional bill printer</span>
-                      <strong>{draftAlternateTarget}</strong>
-                    </div>
-                    <span className="printer-slot-optional">Optional</span>
-                  </div>
-                  <label>
-                    Printer label
-                    <input
-                      value={alternateLabel}
-                      onChange={(event) =>
-                        setAlternateLabel(event.target.value)
-                      }
-                      placeholder="Second bill printer"
-                    />
-                  </label>
-                  <div className="printer-mode-tabs">
-                    <button
-                      type="button"
-                      className={
-                        alternatePrinterMode === "system" ? "active" : ""
-                      }
-                      onClick={() => {
-                        setPrinterDirty(true);
-                        setAlternatePrinterMode("system");
-                      }}
-                    >
-                      PC printer
-                    </button>
-                    <button
-                      type="button"
-                      className={
-                        alternatePrinterMode === "network" ? "active" : ""
-                      }
-                      onClick={() => {
-                        setPrinterDirty(true);
-                        setAlternatePrinterMode("network");
-                      }}
-                    >
-                      LAN printer
-                    </button>
-                  </div>
-                  {alternatePrinterMode === "system" ? (
-                    <div className="printer-fields-grid">
-                      <label>
-                        Installed printer
-                        <select
-                          value={alternatePrinterName}
-                          onChange={(event) =>
-                            setAlternatePrinterName(event.target.value)
-                          }
-                        >
-                          <option value="">
-                            {systemPrinters.data?.length
-                              ? "Choose optional PC printer"
-                              : "Load PC printers first"}
-                          </option>
-                          {(systemPrinters.data ?? []).map((printer) => (
-                            <option key={printer.name} value={printer.name}>
-                              {printer.displayName}
-                              {printer.isDefault ? " (default)" : ""}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                    </div>
-                  ) : (
-                    <div className="printer-fields-grid network">
-                      <label>
-                        Printer IP
-                        <input
-                          value={alternateHost}
-                          onChange={(event) =>
-                            setAlternateHost(event.target.value)
-                          }
-                          placeholder="192.168.1.71"
-                        />
-                      </label>
-                      <label>
-                        Port
-                        <input
-                          value={alternatePort}
-                          onChange={(event) =>
-                            setAlternatePort(event.target.value)
-                          }
-                          inputMode="numeric"
-                          placeholder="9100"
-                        />
-                      </label>
-                    </div>
-                  )}
-                  <p className="plain-state">
-                    Leave this empty if you only use one bill printer.
-                  </p>
-                </div>
-                <div className="form-actions printer-form-actions">
-                  <button
-                    type="submit"
-                    disabled={
-                      saveReceiptPrinter.isPending || !canSaveReceiptPrinter
-                    }
-                  >
-                    {saveReceiptPrinter.isPending
-                      ? "Saving..."
-                      : "Save bill printers"}
-                  </button>
-                  {receiptPrinterConfigured ? (
-                    <button
-                      type="button"
-                      className="secondary-button"
-                      onClick={() => {
-                        setPrinterEditing(false);
-                        setPrinterDirty(false);
-                      }}
-                    >
-                      Cancel
-                    </button>
-                  ) : null}
-                </div>
-              </form>
-            )}
+      <section className="printer-overview" aria-labelledby="bill-printers-title">
+        <header className="printer-overview-head">
+          <div>
+            <h3 id="bill-printers-title">Bill printers</h3>
+            <p>Staff choose one of these when printing a bill. Roll width and QR size are set for each printer.</p>
           </div>
+          <div className="printer-output" role="radiogroup" aria-label="Printer output">
+            <span className={printerOutputMode === "live" ? "printer-output-state live" : "printer-output-state"}>
+              {printerOutputMode === "live" ? "Live — real tickets print" : "Test mode — nothing prints"}
+            </span>
+            <div className="segmented-row">
+              {(["test", "live"] as const).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  role="radio"
+                  aria-checked={printerOutputMode === mode}
+                  className={printerOutputMode === mode ? "active" : ""}
+                  disabled={updatePrinterMode.isPending}
+                  onClick={() => void requestPrinterMode(mode)}
+                >
+                  {mode === "test" ? "Test" : "Live"}
+                </button>
+              ))}
+            </div>
+          </div>
+        </header>
 
-          <aside className="printer-config-side">
-            <div className="printer-summary-panel">
-              <span>Current printer setup</span>
-              <div>
-                <strong>{receiptLabel || "Default printer"}</strong>
-                <small>{printerSummaryDefault}</small>
-              </div>
-              <div>
-                <strong>{alternateLabel || "Optional printer"}</strong>
-                <small>{printerSummaryAlternate}</small>
+        {printers ? (
+          <div className="bill-printer-list">
+            {BILL_PRINTER_SLOTS.map((slot) => {
+              const profile = printers[slot];
+              const target = targetText(profile);
+              const editing = editingSlot === slot;
+              return (
+                <article key={slot} className={`bill-printer-row${editing ? " editing" : ""}`} aria-label={profile.label}>
+                  <div className="bill-printer-summary">
+                    <div className="bill-printer-name">
+                      <strong>{profile.label || defaultBillPrinterLabel(slot)}</strong>
+                      <span>{slot === "default" ? "Main" : "Second · optional"}</span>
+                    </div>
+                    <dl className="bill-printer-facts">
+                      <div>
+                        <dt>Connection</dt>
+                        <dd className={profile.configured ? "" : "missing"}>
+                          {profile.configured ? `${profile.printerMode === "system" ? "PC" : "LAN"} · ${target}` : slot === "default" ? "Not set" : "Not used"}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Roll</dt>
+                        <dd>{profile.paperWidthMm ? `${profile.paperWidthMm} mm` : `Layout${receiptLayoutWidth ? ` (${paperLabelForChars(receiptLayoutWidth)})` : ""}`}</dd>
+                      </div>
+                      <div>
+                        <dt>Payment QR</dt>
+                        <dd>{profile.paymentQrSizeMm} mm</dd>
+                      </div>
+                    </dl>
+                    <div className="bill-printer-actions">
+                      <button
+                        type="button"
+                        className="secondary-button"
+                        onClick={() => testBillPrint.mutate(slot)}
+                        disabled={testBillPrint.isPending || !profile.configured}
+                        aria-label={`Test print on ${profile.label}`}
+                      >
+                        <Printer size={15} /> Test
+                      </button>
+                      <button
+                        type="button"
+                        className="secondary-button"
+                        onClick={() => setEditingSlot(editing ? null : slot)}
+                        aria-expanded={editing}
+                        aria-label={`Edit ${profile.label}`}
+                        disabled={Boolean(editingSlot && !editing) || savePrinter.isPending}
+                      >
+                        <Pencil size={15} /> Edit
+                      </button>
+                    </div>
+                  </div>
+                  {editing ? (
+                    <BillPrinterEditor
+                      slot={slot}
+                      initial={billPrinterDraft(profile, slot)}
+                      systemPrinters={systemPrinters.data}
+                      systemPrintersLoading={systemPrintersLoading}
+                      onLoadSystemPrinters={() => void refreshSystemPrinters()}
+                      saving={savePrinter.isPending}
+                      onSave={(draft) => savePrinter.mutate({ slot, draft })}
+                      onCancel={() => setEditingSlot(null)}
+                    />
+                  ) : null}
+                </article>
+              );
+            })}
+            <div className="bill-printer-row kitchen">
+              <div className="bill-printer-summary">
+                <div className="bill-printer-name">
+                  <strong>Kitchen tickets</strong>
+                  <span>Each station prints to its own printer</span>
+                </div>
+                <p className="bill-printer-note">Set station printers in Kitchen stations. Logos never print on kitchen tickets.</p>
+                <div className="bill-printer-actions">
+                  <button type="button" className="secondary-button" onClick={() => testKotPrint.mutate()} disabled={testKotPrint.isPending}>
+                    <ChefHat size={15} /> Test
+                  </button>
+                </div>
               </div>
             </div>
-            <div
-              className={
-                printerOutputMode === "live"
-                  ? "printer-output-panel live"
-                  : "printer-output-panel"
-              }
-            >
-              <span>Output mode</span>
-              <strong>
-                {printerOutputMode === "live" ? "Live printing" : "Test mode"}
-              </strong>
-              <div className="segment-row">
-                <button
-                  type="button"
-                  className={printerOutputMode === "test" ? "active" : ""}
-                  aria-pressed={printerOutputMode === "test"}
-                  onClick={() => void requestPrinterMode("test")}
-                  disabled={updatePrinterMode.isPending}
-                >
-                  Test
-                </button>
-                <button
-                  type="button"
-                  className={printerOutputMode === "live" ? "active" : ""}
-                  aria-pressed={printerOutputMode === "live"}
-                  onClick={() => void requestPrinterMode("live")}
-                  disabled={updatePrinterMode.isPending}
-                >
-                  Live
-                </button>
-              </div>
-            </div>
-            <div className="printer-test-actions">
-              <button
-                type="button"
-                className="utility-action"
-                onClick={() => testBillPrint.mutate("default")}
-                disabled={testBillPrint.isPending}
-              >
-                <Printer size={18} /> Test default bill
+          </div>
+        ) : (
+          <div className="settings-info-row" role={billPrinters.isError ? "alert" : "status"}>
+            <p className="soft-note">{billPrinters.isError ? messageOf(billPrinters.error) : "Loading bill printers…"}</p>
+            {billPrinters.isError ? (
+              <button type="button" className="secondary-button" onClick={() => void billPrinters.refetch()}>
+                Retry printers
               </button>
-              <button
-                type="button"
-                className="utility-action"
-                onClick={() => testBillPrint.mutate("alternate")}
-                disabled={
-                  testBillPrint.isPending || !alternatePrinterConfigured
-                }
-              >
-                <Printer size={18} /> Test alternate bill
-              </button>
-              <button
-                type="button"
-                className="utility-action"
-                onClick={() => testKotPrint.mutate()}
-                disabled={testKotPrint.isPending}
-              >
-                <ChefHat size={18} /> Test kitchen
-              </button>
-            </div>
-          </aside>
-        </div>
-      ) : (
-        <div
-          className="settings-info-row"
-          role={billPrinters.isError ? "alert" : "status"}
-        >
-          <p className="soft-note">
-            {billPrinters.isError
-              ? messageOf(billPrinters.error)
-              : "Loading bill printer settings…"}
-          </p>
-          {billPrinters.isError ? (
-            <button
-              type="button"
-              className="secondary-button"
-              onClick={() => void billPrinters.refetch()}
-            >
-              Retry printers
-            </button>
-          ) : null}
-        </div>
-      )}
+            ) : null}
+          </div>
+        )}
+      </section>
+
       <section className="settings-print-layout-section">
         {printLayouts.isError ? (
           <div className="settings-info-row" role="alert">
             <p className="soft-note">{messageOf(printLayouts.error)}</p>
-            <button
-              type="button"
-              className="secondary-button"
-              onClick={() => void printLayouts.refetch()}
-            >
+            <button type="button" className="secondary-button" onClick={() => void printLayouts.refetch()}>
               Retry layouts
             </button>
           </div>
@@ -647,6 +284,7 @@ export function PrinterSetupCard({
           <PrintLayoutEditor
             layouts={printLayouts.data}
             paymentQr={paymentQr.isError ? null : paymentQr.data?.qr}
+            billPrinters={printers}
             units={bootstrap.productionUnits}
             setNotice={setNotice}
             requestManagerApproval={requestManagerApproval}
@@ -659,4 +297,12 @@ export function PrinterSetupCard({
       </section>
     </SetupCard>
   );
+}
+
+/** Layout widths are stored as characters per line; show the roll they correspond to. */
+export function paperLabelForChars(lineWidthChars: number): string {
+  if (lineWidthChars <= 25) return "45 mm";
+  if (lineWidthChars <= 28) return "50 mm";
+  if (lineWidthChars <= 32) return "58 mm";
+  return lineWidthChars >= 48 ? "80 mm wide" : "80 mm";
 }

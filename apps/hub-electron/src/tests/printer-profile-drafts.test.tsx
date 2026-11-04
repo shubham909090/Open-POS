@@ -30,6 +30,7 @@ vi.mock("../renderer/hub-api.js", () => ({
     testBillPrint: vi.fn(),
     testKotPrint: vi.fn(),
     updatePrintLayout: vi.fn(),
+    restaurantBranding: vi.fn(),
   },
 }));
 
@@ -40,6 +41,8 @@ const initialPrinters: BillPrinters = {
     printerName: "EPSON",
     printerHost: null,
     printerPort: 9100,
+    paperWidthMm: null,
+    paymentQrSizeMm: 32,
     configured: true,
   },
   alternate: {
@@ -48,6 +51,8 @@ const initialPrinters: BillPrinters = {
     printerName: null,
     printerHost: "192.168.1.71",
     printerPort: 9100,
+    paperWidthMm: 58,
+    paymentQrSizeMm: 38,
     configured: true,
   },
 };
@@ -117,6 +122,7 @@ function renderPrinterSettings() {
     ],
   });
   client.setQueryData(["payment-qr"], { qr: null });
+  client.setQueryData(["restaurant-branding"], { branding: { restaurantName: "Saffron Table", logoImageDataUrl: null, updatedAt: null } });
   render(
     <QueryClientProvider client={client}>
       <SettingsPageContext.Provider value>
@@ -129,7 +135,6 @@ function renderPrinterSettings() {
       </SettingsPageContext.Provider>
     </QueryClientProvider>,
   );
-  fireEvent.click(screen.getByRole("button", { name: "Edit bill printers" }));
   return client;
 }
 
@@ -140,11 +145,7 @@ async function replaceBackgroundCache(client: QueryClient) {
   // This heading uses server data, so observing it proves the replacement has
   // rendered before checking that the independently edited form survived.
   await waitFor(() => {
-    expect(
-      screen.getByText("BACKGROUND-EPSON", {
-        selector: ".printer-section-header strong",
-      }),
-    ).toBeTruthy();
+    expect(screen.getByText("PC · BACKGROUND-EPSON")).toBeTruthy();
   });
 }
 
@@ -155,7 +156,7 @@ describe("printer profile drafts", () => {
       screen.getByRole<HTMLInputElement>("textbox", { name: "Footer text" });
     fireEvent.change(footer(), { target: { value: "Unsaved receipt footer" } });
     const layoutFor = screen.getByRole("combobox", { name: "Layout for" });
-    fireEvent.change(layoutFor, { target: { value: "unit" } });
+    fireEvent.change(layoutFor, { target: { value: "unit-kitchen" } });
     fireEvent.change(footer(), { target: { value: "Unsaved kitchen footer" } });
     vi.mocked(hubApi.printLayouts).mockRejectedValueOnce(
       new Error("Layout refresh failed"),
@@ -181,61 +182,44 @@ describe("printer profile drafts", () => {
     expect(footer().value).toBe("Unsaved receipt footer");
   });
 
-  it("keeps both unsaved printer labels when background query data changes", async () => {
+  it("keeps an unsaved printer edit when background query data changes", async () => {
     const client = renderPrinterSettings();
-    const labels = () =>
-      screen.getAllByRole<HTMLInputElement>("textbox", {
-        name: "Printer label",
-      });
-    expect(labels().map((input) => input.value)).toEqual([
-      "Cash counter",
-      "Downstairs",
-    ]);
-    fireEvent.change(labels()[0]!, { target: { value: "My counter draft" } });
-    fireEvent.change(labels()[1]!, {
-      target: { value: "My downstairs draft" },
-    });
+    fireEvent.click(screen.getByRole("button", { name: "Edit Cash counter" }));
+    const editor = within(screen.getByRole("form", { name: "Edit Cash counter" }));
+    fireEvent.change(editor.getByRole("textbox", { name: "Printer label" }), { target: { value: "My counter draft" } });
+    // No text change here: the connection choice alone must survive a refresh.
+    fireEvent.click(editor.getByRole("radio", { name: "LAN printer" }));
 
     await replaceBackgroundCache(client);
 
-    expect(labels().map((input) => input.value)).toEqual([
-      "My counter draft",
-      "My downstairs draft",
-    ]);
+    const form = within(screen.getByRole("form", { name: "Edit My counter draft" }));
+    expect(form.getByRole<HTMLInputElement>("textbox", { name: "Printer label" }).value).toBe("My counter draft");
+    expect(form.getByRole("radio", { name: "LAN printer" }).getAttribute("aria-checked")).toBe("true");
+    expect(form.getByRole("textbox", { name: "Printer IP" })).toBeTruthy();
+    expect(form.queryByRole("combobox", { name: "Installed printer" })).toBeNull();
   });
 
-  it("keeps mode-only edits for both printers when background query data changes", async () => {
-    const client = renderPrinterSettings();
-    const labels = screen.getAllByRole("textbox", { name: "Printer label" });
-    const primary = within(
-      labels[0]!.closest<HTMLElement>(".printer-slot-card")!,
-    );
-    const alternate = within(
-      labels[1]!.closest<HTMLElement>(".printer-slot-card")!,
-    );
-    // No input changes here: mode buttons must mark the draft dirty themselves.
-    fireEvent.click(primary.getByRole("button", { name: "LAN printer" }));
-    fireEvent.click(alternate.getByRole("button", { name: "PC printer" }));
+  it("saves roll width and QR size for one printer and keeps the other printer's sizes", async () => {
+    renderPrinterSettings();
+    vi.mocked(hubApi.updateBillPrinters).mockResolvedValueOnce(initialPrinters);
+    fireEvent.click(screen.getByRole("button", { name: "Edit Cash counter" }));
+    const editor = within(screen.getByRole("form", { name: "Edit Cash counter" }));
+    fireEvent.change(editor.getByRole("combobox", { name: /Paper roll/ }), { target: { value: "80" } });
+    fireEvent.change(editor.getByRole("slider", { name: "Payment QR printed size in millimetres" }), { target: { value: "40" } });
+    fireEvent.click(editor.getByRole("button", { name: "Save printer" }));
 
-    await replaceBackgroundCache(client);
+    await waitFor(() => expect(hubApi.updateBillPrinters).toHaveBeenCalledTimes(1));
+    const payload = vi.mocked(hubApi.updateBillPrinters).mock.calls[0]![0];
+    expect(payload.default).toMatchObject({ label: "Cash counter", printerMode: "system", printerName: "EPSON", paperWidthMm: 80, paymentQrSizeMm: 40 });
+    // Omitting sizes tells the hub to keep the second printer's saved 58 mm roll and 38 mm QR.
+    expect(payload.alternate).toEqual({ label: "Downstairs", printerMode: "network", printerName: undefined, printerHost: "192.168.1.71", printerPort: 9100 });
+  });
 
-    expect(
-      primary
-        .getByRole("button", { name: "LAN printer" })
-        .classList.contains("active"),
-    ).toBe(true);
-    expect(primary.getByRole("textbox", { name: "Printer IP" })).toBeTruthy();
-    expect(
-      primary.queryByRole("combobox", { name: "Installed printer" }),
-    ).toBeNull();
-    expect(
-      alternate
-        .getByRole("button", { name: "PC printer" })
-        .classList.contains("active"),
-    ).toBe(true);
-    expect(
-      alternate.getByRole("combobox", { name: "Installed printer" }),
-    ).toBeTruthy();
-    expect(alternate.queryByRole("textbox", { name: "Printer IP" })).toBeNull();
+  it("previews the bill with the chosen printer's roll width and QR size", () => {
+    renderPrinterSettings();
+    expect(screen.getByText(/^50 mm/, { selector: ".layout-preview-meta" })).toBeTruthy();
+    fireEvent.change(screen.getByRole("combobox", { name: "Preview printer" }), { target: { value: "alternate" } });
+    expect(screen.getByText("58 mm · printer setting", { selector: ".layout-preview-meta" })).toBeTruthy();
+    expect(document.querySelector<HTMLElement>(".print-paper")?.style.getPropertyValue("--paper-chars")).toBe("32");
   });
 });

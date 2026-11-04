@@ -122,4 +122,6 @@
 .settings-workspace .update-status-card { background: var(--panel); border-color: var(--line); gap: 12px; }
 .settings-workspace .update-status-card strong { font-size: 13px; font-weight: 500; }
 .settings-workspace .update-status-card span:not(.record-status) { font-size: 12px; font-weight: 400; line-height: 1.6; }
-.settings-workspace .github-update-card { background: var(--wash); border-color: var(--line); }
+.settings-workspace .github-update-card { background: transparent; border: 0; padding: 0; }
+.settings-workspace .github-update-card .primary-button { flex: 0 1 auto; min-height: 36px; }
+.settings-workspace .update-status-card .record-status { justify-self: start; }

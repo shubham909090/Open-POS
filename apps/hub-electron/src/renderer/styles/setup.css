@@ -41,10 +41,16 @@
 .settings-view-panel .manager-pin-form { padding-top: 18px; border-top: 1px solid var(--line); }
 .settings-view-panel .manager-pin-form:first-of-type { border-top: 0; padding-top: 0; }
 .settings-view-panel .manager-pin-form > .soft-note { grid-column: 1 / -1; font-size: 12px; font-weight: 400; }
+.field-help { font-size: 12px; font-weight: 400; color: var(--muted); }
+.field-error { font-size: 12px; font-weight: 400; color: var(--danger); }
+.settings-workspace .print-job-row { grid-template-columns: minmax(0, 1fr) auto; padding: 10px 12px; align-items: center; }
+.print-job-description { min-width: 0; }
+.print-job-description strong small { font-weight: 400; color: var(--muted); }
+.print-job-description .print-job-error { color: var(--danger); overflow-wrap: anywhere; }
+input[aria-invalid="true"] { border-color: var(--danger); }
 .settings-view-panel label { font-size: 12px; font-weight: 500; line-height: 1.5; }
 .settings-view-panel .soft-note, .settings-view-panel .plain-state { font-size: 12px; font-weight: 400; line-height: 1.7; }
 .settings-print-layout-section { display: grid; gap: 16px; padding-top: 20px; border-top: 1px solid var(--line); }
-.settings-print-layout-section > .sub-panel { padding: 0; border: 0; border-radius: 0; }
 .settings-info-row { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 16px 0; }
 .settings-info-row + .settings-info-row { border-top: 1px solid var(--line); }
 .settings-info-row > div { display: grid; gap: 4px; }
@@ -52,7 +58,8 @@
 .settings-info-row p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.7; }
 .settings-info-row strong { font-size: 13px; font-weight: 500; font-variant-numeric: tabular-nums; }
 .setup-board { @apply grid gap-4; }
-.setup-card { @apply overflow-hidden rounded-lg border border-line bg-panel; }
+/* clip, not hidden: hidden makes a scroll container and breaks the sticky print preview. */
+.setup-card { @apply rounded-lg border border-line bg-panel; overflow: clip; }
 .setup-card-header { @apply flex min-h-16 w-full items-center justify-between gap-3 rounded-none bg-panel px-4 py-3 text-left text-ink hover:bg-wash; }
 .setup-card-header.static { padding: 18px 20px; background: var(--panel); }
 .setup-heading { @apply flex min-w-0 items-center gap-3; }
@@ -77,9 +84,7 @@
 .settings-view-panel .danger-zone .warning-text { margin: 0; padding: 12px 14px; border: 1px solid color-mix(in srgb, var(--danger) 18%, var(--line)); border-radius: 6px; background: var(--danger-soft); font-size: 12px; line-height: 1.7; }
 
 @container (max-width: 760px) {
-  .printer-console, .layout-editor, .sale-group-row, .pairing-card { grid-template-columns: minmax(0, 1fr); }
-  .printer-config-side { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .printer-test-actions { grid-column: 1 / -1; }
+  .sale-group-row, .pairing-card { grid-template-columns: minmax(0, 1fr); }
   .unit-edit-form .row-edit-fields, .unit-edit-form .row-edit-fields.unit-edit-fields, .pairing-form { grid-template-columns: minmax(0, 1fr); }
 }
 
@@ -113,10 +118,34 @@
   .payment-qr-content { grid-template-columns: minmax(0, 1fr); }
   .payment-qr-paper { width: 230px; max-width: 100%; margin: 0 auto; }
   .payment-qr-lock { margin-left: 0; }
-  .printer-config-side { grid-template-columns: minmax(0, 1fr); }
 }
 
 /* Reset row: the destructive action keeps normal control height instead of stretching to the label column. */
 .reset-options { @apply items-end; }
 .reset-options > button { @apply w-fit min-w-36 justify-self-start; min-height: var(--control-height); }
 .reset-options > .checkbox-row { min-height: var(--control-height); }
+
+/* Restaurant identity: previews left, fields right. */
+.branding-editor { display: grid; grid-template-columns: minmax(0, 300px) minmax(0, 1fr); gap: 24px; align-items: start; }
+.branding-previews { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.branding-previews figure { display: grid; gap: 6px; min-width: 0; margin: 0; }
+.branding-previews figcaption { font-size: 11px; color: var(--muted); }
+.branding-logo-frame { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; aspect-ratio: 1; min-width: 0; overflow: hidden; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--wash); }
+.branding-logo-frame img { display: block; width: 100%; height: auto; max-height: 100%; min-height: 0; object-fit: contain; }
+.branding-logo-frame.paper { background: #fff; font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; text-align: center; }
+.branding-logo-frame.paper img { width: 80%; max-height: 60%; }
+.branding-logo-frame.paper img.thermal { filter: grayscale(1) contrast(1.6); }
+.branding-logo-frame.paper strong { max-width: 100%; overflow-wrap: anywhere; font-size: 11px; font-weight: 700; line-height: 1.25; }
+.branding-logo-frame.paper span { font-size: 11px; color: var(--muted); }
+.branding-fields { display: grid; gap: 16px; min-width: 0; }
+.branding-conflict { display: grid; gap: 8px; padding: 12px; border: 1px solid var(--warning); border-radius: 6px; background: var(--warning-soft); color: var(--warning); font-size: 13px; }
+.branding-conflict p { margin: 0; }
+.branding-conflict button { justify-self: start; }
+.branding-image-error { margin: 0; font-size: 12px; font-weight: 400; color: var(--danger); }
+.branding-fields label, .branding-logo-field { display: grid; gap: 6px; max-width: 480px; font-size: 13px; font-weight: 600; }
+.branding-fields small { font-size: 12px; font-weight: 400; color: var(--muted); }
+.branding-logo-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.quiet-danger-button { border-color: transparent; background: transparent; color: var(--danger); box-shadow: none; }
+.quiet-danger-button:hover:not(:disabled) { background: var(--danger-soft); }
+.branding-lock { display: flex; align-items: center; gap: 6px; margin: 0; padding: 8px 10px; border-radius: 6px; background: var(--warning-soft); color: var(--warning); font-size: 12px; }
+@media (max-width: 900px) { .branding-editor { grid-template-columns: 1fr; } .branding-previews { max-width: 320px; } }

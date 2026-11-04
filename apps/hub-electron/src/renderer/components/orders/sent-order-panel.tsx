@@ -222,10 +222,14 @@ export function SentOrderPanel({
                   onChange={(event) => setShiftTargetTableId(event.target.value)}
                 >
                   <option value="">Choose active table</option>
-                  {shiftTargets.map((table) => (
-                    <option key={table.id} value={table.id}>
-                      {table.name}
-                    </option>
+                  {groupTargetsByFloor(shiftTargets).map(([floorName, tables]) => (
+                    <optgroup key={floorName} label={floorName}>
+                      {tables.map((table) => (
+                        <option key={table.id} value={table.id}>
+                          {table.name}{table.status === "free" ? "" : " · running"}
+                        </option>
+                      ))}
+                    </optgroup>
                   ))}
                 </select>
               </label>
@@ -293,4 +297,15 @@ export function SentOrderPanel({
       ) : null}
     </div>
   );
+}
+
+/** Keeps the caller's order; groups consecutive targets under their floor for the native picker. */
+function groupTargetsByFloor(tables: Bootstrap["tables"]): Array<[string, Bootstrap["tables"]]> {
+  const groups: Array<[string, Bootstrap["tables"]]> = [];
+  for (const table of tables) {
+    const last = groups.at(-1);
+    if (last && last[0] === table.floor_name) last[1].push(table);
+    else groups.push([table.floor_name, [table]]);
+  }
+  return groups;
 }

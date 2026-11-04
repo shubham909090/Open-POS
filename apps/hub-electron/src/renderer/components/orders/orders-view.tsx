@@ -7,6 +7,7 @@ import type { ManagerApprovalRequest } from "../../hooks/use-manager-approval.js
 import { useKeyboardListNavigation } from "../../hooks/use-keyboard-list-navigation.js";
 import type { Bootstrap } from "../../hub-api.js";
 import { useHubStore, type OrderPanel } from "../../store.js";
+import { sortTables } from "../../lib/table-order.js";
 import { EmptyState } from "../ui/empty-state.js";
 import { getMenuActionVariants, MenuResultSection } from "./menu-card.js";
 import { TableWorkspace } from "./table-workspace.js";
@@ -20,6 +21,7 @@ export function OrdersView({ bootstrap, setNotice, requestManagerApproval }: { b
   const setSearch = useHubStore((state) => state.setMenuSearch);
   const addDraftItem = useHubStore((state) => state.addDraftItem);
   const drafts = useHubStore((state) => state.drafts);
+  const tableOrderMode = useHubStore((state) => state.tableOrderMode);
   const [saleGroupFilter, setSaleGroupFilter] = useState<SaleGroupKind | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [nowMs, setNowMs] = useState(() => Date.now());
@@ -84,7 +86,7 @@ export function OrdersView({ bootstrap, setNotice, requestManagerApproval }: { b
         </div>
         <div className="floor-table-list">
           {bootstrap.floors.filter((floor) => floor.active).map((floor) => {
-            const floorTables = activeTables.filter((table) => table.floor_id === floor.id);
+            const floorTables = sortTables(activeTables.filter((table) => table.floor_id === floor.id), tableOrderMode);
             if (!floorTables.length) return null;
             return (
               <div className="floor-group" key={floor.id}>
@@ -161,17 +163,18 @@ export function OrdersView({ bootstrap, setNotice, requestManagerApproval }: { b
             }
           }}>
             <header className="order-modal-header">
-              <div>
-                <div className="order-modal-kicker">
+              <div className="order-modal-title">
+                <DialogPrimitive.Title asChild><h2>{selectedTable.name}<span className="sr-only"> order workspace</span></h2></DialogPrimitive.Title>
+                <span className="order-modal-meta">
                   <span>{selectedTable.floor_name}</span>
+                  <span>{tileStateLabel(getTableDisplayState(selectedTable))}</span>
                   {selectedTableDuration ? (
                     <span className="order-modal-duration" aria-label={`${selectedTable.name} open for ${selectedTableDuration}`}>
-                      <Clock3 size={13} />
+                      <Clock3 size={13} aria-hidden="true" />
                       {selectedTableDuration}
                     </span>
                   ) : null}
-                </div>
-                <DialogPrimitive.Title asChild><h2>{selectedTable.name}<span className="sr-only"> order workspace</span></h2></DialogPrimitive.Title>
+                </span>
                 <DialogPrimitive.Description className="sr-only">Add items, review kitchen tickets and settle this table's bill.</DialogPrimitive.Description>
               </div>
               <div className="order-modal-actions">

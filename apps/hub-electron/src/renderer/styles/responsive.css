@@ -1,6 +1,5 @@
 @media (max-width: 1180px) {
   .orders-grid.has-selection,
-  .order-modal-layout.menu-open,
   .reports-layout .report-detail-grid,
   .order-workspace-grid.menu-open,
   .order-workspace-grid.menu-collapsed,
@@ -18,29 +17,14 @@
   .pairing-form,
   .role-card-grid,
   .csv-import-grid,
-  .printer-console,
-  .printer-pc-toolbar,
-  .printer-slot-head,
   .printer-fields-grid,
   .printer-fields-grid.network,
-  .unit-edit-fields,
-  .layout-editor {
+  .unit-edit-fields {
     grid-template-columns: 1fr;
   }
 
   .panel-title {
     @apply items-start;
-  }
-
-  .printer-section-header,
-  .printer-pc-toolbar,
-  .printer-slot-head {
-    @apply flex-col items-stretch;
-  }
-
-  .printer-section-header button,
-  .printer-pc-toolbar button {
-    @apply w-full;
   }
 
   .guest-row,
@@ -83,21 +67,5 @@
     @apply w-fit;
   }
 
-  .order-modal-backdrop {
-    @apply p-2;
-  }
-
-  .order-modal-card {
-    max-height: calc(100vh - 1rem);
-    @apply p-3;
-  }
-
-  .order-modal-header {
-    @apply grid;
-  }
-
-  .order-modal-actions {
-    @apply justify-start;
-  }
 
 }

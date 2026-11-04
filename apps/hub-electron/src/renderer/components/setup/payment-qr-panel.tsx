@@ -9,6 +9,7 @@ import type {
 } from "../../hooks/use-manager-approval.js";
 import { messageOf, type NoticeSetter } from "../../lib/format.js";
 import { SettingsPageActiveContext } from "./setup-card.js";
+import { readImageFile } from "../../lib/image-file.js";
 
 export function PaymentQrPanel({
   masterPinConfigured,
@@ -29,7 +30,6 @@ export function PaymentQrPanel({
   });
   const qr = current.isError ? null : current.data?.qr;
   const [image, setImage] = useState("");
-  const [sizeMm, setSizeMm] = useState(32);
   const [reading, setReading] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const originalVersion = useRef<string | undefined>(undefined);
@@ -37,9 +37,10 @@ export function PaymentQrPanel({
     if (originalVersion.current !== qr?.updatedAt) {
       originalVersion.current = qr?.updatedAt;
       setImage("");
-      setSizeMm(qr?.sizeMm ?? 32);
     }
   }, [qr]);
+  // Printed size belongs to each bill printer; this panel only shows it.
+  const billPrinters = useQuery({ queryKey: ["bill-printers"], queryFn: hubApi.billPrinters, enabled: active });
 
   const save = useMutation({
     mutationFn: ({
@@ -82,7 +83,7 @@ export function PaymentQrPanel({
     onError: (error) => setNotice({ tone: "bad", text: messageOf(error) }),
   });
   const busy = reading || save.isPending || remove.isPending;
-  const changed = Boolean(image) || Boolean(qr && qr.sizeMm !== sizeMm);
+  const changed = Boolean(image);
   const chooseFile = async (file: File | undefined) => {
     if (!file) return;
     if (
@@ -97,13 +98,7 @@ export function PaymentQrPanel({
     }
     setReading(true);
     try {
-      const data = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(String(reader.result));
-        reader.onerror = () =>
-          reject(new Error("Could not read this image. Try another file."));
-        reader.readAsDataURL(file);
-      });
+      const data = await readImageFile(file);
       setImage(data);
     } catch (error) {
       setNotice({ tone: "bad", text: messageOf(error) });
@@ -119,9 +114,7 @@ export function PaymentQrPanel({
       message:
         "This changes the payment QR on all new bills and staff phones for this hub.",
       pinLabel: "Master PIN",
-      defaultReason: image
-        ? "Update shared payment QR"
-        : "Change payment QR print size",
+      defaultReason: "Update shared payment QR",
       requireReason: false,
       approvedBy: "master",
       confirmLabel: "Save payment QR",
@@ -129,7 +122,8 @@ export function PaymentQrPanel({
     if (approval)
       save.mutate({
         imageDataUrl,
-        size: sizeMm,
+        // Legacy shared size, kept only as the fallback for printers without their own size.
+        size: qr?.sizeMm ?? 32,
         approval,
         version: qr?.updatedAt ?? null,
       });
@@ -233,28 +227,12 @@ export function PaymentQrPanel({
               )}
             </div>
             <small>PNG or JPG · up to 2 MB · no fixed payment amount</small>
-            <label className="payment-qr-size">
-              <span>
-                Printed QR size <output>{sizeMm} mm</output>
-              </span>
-              <input
-                type="range"
-                min={20}
-                max={45}
-                step={1}
-                value={sizeMm}
-                disabled={busy || !masterPinConfigured || !(qr || image)}
-                onChange={(event) => setSizeMm(Number(event.target.value))}
-                aria-label="Printed payment QR size in millimetres"
-              />
-              <small>
-                20 mm <span>45 mm</span>
-              </small>
-            </label>
             <p className="payment-qr-hint">
-              32 mm is the default. Size adjusts to fit the roll and keep QR
-              squares sharp; dense codes may print larger. Confirm payments in
-              your UPI app.
+              Printed size is set for each bill printer in Printers &amp; receipts
+              {billPrinters.data
+                ? `: ${billPrinters.data.default.label} ${billPrinters.data.default.paymentQrSizeMm} mm${billPrinters.data.alternate.configured ? `, ${billPrinters.data.alternate.label} ${billPrinters.data.alternate.paymentQrSizeMm} mm` : ""}.`
+                : "."}{" "}
+              Confirm each payment in your UPI app.
             </p>
             {!masterPinConfigured && (
               <p role="status">
@@ -277,7 +255,6 @@ export function PaymentQrPanel({
                   disabled={busy}
                   onClick={() => {
                     setImage("");
-                    setSizeMm(qr?.sizeMm ?? 32);
                   }}
                 >
                   Cancel changes

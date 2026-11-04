@@ -15,6 +15,7 @@ import { HubConnectionCard } from "./hub-connection-card.js";
 import { KdsOperationsCard } from "./kds-operations-card.js";
 import { PrinterSetupCard } from "./printer-setup-card.js";
 import { PaymentQrPanel } from "./payment-qr-panel.js";
+import { RestaurantBrandingPanel } from "./restaurant-branding-panel.js";
 import { SettingsWorkspace } from "./settings-workspace.js";
 import { setupSections } from "./settings-sections.js";
 import { SettingsPageActiveContext } from "./setup-card.js";
@@ -139,6 +140,11 @@ export function SetupView({
         <>
           {section === "general" ? (
             <>
+              <RestaurantBrandingPanel
+                masterPinConfigured={Boolean(bootstrap.setup?.masterPinConfigured)}
+                requestManagerApproval={requestManagerApproval}
+                setNotice={setNotice}
+              />
               <BusinessDayCard bootstrap={bootstrap} />
 
               <KdsOperationsCard bootstrap={bootstrap} setNotice={setNotice} />
