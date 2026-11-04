@@ -1,8 +1,7 @@
-import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { platform } from "node:os";
 import { basename, dirname, extname, join, resolve } from "node:path";
-import { spawn } from "node:child_process";
 import { readAppMetadata } from "../app-metadata.js";
 import type { BackupService, BackupSummary } from "../db/backup-service.js";
 import type { HubDatabase } from "../db/database.js";
@@ -11,6 +10,7 @@ import type { OnlineUpdateMetadata, UpdatePackageManifest } from "./update-packa
 import { PACKAGED_SQLITE_NATIVE_PATH, UPDATE_APP_ID, sha256, validateOnlineUpdateMetadata, validateUpdatePackage, validateWindowsX64NativeModule } from "./update-package.js";
 import { GithubUpdateSource, compareVersions, type GithubFetch, type GithubUpdateCheckResult, type GithubUpdateInstallRequest } from "./github-update-source.js";
 import { powershellCommand, psQuote, startProcessCommand, writeWindowsHandoffScript, writeWindowsInstallerHandoff, type UpdateLaunchPlan } from "./windows-update-handoff.js";
+import { launchUpdateProcess } from "./launch-update-process.js";
 export type { GithubFetch, GithubFetchResponse, GithubRelease, GithubReleaseAsset, GithubUpdateCheckResult, GithubUpdateCheckStatus, GithubUpdateInstallRequest } from "./github-update-source.js";
 export type { UpdateLaunchPlan } from "./windows-update-handoff.js";
 
@@ -455,29 +455,17 @@ export class AppUpdateService {
   private async launchAndExit(plan: UpdateLaunchPlan): Promise<void> {
     const launchPlan = this.installerLaunchPlan(plan);
     if (this.input.launchInstaller) await this.input.launchInstaller(launchPlan);
-    else {
-      const isBatch = extname(launchPlan.filePath).toLowerCase() === ".cmd";
-      const command = isBatch ? "powershell.exe" : launchPlan.filePath;
-      const args = isBatch
-        ? ["-NoProfile", "-ExecutionPolicy", "Bypass", "-EncodedCommand", Buffer.from(startProcessCommand(launchPlan), "utf16le").toString("base64")]
-        : launchPlan.args;
-      await new Promise<void>((resolve, reject) => {
-        const child = spawn(command, args, { detached: true, stdio: "ignore", cwd: this.input.updateDir, shell: false });
-        child.once("error", reject);
-        child.once("spawn", () => {
-          child.unref();
-          resolve();
-        });
-      });
-    }
+    else await launchUpdateProcess(launchPlan, this.input.updateDir);
     if (this.input.exitApp) this.input.exitApp();
   }
 
   private installerLaunchPlan(plan: UpdateLaunchPlan): UpdateLaunchPlan {
     const targetPlatform = this.input.platform ?? platform();
-    if (targetPlatform !== "win32" || extname(plan.filePath).toLowerCase() !== ".exe") return plan;
+    if (targetPlatform !== "win32" || ![".exe", ".cmd"].includes(extname(plan.filePath).toLowerCase())) return plan;
+    mkdirSync(this.input.updateDir, { recursive: true });
+    const attemptDir = mkdtempSync(join(this.input.updateDir, "handoff-"));
     return writeWindowsInstallerHandoff({
-      scriptPath: join(this.input.updateDir, "Install Gaurav POS Update.ps1"),
+      scriptPath: join(attemptDir, "Install Gaurav POS Update.ps1"),
       logPath: join(this.input.updateDir, "install-handoff.log"),
       installer: plan,
       appExecutablePath: process.execPath,

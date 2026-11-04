@@ -17,7 +17,7 @@ describe("windows update handoff", () => {
         parentPid: 12345,
         installer: { filePath: "C:\\Temp\\O'Hara & %data%\\Jos\u00e9\\setup.exe", args: ["--updated", "/S", "--force-run"] }
       });
-      expect(plan).toEqual({ filePath: "powershell.exe", args: ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", scriptPath] });
+      expect(plan).toMatchObject({ filePath: "powershell.exe", args: ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", scriptPath] });
       const script = readFileSync(scriptPath, "utf8");
       expect(script.charCodeAt(0)).toBe(0xfeff);
       expect(script).toContain("Jos\u00e9");
