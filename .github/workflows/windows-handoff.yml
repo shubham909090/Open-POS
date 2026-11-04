@@ -4,6 +4,12 @@ on:
   workflow_dispatch:
   push:
     branches: [codex/windows-update-handoff-fix]
+  pull_request:
+    paths:
+      - apps/hub-electron/src/update/**
+      - apps/hub-electron/src/config/update-handoff.ts
+      - apps/hub-electron/scripts/test-windows-handoff.cjs
+      - .github/workflows/windows-handoff.yml
 
 permissions:
   contents: read
@@ -22,39 +28,28 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @gaurav-pos/shared build
       - run: pnpm --filter @gaurav-pos/hub-electron exec tsc -p tsconfig.build.json
-      - name: Probe real Electron child process startup
-        shell: pwsh
-        run: |
-          $electron = node -e "process.stdout.write(require('./apps/hub-electron/node_modules/electron'))"
-          $probe = Resolve-Path apps/hub-electron/scripts/probe-windows-handoff.cjs
-          $output = Join-Path $env:RUNNER_TEMP handoff-probe
-          $process = Start-Process $electron -ArgumentList @($probe, $output) -PassThru
-          if (-not $process.WaitForExit(90000)) { $process.Kill(); throw 'Electron probe timed out' }
-          Get-Content (Join-Path $output result.json)
-          if ($process.ExitCode -ne 0) { throw 'Electron probe failed' }
-          $deadline = (Get-Date).AddSeconds(30)
-          while (!(Test-Path (Join-Path $output survived-parent.ready)) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 100 }
-          if (!(Test-Path (Join-Path $output survived-parent.ready))) { throw 'Separate-console helper did not survive Electron shutdown' }
       - name: Verify production helper readiness, parent exit, and late cancellation
         shell: pwsh
         run: |
           $electron = node -e "process.stdout.write(require('./apps/hub-electron/node_modules/electron'))"
           $test = Resolve-Path apps/hub-electron/scripts/test-windows-handoff.cjs
-          foreach ($scenario in @('success', 'cancel')) {
+          foreach ($scenario in @('success', 'rollback', 'cancel')) {
             $output = Join-Path $env:RUNNER_TEMP "handoff-probe/$scenario"
             $process = Start-Process $electron -ArgumentList @($test, $output, $scenario) -PassThru
             if (!$process.WaitForExit(60000)) { $process.Kill(); throw 'Production helper test timed out' }
             if ($process.ExitCode -ne 0) { Get-Content "$output/failure.log"; throw 'Production helper test failed' }
+            $logPath = "$output/install-handoff.log"
+            if ($scenario -eq 'cancel') { $logPath = "$output/late-install-handoff.log" }
             $deadline = (Get-Date).AddSeconds(30)
-            while (!(Test-Path "$output/install-handoff.log") -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 100 }
-            while ((Get-Content "$output/install-handoff.log" -Raw) -notmatch 'Transcript end' -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 100 }
-            $log = Get-Content "$output/install-handoff.log" -Raw
-            if ($scenario -eq 'success') {
+            while (!(Test-Path $logPath) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 100 }
+            while ((Get-Content $logPath -Raw) -notmatch 'Transcript end' -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 100 }
+            $log = Get-Content $logPath -Raw
+            if ($scenario -ne 'cancel') {
               if (!(Test-Path "$output/authorized") -or !(Test-Path "$output/fake-installer-ran") -or $log -notmatch 'completed successfully') { throw 'Installer did not run after Electron shutdown' }
             } else {
               if (!(Test-Path "$output/cancelled") -or (Test-Path "$output/fake-installer-ran") -or $log -notmatch 'cancelled or not authorized') { throw 'Late cancellation was not respected' }
             }
-            Get-Content "$output/install-handoff.log"
+            Get-Content $logPath
           }
       - uses: actions/upload-artifact@v4
         if: always()
