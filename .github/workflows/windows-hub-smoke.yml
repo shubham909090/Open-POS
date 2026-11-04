@@ -1,6 +1,14 @@
 name: Windows Hub Update Smoke
 
 on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'apps/hub-electron/**'
+      - 'packages/shared/**'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - '.github/workflows/windows-hub-smoke.yml'
   workflow_dispatch:
     inputs:
       fixtureVersion:
@@ -16,6 +24,10 @@ on:
 
 permissions:
   contents: read
+
+concurrency:
+  group: windows-hub-smoke-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   windows-update:
