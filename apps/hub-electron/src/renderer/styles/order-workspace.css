@@ -111,7 +111,7 @@
 .ticket-body .line-row { grid-template-areas: "main amount qty" "note note note" "action action action"; row-gap: 2px; }
 .ticket-body .line-note-field summary { width: max-content; min-height: 24px; padding: 0; font-size: 12px; font-weight: 500; color: var(--accent-dark); }
 .ticket-body .line-note-field:not([open]) { margin-left: 0; }
-.ticket-body .line-note-field input { max-width: 480px; min-height: 36px; background: var(--panel); font-weight: 500; }
+.ticket-body .line-note-field input { width: 100%; max-width: 480px; min-height: 36px; background: var(--panel); font-weight: 500; }
 .ticket-body .line-note-text { padding: 4px 0; font-size: 12px; }
 
 /* ---------- Sent items ---------- */

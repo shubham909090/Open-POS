@@ -69,6 +69,7 @@
 
 .line-title-copy {
   @apply grid min-w-0 gap-1;
+  flex: 1;
 }
 
 .line-title-copy strong {
