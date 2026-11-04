@@ -19,12 +19,15 @@ Windows Hub and Android share visual rules, semantic colors and interaction stat
 
 - Center single-task setup, approval and QR presentation. Center quantity controls and icons optically. Align names and field labels left; amounts right.
 - The table popup is one continuous surface. Separate its ticket, footer and payment areas with spacing or dividers, never nested rounded cards.
+- Dialog height follows short New, Sent and Bill content, capped by the viewport. Long forms scroll with their final action visible. Headers use available space for table identity; truncate only constrained floor/name text with the full value available. Keep status and elapsed time together.
+- Single-option menu items use one full target, including a non-default portion label. Multiple sizes use content-sized rows with the complete name and wrapping actions. Never compress option buttons into ordinary fixed-height dish tiles or hide mobile sizes in a horizontal strip.
 - One page title, one clear primary action per decision area. No breadcrumb that repeats the adjacent heading, configured badge, duplicate total, or explanatory paragraph by default.
 - Keep the catalog and service work visible immediately. Add/import forms open on demand. Do not put a catalog below a permanently expanded creation form.
 - Order identity and the New order / Sent items / Bill tabs live in the workspace header. Keep the dialog bounded and centered; Sent items fits its contents. New order starts with search and category controls only. A search or explicit category opens the menu grid beside the ticket; no category opens automatically. Each editable line has quantity controls and a whole-line Remove action. Sent removals remain local edits until saved through existing approval rules. Bill shows the receipt beside the settle card. Keep the payable amount and final action together. Never show an old bill's action while revising it.
 - Tender has one method chip (fill remaining) and one explicit amount per method; split tender remains directly editable. Cash change subtracts recorded payments and new non-cash tenders from the balance before comparing cash received; the calculator never changes tender amounts. Bill opens on Cash. F8 punches an exact payment; reprint requires its focused button, never global Enter.
 - History edit uses receipt/items beside settlement, a compact Master PIN beside Save, and an aligned Before/After audit with IDs in a selectable footer.
 - Destructive entry actions use red text or outline. Filled red belongs to confirmation.
+- Secondary buttons have a warm tint and visible border; destructive entry buttons use a soft red fill and red border. Kitchen, bill and payment commits retain saffron, indigo and green.
 - Kitchen shows bare quantities for new orders and signed changes for modifications. Show age from the stored ticket timestamp when available; billed table timers show time since billing.
 - Dialogs open on the field that does the work (PIN, search, default printer), not on Close.
 - Settings use aligned field rows and progressive disclosure. Printer preview follows the selected printer and stays visible where space permits.

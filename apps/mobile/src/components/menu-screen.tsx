@@ -347,13 +347,13 @@ function MenuItemRow({
             </Pressable>
           </View>); })()
         ) : (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always" contentContainerStyle={styles.variantWrap}>
+          <View style={styles.variantWrap}>
             {activeVariants.map((variant) => (
               <Pressable key={variant.id || menuItem.id} accessibilityLabel={`Add ${menuItem.name}, ${variant.label}, ₹${formatRupees(variant.price_paise)}`} style={styles.variantChip} onPress={() => onAddItem(menuItem.id, variant.id || undefined)}>
                 <Text style={styles.filterChipText}>{variant.label}</Text><Text style={styles.variantPrice}>₹{formatRupees(variant.price_paise)}</Text>
               </Pressable>
             ))}
-          </ScrollView>
+          </View>
         )}
       </View>
       {hasMultipleVariants && draftSelectionLabel ? (

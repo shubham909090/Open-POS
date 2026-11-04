@@ -74,6 +74,7 @@ export const serviceWorkflowStyles = {
   kotNote: { color: palette.amberBold, backgroundColor: palette.amberSoft, borderLeftWidth: 3, borderLeftColor: palette.amber, paddingHorizontal: 10, paddingVertical: 6, fontSize: 14, fontWeight: "600", lineHeight: 19 },
   kotItemNote: { color: palette.amberBold, fontSize: 13, fontWeight: "600", lineHeight: 18 },
   kotReadyButton: { backgroundColor: palette.success, borderColor: palette.success },
+  kotCommitButton: { backgroundColor: palette.green },
   kotCardPreparing: { borderTopColor: palette.accentBright },
   kotCardReady: { borderTopColor: palette.success, backgroundColor: palette.successSoft },
   kotCardServed: { borderColor: palette.line, backgroundColor: palette.wash, opacity: 0.7 },

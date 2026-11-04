@@ -4,13 +4,14 @@ import { Pressable } from "./pressable";
 import { palette, tabularFigures } from "../styles/app-style-tokens";
 
 export function Button({ label, onPress, tone = "primary", disabled, busy, icon, style, accessibilityLabel }: {
-  label: string; onPress: () => void; tone?: "primary" | "money" | "secondary" | "quiet" | "danger";
+  label: string; onPress: () => void; tone?: "primary" | "kitchen" | "money" | "secondary" | "quiet" | "danger";
   disabled?: boolean; busy?: boolean; icon?: ReactNode; style?: ViewStyle; accessibilityLabel?: string;
 }) {
-  const labelColor = disabled || busy ? palette.muted : tone === "primary" || tone === "money" ? palette.inverseText : tone === "danger" ? palette.red : palette.ink;
+  const filled = tone === "primary" || tone === "kitchen" || tone === "money";
+  const labelColor = disabled || busy ? palette.muted : filled ? palette.inverseText : tone === "danger" ? palette.red : palette.ink;
   // Android dropped the caption after a disabled/background transition; remount the native control.
   return <Pressable key={disabled || busy ? "disabled" : tone} accessibilityLabel={accessibilityLabel ?? label} disabled={disabled || busy} onPress={onPress} style={[ui.button, ui[tone], (disabled || busy) && ui.disabled, style]}>
-    {busy ? <ActivityIndicator size="small" color={tone === "primary" || tone === "money" ? palette.inverseText : palette.green} /> : icon}
+    {busy ? <ActivityIndicator size="small" color={filled ? palette.inverseText : palette.green} /> : icon}
     <Text style={[ui.buttonLabel, { color: labelColor }]}>{label}</Text>
   </Pressable>;
 }
@@ -33,10 +34,11 @@ export function Section({ title, trailing, children }: { title?: string; trailin
 export const ui = StyleSheet.create({
   button: { minHeight: 48, paddingHorizontal: 16, paddingVertical: 12, borderRadius: 8, flexDirection: "row", gap: 8, alignItems: "center", justifyContent: "center" },
   disabled: { backgroundColor: palette.wash, borderWidth: 1, borderColor: palette.line },
-  primary: { backgroundColor: palette.green },
+  primary: { backgroundColor: palette.chrome },
+  kitchen: { backgroundColor: palette.green },
   /** Settles money: the only green action. */
   money: { backgroundColor: palette.success },
-  secondary: { backgroundColor: palette.paper, borderWidth: 1, borderColor: palette.line },
+  secondary: { backgroundColor: palette.softWash, borderWidth: 1, borderColor: palette.lineStrong },
   quiet: { backgroundColor: "transparent" },
   danger: { backgroundColor: palette.redSoft, borderWidth: 1, borderColor: palette.redLine },
   // Android measures weight "600" with the regular face but draws it heavier, clipping the last word

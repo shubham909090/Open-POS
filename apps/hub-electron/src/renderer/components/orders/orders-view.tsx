@@ -235,14 +235,14 @@ export function OrdersView({ bootstrap, setNotice, requestManagerApproval, opera
           }}>
             <header className={`order-modal-header state-${selectedTableState ? tableDisplayClass(selectedTableState) : "free"}`}>
               <div className="order-modal-title">
-                <DialogPrimitive.Title asChild><h2>{selectedTable.name}<span className="sr-only"> order workspace</span></h2></DialogPrimitive.Title>
+                <DialogPrimitive.Title asChild><h2 title={selectedTable.name}>{selectedTable.name}<span className="sr-only"> order workspace</span></h2></DialogPrimitive.Title>
                 <span className="order-modal-meta">
-                  <span>{selectedTable.floor_name}</span>
+                  <span className="order-modal-floor" title={selectedTable.floor_name}>{selectedTable.floor_name}</span>
                   <span className="order-modal-state">{selectedTableState ? tileStateLabel(selectedTableState) : "Free"}</span>
                   {selectedTableDuration ? (
-                    <span className="order-modal-duration" aria-label={`${selectedTable.name} open for ${selectedTableDuration}`}>
+                    <span className="order-modal-duration" aria-label={selectedTableState === "bill_printed" ? `${selectedTable.name}, ${selectedTableDuration}` : `${selectedTable.name} open for ${selectedTableDuration}`}>
                       <Clock3 size={12} aria-hidden="true" />
-                      {selectedTableDuration}
+                      {selectedTableState === "bill_printed" ? selectedTableDuration.replace(/^Billed /, "") : selectedTableDuration}
                     </span>
                   ) : null}
                 </span>

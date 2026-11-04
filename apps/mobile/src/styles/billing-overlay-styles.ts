@@ -180,7 +180,7 @@ export const billingOverlayStyles = {
     paddingHorizontal: 14,
     flexGrow: 1
   },
-  dangerButtonText: { color: palette.inverseText, fontWeight: "600" },
+  dangerButtonText: { color: palette.inverseText, fontWeight: "700" },
   dangerText: { color: palette.red, fontWeight: "600" },
   sendButton: { flex: 1, minHeight: 48 },
   buttonDisabled: { opacity: 0.45 },

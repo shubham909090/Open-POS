@@ -7,7 +7,7 @@
 .ui-button-primary:hover:not(:disabled), .primary-button:hover:not(:disabled) { background: #000; }
 
 .ui-button-secondary, .secondary-button, .secondary-inline, .fill-rest-btn, .load-more-button, .utility-action, .order-icon-button, .menu-rail-button, .transfer-panel-toggle, .shift-button, .quick-pay-button, .history-print-button, .variant-buttons button {
-  border: 1px solid var(--line-strong); background: var(--panel); color: var(--ink); box-shadow: 0 1px 1px rgba(28, 25, 23, 0.05);
+  border: 1px solid var(--line-strong); background: var(--wash); color: var(--ink); box-shadow: 0 1px 1px rgba(28, 25, 23, 0.05);
 }
 .ui-button-secondary:hover:not(:disabled), .secondary-button:hover:not(:disabled), .secondary-inline:hover:not(:disabled), .variant-buttons button:hover:not(:disabled), .order-icon-button:hover:not(:disabled), .fill-rest-btn:hover:not(:disabled), .load-more-button:hover:not(:disabled), .utility-action:hover:not(:disabled), .history-print-button:hover:not(:disabled) {
   background: var(--wash); border-color: var(--faint);
@@ -16,7 +16,7 @@
 .ui-button-ghost:hover:not(:disabled), .quiet-button:hover:not(:disabled) { background: color-mix(in srgb, var(--ink) 6%, transparent); color: var(--ink); }
 .ui-button-danger, .danger-button, .danger-small-button { background: var(--danger); border-color: var(--danger); color: #fff; }
 .ui-button-danger:hover:not(:disabled), .danger-button:hover:not(:disabled) { background: color-mix(in srgb, var(--danger) 88%, #000); }
-.danger-link { border: 1px solid transparent; color: var(--danger); background: transparent; box-shadow: none; }
+.danger-link { border: 1px solid var(--danger-line); color: var(--danger); background: var(--danger-soft); box-shadow: none; }
 .danger-link:hover:not(:disabled), .secondary-inline.danger:hover:not(:disabled) { background: var(--danger-soft); color: var(--danger); }
 .ui-button-warning { background: var(--warning); color: #fff; }
 

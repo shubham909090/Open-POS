@@ -77,16 +77,17 @@ export function MenuCard({
 }) {
   const countBadge = draftCount > 0 ? <span className="menu-tile-count" aria-label={`${draftCount} in new order`}>{draftCount}</span> : null;
   const variants = getMenuActionVariants(item);
-  const single = variants.length === 1 && variants[0]?.kind === "default" ? variants[0] : null;
+  const single = variants.length === 1 ? variants[0] : null;
   const className = `menu-card menu-tile category-${item.sale_group_kind ?? "other"}${single ? " single" : " multi"}${draftCount > 0 ? " in-draft" : ""}${active ? " keyboard-active" : ""}`;
   // A plain dish is one big target: the whole tile adds it. Variant dishes keep one chip per size.
   if (single) {
     const price = formatCompactInr(single.price_paise);
+    const actionLabel = single.kind === "default" ? price : `${single.label} · ${price}`;
     return (
       <article ref={rowRef} className={className} onPointerMove={onActive}>
-        <button type="button" className="menu-tile-button" onClick={() => onAdd(single.id || undefined)} aria-label={`${item.name} + ${price}`}>
+        <button type="button" className="menu-tile-button" onClick={() => onAdd(single.id || undefined)} aria-label={`${item.name} + ${actionLabel}`}>
           <strong className="menu-tile-name" title={item.name}>{item.name}</strong>
-          <span className="menu-tile-price">{price}</span>
+          <span className="menu-tile-price">{actionLabel}</span>
         </button>
         {countBadge}
       </article>

@@ -90,10 +90,11 @@ export const menuTicketStyles = {
   singleVariantBlock: { alignItems: "stretch" },
   variantStripBlock: { width: "46%", minWidth: 132, maxWidth: 240, flexShrink: 0 },
   variantStack: { width: "100%", maxWidth: "100%", minWidth: 0, flexShrink: 1, paddingTop: 0 },
-  variantWrap: { flexDirection: "row", gap: 7, alignItems: "center", paddingRight: 4 },
+  variantWrap: { flexDirection: "row", flexWrap: "wrap", gap: 7, alignItems: "stretch" },
   variantChip: {
     minHeight: 44,
     minWidth: 84,
+    maxWidth: "100%",
     flexGrow: 0,
     borderWidth: 1,
     borderColor: palette.line,

@@ -162,7 +162,7 @@ export const appShellStyles = {
   primaryButton: {
     minHeight: 48,
     borderRadius: 8,
-    backgroundColor: palette.green,
+    backgroundColor: palette.chrome,
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 16
@@ -177,7 +177,7 @@ export const appShellStyles = {
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 14,
-    backgroundColor: palette.paper
+    backgroundColor: palette.softWash
   },
   secondaryButtonText: { color: palette.ink, fontWeight: "700" },
   approvalActionActive: { backgroundColor: palette.greenSoft, borderColor: palette.green },

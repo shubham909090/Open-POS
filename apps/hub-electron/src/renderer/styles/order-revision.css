@@ -1,5 +1,7 @@
-/* Bill revision: replaces the bill view while editing, one centred card. */
+/* Bill revision replaces the bill view on the same continuous dialog surface. */
 .revision-box { display: flex; flex-direction: column; gap: 10px; padding: 14px; border-radius: var(--surface-radius); background: var(--panel); box-shadow: var(--shadow-md); }
+.order-modal-card .revision-box { border-radius: 0; background: transparent; box-shadow: none; }
+.order-modal-card .revision-actions { border-radius: 0; background: var(--panel); }
 .revision-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .revision-head strong { font-size: 15px; font-weight: 700; }
 .revision-add-row { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; }

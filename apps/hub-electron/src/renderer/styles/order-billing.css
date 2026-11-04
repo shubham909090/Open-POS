@@ -4,14 +4,14 @@
  * The punch action sits pinned at the bottom of the settle card, where KOT sits on
  * the new-order ticket.
  */
-.ticket-body.panel-bill { padding: 14px; overflow: auto; justify-content: safe center; }
+.ticket-body.panel-bill { padding: 14px; overflow: auto; justify-content: flex-start; }
 .order-modal-card .bill-receipt, .order-modal-card .bill-settle { border-radius: 0; background: transparent; box-shadow: none; }
 .order-modal-card .bill-receipt::after { display: none; }
 .order-modal-card .bill-settle { border-left: 1px solid var(--line); }
-.order-modal-card .bill-settle-bar, .order-modal-card .bill-action-bar { border-radius: 0; background: transparent; }
+.order-modal-card .bill-settle-bar, .order-modal-card .bill-action-bar { position: sticky; bottom: 0; z-index: 1; border-radius: 0; background: var(--panel); }
 .ticket-body.panel-bill > .bill-draft-note, .ticket-body.panel-bill > .workspace-operation-error { width: min(836px, 100%); margin: 0 auto 10px; }
 .bill-layout {
-  display: grid; flex: 1; min-height: 0; justify-content: center; align-items: start; gap: 14px 16px; padding-top: 4px;
+  display: grid; flex: 0 1 auto; min-height: 0; justify-content: center; align-items: start; gap: 14px 16px; padding-top: 4px;
   grid-template-columns: minmax(320px, 460px) minmax(340px, 420px);
   grid-template-areas: "receipt settle" "actions settle";
   grid-template-rows: max-content 1fr;
@@ -115,6 +115,5 @@
 .discount-type-control button { min-width: 28px; min-height: 26px; padding: 0 7px; border: 0; background: transparent; color: var(--muted); box-shadow: none; }
 .discount-type-control button[aria-pressed="true"] { background: var(--panel); color: var(--ink); box-shadow: var(--shadow); }
 .bill-adjustments .split-input, .history-edit-money .split-input { display: grid; grid-template-columns: auto minmax(72px, 1fr); gap: 6px; }
-@media (min-height: 820px) { .bill-layout:not(.revising) { align-content: center; flex: 0 0 auto; padding-block: 22px; grid-template-rows: max-content 1fr; } }
 
 .change-helper-error { grid-column: 1 / -1; color: var(--danger); font-size: 12px; }

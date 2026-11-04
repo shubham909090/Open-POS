@@ -53,6 +53,17 @@ it("does not offer unavailable alcohol for ordering", () => {
   expect(screen.queryByRole("button")).toBeNull();
 });
 
+it("offers all active liquor sizes and preserves the selected size with a long item name", () => {
+  const onAdd = vi.fn();
+  const name = "Reserve blended whisky with a long restaurant menu name";
+  const variants = [30, 60, 180, 750].map((volume) => ({ id: `v${volume}`, kind: "shot", label: `${volume} ml`, active: true, price_paise: volume * 400, volume_ml: volume, inventory_action: "large_ml" }));
+  render(<MenuItemRow menuItem={{ ...dish, name, sale_group_kind: "alcohol", variants }} onAddItem={onAdd} />);
+  expect(screen.getByText(name)).toBeTruthy();
+  expect(screen.getAllByRole("button")).toHaveLength(4);
+  fireEvent.click(screen.getByRole("button", { name: `Add ${name}, 750 ml, ₹3,000` }));
+  expect(onAdd).toHaveBeenCalledWith("dish", "v750");
+});
+
 it("requires a payment choice and preserves numeric splits above one thousand", () => {
   const settle = vi.fn();
   const order = { order: { id: "order", table_id: "M2" }, items: [], bill: { id: "bill", total_paise: 140000, paid_paise: 0 }, payments: [] } as unknown as HubOrder;

@@ -245,7 +245,7 @@ function TicketScreen({
             <View style={styles.billAmountRow}><Text style={styles.muted}>{newCount} new items</Text><Text style={styles.totalText}>₹{formatRupees(draftTotal)}</Text></View>
             <View style={styles.sendButtonRow}>
               <Button label="Print + KOT" tone="secondary" disabled={!canSubmit} style={{ flex: 1 }} onPress={() => onSubmit("kot_print")} />
-              <Button label={sending ? "Sending…" : connection === "online" ? "Send KOT" : "Save draft"} disabled={!canSubmit} style={{ flex: 1 }} onPress={() => onSubmit("kot")} />
+              <Button label={sending ? "Sending…" : connection === "online" ? "Send KOT" : "Save draft"} tone={connection === "online" ? "kitchen" : "primary"} disabled={!canSubmit} style={{ flex: 1 }} onPress={() => onSubmit("kot")} />
             </View>
           </View> : null}
       </View> : null}
@@ -425,6 +425,7 @@ function TicketScreen({
                   <Pressable
                     style={[
                       styles.primaryButton,
+                      styles.kotCommitButton,
                       styles.sendButton,
                       sending && styles.buttonDisabled,
                     ]}

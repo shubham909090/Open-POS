@@ -43,7 +43,7 @@
 .manager-pin-form button { justify-self: start; width: fit-content; margin: 0; }
 .manager-pin-form .soft-note { margin: 0; }
 .kot-note-field { display: grid; gap: 4px; color: var(--muted); font-size: 12px; }
-.secondary-inline.danger { border-color: var(--danger-line); background: transparent; color: var(--danger); }
+.secondary-inline.danger { border-color: var(--danger-line); background: var(--danger-soft); color: var(--danger); }
 .ui-input { width: 100%; }
 .ui-input-invalid { border-color: var(--danger); }
 @media (pointer: coarse) { .compact-menu-card { min-height: 64px; } }
