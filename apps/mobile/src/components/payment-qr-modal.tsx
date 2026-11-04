@@ -46,7 +46,7 @@ export function PaymentQrModal({
     notice,
     change,
     setChange,
-    refresh,
+    retry,
     pickImage,
     saveChange,
     exportImage,
@@ -213,7 +213,7 @@ export function PaymentQrModal({
                       <Pressable
                         accessibilityRole="button"
                         style={s.textButton}
-                        onPress={() => void refresh(true)}
+                        onPress={() => void retry()}
                       >
                         <Text style={s.dangerText}>Try again</Text>
                       </Pressable>

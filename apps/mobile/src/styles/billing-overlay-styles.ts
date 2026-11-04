@@ -126,7 +126,9 @@ export const billingOverlayStyles = {
   quickPayButton: {
     minHeight: 50,
     minWidth: 64,
-    flex: 1,
+    flexGrow: 1,
+    flexShrink: 1,
+    flexBasis: 0,
     borderRadius: 6,
     borderWidth: 1,
     borderColor: palette.line,
@@ -135,6 +137,7 @@ export const billingOverlayStyles = {
     justifyContent: "center",
     paddingHorizontal: 8
   },
+  quickPayButtonWide: { flexBasis: "45%", flexShrink: 0 },
   quickPaySelected: { borderColor: palette.green, backgroundColor: palette.greenSoft },
   quickPayText: { color: palette.greenBold, fontWeight: "600", fontSize: 14 },
   popupBackdrop: {

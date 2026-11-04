@@ -15,7 +15,7 @@
           "cameraPermission": "Allow Gaurav POS to scan hub pairing QR codes."
         }
       ],
-      "./plugins/with-cleartext-traffic.cjs",
+      "./plugins/with-android-runtime.cjs",
       "expo-sharing"
     ],
     "android": {

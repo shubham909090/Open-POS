@@ -47,6 +47,7 @@ export function usePaymentQr({ client, online, deviceName }: {
   const request = useRef<AbortController | null>(null);
   const sequence = useRef(0);
   const actionBusy = useRef(false);
+  const exportRetry = useRef<boolean | null>(null);
 
   useEffect(() => {
     mounted.current = true;
@@ -119,6 +120,7 @@ export function usePaymentQr({ client, online, deviceName }: {
     if (actionBusy.current) return;
     setError("");
     setNotice("");
+    exportRetry.current = null;
     try {
       const imageDataUrl = await pickImageDataUrl(PAYMENT_QR_MAX_IMAGE_BYTES, "payment QR");
       if (!mounted.current || !imageDataUrl) return;
@@ -138,6 +140,7 @@ export function usePaymentQr({ client, online, deviceName }: {
     setBusy(true);
     setError("");
     setNotice("");
+    exportRetry.current = null;
     request.current?.abort();
     sequence.current += 1;
     setLoading(false);
@@ -172,6 +175,8 @@ export function usePaymentQr({ client, online, deviceName }: {
     setBusy(true);
     setError("");
     setNotice("");
+    exportRetry.current = null;
+    let destinationVerified = false;
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 10_000);
     try {
@@ -180,7 +185,9 @@ export function usePaymentQr({ client, online, deviceName }: {
       clearTimeout(timeout);
       if (!mounted.current) return;
       setQr(latest.qr);
+      setLoadError("");
       if (!latest.qr) throw new Error("The payment QR has been removed. Ask the owner to upload one.");
+      destinationVerified = true;
       const fileName = `payment-qr-${Date.parse(latest.qr.updatedAt)}.png`;
       const imageBase64 = latest.qr.imageDataUrl.replace(/^data:image\/png;base64,/, "");
       if (download) {
@@ -198,8 +205,13 @@ export function usePaymentQr({ client, online, deviceName }: {
       if (mounted.current) {
         const message = failure instanceof Error ? failure.message : "Could not save the payment QR.";
         if (!/cancel/i.test(message)) {
-          setQr(null);
-          setError(message);
+          if (destinationVerified) {
+            exportRetry.current = download;
+            setError(download ? "Couldn't save the QR. Try again." : "Couldn't share the QR. Try again.");
+          } else {
+            setQr(null);
+            setLoadError(message);
+          }
         }
       }
     } finally {
@@ -209,6 +221,7 @@ export function usePaymentQr({ client, online, deviceName }: {
     }
   }
 
-  const editChange = (next: PaymentQrChange | null) => { setError(""); setChange(next); };
-  return { qr, loading, busy, error: error || loadError, notice, change, setChange: editChange, refresh, pickImage, saveChange, exportImage };
+  const editChange = (next: PaymentQrChange | null) => { exportRetry.current = null; setError(""); setChange(next); };
+  const retry = () => exportRetry.current === null ? refresh(true) : exportImage(exportRetry.current);
+  return { qr, loading, busy, error: error || loadError, notice, change, setChange: editChange, refresh, retry, pickImage, saveChange, exportImage };
 }

@@ -4,9 +4,10 @@ import { afterEach, expect, it, vi } from "vitest";
 import type { PaymentQr } from "@gaurav-pos/shared";
 import type { HubClient } from "../lib/hub-client";
 import { usePaymentQr } from "../hooks/use-payment-qr";
+import { Directory } from "expo-file-system";
 
 vi.mock("react-native", () => ({ AppState: { currentState: "active", addEventListener: vi.fn(() => ({ remove: vi.fn() })) } }));
-vi.mock("expo-file-system", () => ({ Directory: {}, File: class {}, Paths: {} }));
+vi.mock("expo-file-system", () => ({ Directory: { pickDirectoryAsync: vi.fn() }, File: class {}, Paths: {} }));
 vi.mock("expo-image-picker", () => ({ launchImageLibraryAsync: vi.fn() }));
 vi.mock("expo-sharing", () => ({ isAvailableAsync: vi.fn(), shareAsync: vi.fn() }));
 afterEach(() => { cleanup(); vi.clearAllMocks(); vi.useRealTimers(); });
@@ -43,4 +44,22 @@ it("clears a connection-load error when the current QR can be fetched again", as
   await act(async () => { await result.current.refresh(); });
   expect(result.current.error).toBe("");
   expect(result.current.qr).toEqual(qr);
+});
+
+it("retains the verified QR, hides native export details, and retries the failed download", async () => {
+  const write = vi.fn();
+  const createFile = vi.fn(() => ({ write }));
+  vi.mocked(Directory.pickDirectoryAsync).mockRejectedValueOnce(new Error("java.lang.IllegalStateException: unregistered ActivityResultLauncher"))
+    .mockResolvedValueOnce({ createFile } as never);
+  const client = { paymentQr: vi.fn().mockResolvedValue({ qr }), subscribeRealtime: vi.fn(() => vi.fn()) } as unknown as HubClient;
+  const { result } = renderHook(() => usePaymentQr({ client, online: true, deviceName: "Waiter" }));
+  await waitFor(() => expect(result.current.qr).toEqual(qr));
+  await act(async () => { await result.current.exportImage(true); });
+  expect(result.current.qr).toEqual(qr);
+  expect(result.current.error).toBe("Couldn't save the QR. Try again.");
+  await act(async () => { await result.current.retry(); });
+  expect(Directory.pickDirectoryAsync).toHaveBeenCalledTimes(2);
+  expect(write).toHaveBeenCalledWith("AAAA", { encoding: "base64" });
+  expect(result.current.error).toBe("");
+  expect(result.current.notice).toContain("saved");
 });

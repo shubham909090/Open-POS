@@ -1,6 +1,6 @@
 import { FormModal } from "./form-modal";
 import { useEffect, useState } from "react";
-import { ScrollView, Text, TextInput, View } from "react-native";
+import { ScrollView, Text, TextInput, useWindowDimensions, View } from "react-native";
 import { Pressable } from "./pressable";
 
 import type { HubOrder } from "../lib/hub-client";
@@ -48,6 +48,8 @@ function CaptainBillingPanel({
     }>;
   }) => void;
 }) {
+  const { width, fontScale } = useWindowDimensions();
+  const widePaymentButtons = fontScale >= 1.3 || width < 360;
   const bill = currentOrder?.bill ?? null;
   const payments = currentOrder?.payments ?? [];
   const [discountType, setDiscountType] = useState<"amount" | "percent">(
@@ -207,7 +209,7 @@ function CaptainBillingPanel({
                 <Pressable
                   key={method}
                   accessibilityState={{ selected: amountInputToPaise(paymentInputs[method]) === balancePaise && balancePaise > 0 }}
-                  style={[styles.quickPayButton, amountInputToPaise(paymentInputs[method]) === balancePaise && balancePaise > 0 && styles.quickPaySelected]}
+                  style={[styles.quickPayButton, widePaymentButtons && styles.quickPayButtonWide, amountInputToPaise(paymentInputs[method]) === balancePaise && balancePaise > 0 && styles.quickPaySelected]}
                   onPress={() => fillFullPayment(method)}
                 >
                   <Text style={styles.quickPayText}>

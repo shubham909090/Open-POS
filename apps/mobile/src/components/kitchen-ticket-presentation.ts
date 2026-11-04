@@ -22,3 +22,8 @@ export function kitchenItemPresentation(quantityDelta: number, note?: string | n
   if (quantityDelta === 0) return { quantity: "Note", action: note ? "Updated" : "Cleared", kind: "note" as const };
   return { quantity: `+${quantityDelta}×`, action: "Add", kind: "add" as const };
 }
+
+/** Cancellation and note-only notices do not ask the cook to prepare dishes. */
+export function kitchenTicketNeedsAcknowledgment(type: KotType | undefined, items: ReadonlyArray<{ quantity_delta: number }>) {
+  return type === "cancelled" || type === "partial_cancel" || items.every((item) => item.quantity_delta <= 0);
+}
