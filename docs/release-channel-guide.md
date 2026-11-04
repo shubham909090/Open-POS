@@ -1,18 +1,21 @@
 # Official and nightly releases
 
-Hub 0.1.25 and Android 0.1.15 are the published official releases for the approved redesign, restaurant branding, per-printer QR sizing and repaired update flows. They replace both the previous regular release and the UI nightly.
+Hub 0.1.26 and Android 0.1.16 are the current official release targets. They include the refined compact interface, corrected menu-size layouts and restored reprint/payment shortcuts, plus the existing branding, QR sizing and update controls.
 
 | Channel | Windows Hub | Android | Intended use |
 | --- | --- | --- | --- |
-| Official | 0.1.25 | 0.1.15, versionCode 15 | Reviewed redesign and new update controls |
+| Official | 0.1.26 | 0.1.16, versionCode 16 | Compact redesign, complete menu-size layouts and preserved shortcuts |
+| Previous official | 0.1.25 | 0.1.15, versionCode 15 | Initial redesign and new update controls |
 | Previous regular | 0.1.23 | 0.1.13, versionCode 13 | Previous interface with QR and text sizing |
 | Previous UI nightly | 0.1.24 | 0.1.14, versionCode 14 | Earlier manual UI preview |
 
 Release pages:
 
-- [Official release](https://github.com/shubham909090/Open-POS/releases/tag/hub-v0.1.25)
+- [Official release](https://github.com/shubham909090/Open-POS/releases/tag/hub-v0.1.26)
 - [Previous regular release](https://github.com/shubham909090/Open-POS/releases/tag/hub-v0.1.23)
 - [UI nightly prerelease](https://github.com/shubham909090/Open-POS/releases/tag/hub-v0.1.24)
+
+Hub 0.1.25 and Android 0.1.15 can use their update buttons to receive this release.
 
 ## Updating the restaurant
 
