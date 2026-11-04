@@ -62,4 +62,6 @@ it("retains the verified QR, hides native export details, and retries the failed
   expect(write).toHaveBeenCalledWith("AAAA", { encoding: "base64" });
   expect(result.current.error).toBe("");
   expect(result.current.notice).toContain("saved");
+  await act(async () => { await result.current.refresh(true); });
+  expect(result.current.notice).toContain("saved");
 });

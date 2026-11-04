@@ -1,0 +1,50 @@
+diff --git a/android/src/main/java/expo/modules/kotlin/activityresult/AppContextActivityResultLauncher.kt b/android/src/main/java/expo/modules/kotlin/activityresult/AppContextActivityResultLauncher.kt
+index 7de4c043ff3d0d20f3e2966466eec3f7c77c62b8..d98506b70d56652d4804b7c0acb3947fdb01bdee 100644
+--- a/android/src/main/java/expo/modules/kotlin/activityresult/AppContextActivityResultLauncher.kt
++++ b/android/src/main/java/expo/modules/kotlin/activityresult/AppContextActivityResultLauncher.kt
+@@ -4,6 +4,8 @@ import androidx.activity.result.ActivityResultCallback
+ import androidx.activity.result.contract.ActivityResultContract
+ import java.io.Serializable
+ import kotlinx.coroutines.suspendCancellableCoroutine
++import kotlinx.coroutines.Dispatchers
++import kotlinx.coroutines.withContext
+ import kotlin.coroutines.resume
+ 
+ /**
+@@ -22,11 +24,14 @@ abstract class AppContextActivityResultLauncher<I : Serializable, O> {
+    */
+   abstract fun launch(input: I, callback: ActivityResultCallback<O>)
+ 
+-  suspend fun launch(input: I): O = suspendCancellableCoroutine { continuation ->
+-    launch(input) { output ->
+-      // avoids IllegalStateException: Already resumed - a rare crash likely due to race condition in lifecycle events
+-      if (continuation.isActive) {
+-        continuation.resume(output)
++  // Lifecycle observer registration must run on main, including after Activity recreation.
++  suspend fun launch(input: I): O = withContext(Dispatchers.Main.immediate) {
++    suspendCancellableCoroutine<O> { continuation ->
++      launch(input) { output ->
++        // avoids IllegalStateException: Already resumed - a rare crash likely due to race condition in lifecycle events
++        if (continuation.isActive) {
++          continuation.resume(output)
++        }
+       }
+     }
+   }
+diff --git a/android/src/main/java/expo/modules/kotlin/activityresult/AppContextActivityResultRegistry.kt b/android/src/main/java/expo/modules/kotlin/activityresult/AppContextActivityResultRegistry.kt
+index a5b971ef8fdc06d064d68349a6ac7230b517a783..f32cfee7ac6432e31ee8724ab43a44df56ec6eaa 100644
+--- a/android/src/main/java/expo/modules/kotlin/activityresult/AppContextActivityResultRegistry.kt
++++ b/android/src/main/java/expo/modules/kotlin/activityresult/AppContextActivityResultRegistry.kt
+@@ -221,6 +221,12 @@ class AppContextActivityResultRegistry(
+ 
+     return object : AppContextActivityResultLauncher<I, O>() {
+       override fun launch(input: I, callback: ActivityResultCallback<O>) {
++        // The React context can outlive an Activity destroyed by a configuration
++        // change. Rebind its surviving module launcher to the current Activity.
++        if (!keyToRequestCode.containsKey(key)) {
++          register(key, activity, contract, fallbackCallback).launch(input, callback)
++          return
++        }
+         val requestCode = keyToRequestCode[key]
+           ?: throw IllegalStateException("Attempting to launch an unregistered ActivityResultLauncher with contract $contract and input $input. You must ensure the ActivityResultLauncher is registered before calling launch()")
+ 

@@ -3,7 +3,7 @@ import { AppState } from "react-native";
 import { Directory, File, Paths } from "expo-file-system";
 import * as ImagePicker from "expo-image-picker";
 import * as Sharing from "expo-sharing";
-import { PAYMENT_QR_MAX_IMAGE_BYTES, type PaymentQr } from "@gaurav-pos/shared";
+import { feedbackTiming, PAYMENT_QR_MAX_IMAGE_BYTES, type PaymentQr } from "@gaurav-pos/shared";
 
 import type { HubClient } from "../lib/hub-client";
 
@@ -50,6 +50,12 @@ export function usePaymentQr({ client, online, deviceName }: {
   const exportRetry = useRef<boolean | null>(null);
 
   useEffect(() => {
+    if (!notice) return;
+    const timer = setTimeout(() => setNotice((current) => current === notice ? "" : current), feedbackTiming.successNoticeMs);
+    return () => clearTimeout(timer);
+  }, [notice]);
+
+  useEffect(() => {
     mounted.current = true;
     return () => {
       mounted.current = false;
@@ -74,7 +80,6 @@ export function usePaymentQr({ client, online, deviceName }: {
       setQr(null);
       setLoading(true);
       setLoadError("");
-      setNotice("");
     }
     try {
       const result = await client.paymentQr(controller.signal);
@@ -160,7 +165,7 @@ export function usePaymentQr({ client, online, deviceName }: {
       setLoading(false);
       setLoadError("");
       setChange(null);
-      setNotice(result.qr ? "Payment QR updated for all bill printers and staff." : "Payment QR removed from bills and staff devices.");
+      setNotice(result.qr ? "Payment QR updated." : "Payment QR removed.");
     } catch (failure) {
       if (mounted.current) setError(failure instanceof Error ? failure.message : "Could not update the payment QR.");
     } finally {
@@ -194,7 +199,7 @@ export function usePaymentQr({ client, online, deviceName }: {
         const directory = await Directory.pickDirectoryAsync();
         const file = directory.createFile(fileName, "image/png");
         file.write(imageBase64, { encoding: "base64" });
-        if (mounted.current) setNotice("Payment QR image saved to your selected folder.");
+        if (mounted.current) setNotice("QR saved.");
         return;
       }
       if (!await Sharing.isAvailableAsync()) throw new Error("Saving and sharing images is unavailable on this device.");

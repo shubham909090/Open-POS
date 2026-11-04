@@ -117,6 +117,8 @@ pnpm release:mobile:local -- --skip-typecheck
 
 The repo-local JDK and Android SDK are intentionally under `.agent/`, which is gitignored. They are not system-wide installs.
 
+Android keeps a small pinned Expo Core 55.0.25 patch in `patches/`: a picker launcher surviving an Activity recreation re-registers on the main thread before its next use. Keep normal Android font/density handling; overriding it left text layouts clipped. When upgrading Expo, retest text-size changes followed by image/folder selection, cancellation and retry before removing the patch. It does not restore an already-open picker across Activity recreation. The related upstream lifecycle issue is [expo/expo#41252](https://github.com/expo/expo/issues/41252).
+
 ## Before Building
 
 From the repo root:
