@@ -79,8 +79,11 @@ describe("reports history payment edit", () => {
     expect((saveButton as HTMLButtonElement).disabled).toBe(true);
 
     fireEvent.focus(screen.getByLabelText("History UPI amount"));
-    expect(screen.getByLabelText<HTMLInputElement>("History UPI amount").value).toBe("0");
-    expect((saveButton as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByLabelText<HTMLInputElement>("History UPI amount").value).toBe("300");
+    expect((saveButton as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.change(screen.getByLabelText("History UPI amount"), { target: { value: "250" } });
+    fireEvent.focus(screen.getByLabelText("History UPI amount"));
+    expect(screen.getByLabelText<HTMLInputElement>("History UPI amount").value).toBe("250");
     fireEvent.click(screen.getByRole("button", { name: "Fill remaining into History upi" }));
     expect(screen.getByLabelText<HTMLInputElement>("History UPI amount").value).toBe("300");
     expect(screen.getByText("Payment exact")).toBeTruthy();
@@ -104,6 +107,19 @@ describe("reports history payment edit", () => {
       expect.any(String),
       "default"
     );
+  });
+
+  it("switches the entire edited payment to any method in one click", async () => {
+    const { ReportsView } = await importReportsView();
+    renderReportsView(ReportsView);
+    fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
+    for (const method of ["UPI", "Card", "Online", "Cash"]) {
+      fireEvent.click(screen.getByRole("button", { name: `History Full ${method}` }));
+      for (const label of ["Cash", "UPI", "Card", "Online"]) {
+        expect(screen.getByLabelText<HTMLInputElement>(`History ${label} amount`).value).toBe(label === method ? "500" : "0");
+      }
+    }
+    expect(historyEditBillMock).not.toHaveBeenCalled();
   });
 
   it("saves history bill edits without opening the printer chooser", async () => {

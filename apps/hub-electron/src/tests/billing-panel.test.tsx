@@ -98,15 +98,16 @@ describe("hub billing shortcuts", () => {
     await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: "Revise printed bill" })));
   });
 
-  it("renders one remaining-balance chip per payment method", async () => {
+  it("retains full-payment shortcuts and Rest controls for all four methods", async () => {
     const { BillingPanel } = await importBillingPanel();
     renderBillingPanel(BillingPanel);
 
     const restButtons = screen.getAllByRole("button", { name: /Fill remaining into/ });
     expect(restButtons).toHaveLength(4);
+    expect(screen.getAllByRole("button", { name: /^Full / })).toHaveLength(4);
   });
 
-  it("method chip fills remaining balance for split payment", async () => {
+  it("Rest fills remaining balance without changing other split amounts", async () => {
     const { BillingPanel } = await importBillingPanel();
     const { container } = renderBillingPanel(BillingPanel);
 
@@ -162,19 +163,29 @@ describe("hub billing shortcuts", () => {
     }));
   });
 
-  it("keeps focus read-only and fills the remaining split only through its method chip", async () => {
+  it("fills an empty tender on focus and preserves an amount already entered", async () => {
     const { BillingPanel } = await importBillingPanel();
     const { container } = renderBillingPanel(BillingPanel);
 
     const paymentInputs = Array.from(container.querySelectorAll<HTMLInputElement>(".payment-grid input"));
     fireEvent.change(paymentInputs[0]!, { target: { value: "200" } });
     fireEvent.focus(paymentInputs[1]!);
-    expect(paymentInputs[1]!.value).toBe("0");
-    fireEvent.click(screen.getByRole("button", { name: "Fill remaining into upi" }));
     expect(paymentInputs[1]!.value).toBe("300");
 
     fireEvent.change(paymentInputs[1]!, { target: { value: "250" } });
+    fireEvent.focus(paymentInputs[1]!);
     expect(paymentInputs[1]!.value).toBe("250");
+  });
+
+  it("switches full payment in one click and subtracts payments already recorded", async () => {
+    const { BillingPanel } = await importBillingPanel();
+    renderBillingPanel(BillingPanel, { bill: { id: "bill-1", order_id: "order-1", status: "pending", total_paise: 50000, final_total_paise: 50000, discount_paise: 0, tip_paise: 0, paid_paise: 20000 } });
+    for (const method of ["Cash", "UPI", "Card", "Online"]) {
+      fireEvent.click(screen.getByRole("button", { name: `Full ${method}` }));
+      for (const label of ["Cash", "UPI", "Card", "Online"]) {
+        expect(screen.getByLabelText<HTMLInputElement>(`${label} amount`).value).toBe(label === method ? "300" : "0");
+      }
+    }
   });
 
   it("shows a local return calculator without changing payment amounts", async () => {
@@ -244,15 +255,28 @@ describe("hub billing shortcuts", () => {
     expect(screen.getByText("Return ₹500.00")).toBeTruthy();
   });
 
-  it("opens on Cash and ignores bare Enter until Reprint itself is activated", async () => {
+  it("opens on Cash and restores bare Enter to request reprint approval", async () => {
     const { BillingPanel } = await importBillingPanel();
     requestManagerApprovalMock.mockResolvedValue({ pin: "1234", reason: "Bill reprint", approvedBy: "manager" });
     renderBillingPanel(BillingPanel);
     expect(document.activeElement).toBe(screen.getByLabelText("Cash amount"));
     fireEvent.keyDown(window, { key: "Enter" });
-    expect(requestManagerApprovalMock).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "Reprint bill" }));
     await waitFor(() => expect(requestManagerApprovalMock).toHaveBeenCalledWith(expect.objectContaining({ title: "Approve bill reprint" })));
+    expect(billPrintersMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("ignores reprint Enter with modifiers or beneath another dialog", async () => {
+    const { BillingPanel } = await importBillingPanel();
+    renderBillingPanel(BillingPanel);
+    for (const modifier of ["altKey", "ctrlKey", "metaKey", "shiftKey"]) {
+      fireEvent.keyDown(window, { key: "Enter", [modifier]: true });
+    }
+    const dialog = document.createElement("div");
+    dialog.setAttribute("role", "dialog");
+    document.body.append(dialog);
+    fireEvent.keyDown(window, { key: "Enter" });
+    dialog.remove();
+    expect(requestManagerApprovalMock).not.toHaveBeenCalled();
   });
 
   it("does not use Enter for reprint when the bill button is hidden or a form control has focus", async () => {

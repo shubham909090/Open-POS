@@ -71,6 +71,7 @@ function ReportHistoryEditModal({
   onSavePrint,
   updateEditQty,
   addMenuItem,
+  fillHistoryPaymentFull,
   fillHistoryPaymentRemaining,
 }: {
   bill: HistoryBill;
@@ -109,6 +110,7 @@ function ReportHistoryEditModal({
   onSavePrint: () => void;
   updateEditQty: (key: string, delta: number) => void;
   addMenuItem: (item: MenuItem, variant?: NonNullable<MenuItem["variants"]>[number]) => void;
+  fillHistoryPaymentFull: (method: HistoryPaymentMethod) => void;
   fillHistoryPaymentRemaining: (method: HistoryPaymentMethod) => void;
 }) {
   return (
@@ -161,7 +163,7 @@ function ReportHistoryEditModal({
             </div>
             {!bill.isNc ? (
               <>
-                <PaymentFields payments={editPayments} setPayments={setEditPayments} fillRemaining={fillHistoryPaymentRemaining} labelPrefix="History " />
+                <PaymentFields payments={editPayments} setPayments={setEditPayments} fillFull={fillHistoryPaymentFull} fillRemaining={fillHistoryPaymentRemaining} labelPrefix="History " />
                 <label>
                   Payment note
                   <input value={editPaymentReference} onChange={(event) => setEditPaymentReference(event.target.value)} placeholder="UPI ref, card slip, or owner note" />

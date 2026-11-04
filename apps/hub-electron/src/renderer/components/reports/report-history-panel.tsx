@@ -188,6 +188,9 @@ function ReportHistoryPanel({
     onCommit: addKeyboardHistoryItem
   });
 
+  const fillHistoryPaymentFull = (method: HistoryPaymentMethod) => {
+    setEditPayments({ cash: "0", upi: "0", card: "0", online: "0", [method]: String(editFinalTotal / 100) });
+  };
   const fillHistoryPaymentRemaining = (method: HistoryPaymentMethod) => {
     setEditPayments((current) => {
       const otherTotal = PAYMENT_METHODS
@@ -248,6 +251,7 @@ function ReportHistoryPanel({
           onSavePrint={() => setHistoryEditPrintBill(editingBill)}
           updateEditQty={updateEditQty}
           addMenuItem={addMenuItem}
+          fillHistoryPaymentFull={fillHistoryPaymentFull}
           fillHistoryPaymentRemaining={fillHistoryPaymentRemaining}
         />
       ) : null}

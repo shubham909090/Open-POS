@@ -117,10 +117,10 @@ function CaptainBillingPanel({
         ? "NC bill"
         : "Revise bill";
 
-  const fillRemainingPayment = (method: PaymentMethod) => {
-    setPaymentInputs((current) => {
-      const otherPaid = (["cash", "upi", "card", "online"] as PaymentMethod[]).filter((entry) => entry !== method).reduce((sum, entry) => sum + amountInputToPaise(current[entry]), 0);
-      return { ...current, [method]: paiseToRupeeInput(Math.max(0, balancePaise - otherPaid)) };
+  const fillFullPayment = (method: PaymentMethod) => {
+    setPaymentInputs({
+      cash: "0", upi: "0", card: "0", online: "0",
+      [method]: paiseToRupeeInput(balancePaise),
     });
   };
   const selectApprovalAction = (action: "reprint" | "nc" | "revise") => {
@@ -188,10 +188,10 @@ function CaptainBillingPanel({
             <View style={styles.billAmountRow}><Text style={styles.sectionTitle}>Balance</Text><Text style={styles.sectionTitle}>₹{formatRupees(balancePaise)}</Text></View>
           </View>
 
-          <Text style={styles.smallMuted}>Tap a method to fill the remaining balance, or enter a split.</Text>
+          <Text style={styles.smallMuted}>Tap a method for full payment, or enter a split.</Text>
           <View style={styles.paymentGrid}>
             {(["cash", "upi", "card", "online"] as PaymentMethod[]).map((method) => <View key={method} style={styles.tenderRow}>
-              <Pressable accessibilityLabel={method === "upi" ? "UPI" : method.charAt(0).toUpperCase() + method.slice(1)} style={[styles.quickPayButton, amountInputToPaise(paymentInputs[method]) > 0 && styles.quickPaySelected]} onPress={() => fillRemainingPayment(method)}>
+              <Pressable accessibilityLabel={method === "upi" ? "UPI" : method.charAt(0).toUpperCase() + method.slice(1)} style={[styles.quickPayButton, amountInputToPaise(paymentInputs[method]) === balancePaise && balancePaise > 0 && styles.quickPaySelected]} onPress={() => fillFullPayment(method)}>
                 <Text style={styles.quickPayText}>{method === "upi" ? "UPI" : method.charAt(0).toUpperCase() + method.slice(1)}</Text>
               </Pressable>
               <TextInput accessibilityLabel={`${method.toUpperCase()} amount`} style={[styles.input, styles.tenderInput]} value={paymentInputs[method]} onChangeText={(value) => setPaymentInputs((current) => ({ ...current, [method]: value.replace(/[^0-9.]/g, "").slice(0, 10) }))} keyboardType="decimal-pad" selectTextOnFocus returnKeyType="done" />

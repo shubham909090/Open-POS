@@ -18,6 +18,11 @@ type SettlePayload = {
   payments: Array<{ method: "cash" | "upi" | "card" | "online"; amountPaise: number; reference?: string }>;
 };
 
+function isHotkeyTypingTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  return Boolean(target.closest("input,select,textarea,button,a,[contenteditable='true'],[role='button']"));
+}
+
 export function BillingPanel({
   tableOrder,
   tableName,
@@ -175,6 +180,10 @@ export function BillingPanel({
     },
     onError: (error) => setNotice({ tone: "bad", text: messageOf(error) })
   });
+  function fillFull(method: keyof typeof payments) {
+    setPayments({ cash: "0", upi: "0", card: "0", online: "0", [method]: String(Math.max(0, finalTotal - existingPaid) / 100) });
+  }
+
   function fillRemaining(method: keyof typeof payments) {
     const otherTotal = (Object.entries(payments) as Array<[keyof typeof payments, string]>)
       .filter(([key]) => key !== method)
@@ -199,6 +208,19 @@ export function BillingPanel({
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [canPunchBill, discountType, discountPaise, tipPaise, payments, reference, remaining, overpaid]);
+
+  useEffect(() => {
+    if (!canRequestReprint) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || !isKeyboardScopeActive(paymentScope.current)) return;
+      if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+      if (event.key !== "Enter" || isHotkeyTypingTarget(event.target)) return;
+      event.preventDefault();
+      void requestReprint();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [canRequestReprint, requestReprint]);
 
   useEffect(() => {
     if (!bill) return;
@@ -324,7 +346,7 @@ export function BillingPanel({
               <strong>Payment</strong>
               <span className={validPaymentState && overpaid === 0 && remaining === 0 && newPaid > 0 ? "settled" : ""}>{paymentStatus}</span>
             </div>
-            <PaymentFields payments={payments} setPayments={setPayments} fillRemaining={fillRemaining} autoFocus />
+            <PaymentFields payments={payments} setPayments={setPayments} fillFull={fillFull} fillRemaining={fillRemaining} autoFocus />
             {paymentEntries.length > 1 ? (
               <div className="split-summary" aria-label="Split payment breakdown">
                 Split: {paymentEntries.map((entry) => `${entry.method.toUpperCase()} ${formatInr(entry.paise)}`).join(" + ")}
@@ -359,11 +381,13 @@ export function BillingPanel({
             type="button"
             ref={reprintTrigger}
             className="secondary-button reprint-bill-button"
+            aria-label="Reprint bill"
+            aria-keyshortcuts="Enter"
             disabled={!canRequestReprint}
             onClick={() => { void requestReprint(); }}
           >
             <span>{reprintBill.isPending ? "Queueing..." : "Reprint bill"}</span>
-
+            <kbd>Enter</kbd>
           </button>
         ) : null}
         <BillRevisionEditor

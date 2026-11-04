@@ -71,10 +71,23 @@ it("requires a payment choice and preserves numeric splits above one thousand", 
   expect((screen.getByRole("button", { name: "Record ₹1,400" }) as HTMLButtonElement).disabled).toBe(true);
   expect(screen.getByTestId("bill-details-scroll").contains(screen.getByRole("button", { name: "Record ₹1,400" }))).toBe(false);
   fireEvent.change(screen.getByLabelText("CASH amount"), { target: { value: "400" } });
-  fireEvent.click(screen.getByRole("button", { name: "UPI" }));
+  fireEvent.change(screen.getByLabelText("UPI amount"), { target: { value: "1000" } });
   expect((screen.getByLabelText("UPI amount") as HTMLInputElement).value).toBe("1000");
   fireEvent.click(screen.getByRole("button", { name: "Record ₹1,400" }));
   expect(settle).toHaveBeenCalledWith({ discountType: "amount", discountValue: 0, tipPaise: 0, payments: [{ method: "cash", amountPaise: 40000, reference: undefined }, { method: "upi", amountPaise: 100000, reference: undefined }] });
+});
+
+it("switches full payment methods with one tap without carrying the previous tender", () => {
+  const settle = vi.fn();
+  const order = { order: { id: "order", table_id: "M2" }, items: [], bill: { id: "bill", total_paise: 140000, paid_paise: 40000 }, payments: [] } as unknown as HubOrder;
+  render(<CaptainBillingPanel canBill currentOrder={order} hasNewItems={false} sending={false} onGenerateBill={vi.fn()} onReprintBill={vi.fn()} onMarkNc={vi.fn()} onReviseBill={vi.fn()} onSettleBill={settle} />);
+  for (const method of ["Cash", "UPI", "Card", "Online"]) {
+    fireEvent.click(screen.getByRole("button", { name: method }));
+    for (const label of ["Cash", "UPI", "Card", "Online"]) {
+      expect((screen.getByLabelText(`${label.toUpperCase()} amount`) as HTMLInputElement).value).toBe(label === method ? "1000" : "0");
+    }
+  }
+  expect(settle).not.toHaveBeenCalled();
 });
 
 it("keeps existing partially paid billing available when a local draft cannot be revised", () => {
