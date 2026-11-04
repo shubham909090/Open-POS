@@ -30,6 +30,9 @@ jobs:
           if (-not $process.WaitForExit(90000)) { $process.Kill(); throw 'Electron probe timed out' }
           Get-Content (Join-Path $output result.json)
           if ($process.ExitCode -ne 0) { throw 'Electron probe failed' }
+          $deadline = (Get-Date).AddSeconds(30)
+          while (!(Test-Path (Join-Path $output survived-parent.ready)) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 100 }
+          if (!(Test-Path (Join-Path $output survived-parent.ready))) { throw 'Non-detached helper did not survive Electron shutdown' }
       - uses: actions/upload-artifact@v4
         if: always()
         with:

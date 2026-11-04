@@ -41,5 +41,12 @@ app.whenReady().then(async () => {
     results.push(result);
     writeFileSync(join(root, 'result.json'), JSON.stringify({ electron: process.versions, results }, null, 2));
   }
+  const survivor = join(root, 'survived-parent.ready');
+  const survivorScript = join(root, 'survived-parent.ps1');
+  writeFileSync(survivorScript, `\uFEFFWait-Process -Id ${process.pid} -Timeout 30 -ErrorAction Stop\r\n[System.IO.File]::WriteAllText('${survivor.replaceAll("'", "''")}', 'ready')\r\n`);
+  const survivorChild = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', survivorScript], { detached: false, stdio: 'ignore', shell: false });
+  await new Promise((resolve, reject) => { survivorChild.once('spawn', resolve); survivorChild.once('error', reject); });
+  survivorChild.unref();
+  await new Promise(resolve => setTimeout(resolve, 2000));
   app.exit(0);
 }).catch(error => { console.error(error); app.exit(1); });
