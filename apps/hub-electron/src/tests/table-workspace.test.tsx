@@ -54,6 +54,19 @@ describe("hub table workspace send actions", () => {
     await waitFor(() => expect(document.activeElement).toBe(screen.getByPlaceholderText("Search menu item")));
   });
 
+  it("shows a new parent error after an earlier workspace error was dismissed", async () => {
+    const { TableWorkspace, useHubStore } = await importWorkspace();
+    seedDraft(useHubStore);
+    const notify = vi.fn();
+    const { rerender } = render(wrapWorkspace(TableWorkspace, notify, { tone: "bad", text: "First error" }));
+    expect(await screen.findByRole("alert")).toHaveProperty("textContent", "First errorDismiss");
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss operation error" }));
+    expect(screen.queryByRole("alert")).toBeNull();
+
+    rerender(wrapWorkspace(TableWorkspace, notify, { tone: "bad", text: "QR save failed" }));
+    expect(await screen.findByRole("alert")).toHaveProperty("textContent", "QR save failedDismiss");
+  });
+
   it("shows only sent items in the bill total and explains any unsent draft", async () => {
     const { TableWorkspace, useHubStore } = await importWorkspace();
     tableOrderMock.mockResolvedValue(tableOrder(1));
@@ -286,7 +299,7 @@ function renderWorkspace(TableWorkspace: typeof import("../renderer/components/o
   return render(wrapWorkspace(TableWorkspace, setNotice));
 }
 
-function wrapWorkspace(TableWorkspace: typeof import("../renderer/components/orders/table-workspace.js").TableWorkspace, setNotice = vi.fn()) {
+function wrapWorkspace(TableWorkspace: typeof import("../renderer/components/orders/table-workspace.js").TableWorkspace, setNotice = vi.fn(), operationNotice?: { tone: "good" | "bad"; text: string }) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   return (
     <QueryClientProvider client={client}>
@@ -307,6 +320,7 @@ function wrapWorkspace(TableWorkspace: typeof import("../renderer/components/ord
           syncStatus: {}
         }}
         setNotice={setNotice}
+        operationNotice={operationNotice}
         requestManagerApproval={vi.fn()}
       />
     </QueryClientProvider>

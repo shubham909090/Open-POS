@@ -2,9 +2,10 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const { once } = require('node:events');
 const { _electron } = require('playwright');
 
-const [executablePath, smokeRoot] = process.argv.slice(2);
+const [executablePath, smokeRoot, onlineTargetVersion] = process.argv.slice(2);
 const report = {
   platform: process.platform,
   limits: ['Empty, unlicensed smoke database; no dense order workflows or business mutations.',
@@ -14,6 +15,33 @@ const report = {
 let app;
 let page;
 let output;
+let exitedForUpdate = false;
+
+async function clickOnlineUpdate() {
+  await page.getByRole('navigation', { name: 'Hub sections', exact: true }).getByRole('button', { name: 'Administration', exact: true }).click();
+  await page.getByRole('navigation', { name: 'Administration sections', exact: true }).getByRole('button', { name: 'App updates', exact: true }).click();
+  const button = page.getByRole('button', { name: 'Update app', exact: true });
+  await button.waitFor();
+  await page.waitForFunction(() => document.querySelector('[data-update-trigger]')?.disabled === false);
+  await capture('online-update-before-click');
+  const oldPid = app.process().pid;
+  const processExit = once(app.process(), 'exit', { signal: AbortSignal.timeout(600000) });
+  const closed = app.waitForEvent('close', { timeout: 600000 });
+  // Observe the expected process exit even if an earlier click assertion fails.
+  closed.catch(() => {});
+  processExit.catch(() => {});
+  const route = '/system/update/online/install';
+  await Promise.all([
+    page.waitForRequest(request => new URL(request.url()).pathname === route && request.method() === 'POST'),
+    button.click()
+  ]);
+  report.onlineButton = { requestedTarget: onlineTargetVersion, route, oldPid, oldProcessExited: false };
+  await closed;
+  const [code, signal] = await processExit;
+  exitedForUpdate = true;
+  assert.equal(code, 0, 'Fixture process did not quit cleanly for the online update');
+  report.onlineButton = { requestedTarget: onlineTargetVersion, route, oldPid, oldProcessExited: true, exit: { code, signal } };
+}
 
 async function capture(name) {
   await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
@@ -76,7 +104,8 @@ async function testCommandDialog(prefix) {
 
 async function main() {
   assert.equal(process.platform, 'win32', 'This audit must run against the installed Windows application');
-  assert.ok(executablePath && smokeRoot, 'Usage: node test-windows-ui.cjs <installed-exe> <smoke-root>');
+  assert.ok(executablePath && smokeRoot, 'Usage: node test-windows-ui.cjs <installed-exe> <smoke-root> [online-target-version]');
+  if (onlineTargetVersion) assert.match(onlineTargetVersion, /^\d+\.\d+\.\d+$/);
   assert.ok(fs.existsSync(executablePath), 'Installed executable is missing');
   assert.equal(process.env.HUB_HOST, '127.0.0.1');
   assert.equal(process.env.HUB_PORT, '43737');
@@ -143,6 +172,8 @@ async function main() {
     await testCommandDialog(prefix);
   }
   assert.equal(report.errors.length, 0, 'Renderer emitted uncaught JavaScript errors; see audit JSON');
+  if (onlineTargetVersion) await clickOnlineUpdate();
+  assert.equal(report.errors.length, 0, 'Renderer emitted uncaught JavaScript errors during the update');
   report.passed = true;
 }
 
@@ -153,7 +184,7 @@ main().catch(async error => {
   process.exitCode = 1;
   if (page && output) await page.screenshot({ path: path.join(output, 'ui-failure.png'), fullPage: true }).catch(() => {});
 }).finally(async () => {
-  if (app) {
+  if (app && !exitedForUpdate) {
     try { await app.close(); }
     catch (error) { report.passed = false; report.closeError = error.message; process.exitCode = 1; }
   }

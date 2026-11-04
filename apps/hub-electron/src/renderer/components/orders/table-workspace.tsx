@@ -46,6 +46,7 @@ export function TableWorkspace({
   }, [notifyApp]);
   const shownNotice = localNotice ?? operationNotice;
   useEffect(() => { setLocalNotice(null); operationTrigger.current = null; }, [tableId]);
+  useEffect(() => { setLocalNotice(null); }, [operationNotice]);
   useEffect(() => {
     if (!shownNotice || shownNotice.tone !== "bad") return;
     const frame = requestAnimationFrame(() => {

@@ -21,10 +21,12 @@ describe("hub UI draft store", () => {
     };
 
     useHubStore.getState().addDraftItem("table-1", dish);
+    useHubStore.getState().setDraftItemNote("table-1", "dish-1", "No nuts — allergy");
     useHubStore.getState().addDraftItem("table-1", dish);
     useHubStore.getState().addDraftItem("table-2", dish);
 
     expect(useHubStore.getState().drafts["table-1"]?.["dish-1"]?.quantity).toBe(2);
+    expect(useHubStore.getState().drafts["table-1"]?.["dish-1"]?.note).toBe("No nuts — allergy");
     expect(useHubStore.getState().drafts["table-2"]?.["dish-1"]?.quantity).toBe(1);
 
     useHubStore.getState().clearDraft("table-1");

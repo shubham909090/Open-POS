@@ -111,7 +111,7 @@ That command:
 Optional flags:
 
 ```bash
-pnpm release:mobile:local -- --version 0.1.8 --version-code 8
+pnpm release:mobile:local -- --version 0.1.15 --version-code 15
 pnpm release:mobile:local -- --skip-typecheck
 ```
 
@@ -182,6 +182,8 @@ latest.yml
 hub-update-metadata.json
 Gaurav POS Hub-0.1.25.gpos-update.zip
 Gaurav-POS-Mobile-0.1.15.apk
+mobile-update-metadata.json
+SHA256SUMS
 ```
 
 `latest.yml`, the `.exe`, and the `.exe.blockmap` are what Electron updater uses for one-click **Update app** installs.
@@ -224,7 +226,7 @@ The installed Hub 0.1.23/0.1.24 still contains the old broken launch code. Insta
 Brother update flow after this:
 
 ```text
-Open Hub -> Advanced -> App Updates -> Update app -> Hub backs up DB -> Hub closes -> installer opens
+Open Hub -> Administration -> App updates -> Update app -> Hub backs up DB -> Hub closes -> installer opens
 ```
 
 The app still creates a pre-update DB backup before installer launch. If the running app has a registered current installer/package baseline, installer rollback is available too; a first online update without that baseline is DB-backup-only and records the new baseline for future updates.

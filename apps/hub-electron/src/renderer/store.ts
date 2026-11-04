@@ -91,6 +91,7 @@ export const useHubStore = create<HubUiState>((set) => ({
               saleGroupName: item.sale_group_name,
               saleGroupKind: item.sale_group_kind,
               pricePaise: variant?.price_paise ?? item.price_paise,
+              note: current?.note,
               quantity: (current?.quantity ?? 0) + 1
             }
           }
