@@ -99,3 +99,5 @@
 .kot-acknowledge-button { border: 1px solid var(--line-strong); background: var(--panel); color: var(--ink); }
 .kot-card.cancellation .kot-acknowledge-button { border-color: var(--danger-line); color: var(--danger); }
 .kot-acknowledge-button:hover:not(:disabled) { background: var(--wash); }
+.kot-status-button.kot-next-action { border-color: var(--accent); background: var(--accent); color: var(--panel); font-weight: 600; }
+.kot-status-button.kot-next-action:hover:not(:disabled) { border-color: var(--accent-dark); background: var(--accent-dark); }

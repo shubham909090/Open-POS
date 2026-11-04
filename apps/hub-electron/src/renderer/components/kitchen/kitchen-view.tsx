@@ -138,6 +138,7 @@ export function KitchenView({
             const cancellation = ticket.type === "cancelled" || ticket.type === "partial_cancel" || (ticket.items.some((item) => item.quantity_delta < 0) && ticket.items.every((item) => item.quantity_delta <= 0));
             const acknowledgeOnly = cancellation || ticket.items.every((item) => item.quantity_delta === 0);
             const kind = ticket.type ? ticketLabels[ticket.type] : cancellation ? "Items cancelled" : "Kitchen ticket";
+            const primaryStatus = ticket.status === "ready" ? "served" : "ready";
             return <article key={ticket.id} className={`kot-card${cancellation ? " cancellation" : ""}${acknowledgeOnly ? " acknowledge-only" : ""}`}>
 
               <header>
@@ -160,7 +161,7 @@ export function KitchenView({
                   <button
                     key={status}
                     type="button"
-                    className={`kot-status-button ${status}`}
+                    className={`kot-status-button ${status}${status === primaryStatus ? " kot-next-action" : ""}`}
                     aria-label={`Mark ticket ${ticket.sequence} ${status}`}
                     aria-pressed={ticket.status === status}
                     disabled={
@@ -170,7 +171,7 @@ export function KitchenView({
                       statusMutation.mutate({ id: ticket.id, status })
                     }
                   >
-                    {statusMutation.isPending && statusMutation.variables?.id === ticket.id && statusMutation.variables.status === status ? "Saving…" : status}
+                    {statusMutation.isPending && statusMutation.variables?.id === ticket.id && statusMutation.variables.status === status ? "Saving…" : status === "preparing" ? "Start" : status === "ready" ? "Ready" : "Served"}
                   </button>
                 ))}
               </footer>

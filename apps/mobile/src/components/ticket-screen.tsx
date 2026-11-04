@@ -245,7 +245,7 @@ function TicketScreen({
       </CollapsibleSection>
       ) : null}
 
-      {canBill ? (
+      {canBill && currentOrder?.order ? (
         <CollapsibleSection
           title="Billing"
           subtitle={undefined}
@@ -285,7 +285,7 @@ function TicketScreen({
         </View>
       </CollapsibleSection>
 
-      <CollapsibleSection
+      {currentOrder?.order || sentItems.length > 0 ? <CollapsibleSection
         title={`Sent · ${sentCount}`}
         expanded={expandedSections.has("sent")}
         onToggle={() => toggleSection("sent")}
@@ -460,7 +460,7 @@ function TicketScreen({
             ) : null}
           </View>
         )}
-      </CollapsibleSection>
+      </CollapsibleSection> : null}
 
       {selectedTableId && sentItems.length > 0 && canShift ? (
         <TicketTransferSection

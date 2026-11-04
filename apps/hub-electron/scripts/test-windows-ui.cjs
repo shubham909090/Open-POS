@@ -17,6 +17,16 @@ let page;
 let output;
 let exitedForUpdate = false;
 
+async function captureNativeViewport(filePath) {
+  const base64 = await app.evaluate(async ({ BrowserWindow }) => {
+    const bitmap = await BrowserWindow.getAllWindows()[0].capturePage();
+    return bitmap.toPNG().toString('base64');
+  });
+  const png = Buffer.from(base64, 'base64');
+  fs.writeFileSync(filePath, png);
+  return { width: png.readUInt32BE(16), height: png.readUInt32BE(20) };
+}
+
 async function clickOnlineUpdate() {
   await page.getByRole('navigation', { name: 'Hub sections', exact: true }).getByRole('button', { name: 'Administration', exact: true }).click();
   await page.getByRole('navigation', { name: 'Administration sections', exact: true }).getByRole('button', { name: 'App updates', exact: true }).click();
@@ -80,9 +90,12 @@ async function capture(name) {
       state.renderedFonts = (await session.send('CSS.getPlatformFontsForNode', { nodeId })).fonts;
     } finally { await session.detach(); }
   } catch (error) { state.fontInspectionError = error.message; }
-  await page.screenshot({ path: path.join(output, `${name}.png`), fullPage: true });
+  // CDP full-page screenshots crop the right edge under Electron app zoom.
+  // Capture the actual native viewport so 100% and 125% proof stays faithful.
+  state.screenshotPixels = await captureNativeViewport(path.join(output, `${name}.png`));
   report.captures.push(state);
   assert.deepEqual(state.nativeWindow.contentSize, [1366, 768], `${name}: native content size changed`);
+  assert.deepEqual(state.screenshotPixels, { width: 1366, height: 768 }, `${name}: native screenshot is cropped`);
   assert.ok(state.document.scrollWidth <= state.document.width + 1, `${name}: horizontal page overflow`);
 }
 
@@ -182,7 +195,7 @@ main().catch(async error => {
   report.failure = error.stack || String(error);
   console.error(report.failure);
   process.exitCode = 1;
-  if (page && output) await page.screenshot({ path: path.join(output, 'ui-failure.png'), fullPage: true }).catch(() => {});
+  if (page && output) await captureNativeViewport(path.join(output, 'ui-failure.png')).catch(() => {});
 }).finally(async () => {
   if (app && !exitedForUpdate) {
     try { await app.close(); }
