@@ -32,7 +32,7 @@ import { useTableServiceActions } from "./hooks/use-table-service-actions";
 import { useMobileUpdate } from "./hooks/use-mobile-update";
 import { useRestaurantBranding } from "./hooks/use-restaurant-branding";
 import { useTableOrderPreference } from "./components/table-screen";
-import { BrandingSettings, MobileUpdatePanel } from "./components/settings-panels";
+import { BrandingSettings, MobileUpdatePanel, RestaurantShortcutSettings } from "./components/settings-panels";
 import {
   nextConnectionAfterDevicePairing,
   shouldShowMobileOnboarding
@@ -452,6 +452,7 @@ export default function App() {
                       onSave={restaurantBranding.save}
                     />
                   ) : null}
+                  {deviceToken ? <RestaurantShortcutSettings branding={restaurantBranding.branding} /> : null}
                   <MobileUpdatePanel update={mobileUpdate} />
                 </>
               }

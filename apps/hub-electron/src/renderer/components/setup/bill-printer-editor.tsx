@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { LOGO_PRINT_DEFAULTS, billPrinterLineWidthChars, printPaperDotsForChars, logoPrintWidthMm, type LogoPrintSettings } from "@gaurav-pos/shared";
+import { ThermalLogoPreview } from "./thermal-logo-preview.js";
 import type { BillPrinterProfile, BillPrinterSlot, SystemPrinterInfo } from "../../hub-api.js";
 
 export type PaperWidthMm = 45 | 50 | 58 | 80;
@@ -12,6 +14,9 @@ export type BillPrinterDraft = {
   printerPort: string;
   paperWidthMm: PaperWidthMm | null;
   paymentQrSizeMm: number;
+  logoWidthMm: number | null;
+  logoPrintMode: NonNullable<LogoPrintSettings["logoPrintMode"]>;
+  logoThreshold: number;
 };
 
 export function billPrinterDraft(profile: BillPrinterProfile, slot: BillPrinterSlot): BillPrinterDraft {
@@ -23,6 +28,9 @@ export function billPrinterDraft(profile: BillPrinterProfile, slot: BillPrinterS
     printerPort: String(profile.printerPort ?? 9100),
     paperWidthMm: profile.paperWidthMm ?? null,
     paymentQrSizeMm: profile.paymentQrSizeMm ?? 32,
+    logoWidthMm: profile.logoWidthMm ?? null,
+    logoPrintMode: profile.logoPrintMode ?? LOGO_PRINT_DEFAULTS.printMode,
+    logoThreshold: profile.logoThreshold ?? LOGO_PRINT_DEFAULTS.threshold,
   };
 }
 
@@ -50,6 +58,8 @@ export function BillPrinterEditor({
   saving,
   onSave,
   onCancel,
+  layoutWidthChars,
+  logoImageDataUrl,
 }: {
   slot: BillPrinterSlot;
   initial: BillPrinterDraft;
@@ -59,6 +69,8 @@ export function BillPrinterEditor({
   saving: boolean;
   onSave: (draft: BillPrinterDraft) => void;
   onCancel: () => void;
+  layoutWidthChars?: number;
+  logoImageDataUrl?: string | null;
 }) {
   const [draft, setDraft] = useState(initial);
   const set = <K extends keyof BillPrinterDraft>(key: K, value: BillPrinterDraft[K]) => setDraft((current) => ({ ...current, [key]: value }));
@@ -66,6 +78,8 @@ export function BillPrinterEditor({
   // The second printer may be left empty; the main printer must point somewhere.
   const canSave = slot === "alternate" || hasTarget;
   const idPrefix = `bill-printer-${slot}`;
+  const paperDots = printPaperDotsForChars(billPrinterLineWidthChars(draft.paperWidthMm, layoutWidthChars ?? 28));
+  const printableWidthMm = Math.floor(logoPrintWidthMm(paperDots, LOGO_PRINT_DEFAULTS.maxWidthMm));
 
   return (
     <form
@@ -150,6 +164,73 @@ export function BillPrinterEditor({
             </select>
             <small id={`${idPrefix}-paper-hint`}>Set this when this printer uses a different roll from the bill layout.</small>
           </label>
+          <div className="bill-logo-controls span-2">
+            <div className="print-size-control">
+              <span>
+                Logo width
+                <output>
+                  {draft.logoWidthMm === null ? `Auto · ${Math.round(logoPrintWidthMm(paperDots))} mm` : `${Math.min(draft.logoWidthMm, printableWidthMm)} mm`}
+                </output>
+              </span>
+              <div className="segmented-row" role="radiogroup" aria-label="Logo width mode">
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={draft.logoWidthMm === null}
+                  className={draft.logoWidthMm === null ? "active" : ""}
+                  onClick={() => set("logoWidthMm", null)}
+                >Auto</button>
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={draft.logoWidthMm !== null}
+                  className={draft.logoWidthMm !== null ? "active" : ""}
+                  onClick={() => set("logoWidthMm", Math.min(printableWidthMm, LOGO_PRINT_DEFAULTS.widthMm))}
+                >Custom</button>
+              </div>
+              {draft.logoWidthMm !== null ? (
+                <input
+                  id={`${idPrefix}-logo-width`}
+                  type="range"
+                  min={LOGO_PRINT_DEFAULTS.minWidthMm}
+                  max={printableWidthMm}
+                  step={1}
+                  value={Math.min(draft.logoWidthMm, printableWidthMm)}
+                  onChange={(event) => set("logoWidthMm", Number(event.target.value))}
+                  aria-label="Logo printed width in millimetres"
+                  aria-valuetext={`${Math.min(draft.logoWidthMm, printableWidthMm)} millimetres`}
+                />
+              ) : null}
+            </div>
+            <details className="logo-print-adjustments">
+              <summary>Print quality</summary>
+              <label>
+                Style
+                <select value={draft.logoPrintMode} onChange={(event) => set("logoPrintMode", event.target.value as BillPrinterDraft["logoPrintMode"])}>
+                  <option value="threshold">Solid · text and line art</option>
+                  <option value="dither">Detailed · shaded logos</option>
+                </select>
+              </label>
+              <label className="print-size-control">
+                <span>Ink density <output>{draft.logoThreshold}</output></span>
+                <input
+                  type="range"
+                  min={0}
+                  max={255}
+                  step={1}
+                  value={draft.logoThreshold}
+                  onChange={(event) => set("logoThreshold", Number(event.target.value))}
+                  aria-label="Logo ink density"
+                />
+              </label>
+            </details>
+            {logoImageDataUrl ? (
+              <div className="bill-logo-preview">
+                <ThermalLogoPreview imageDataUrl={logoImageDataUrl} paperDots={paperDots} settings={draft} />
+                <small>Printed logo</small>
+              </div>
+            ) : <small>Upload a logo in General.</small>}
+          </div>
           <label className="print-size-control">
             <span>
               Payment QR size <output>{draft.paymentQrSizeMm} mm</output>

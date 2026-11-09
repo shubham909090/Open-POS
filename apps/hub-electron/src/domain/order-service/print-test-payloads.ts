@@ -1,13 +1,19 @@
-import type { PrintLayoutSettingsInput } from "@gaurav-pos/shared";
+import type { LogoPrintSettings, PrintLayoutSettingsInput } from "@gaurav-pos/shared";
+import { resolveReceiptRestaurantName } from "@gaurav-pos/shared";
 
 import { renderBillTicketForPrint, renderKotTicketForPrint } from "../tickets.js";
 import type { UnitRow } from "./types.js";
 
-export function buildTestBillPrintPayload(template: PrintLayoutSettingsInput, paymentQr?: import("../tickets.js").BillTicket["paymentQr"], branding?: import("@gaurav-pos/shared").RestaurantBranding, paperWidthMm?: number | null): string {
+export function buildTestBillPrintPayload(template: PrintLayoutSettingsInput, paymentQr?: import("../tickets.js").BillTicket["paymentQr"], branding?: import("@gaurav-pos/shared").RestaurantBranding, paperWidthMm?: number | null, logoSettings?: LogoPrintSettings): string {
   return renderBillTicketForPrint({
     paymentQr,
     paperWidthMm: paperWidthMm ?? undefined,
-    restaurantLogo: branding?.logoImageDataUrl ? { imageDataUrl: branding.logoImageDataUrl } : null,
+    restaurantLogo: branding?.logoImageDataUrl ? {
+      imageDataUrl: branding.logoImageDataUrl,
+      widthMm: logoSettings?.logoWidthMm,
+      threshold: logoSettings?.logoThreshold,
+      printMode: logoSettings?.logoPrintMode
+    } : null,
     tableName: "TEST",
     billId: "TEST-BILL",
     items: [{ name: "Test item", quantity: 1, unitPricePaise: 100, lineTotalPaise: 100 }],
@@ -16,7 +22,7 @@ export function buildTestBillPrintPayload(template: PrintLayoutSettingsInput, pa
     totalPaise: 100,
     finalTotalPaise: 100,
     createdAt: new Date().toISOString(),
-    restaurantName: branding?.restaurantName || template.restaurantName,
+    restaurantName: resolveReceiptRestaurantName(branding, template.restaurantName),
     restaurantAddress: template.restaurantAddress,
     taxRegistrationText: template.taxRegistrationText,
     lineWidthChars: template.lineWidthChars,
@@ -25,6 +31,15 @@ export function buildTestBillPrintPayload(template: PrintLayoutSettingsInput, pa
     sectionStyles: template.sectionStyles,
     topPaddingLines: template.topPaddingLines,
     feedLines: template.feedLines,
+    showHeader: template.showHeader,
+    showFooter: template.showFooter,
+    showRestaurantName: template.showRestaurantName,
+    showRestaurantLogo: template.showRestaurantLogo,
+    showPaymentQr: template.showPaymentQr,
+    showRestaurantAddress: template.showRestaurantAddress,
+    showTaxRegistration: template.showTaxRegistration,
+    showCustomerName: template.showCustomerName,
+    showPaymentSplit: template.showPaymentSplit,
     showTable: template.showTable,
     showDateTime: template.showDateTime,
     showBillId: template.showBillId,
@@ -57,6 +72,10 @@ export function buildTestKotPrintPayload(input: {
     sectionStyles: template.sectionStyles,
     topPaddingLines: template.topPaddingLines,
     feedLines: template.feedLines,
+    showHeader: template.showHeader,
+    showFooter: template.showFooter,
+    showOrderNote: template.showOrderNote,
+    showItemNotes: template.showItemNotes,
     showTable: template.showTable,
     showCaptain: template.showCaptain,
     showDateTime: template.showDateTime,

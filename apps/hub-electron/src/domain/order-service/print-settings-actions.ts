@@ -1,5 +1,6 @@
 import type {
   BillPrinterSlot,
+  LogoPrintSettings,
   DomainEvent,
   PrintLayoutSettingsInput,
   PrinterOutputMode,
@@ -131,7 +132,7 @@ export function enqueueTestBillPrint(ctx: PrintSettingsActionContext, requestedB
     targetId: "test-bill",
     productionUnitId: null,
     ...resolveBillPrinter(ctx, printerSlot),
-    payload: buildTestBillPrintPayload(template, ctx.getPaymentQr?.(printerSlot), ctx.getRestaurantBranding?.(), profile.paperWidthMm)
+    payload: buildTestBillPrintPayload(template, ctx.getPaymentQr?.(printerSlot), ctx.getRestaurantBranding?.(), profile.paperWidthMm, profile)
   });
   ctx.appendEvent("print_job.test_bill_queued", "print_job", printJobId, { requestedBy, printJobId });
   return { printJobId };
@@ -156,7 +157,7 @@ export function enqueueTestKotPrint(ctx: PrintSettingsActionContext, requestedBy
 function updateBillPrinterProfile(
   ctx: PrintSettingsActionContext,
   slot: BillPrinterSlot,
-  input: { label?: string; printerMode?: "system" | "network"; printerName?: string | null; printerHost?: string; printerPort?: number; paymentQrSizeMm?: number; paperWidthMm?: number | null }
+  input: LogoPrintSettings & { label?: string; printerMode?: "system" | "network"; printerName?: string | null; printerHost?: string; printerPort?: number; paymentQrSizeMm?: number; paperWidthMm?: number | null }
 ): void {
   for (const [key, value] of billPrinterSettingValues(slot, input)) {
     ctx.writeSetting(key, value);

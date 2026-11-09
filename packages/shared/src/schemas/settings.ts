@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { LOGO_PRINT_DEFAULTS } from "../logo-printing.js";
 import { managerApprovalSchema, masterApprovalSchema } from "./common.js";
 
 export const managerPinSchema = z.object({
@@ -34,6 +35,9 @@ export const updateReceiptPrinterSchema = z.object({
 export const billPrinterProfileSchema = updateReceiptPrinterSchema.extend({
   label: z.string().trim().min(1).max(80).default("Bill printer"),
   paymentQrSizeMm: z.number().int().min(20).max(45).optional(),
+  logoWidthMm: z.number().int().min(LOGO_PRINT_DEFAULTS.minWidthMm).max(LOGO_PRINT_DEFAULTS.maxWidthMm).nullable().optional(),
+  logoThreshold: z.number().int().min(0).max(255).optional(),
+  logoPrintMode: z.enum(["threshold", "dither"]).optional(),
   paperWidthMm: z.union([z.literal(45), z.literal(50), z.literal(58), z.literal(80)]).nullable().optional()
 });
 
@@ -133,6 +137,16 @@ export const printLayoutSettingsSchema = z.object({
   sectionStyles: printSectionStylesSchema.default({}),
   topPaddingLines: z.number().int().min(0).max(6).default(0),
   feedLines: z.number().int().min(1).max(8).default(3),
+  showRestaurantName: z.boolean().default(true),
+  showRestaurantLogo: z.boolean().default(true),
+  showPaymentQr: z.boolean().default(true),
+  showRestaurantAddress: z.boolean().default(true),
+  showTaxRegistration: z.boolean().default(true),
+  showHeader: z.boolean().default(true),
+  showFooter: z.boolean().default(true),
+  showCustomerName: z.boolean().default(true),
+  showOrderNote: z.boolean().default(true),
+  showItemNotes: z.boolean().default(true),
   showTable: z.boolean().default(true),
   showCaptain: z.boolean().default(true),
   showDateTime: z.boolean().default(true),

@@ -1,0 +1,23 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'com.gauravpos.shortcut'
+version = '1.0.0'
+
+android {
+  namespace 'com.gauravpos.shortcut'
+  defaultConfig {
+    versionCode 1
+    versionName '1.0.0'
+  }
+}
+
+dependencies {
+  // The same versions already used by Expo ImagePicker 55.
+  implementation 'com.vanniktech:android-image-cropper:4.7.0'
+  implementation 'androidx.core:core-ktx:1.17.0'
+  implementation 'androidx.exifinterface:exifinterface:1.4.1'
+  implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2'
+}

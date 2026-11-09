@@ -15,7 +15,7 @@
 .bill-printer-name strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 600; }
 .bill-printer-name span, .bill-printer-note { font-size: 12px; color: var(--muted); }
 .bill-printer-note { margin: 0; }
-.bill-printer-facts { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) minmax(0, 0.8fr); gap: 12px; margin: 0; min-width: 0; }
+.bill-printer-facts { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) minmax(0, 1.1fr); gap: 12px; margin: 0; min-width: 0; }
 .bill-printer-facts div { display: grid; gap: 1px; min-width: 0; }
 .bill-printer-facts dt { font-size: 11px; color: var(--muted); }
 .bill-printer-facts dd { margin: 0; white-space: normal; overflow-wrap: anywhere; font-size: 13px; font-variant-numeric: tabular-nums; }
@@ -116,3 +116,21 @@
   .bill-printer-summary > .bill-printer-note { grid-column: 1 / -1; grid-row: 2; }
   .bill-printer-name strong { white-space: normal; overflow-wrap: anywhere; }
 }
+.bill-logo-controls { display: grid; grid-template-columns: minmax(0, 1fr) 180px; gap: 12px 24px; align-items: start; padding-block: 12px; border-block: 1px solid var(--line); }
+.bill-logo-controls .print-size-control { display: grid; gap: 8px; }
+.bill-logo-controls .print-size-control > span { font-size: 12px; font-weight: 600; }
+.bill-logo-preview { grid-column: 2; grid-row: 1 / 3; display: grid; gap: 8px; padding: 12px; background: white; text-align: center; }
+.logo-print-adjustments { min-width: 0; }
+.logo-print-adjustments summary { cursor: pointer; color: var(--ink-2); font-size: 12px; }
+.logo-print-adjustments[open] { display: grid; gap: 12px; }
+@media (max-width: 600px) { .bill-logo-controls { grid-template-columns: minmax(0, 1fr); } .bill-logo-preview { grid-column: 1; grid-row: auto; width: 180px; justify-self: center; } }
+
+.bill-printer-facts .bill-printer-image-sizes { display: flex; flex-wrap: wrap; gap: 2px 10px; }
+.bill-printer-image-sizes span { white-space: nowrap; }
+
+/* Optional sections retain their values while their fields are hidden. */
+.layout-branding-checks label, .layout-fields .layout-print-check { display: flex; align-items: center; gap: 8px; min-height: 32px; font-size: 12px; cursor: pointer; }
+.layout-branding-checks input, .layout-fields .layout-print-check input { width: 16px; height: 16px; flex-shrink: 0; }
+.layout-optional-field, .layout-optional-content { display: grid; align-content: start; gap: 6px; min-width: 0; }
+.layout-optional-content .layout-text-align { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 11px; }
+.layout-text-align select { width: auto; min-width: 100px; }

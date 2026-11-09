@@ -42,6 +42,7 @@ export function PrinterSetupCard({
     enabled: active,
     refetchInterval: active ? 30_000 : false,
   });
+  const branding = useQuery({ queryKey: ["restaurant-branding"], queryFn: hubApi.restaurantBranding, enabled: active });
   const printers = billPrinters.data;
   const mainConfigured = Boolean(printers?.default.configured);
   const receiptLayoutWidth = printLayouts.data?.receipt.lineWidthChars;
@@ -95,10 +96,17 @@ export function PrinterSetupCard({
     mutationFn: ({ slot, draft }: { slot: BillPrinterSlot; draft: BillPrinterDraft }) => {
       if (!printers) throw new Error("Printer settings are still loading.");
       // The PUT replaces both connections; the untouched printer is resent as saved,
-      // and its roll/QR sizes are omitted so the hub keeps them.
+      // and its print sizing is omitted so the hub keeps it.
       const payloadFor = (target: BillPrinterSlot) =>
         target === slot
-          ? { ...billPrinterConnectionPayload(draft, slot), paperWidthMm: draft.paperWidthMm, paymentQrSizeMm: draft.paymentQrSizeMm }
+          ? {
+              ...billPrinterConnectionPayload(draft, slot),
+              paperWidthMm: draft.paperWidthMm,
+              paymentQrSizeMm: draft.paymentQrSizeMm,
+              logoWidthMm: draft.logoWidthMm,
+              logoPrintMode: draft.logoPrintMode,
+              logoThreshold: draft.logoThreshold,
+            }
           : billPrinterConnectionPayload(billPrinterDraft(printers[target], target), target);
       return hubApi.updateBillPrinters({ default: payloadFor("default"), alternate: payloadFor("alternate") });
     },
@@ -202,8 +210,11 @@ export function PrinterSetupCard({
                         <dd>{profile.paperWidthMm ? `${profile.paperWidthMm} mm` : `Uses layout width${receiptLayoutWidth ? ` (${paperLabelForChars(receiptLayoutWidth)})` : ""}`}</dd>
                       </div>
                       <div>
-                        <dt>Payment QR</dt>
-                        <dd>{profile.paymentQrSizeMm} mm</dd>
+                        <dt>Images</dt>
+                        <dd className="bill-printer-image-sizes">
+                          <span>Logo {profile.logoWidthMm ? `${profile.logoWidthMm} mm` : "Auto"}</span>
+                          <span>QR {profile.paymentQrSizeMm} mm</span>
+                        </dd>
                       </div>
                     </dl>
                     <div className="bill-printer-actions">
@@ -232,6 +243,8 @@ export function PrinterSetupCard({
                     <BillPrinterEditor
                       slot={slot}
                       initial={billPrinterDraft(profile, slot)}
+                      layoutWidthChars={receiptLayoutWidth}
+                      logoImageDataUrl={branding.data?.branding.logoImageDataUrl ?? null}
                       systemPrinters={systemPrinters.data}
                       systemPrintersLoading={systemPrintersLoading}
                       onLoadSystemPrinters={() => void refreshSystemPrinters()}

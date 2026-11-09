@@ -1,3 +1,5 @@
+import type { LogoPrintSettings, PrintLayoutSettingsInput as PrintLayoutSettings } from "@gaurav-pos/shared";
+
 export type { TallyExportSettingsInput as TallyExportSettings } from "@gaurav-pos/shared";
 
 export interface PrintJob {
@@ -29,7 +31,7 @@ export interface SystemPrinterInfo {
 
 export type BillPrinterSlot = "default" | "alternate";
 
-export interface BillPrinterProfile {
+export interface BillPrinterProfile extends LogoPrintSettings {
   label: string;
   /** Physical roll override; null means the bill layout's paper width applies. */
   paperWidthMm: 45 | 50 | 58 | 80 | null;
@@ -60,31 +62,7 @@ export interface DownloadedFile {
   fileName: string;
 }
 
-export interface PrintLayoutSettings {
-  scope: "default" | "receipt" | "unit";
-  productionUnitId?: string;
-  restaurantName: string;
-  restaurantAddress: string;
-  taxRegistrationText: string;
-  billHeader: string;
-  billFooter: string;
-  kotHeader: string;
-  kotFooter: string;
-  lineWidthChars: number;
-  headerAlign: "left" | "center";
-  footerAlign: "left" | "center";
-  sectionStyles: Record<string, { size: "small" | "normal" | "large"; sizeLevel?: number; bold: boolean; align: "left" | "center" | "right" }>;
-  topPaddingLines: number;
-  feedLines: number;
-  showTable: boolean;
-  showCaptain: boolean;
-  showDateTime: boolean;
-  showBillId: boolean;
-  showTaxBreakup: boolean;
-  showPaymentSplit: boolean;
-  showDiscountTip: boolean;
-  showNcReprintRevision: boolean;
-}
+export type { PrintLayoutSettingsInput as PrintLayoutSettings } from "@gaurav-pos/shared";
 
 export interface PrintLayouts {
   default: PrintLayoutSettings;

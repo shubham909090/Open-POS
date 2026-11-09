@@ -1,4 +1,4 @@
-import { formatPosDateTime, printSizeScale } from "@gaurav-pos/shared";
+import { formatPosDateTime, printSizeScale, LOGO_PRINT_DEFAULTS, RESTAURANT_LOGO_MAX_DATA_URL_LENGTH } from "@gaurav-pos/shared";
 
 export interface KotTicketItem {
   name: string;
@@ -25,6 +25,10 @@ export interface KotTicket {
   sectionStyles?: TicketSectionStyles;
   topPaddingLines?: number;
   feedLines?: number;
+  showHeader?: boolean;
+  showFooter?: boolean;
+  showOrderNote?: boolean;
+  showItemNotes?: boolean;
   showTable?: boolean;
   showCaptain?: boolean;
   showDateTime?: boolean;
@@ -32,7 +36,7 @@ export interface KotTicket {
 
 export interface BillTicket {
   paperWidthMm?: number;
-  restaurantLogo?: { imageDataUrl: string; widthMm?: number } | null;
+  restaurantLogo?: { imageDataUrl: string; widthMm?: number | null; threshold?: number; printMode?: "threshold" | "dither" } | null;
   paymentQr?: { imageDataUrl: string; upiUri: string; sizeMm?: number } | null;
   tableName: string;
   billId: string;
@@ -60,6 +64,14 @@ export interface BillTicket {
   sectionStyles?: TicketSectionStyles;
   topPaddingLines?: number;
   feedLines?: number;
+  showRestaurantName?: boolean;
+  showRestaurantLogo?: boolean;
+  showPaymentQr?: boolean;
+  showRestaurantAddress?: boolean;
+  showTaxRegistration?: boolean;
+  showHeader?: boolean;
+  showFooter?: boolean;
+  showCustomerName?: boolean;
   showTable?: boolean;
   showDateTime?: boolean;
   showBillId?: boolean;
@@ -104,7 +116,9 @@ export interface ParsedPrintStyleLine {
   align: TicketAlign;
   graphicLine?: boolean;
   logoImageDataUrl?: string;
-  logoWidthMm?: number;
+  logoWidthMm?: number | null;
+  logoThreshold?: number;
+  logoPrintMode?: "threshold" | "dither";
   qrImageDataUrl?: string;
   qrSizeMm?: number;
   paperWidthChars?: number;
@@ -114,7 +128,9 @@ interface TicketLine {
   text: string;
   section: TicketSection;
   logoImageDataUrl?: string;
-  logoWidthMm?: number;
+  logoWidthMm?: number | null;
+  logoThreshold?: number;
+  logoPrintMode?: "threshold" | "dither";
   qrImageDataUrl?: string;
   qrSizeMm?: number;
 }
@@ -132,7 +148,7 @@ function resolvedSectionStyle(styles: TicketSectionStyles | undefined, section: 
 }
 
 function encodePrintStyleLine(line: TicketLine, styles: TicketSectionStyles | undefined, fallbackAlign: TicketAlign): string {
-  if (line.logoImageDataUrl) return `${PRINT_LOGO_MARKER}${line.logoWidthMm ?? 32}:${line.logoImageDataUrl}`;
+  if (line.logoImageDataUrl) return `${PRINT_LOGO_MARKER}${line.logoWidthMm ?? "auto"}:${line.logoThreshold ?? LOGO_PRINT_DEFAULTS.threshold}:${line.logoPrintMode ?? LOGO_PRINT_DEFAULTS.printMode}:${line.logoImageDataUrl}`;
   if (line.qrImageDataUrl) return `${PRINT_QR_MARKER}${line.qrSizeMm ?? 32}:${line.qrImageDataUrl}`;
   if (isSeparatorText(line.text)) {
     return `${PRINT_LINE_MARKER}${line.text.length}${PRINT_STYLE_PLAIN_TEXT_SEPARATOR}${line.text}`;
@@ -151,8 +167,15 @@ export function parsePrintStyleLine(line: string): ParsedPrintStyleLine | null {
     const payload = line.slice(PRINT_LOGO_MARKER.length);
     const delimiter = payload.indexOf(":data:");
     const imageDataUrl = delimiter >= 0 ? payload.slice(delimiter + 1) : "";
-    if (!/^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(imageDataUrl) || imageDataUrl.length > 1_500_000) return null;
-    return { text: "Restaurant logo", plainText: "", size: "normal", bold: false, align: "center", logoImageDataUrl: imageDataUrl, logoWidthMm: Math.max(16, Math.min(45, Number(payload.slice(0, delimiter)) || 32)) };
+    if (!/^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(imageDataUrl) || imageDataUrl.length > RESTAURANT_LOGO_MAX_DATA_URL_LENGTH) return null;
+    const [width, threshold, printMode] = payload.slice(0, delimiter).split(":");
+    return {
+      text: "Restaurant logo", plainText: "", size: "normal", bold: false, align: "center",
+      logoImageDataUrl: imageDataUrl,
+      logoWidthMm: width === "auto" ? null : Math.max(LOGO_PRINT_DEFAULTS.minWidthMm, Math.min(LOGO_PRINT_DEFAULTS.maxWidthMm, Number(width) || LOGO_PRINT_DEFAULTS.widthMm)),
+      logoThreshold: threshold !== undefined && /^\d+$/.test(threshold) ? Math.min(255, Number(threshold)) : LOGO_PRINT_DEFAULTS.threshold,
+      logoPrintMode: printMode === "dither" ? "dither" : "threshold"
+    };
   }
   if (line.startsWith(PRINT_QR_MARKER)) {
     const qrPayload = line.slice(PRINT_QR_MARKER.length);
@@ -379,7 +402,7 @@ function buildKotTicketLines(ticket: KotTicket): TicketLine[] {
   const itemNotesAlign = sectionAlign(ticket.sectionStyles, "itemNotes", "left");
   const footerAlign = sectionAlign(ticket.sectionStyles, "footer", ticket.footerAlign ?? "center");
   const lines = [
-    ...(ticket.header ? [...sectionLines(alignTicketText(ticket.header, width, headerAlign), "header"), ...sectionLines(separator(width), "metadata")] : []),
+    ...(ticket.showHeader !== false && ticket.header ? [...sectionLines(alignTicketText(ticket.header, width, headerAlign), "header"), ...sectionLines(separator(width), "metadata")] : []),
     ...sectionLines(alignTicketText(`${ticket.ticketLabel ?? "KOT"} #${ticket.sequence} ${title}`, width, titleAlign), "title"),
     ...(ticket.reason ? [...sectionLines(alignTicketText(ticket.type === "table_shifted" ? compactShiftReason(ticket.reason) : ticket.reason, width, titleAlign), "title"), ...sectionLines(separator(width), "metadata")] : []),
     ...sectionLines(alignTicketText(`Station: ${ticket.productionUnitName}`, width, metadataAlign), "metadata"),
@@ -387,18 +410,18 @@ function buildKotTicketLines(ticket: KotTicket): TicketLine[] {
     ...(ticket.showCaptain === false ? [] : sectionLines(alignTicketText(`Captain: ${ticket.captainId}`, width, metadataAlign), "metadata")),
     ...(ticket.showDateTime === false ? [] : sectionLines(alignTicketText(`Time: ${formatPosDateTime(ticket.createdAt)}`, width, metadataAlign), "metadata")),
     ...sectionLines(separator(width), "metadata"),
-    ...(ticket.note?.trim() ? [...sectionLines(alignTicketText(wrapTicketText(`Note: ${ticket.note.trim()}`, width).join("\n"), width, notesAlign), "notes"), ...sectionLines(separator(width), "metadata")] : [])
+    ...(ticket.showOrderNote !== false && ticket.note?.trim() ? [...sectionLines(alignTicketText(wrapTicketText(`Note: ${ticket.note.trim()}`, width).join("\n"), width, notesAlign), "notes"), ...sectionLines(separator(width), "metadata")] : [])
   ];
 
   for (const item of ticket.items) {
     const sign = item.quantityDelta > 0 ? "+" : "";
     const quantityText = item.quantityDelta === 0 ? item.name : `${sign}${item.quantityDelta} x ${item.name}`;
     lines.push(...sectionLines(wrapTicketText(quantityText, width), "items"));
-    if (item.note?.trim()) {
+    if (ticket.showItemNotes !== false && item.note?.trim()) {
       lines.push(...sectionLines(alignTicketText(wrapTicketText(item.note.trim(), width).join("\n"), width, itemNotesAlign), "itemNotes"));
     }
   }
-  if (ticket.footer) lines.push(...sectionLines(separator(width), "metadata"), ...sectionLines(alignTicketText(ticket.footer, width, footerAlign), "footer"));
+  if (ticket.showFooter !== false && ticket.footer) lines.push(...sectionLines(separator(width), "metadata"), ...sectionLines(alignTicketText(ticket.footer, width, footerAlign), "footer"));
 
   return lines;
 }
@@ -427,12 +450,12 @@ function buildBillTicketLines(ticket: BillTicket): TicketLine[] {
   const metadataAlign = sectionAlign(ticket.sectionStyles, "metadata", "left");
   const footerAlign = sectionAlign(ticket.sectionStyles, "footer", ticket.footerAlign ?? "center");
   const lines = [
-    ...(ticket.restaurantLogo ? [{ text: "", section: "restaurantName" as const, logoImageDataUrl: ticket.restaurantLogo.imageDataUrl, logoWidthMm: ticket.restaurantLogo.widthMm }] : []),
-    ...(ticket.restaurantName ? sectionLines(alignTicketText(ticket.restaurantName, width, restaurantAlign), "restaurantName") : []),
-    ...(ticket.restaurantAddress ? sectionLines(alignTicketText(ticket.restaurantAddress, width, addressAlign), "address") : []),
-    ...(ticket.header ? sectionLines(alignTicketText(ticket.header, width, headerAlign), "header") : []),
+    ...(ticket.showRestaurantLogo !== false && ticket.restaurantLogo ? [{ text: "", section: "restaurantName" as const, logoImageDataUrl: ticket.restaurantLogo.imageDataUrl, logoWidthMm: ticket.restaurantLogo.widthMm, logoThreshold: ticket.restaurantLogo.threshold, logoPrintMode: ticket.restaurantLogo.printMode }] : []),
+    ...(ticket.showRestaurantName !== false && ticket.restaurantName ? sectionLines(alignTicketText(ticket.restaurantName, width, restaurantAlign), "restaurantName") : []),
+    ...(ticket.showRestaurantAddress !== false && ticket.restaurantAddress ? sectionLines(alignTicketText(ticket.restaurantAddress, width, addressAlign), "address") : []),
+    ...(ticket.showHeader !== false && ticket.header ? sectionLines(alignTicketText(ticket.header, width, headerAlign), "header") : []),
     ...(ticket.showBillId === false ? [] : sectionLines(alignTicketText(`BILL ${ticket.billId}`, width, titleAlign), "title")),
-    ...(customerName ? sectionLines(alignTicketText(wrapTicketText(`Name: ${customerName}`, width).join("\n"), width, metadataAlign), "metadata") : []),
+    ...(ticket.showCustomerName !== false && customerName ? sectionLines(alignTicketText(wrapTicketText(`Name: ${customerName}`, width).join("\n"), width, metadataAlign), "metadata") : []),
     ...(ticket.showNcReprintRevision === false
       ? []
       : [
@@ -440,7 +463,7 @@ function buildBillTicketLines(ticket: BillTicket): TicketLine[] {
         ]),
     ...(ticket.showTable === false ? [] : sectionLines(alignTicketText(`Table: ${ticket.tableName}`, width, metadataAlign), "metadata")),
     ...(ticket.showDateTime === false ? [] : sectionLines(alignTicketText(`Date: ${formatPosDateTime(ticket.createdAt)}`, width, metadataAlign), "metadata")),
-    ...(ticket.taxRegistrationText ? sectionLines(alignTicketText(ticket.taxRegistrationText, width, metadataAlign), "metadata") : []),
+    ...(ticket.showTaxRegistration !== false && ticket.taxRegistrationText ? sectionLines(alignTicketText(ticket.taxRegistrationText, width, metadataAlign), "metadata") : []),
     ...sectionLines(separator(width), "metadata"),
     ...(ticket.items?.length
 	      ? [
@@ -475,11 +498,11 @@ function buildBillTicketLines(ticket: BillTicket): TicketLine[] {
   }
   if (ticket.showNcReprintRevision !== false && ticket.ncReason) lines.push(...sectionLines(`NC Reason: ${ticket.ncReason}`, "metadata"));
 
-  if (ticket.paymentQr) {
+  if (ticket.showPaymentQr !== false && ticket.paymentQr) {
     lines.push(...sectionLines(separator(width), "metadata"), ...sectionLines(alignTicketText("Scan to pay", width, "center"), "footer"), { text: "", section: "footer", qrImageDataUrl: ticket.paymentQr.imageDataUrl, qrSizeMm: ticket.paymentQr.sizeMm });
   }
 
-  if (ticket.footer) lines.push(...sectionLines(separator(width), "metadata"), ...sectionLines(alignTicketText(ticket.footer, width, footerAlign), "footer"));
+  if (ticket.showFooter !== false && ticket.footer) lines.push(...sectionLines(separator(width), "metadata"), ...sectionLines(alignTicketText(ticket.footer, width, footerAlign), "footer"));
 
   return lines;
 }

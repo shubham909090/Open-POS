@@ -120,3 +120,17 @@ input[aria-invalid="true"] { border-color: var(--danger); }
 .reset-options input:not([type="checkbox"]) { width: 220px; font-family: ui-monospace, Consolas, monospace; letter-spacing: .04em; }
 .reset-options .checkbox-row { min-height: var(--control-height); }
 @container (max-width: 760px) { .pin-cards { grid-template-columns: 1fr; } .sale-group-head { display: none; } .record-row.sale-group-row { grid-template-columns: 1fr 84px; } .sale-group-form input { grid-column: 1 / -1; } .print-job-row { grid-template-columns: minmax(0, 1fr) auto; } .print-job-attempts { display: none; } }
+.branding-name-mark { font-size: 38px; font-weight: 700; color: var(--ink); }
+.thermal-logo-preview { display: block; width: 100%; height: auto; image-rendering: pixelated; }
+.branding-logo-frame.paper .thermal-logo-preview { max-height: 70%; object-fit: contain; }
+.logo-crop-dialog { width: min(420px, calc(100vw - 32px)); }
+.logo-crop-stage { position: relative; height: min(320px, 48vh); overflow: hidden; background: var(--ink); border-radius: var(--control-radius); }
+.logo-crop-zoom { display: grid; gap: 8px; margin-block: 16px; font-size: 12px; font-weight: 600; }
+.logo-crop-zoom > span { display: flex; justify-content: space-between; }
+.logo-crop-zoom output { font-variant-numeric: tabular-nums; color: var(--muted); }
+.logo-crop-zoom input { width: 100%; }
+.logo-crop-actions { display: flex; justify-content: flex-end; }
+.logo-crop-actions > button:first-child { margin-right: auto; }
+.branding-icon-preview { display: grid; place-items: center; position: relative; width: 100%; height: 100%; aspect-ratio: 1; border-radius: 50%; overflow: hidden; background: white; }
+.branding-icon-preview img { width: 100%; height: 100%; object-fit: contain; }
+.branding-icon-preview.cropped img { position: absolute; max-width: none; max-height: none; object-fit: fill; }

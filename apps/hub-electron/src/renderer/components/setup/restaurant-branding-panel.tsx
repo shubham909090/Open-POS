@@ -1,12 +1,13 @@
 import { useContext, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ImageUp, LockKeyhole, Store } from "lucide-react";
+import { Crop, ImageUp, LockKeyhole, Store } from "lucide-react";
 import { RESTAURANT_LOGO_MAX_IMAGE_BYTES } from "@gaurav-pos/shared";
 import { hubApi } from "../../hub-api.js";
 import type { ManagerApprovalRequest } from "../../hooks/use-manager-approval.js";
 import { messageOf, type NoticeSetter } from "../../lib/format.js";
 import { readImageFile } from "../../lib/image-file.js";
-import { DEFAULT_BRAND_MARK_URL } from "../../lib/branding.js";
+import { LogoCropDialog, LogoIconPreview, type IconCrop } from "./logo-crop-dialog.js";
+import { ThermalLogoPreview } from "./thermal-logo-preview.js";
 import { SettingsPageActiveContext, SetupCard } from "./setup-card.js";
 
 export function RestaurantBrandingPanel({
@@ -28,6 +29,8 @@ export function RestaurantBrandingPanel({
   const branding = current.data?.branding;
   const [name, setName] = useState("");
   const [newLogo, setNewLogo] = useState("");
+  const [pendingIconCrop, setPendingIconCrop] = useState<IconCrop | null | undefined>();
+  const [cropOpen, setCropOpen] = useState(false);
   const [reading, setReading] = useState(false);
   const [imageError, setImageError] = useState("");
   const [loadedBranding, setLoadedBranding] = useState<typeof branding>();
@@ -46,6 +49,8 @@ export function RestaurantBrandingPanel({
     setLoadedBranding(branding);
     setName(branding.restaurantName);
     setNewLogo("");
+    setPendingIconCrop(undefined);
+    setCropOpen(false);
     setConflict(false);
   }, [branding]);
 
@@ -55,6 +60,8 @@ export function RestaurantBrandingPanel({
     setLoadedBranding(result.branding);
     setName(result.branding.restaurantName);
     setNewLogo("");
+    setPendingIconCrop(undefined);
+    setCropOpen(false);
     setConflict(false);
     queryClient.setQueryData(["restaurant-branding"], result);
     setNotice({ tone: "good", text });
@@ -66,16 +73,17 @@ export function RestaurantBrandingPanel({
   });
   const remove = useMutation({
     mutationFn: (input: Parameters<typeof hubApi.removeRestaurantLogo>[0]) => hubApi.removeRestaurantLogo(input),
-    onSuccess: (result) => onSaved(result, "Logo removed. New bills print the name only."),
+    onSuccess: (result) => onSaved(result, "Logo removed."),
     onError: (error) => setNotice({ tone: "bad", text: messageOf(error) }),
   });
 
   const busy = reading || save.isPending || remove.isPending;
   const locked = !masterPinConfigured;
   const trimmedName = name.trim();
-  const changed = Boolean(loadedBranding) && (Boolean(newLogo) || trimmedName !== loadedBranding?.restaurantName);
-  dirty.current = changed;
+  const changed = Boolean(loadedBranding) && (Boolean(newLogo) || pendingIconCrop !== undefined || trimmedName !== loadedBranding?.restaurantName);
+  dirty.current = changed || cropOpen;
   const shownLogo = newLogo || loadedBranding?.logoImageDataUrl || "";
+  const shownCrop = pendingIconCrop === undefined ? loadedBranding?.iconCrop ?? null : pendingIconCrop;
 
   const discardChanges = () => {
     dirty.current = false;
@@ -83,6 +91,8 @@ export function RestaurantBrandingPanel({
     setLoadedBranding(branding);
     setName(branding?.restaurantName ?? "");
     setNewLogo("");
+    setPendingIconCrop(undefined);
+    setCropOpen(false);
     setConflict(false);
   };
 
@@ -96,6 +106,8 @@ export function RestaurantBrandingPanel({
     setReading(true);
     try {
       setNewLogo(await readImageFile(file));
+      setPendingIconCrop(null);
+      setCropOpen(true);
     } catch (error) {
       setImageError(messageOf(error));
     } finally {
@@ -104,7 +116,7 @@ export function RestaurantBrandingPanel({
   };
 
   const saveWithApproval = async () => {
-    if (!branding || !trimmedName || busy || conflict) return;
+    if (!branding || busy || conflict) return;
     const approval = await requestManagerApproval({
       title: "Save restaurant identity",
       message: "The name and logo appear in this hub and at the top of new customer bills.",
@@ -118,6 +130,7 @@ export function RestaurantBrandingPanel({
     save.mutate({
       restaurantName: trimmedName,
       ...(newLogo ? { imageDataUrl: newLogo } : {}),
+      ...(pendingIconCrop !== undefined ? { iconCrop: pendingIconCrop } : {}),
       expectedUpdatedAt: loadedBranding?.updatedAt ?? branding.updatedAt,
       masterApproval: approval,
     });
@@ -143,7 +156,7 @@ export function RestaurantBrandingPanel({
       title="Restaurant identity"
       done={Boolean(branding?.restaurantName)}
       icon={<Store size={20} />}
-      summary={branding ? `${branding.restaurantName || "No name set"} · ${branding.logoImageDataUrl ? "custom logo" : "default mark"}` : "Name and logo for bills"}
+      summary={branding ? `${branding.restaurantName || "No name set"} · ${branding.logoImageDataUrl ? "custom logo" : "name only"}` : "Name and logo for bills"}
     >
       {current.isPending ? (
         <p className="soft-note" role="status">Loading restaurant identity…</p>
@@ -157,28 +170,28 @@ export function RestaurantBrandingPanel({
           className="branding-editor"
           onSubmit={(event) => {
             event.preventDefault();
-            void saveWithApproval();
+            if (!cropOpen) void saveWithApproval();
           }}
         >
           <div className="branding-previews" aria-live="polite">
             <figure>
               <div className="branding-logo-frame">
-                <img src={shownLogo || DEFAULT_BRAND_MARK_URL} alt={shownLogo ? (newLogo ? "New logo preview" : "Current restaurant logo") : "Default app mark"} />
+                {shownLogo ? <LogoIconPreview image={shownLogo} crop={shownCrop} alt={newLogo ? "New icon preview" : "Restaurant icon"} /> : <span className="branding-name-mark">{(trimmedName || "Restaurant").slice(0, 1).toLocaleUpperCase()}</span>}
               </div>
-              <figcaption>{newLogo ? "New logo · not saved" : shownLogo ? "In the app" : "Default mark · no logo uploaded"}</figcaption>
+              <figcaption>{newLogo ? "New logo · not saved" : shownLogo ? "App icon" : "Restaurant name"}</figcaption>
             </figure>
             <figure>
               <div className="branding-logo-frame paper">
-                {shownLogo ? <img className="thermal" src={shownLogo} alt="" /> : <span>No logo on bills</span>}
-                <strong>{trimmedName || "Restaurant name"}</strong>
+                {shownLogo ? <ThermalLogoPreview imageDataUrl={shownLogo} paperDots={384} /> : null}
+                {trimmedName ? <strong>{trimmedName}</strong> : null}
               </div>
-              <figcaption>Bill header · black and white</figcaption>
+              <figcaption>Bill header</figcaption>
             </figure>
           </div>
           <div className="branding-fields">
             {conflict ? <div className="branding-conflict" role="alert"><p>The restaurant identity changed on another device. Your changes are still here. Load the current identity before saving.</p><button type="button" className="secondary-button compact" onClick={discardChanges}>Load current identity</button></div> : null}
             <label>
-              Restaurant name
+              Restaurant name (optional)
               <input
                 value={name}
                 maxLength={160}
@@ -205,13 +218,18 @@ export function RestaurantBrandingPanel({
                   <ImageUp size={16} />
                   {reading ? "Reading…" : shownLogo ? "Replace logo" : "Upload logo"}
                 </button>
+                {shownLogo ? (
+                  <button type="button" className="secondary-button" disabled={busy || locked || conflict} onClick={() => setCropOpen(true)}>
+                    <Crop size={16} /> Adjust icon
+                  </button>
+                ) : null}
                 {branding?.logoImageDataUrl && !newLogo ? (
                   <button type="button" className="quiet-danger-button" disabled={busy || locked || conflict} onClick={() => void removeWithApproval()}>
                     {remove.isPending ? "Removing…" : "Remove logo"}
                   </button>
                 ) : null}
               </div>
-              <small>PNG or JPG · up to 2 MB · customer bills only</small>
+              <small>PNG or JPG · up to 2 MB. Bill size is set per printer.</small>
               {imageError ? <p className="branding-image-error" role="alert">{imageError}</p> : null}
             </div>
             {locked ? (
@@ -220,7 +238,7 @@ export function RestaurantBrandingPanel({
               </p>
             ) : null}
             <div className="form-actions">
-              <button type="submit" disabled={busy || locked || conflict || !changed || !trimmedName}>
+              <button type="submit" disabled={busy || locked || conflict || !changed}>
                 {save.isPending ? "Saving…" : "Save identity"}
               </button>
               {changed ? (
@@ -233,9 +251,19 @@ export function RestaurantBrandingPanel({
                   Discard changes
                 </button>
               ) : null}
-              {!trimmedName && changed ? <small role="alert">Enter the restaurant name.</small> : null}
             </div>
           </div>
+          {cropOpen && shownLogo ? (
+            <LogoCropDialog
+              image={shownLogo}
+              initialCrop={shownCrop}
+              onClose={() => setCropOpen(false)}
+              onUse={(crop) => {
+                setPendingIconCrop(crop);
+                setCropOpen(false);
+              }}
+            />
+          ) : null}
         </form>
       )}
     </SetupCard>

@@ -1,8 +1,10 @@
-import { printFontPoints } from "@gaurav-pos/shared";
+import { printFontPoints, printPaperDotsForChars, type LogoPrintSettings } from "@gaurav-pos/shared";
 import type { CSSProperties } from "react";
 
 import { parsePrintStyleLine, renderBillTicketForPrint, renderKotTicketForPrint } from "../../../domain/tickets.js";
 import type { PrintLayoutSettings } from "../../hub-api.js";
+
+import { ThermalLogoPreview } from "./thermal-logo-preview.js";
 
 type PreviewQr = { imageDataUrl: string; upiUri: string; sizeMm?: number } | null;
 
@@ -21,6 +23,7 @@ export function PrintLayoutPreview({
   paymentQr,
   restaurantName,
   restaurantLogo,
+  logoSettings,
 }: {
   draft: PrintLayoutSettings;
   scope: "receipt" | "unit";
@@ -28,8 +31,9 @@ export function PrintLayoutPreview({
   paymentQr?: PreviewQr;
   restaurantName: string;
   restaurantLogo: string | null;
+  logoSettings?: LogoPrintSettings;
 }) {
-  const preview = scope === "receipt" ? renderReceiptPreview(draft, paymentQr ?? null, restaurantName, restaurantLogo) : renderKotPreview(draft, unitName);
+  const preview = scope === "receipt" ? renderReceiptPreview(draft, paymentQr ?? null, restaurantName, restaurantLogo, logoSettings) : renderKotPreview(draft, unitName);
   const lines = preview
     .split(/\r?\n/)
     .map((line) => parsePrintStyleLine(line) ?? { text: line, size: "normal" as const, bold: false, align: "left" as const, graphicLine: false })
@@ -42,7 +46,7 @@ export function PrintLayoutPreview({
       {lines.map((line, index) =>
         "logoImageDataUrl" in line && line.logoImageDataUrl ? (
           <div key={`logo-${index}`} className="print-paper-image">
-            <img src={line.logoImageDataUrl} alt="Restaurant logo" style={{ width: imageWidth(line.logoWidthMm ?? 32) }} />
+            <ThermalLogoPreview imageDataUrl={line.logoImageDataUrl} paperDots={printPaperDotsForChars(draft.lineWidthChars)} settings={logoSettings} />
           </div>
         ) : "qrImageDataUrl" in line && line.qrImageDataUrl ? (
           <div key={`qr-${index}`} className="print-paper-image">
@@ -58,15 +62,16 @@ export function PrintLayoutPreview({
   );
 }
 
-function renderReceiptPreview(draft: PrintLayoutSettings, paymentQr: PreviewQr, restaurantName: string, restaurantLogo: string | null): string {
+function renderReceiptPreview(draft: PrintLayoutSettings, paymentQr: PreviewQr, restaurantName: string, restaurantLogo: string | null, logoSettings?: LogoPrintSettings): string {
   return renderBillTicketForPrint({
     ...draft,
     paymentQr,
-    restaurantLogo: restaurantLogo ? { imageDataUrl: restaurantLogo } : null,
+    restaurantLogo: restaurantLogo ? { imageDataUrl: restaurantLogo, widthMm: logoSettings?.logoWidthMm, printMode: logoSettings?.logoPrintMode, threshold: logoSettings?.logoThreshold } : null,
     tableName: "T1",
     billId: "TEST-BILL",
     createdAt: "2026-05-15T15:00:00.000Z",
     restaurantName,
+    customerName: "Sample guest",
     restaurantAddress: draft.restaurantAddress,
     taxRegistrationText: draft.taxRegistrationText,
     header: draft.billHeader,
@@ -76,15 +81,13 @@ function renderReceiptPreview(draft: PrintLayoutSettings, paymentQr: PreviewQr, 
       { name: "Butter Naan", quantity: 3, unitPricePaise: 5500, lineTotalPaise: 16500 },
     ],
     subtotalPaise: 60500,
-    taxPaise: draft.showTaxBreakup ? 3025 : 0,
-    totalPaise: 60500,
-    taxBreakdown: draft.showTaxBreakup
-      ? [
-          { name: "CGST", rateBps: 250, amountPaise: 1513 },
-          { name: "SGST", rateBps: 250, amountPaise: 1512 },
-        ]
-      : [],
-    payments: draft.showPaymentSplit ? [{ method: "cash", amountPaise: 60500 }] : [],
+    taxPaise: 3025,
+    totalPaise: 63525,
+    taxBreakdown: [
+      { name: "CGST", rateBps: 250, amountPaise: 1513 },
+      { name: "SGST", rateBps: 250, amountPaise: 1512 },
+    ],
+    payments: [{ method: "cash", amountPaise: 63525 }],
   });
 }
 
@@ -98,6 +101,7 @@ function renderKotPreview(draft: PrintLayoutSettings, unitName: string): string 
     captainId: "Captain",
     createdAt: "2026-05-15T15:00:00.000Z",
     items: [{ name: "Paneer Tikka", quantityDelta: 2, note: "No onion" }],
+    note: "Less spicy",
     header: draft.kotHeader,
     footer: draft.kotFooter,
     ...draft,

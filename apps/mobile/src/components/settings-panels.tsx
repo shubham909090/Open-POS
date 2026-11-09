@@ -6,7 +6,8 @@ import type { useMobileUpdate } from "../hooks/use-mobile-update";
 import type { RestaurantBrandingDraft } from "../hooks/use-restaurant-branding";
 import { palette, styles } from "../styles/app-styles";
 import { settingsStyles as s } from "../styles/settings-styles";
-import { BrandMark, DEFAULT_BRAND_NAME } from "./brand-mark";
+import { BrandMark, DEFAULT_BRAND_NAME, brandDisplayName } from "./brand-mark";
+import { cropRestaurantIcon, isRestaurantIconCropSupported, isRestaurantShortcutSupported, requestRestaurantShortcut } from "../../modules/restaurant-shortcut";
 import { Pressable } from "./pressable";
 import { Button } from "./ui-primitives";
 
@@ -41,49 +42,100 @@ export function BrandingSettings({
 }) {
   const savedName = branding?.restaurantName ?? "";
   const savedLogo = branding?.logoImageDataUrl ?? null;
+  const savedCropKey = JSON.stringify(branding?.iconCrop ?? null);
+  const savedUpdatedAt = branding?.updatedAt ?? null;
   const [name, setName] = useState(savedName);
   const [logo, setLogo] = useState<string | null | undefined>(undefined);
   const [pin, setPin] = useState("");
-  const previousSaved = useRef({ name: savedName, logo: savedLogo });
+  const [iconCrop, setIconCrop] = useState<RestaurantBrandingDraft["iconCrop"]>(undefined);
+  const [iconPreview, setIconPreview] = useState<string | null>(null);
+  const [cropping, setCropping] = useState(false);
+  const [cropError, setCropError] = useState("");
+  const previousSaved = useRef({ name: savedName, logo: savedLogo, crop: savedCropKey, updatedAt: savedUpdatedAt });
   const [remoteChanged, setRemoteChanged] = useState(false);
   // Preserve an unfinished edit if another device changes the shared branding.
   useEffect(() => {
     if (busy) return;
-    if (savedName === previousSaved.current.name && savedLogo === previousSaved.current.logo) return;
-    if (name === previousSaved.current.name && logo === undefined) setName(savedName);
-    else if (name !== savedName || (logo !== undefined && logo !== savedLogo)) setRemoteChanged(true);
-    previousSaved.current = { name: savedName, logo: savedLogo };
-  }, [savedName, savedLogo, busy]);
+    const previous = previousSaved.current;
+    if (savedName === previous.name && savedLogo === previous.logo && savedCropKey === previous.crop && savedUpdatedAt === previous.updatedAt) return;
+    if (!cropping && name === previous.name && logo === undefined && iconCrop === undefined) {
+      setName(savedName);
+      setIconPreview(null);
+    } else if (cropping || name !== savedName || (logo !== undefined && logo !== savedLogo) || (iconCrop !== undefined && JSON.stringify(iconCrop) !== savedCropKey)) {
+      setRemoteChanged(true);
+    }
+    previousSaved.current = { name: savedName, logo: savedLogo, crop: savedCropKey, updatedAt: savedUpdatedAt };
+  }, [savedName, savedLogo, savedCropKey, savedUpdatedAt, busy, cropping]);
 
   const previewLogo = logo === undefined ? savedLogo : logo;
-  const dirty = name.trim() !== savedName.trim() || logo !== undefined || remoteChanged;
-  const reset = () => { setName(savedName); setLogo(undefined); setPin(""); setRemoteChanged(false); };
+  const previewIcon = iconCrop === null ? previewLogo : iconPreview || (logo === undefined ? branding?.iconImageDataUrl ?? savedLogo : previewLogo);
+  const dirty = name.trim() !== savedName.trim() || logo !== undefined || iconCrop !== undefined || remoteChanged;
+  const cropSupported = isRestaurantIconCropSupported();
+  const hubCropSupported = Boolean(branding && "iconCrop" in branding);
+  const disabled = !online || busy || cropping;
+  const reset = () => { setName(savedName); setLogo(undefined); setIconCrop(undefined); setIconPreview(null); setCropError(""); setPin(""); setRemoteChanged(false); };
+  const adjustIcon = async () => {
+    if (!previewLogo) return;
+    setCropping(true);
+    setCropError("");
+    try {
+      const result = await cropRestaurantIcon(previewLogo, iconCrop === undefined ? branding?.iconCrop : iconCrop);
+      if (result) {
+        setIconCrop(result.crop);
+        setIconPreview(result.previewImageDataUrl);
+      }
+    } catch {
+      setCropError("Could not adjust the icon. Try again.");
+    } finally {
+      setCropping(false);
+    }
+  };
   const submit = async () => {
     const submittedPin = pin.trim();
     setPin("");
-    if (await onSave({ restaurantName: name, imageDataUrl: logo }, submittedPin)) { setLogo(undefined); setRemoteChanged(false); }
+    if (await onSave({ restaurantName: name, imageDataUrl: logo, iconCrop }, submittedPin)) { setLogo(undefined); setIconCrop(undefined); setIconPreview(null); setRemoteChanged(false); }
   };
 
   return (
     <SettingsSection title="Restaurant">
       <View style={s.brandEditorRow}>
-        <BrandMark branding={branding} previewUri={previewLogo} size={56} />
+        <BrandMark branding={branding} previewUri={previewLogo} previewName={name} size={56} />
         <View style={s.brandEditorActions}>
-          <Pressable style={[s.smallButton, (!online || busy) && styles.buttonDisabled]} disabled={!online || busy} onPress={async () => {
+          <Pressable accessibilityLabel={previewLogo ? "Replace logo" : "Upload logo"} style={[s.smallButton, s.brandAction, disabled && styles.buttonDisabled]} disabled={disabled} onPress={async () => {
             const picked = await onPickLogo();
-            if (picked) setLogo(picked);
+            if (picked) { setLogo(picked); setIconCrop(null); setIconPreview(null); setCropError(""); }
           }}>
-            <Text style={s.smallButtonText}>{previewLogo ? "Replace logo" : "Upload logo"}</Text>
+            <Text style={s.smallButtonText}>{previewLogo ? "Replace" : "Upload"}</Text>
           </Pressable>
           {previewLogo ? (
-            <Pressable style={[s.textButton, (!online || busy) && styles.buttonDisabled]} disabled={!online || busy} onPress={() => setLogo(null)}>
-              <Text style={s.textButtonDanger}>Remove logo</Text>
+            <Pressable accessibilityLabel="Remove logo" style={[s.smallButton, s.brandAction, s.removeLogoButton, disabled && styles.buttonDisabled]} disabled={disabled} onPress={() => { setLogo(null); setIconCrop(null); setIconPreview(null); setCropError(""); }}>
+              <Text style={[s.smallButtonText, s.textButtonDanger]}>Remove</Text>
             </Pressable>
           ) : (
-            <Text style={styles.smallMuted}>PNG / JPEG · 2 MB max</Text>
+            <Text style={[styles.smallMuted, s.brandAction]}>PNG / JPEG · 2 MB max</Text>
           )}
         </View>
       </View>
+      {previewLogo ? (
+        <View style={s.brandIconRow}>
+          <BrandMark branding={branding} previewUri={previewIcon} previewName={name} size={44} />
+          <View style={s.brandIconControls}>
+            <Text style={styles.inputLabel}>App icon</Text>
+            <View style={s.brandIconActions}>
+              <Pressable accessibilityLabel="Adjust restaurant icon" style={[s.smallButton, (!cropSupported || !hubCropSupported || disabled) && styles.buttonDisabled]} disabled={!cropSupported || !hubCropSupported || disabled} onPress={() => void adjustIcon()}>
+                <Text style={s.smallButtonText}>{cropping ? "Opening…" : "Adjust icon"}</Text>
+              </Pressable>
+              {(iconCrop === undefined ? branding?.iconCrop : iconCrop) ? (
+                <Pressable accessibilityLabel="Reset restaurant icon" style={[s.smallButton, disabled && styles.buttonDisabled]} disabled={disabled} onPress={() => { setIconCrop(null); setIconPreview(null); setCropError(""); }}>
+                  <Text style={s.smallButtonText}>Reset</Text>
+                </Pressable>
+              ) : null}
+            </View>
+          </View>
+        </View>
+      ) : null}
+      {previewLogo && (!cropSupported || !hubCropSupported) ? <Text style={styles.smallMuted}>{!hubCropSupported ? "Update Hub to adjust the icon." : "Update Android app to adjust the icon."}</Text> : null}
+      {cropError ? <Text style={styles.dangerText} accessibilityLiveRegion="polite">{cropError}</Text> : null}
       <View style={styles.inputGroup}>
         <Text style={styles.inputLabel}>Restaurant name</Text>
         <TextInput
@@ -92,7 +144,7 @@ export function BrandingSettings({
           value={name}
           onChangeText={setName}
           maxLength={160}
-          editable={online && !busy}
+          editable={!disabled}
           placeholder={DEFAULT_BRAND_NAME}
           placeholderTextColor={palette.muted}
           returnKeyType="done"
@@ -114,10 +166,10 @@ export function BrandingSettings({
             />
           </View>
           <View style={styles.sendButtonRow}>
-            <Pressable style={[styles.secondaryButton, styles.sendButton]} onPress={reset} disabled={busy}>
+            <Pressable style={[styles.secondaryButton, styles.sendButton]} onPress={reset} disabled={busy || cropping}>
               <Text style={styles.secondaryButtonText}>Discard</Text>
             </Pressable>
-            <Button label={busy ? "Saving…" : logo === null && name.trim() === savedName.trim() ? "Remove logo" : "Save"} style={styles.sendButton} disabled={busy || !pin.trim() || remoteChanged} onPress={() => void submit()} />
+            <Button label={busy ? "Saving…" : logo === null && name.trim() === savedName.trim() ? "Remove logo" : "Save"} style={styles.sendButton} disabled={busy || cropping || !pin.trim() || remoteChanged} onPress={() => void submit()} />
           </View>
         </View>
       ) : null}
@@ -125,6 +177,36 @@ export function BrandingSettings({
       {remoteChanged ? <Text style={styles.dangerText} accessibilityLiveRegion="polite">Changed on another device. Discard to reload.</Text> : null}
       {error ? <Text style={styles.dangerText} accessibilityLiveRegion="polite">{error}</Text> : null}
       {notice && !dirty ? <Text style={s.successText} accessibilityLiveRegion="polite">{notice}</Text> : null}
+    </SettingsSection>
+  );
+}
+
+export function RestaurantShortcutSettings({ branding }: { branding: RestaurantBranding | null }) {
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState("");
+  const [error, setError] = useState("");
+  const supported = isRestaurantShortcutSupported();
+  async function addShortcut() {
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      const result = await requestRestaurantShortcut({ name: brandDisplayName(branding), logoImageDataUrl: branding?.iconImageDataUrl ?? branding?.logoImageDataUrl ?? null });
+      setNotice(result === "updated" ? "Home screen shortcut updated." : result === "requested" ? "Confirm on your home screen to add the shortcut." : "This launcher does not support home screen shortcuts.");
+    } catch {
+      setError("Could not add the shortcut. Try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <SettingsSection title="App icon">
+      <Pressable style={[styles.secondaryButton, (!supported || busy) && styles.buttonDisabled]} disabled={!supported || busy} onPress={() => void addShortcut()}>
+        <Text style={styles.secondaryButtonText}>{busy ? "Opening…" : "Add to home screen"}</Text>
+      </Pressable>
+      {!supported ? <Text style={styles.smallMuted}>Available in the updated Android app.</Text> : null}
+      {notice ? <Text style={styles.smallMuted} accessibilityLiveRegion="polite">{notice}</Text> : null}
+      {error ? <Text style={styles.dangerText} accessibilityLiveRegion="polite">{error}</Text> : null}
     </SettingsSection>
   );
 }

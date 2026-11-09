@@ -1,4 +1,5 @@
 import type {
+  LogoPrintSettings,
   BulkDeleteAlcoholItemsInput,
   BulkDeleteMenuItemsInput,
   MenuItemDeleteApprovalInput,
@@ -6,7 +7,7 @@ import type {
   UserRole
 } from "@gaurav-pos/shared";
 
-export type BillPrinterProfile = {
+export type BillPrinterProfile = LogoPrintSettings & {
   paymentQrSizeMm?: number;
   paperWidthMm?: 45 | 50 | 58 | 80 | null;
   label: string;

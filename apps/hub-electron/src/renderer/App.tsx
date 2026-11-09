@@ -5,9 +5,8 @@ import {
   useQuery,
 } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import { RefreshCw, X } from "lucide-react";
+import { RefreshCw, Store, X } from "lucide-react";
 import { feedbackTiming } from "@gaurav-pos/shared";
-import { DEFAULT_BRAND_MARK_URL } from "./lib/branding.js";
 import { Button } from "./components/ui/button.js";
 import { Badge } from "./components/ui/badge.js";
 import {
@@ -206,7 +205,7 @@ function HubShell() {
       <main className="pin-setup">
         <section className="pin-setup-content" aria-labelledby="pin-setup-title">
           <header className="pin-setup-heading">
-            <img src={DEFAULT_BRAND_MARK_URL} alt="" />
+            <Store size={40} aria-hidden="true" />
             <h1 id="pin-setup-title">Create manager PIN</h1>
             <p>Approves reprints, cancellations and setup changes on this hub.</p>
           </header>

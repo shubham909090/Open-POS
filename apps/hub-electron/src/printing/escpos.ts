@@ -1,4 +1,5 @@
 import net from "node:net";
+import { PNG } from "pngjs";
 import { execFile } from "node:child_process";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -53,6 +54,20 @@ export function renderEscposPayload(payload: string): Buffer {
   return Buffer.concat(chunks);
 }
 
+const WINDOWS_LOGO_RASTER_MARKER = "\u001dlogo-raster:";
+
+export function prepareWindowsSystemPrintPayload(payload: string): string {
+  const paperDots = ticketPaperDots(payload);
+  return payload.split(/\r?\n/).map(line => {
+    const parsed = parsePrintStyleLine(line);
+    if (!parsed?.logoImageDataUrl) return line;
+    const bitmap = logoBitmap(parsed, paperDots);
+    const png = new PNG({ width: bitmap.width, height: bitmap.height });
+    png.data = Buffer.from(bitmap.data);
+    return `${WINDOWS_LOGO_RASTER_MARKER}${PNG.sync.write(png).toString("base64")}`;
+  }).join("\n");
+}
+
 export function buildWindowsSystemPrintCommand(file: string, printerName: string): string[] {
   return [
     "-NoProfile",
@@ -60,18 +75,18 @@ export function buildWindowsSystemPrintCommand(file: string, printerName: string
     [
       "Add-Type -AssemblyName System.Drawing;",
       "Add-Type -AssemblyName System.Windows.Forms;",
-      `$text = Get-Content -Raw -LiteralPath ${JSON.stringify(file)};`,
+      `$text = Get-Content -Raw -Encoding UTF8 -LiteralPath ${JSON.stringify(file)};`,
       "$lines = $text -split \"`r?`n\";",
       "if ($lines.Length -gt 0 -and $lines[$lines.Length - 1] -eq '') { if ($lines.Length -eq 1) { $lines = @() } else { $lines = $lines[0..($lines.Length - 2)] } }",
       "$marker = [char]30;",
       "$lineMarker = [char]29 + 'line:';",
       "$plainMarker = [char]31;",
-      "$logoMarker = [char]29 + 'logo:';",
+      "$logoMarker = [char]29 + 'logo-raster:';",
       "$qrMarker = [char]29 + 'qr:';",
       "$paperMarker = [char]29 + 'paper:';",
       "function Parse-TicketLine($line) {",
       "  if ($line.StartsWith($paperMarker)) { return @{ IsPaper = $true; WidthChars = [int]$line.Substring($paperMarker.Length) } }",
-      "  if ($line.StartsWith($logoMarker)) { $logo = $line.Substring($logoMarker.Length); $bar = $logo.IndexOf(':data:'); if ($bar -lt 0) { throw 'Invalid logo print payload' }; $png = $logo.Substring($bar + 1); return @{ LogoBase64 = $png.Substring($png.IndexOf(',') + 1); LogoWidthMm = [Math]::Max(16, [Math]::Min(45, [double]$logo.Substring(0, $bar))) } }",
+      "  if ($line.StartsWith($logoMarker)) { return @{ LogoBase64 = $line.Substring($logoMarker.Length) } }",
       "  if ($line.StartsWith($qrMarker)) { $qr = $line.Substring($qrMarker.Length); $qrBar = $qr.IndexOf(':data:'); $mm = if ($qrBar -ge 0) { [double]$qr.Substring(0, $qrBar) } else { 32 }; $png = if ($qrBar -ge 0) { $qr.Substring($qrBar + 1) } else { $qr }; return @{ QrBase64 = $png.Substring($png.IndexOf(',') + 1); QrSizeMm = [Math]::Max(20, [Math]::Min(45, $mm)) } }",
       "  if ($line.StartsWith($lineMarker)) {",
       "    $payload = $line.Substring($lineMarker.Length);",
@@ -104,9 +119,9 @@ export function buildWindowsSystemPrintCommand(file: string, printerName: string
       "    $contentWidth = if ($null -ne $script:paperWidth) { [Math]::Min($eventArgs.MarginBounds.Width, $script:paperWidth) } else { $eventArgs.MarginBounds.Width };",
       "    if ($parsed.LogoBase64) {",
       "      $stream = [System.IO.MemoryStream]::new([Convert]::FromBase64String($parsed.LogoBase64)); $image = [System.Drawing.Image]::FromStream($stream);",
-      "      $width = [Math]::Min($contentWidth - 8, $parsed.LogoWidthMm * 100 / 25.4); $scale = [Math]::Min($width / $image.Width, (20 * 100 / 25.4) / $image.Height); $width = $image.Width * $scale; $height = $image.Height * $scale;",
+      "      $width = [Math]::Min($contentWidth, $image.Width * 100 / 203); $height = $image.Height * $width / $image.Width;",
       "      if (($y + $height) -ge $eventArgs.MarginBounds.Bottom -and $y -gt 0) { $image.Dispose(); $stream.Dispose(); break }",
-      "      $eventArgs.Graphics.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic; $eventArgs.Graphics.DrawImage($image, [single](($contentWidth - $width) / 2), [single]$y, [single]$width, [single]$height);",
+      "      $eventArgs.Graphics.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::NearestNeighbor; $eventArgs.Graphics.PixelOffsetMode = [System.Drawing.Drawing2D.PixelOffsetMode]::Half; $eventArgs.Graphics.DrawImage($image, [single](($contentWidth - $width) / 2), [single]$y, [single]$width, [single]$height);",
       "      $image.Dispose(); $stream.Dispose(); $y += $height; $script:index += 1; continue;",
       "    }",
       "    if ($parsed.QrBase64) {",
@@ -186,7 +201,7 @@ export class SystemPrinterAdapter implements PrinterAdapter {
     const file = join(dir, "ticket.txt");
 
     try {
-      await writeFile(file, process.platform === "win32" ? target.payload : stripPrintStyleMarkers(target.payload), "utf8");
+      await writeFile(file, process.platform === "win32" ? prepareWindowsSystemPrintPayload(target.payload) : stripPrintStyleMarkers(target.payload), "utf8");
       if (process.platform === "win32") {
         await this.execFileAsync("powershell.exe", buildWindowsSystemPrintCommand(file, target.printerName));
       } else {

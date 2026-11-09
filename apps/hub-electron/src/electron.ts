@@ -4,6 +4,7 @@ import { chooseUpdateFile, restoreRendererFocus, type UpdateFileDialogKind } fro
 import { startHub } from "./runtime.js";
 import { runPrintSelfTest, runSqliteSelfTest } from "./self-test.js";
 import { createElectronOnlineUpdater } from "./update/electron-online-updater.js";
+import { applyRestaurantDesktopBranding } from "./restaurant-desktop-branding.js";
 
 let mainWindow: BrowserWindow | null = null;
 let hubPromise: ReturnType<typeof startHub> | null = null;
@@ -53,8 +54,20 @@ async function createWindow() {
     }
   });
 
+  const window = mainWindow;
+  let brandingWork = Promise.resolve();
+  const refreshBranding = () => {
+    const branding = hub.getRestaurantBranding();
+    brandingWork = brandingWork.then(() => applyRestaurantDesktopBranding(window, branding))
+      .catch((error) => console.warn("Unable to refresh restaurant desktop branding", error));
+  };
+  const unsubscribeBranding = hub.subscribeRestaurantBranding(refreshBranding);
+  window.on("page-title-updated", (event) => event.preventDefault());
+  refreshBranding();
+
   await mainWindow.loadURL(hub.url);
   mainWindow.on("closed", () => {
+    unsubscribeBranding();
     mainWindow = null;
   });
 }

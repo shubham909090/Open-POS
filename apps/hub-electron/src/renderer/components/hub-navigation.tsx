@@ -97,6 +97,7 @@ export function HubNavigation({
   );
   const [searchOpen, setSearchOpen] = useState(false);
   const brand = useRestaurantBranding();
+  const [failedLogo, setFailedLogo] = useState<string | null>(null);
   const searchOpener = useRef<HTMLElement | null>(null);
   const openSearch = () => {
     searchOpener.current =
@@ -124,11 +125,11 @@ export function HubNavigation({
       >
         <div className="workspace-brand">
           <span className={`workspace-mark${brand.hasCustomLogo ? " custom" : ""}`} aria-hidden="true">
-            <img src={brand.logoUrl} alt="" />
+            {brand.logoUrl && brand.logoUrl !== failedLogo ? <img src={brand.logoUrl} alt="" onError={() => setFailedLogo(brand.logoUrl)} /> : brand.initial}
           </span>
           <div className="workspace-brand-copy">
-            <strong title={brand.name ?? undefined}>{brand.name ?? "Gaurav POS"}</strong>
-            <span>{brand.name ? "Gaurav POS hub" : "Restaurant hub"}</span>
+            <strong title={brand.name ?? undefined}>{brand.name ?? "Restaurant"}</strong>
+            <span>Restaurant hub</span>
           </div>
           <Button
             variant="ghost"

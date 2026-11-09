@@ -132,6 +132,10 @@ export async function startHub(options: { requestRestart?: () => void; requestEx
   return {
     app,
     database,
+    getRestaurantBranding: () => orderService.getRestaurantBranding(),
+    subscribeRestaurantBranding: (listener: () => void) => eventBus.subscribe((event) => {
+      if (typeof event === "object" && event !== null && "type" in event && event.type === "restaurant_branding.updated") listener();
+    }),
     url: `http://${config.host === "0.0.0.0" ? "127.0.0.1" : config.host}:${config.port}`,
     stop
   };

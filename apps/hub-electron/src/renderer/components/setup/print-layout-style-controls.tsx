@@ -1,9 +1,9 @@
 import type { PrintLayoutSettings } from "../../hub-api.js";
 import { printSizeLevel } from "@gaurav-pos/shared";
 
-const defaultSectionStyle: PrintLayoutSettings["sectionStyles"][string] = { size: "normal", bold: false, align: "left" };
+const defaultSectionStyle: PrintLayoutSettings["sectionStyles"][keyof PrintLayoutSettings["sectionStyles"]] = { size: "normal", bold: false, align: "left" };
 type SectionStyleKey = keyof PrintLayoutSettings["sectionStyles"];
-type SectionStylePatch = Partial<PrintLayoutSettings["sectionStyles"][string]>;
+type SectionStylePatch = Partial<PrintLayoutSettings["sectionStyles"][keyof PrintLayoutSettings["sectionStyles"]]>;
 
 const sectionStyleKeys = [
   ["restaurantName", "Restaurant name"],
@@ -37,16 +37,17 @@ export function PrintLayoutStyleControls({
         <small>Size, bold and alignment for each part of the {scope === "receipt" ? "bill" : "ticket"}</small>
       </summary>
       <div className="print-style-grid">
-        {sectionStyleKeys.filter(([key]) => !(scope === "receipt" ? kitchenOnly : billOnly).has(key)).map(([key, label]) => {
+        {sectionStyleKeys.filter(([key]) => !(scope === "receipt" ? kitchenOnly : billOnly).has(key) && sectionIsVisible(key, draft, scope)).map(([key, label]) => {
           const style = draft.sectionStyles[key] ?? defaultSectionStyle;
+          const shownLabel = key === "metadata" ? (scope === "receipt" ? "Bill details" : "Ticket details") : key === "footer" && draft.showFooter === false ? "QR caption" : label;
           return (
             <div key={key} className="print-style-row">
-              <strong>{label}</strong>
+              <strong>{shownLabel}</strong>
               <div className="print-style-fields">
                 <label className="print-size-control">
                   <span>Size <output>{printSizeLevel(style.size, style.sizeLevel)} / 10</output></span>
                   <input
-                    aria-label={`${label} text size`}
+                    aria-label={`${shownLabel} text size`}
                     type="range"
                     min={0}
                     max={10}
@@ -84,3 +85,17 @@ export function PrintLayoutStyleControls({
 }
 
 export { defaultSectionStyle };
+
+function sectionIsVisible(key: SectionStyleKey, draft: PrintLayoutSettings, scope: "receipt" | "unit"): boolean {
+  switch (key) {
+    case "restaurantName": return draft.showRestaurantName !== false;
+    case "address": return draft.showRestaurantAddress !== false;
+    case "header": return draft.showHeader !== false;
+    case "footer": return draft.showFooter !== false || (scope === "receipt" && draft.showPaymentQr !== false);
+    case "notes": return draft.showOrderNote !== false;
+    case "itemNotes": return draft.showItemNotes !== false;
+    case "metadata": return scope === "unit" || draft.showTable !== false || draft.showDateTime !== false || draft.showTaxRegistration !== false || draft.showCustomerName !== false || draft.showPaymentSplit !== false || draft.showNcReprintRevision !== false;
+    case "title": return scope === "unit" || draft.showBillId !== false || draft.showNcReprintRevision !== false;
+    default: return true;
+  }
+}

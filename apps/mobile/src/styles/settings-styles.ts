@@ -13,7 +13,7 @@ export const settingsStyles = StyleSheet.create({
     justifyContent: "center"
   },
   brandMarkLogo: { width: "86%", height: "86%" },
-  brandMarkDefault: { width: "100%", height: "100%" },
+  brandMarkInitials: { color: palette.ink, fontWeight: "700", textAlign: "center" },
   // Each settings group is one white card on the paper page, matching service screens.
   section: {
     gap: 12,
@@ -24,8 +24,13 @@ export const settingsStyles = StyleSheet.create({
     borderColor: palette.line
   },
   sectionHead: { gap: 2 },
+  brandIconRow: { flexDirection: "row", alignItems: "center", gap: 16 },
+  brandIconActions: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  brandIconControls: { flex: 1, alignItems: "flex-start", gap: 6 },
   brandEditorRow: { flexDirection: "row", alignItems: "center", gap: 16 },
-  brandEditorActions: { flex: 1, minWidth: 0, alignItems: "flex-start", gap: 2 },
+  brandEditorActions: { flex: 1, minWidth: 0, flexDirection: "row", alignItems: "stretch", gap: 8 },
+  brandAction: { flex: 1, minWidth: 0, paddingHorizontal: 8 },
+  removeLogoButton: { borderColor: palette.redLine, backgroundColor: palette.redSoft },
   smallButton: {
     minHeight: 44,
     borderRadius: 8,
@@ -37,8 +42,7 @@ export const settingsStyles = StyleSheet.create({
     justifyContent: "center"
   },
   smallButtonText: { color: palette.ink, fontWeight: "700", fontSize: 14 },
-  textButton: { minHeight: 48, justifyContent: "center", paddingHorizontal: 2 },
-  textButtonDanger: { color: palette.red, fontWeight: "600", fontSize: 14 },
+  textButtonDanger: { color: palette.red, fontWeight: "700", fontSize: 14 },
   approvalBlock: { gap: 10 },
   successText: { color: palette.success, fontSize: 13, lineHeight: 19 },
   updateStatusRow: { flexDirection: "row", alignItems: "center", gap: 10 },

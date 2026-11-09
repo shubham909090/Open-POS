@@ -9,3 +9,6 @@ export * from "./table-state.js";
 export * from "./types.js";
 
 export * from "./natural-order.js";
+
+export * from "./logo-printing.js";
+export * from "./restaurant-branding.js";

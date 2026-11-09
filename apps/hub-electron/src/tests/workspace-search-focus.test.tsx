@@ -30,9 +30,9 @@ it("returns keyboard focus to the current page after closing Ctrl+K navigation",
     />
     </QueryClientProvider>,
   );
-  // The shell shows the restaurant name, with the bundled mark when no logo is uploaded.
+  // The restaurant name supplies the mark when no logo is uploaded.
   expect(screen.getByText("Saffron Table")).toBeTruthy();
-  expect(document.querySelector<HTMLImageElement>(".workspace-mark img")?.getAttribute("src")).toBe("/brand-mark.png");
+  expect(document.querySelector(".workspace-mark")?.textContent).toBe("S");
   const orders = screen.getByRole("button", { name: "Orders" });
   orders.focus();
   fireEvent.keyDown(window, { key: "k", ctrlKey: true });

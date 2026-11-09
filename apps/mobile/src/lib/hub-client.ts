@@ -1,4 +1,4 @@
-import type { HistoryEditBillInput, PaymentQr, RestaurantBranding, SubmitOrderInput } from "@gaurav-pos/shared";
+import type { HistoryEditBillInput, PaymentQr, RestaurantBranding, SubmitOrderInput, UpdateRestaurantBrandingInput } from "@gaurav-pos/shared";
 import { MOBILE_HEALTH_TIMEOUT_MS } from "./connection-health";
 import { buildRealtimeUrl, createIdempotencyKey, HubHttpError } from "./hub-client-helpers";
 import type {
@@ -96,7 +96,7 @@ export class HubClient {
 
   /** `imageDataUrl` undefined keeps the current logo, null removes it. */
   async updateRestaurantBranding(
-    input: { restaurantName: string; imageDataUrl?: string | null; expectedUpdatedAt?: string | null },
+    input: Omit<UpdateRestaurantBrandingInput, "masterApproval">,
     approval: MasterApprovalPayload
   ): Promise<{ branding: RestaurantBranding }> {
     return this.request("/settings/restaurant-branding", { method: "PUT", body: JSON.stringify({ ...input, ...approval }) });

@@ -1,5 +1,5 @@
 import { createCanvas } from "@napi-rs/canvas";
-import { printSizeScale } from "@gaurav-pos/shared";
+import { printSizeScale, printPaperDotsForChars, renderLogoBitmap } from "@gaurav-pos/shared";
 import { PNG } from "pngjs";
 import { deflateSync } from "node:zlib";
 import { parsePrintStyleLine, type ParsedPrintStyleLine } from "../domain/tickets.js";
@@ -8,7 +8,7 @@ export interface TicketBitmap { width: number; height: number; data: Uint8Array 
 
 export function ticketPaperDots(payload: string): number {
   const chars = payload.split(/\r?\n/).map(parsePrintStyleLine).find((line) => line?.paperWidthChars)?.paperWidthChars ?? 32;
-  return chars <= 25 ? 320 : chars <= 28 ? 360 : chars <= 32 ? 384 : chars <= 48 ? 576 : 832;
+  return printPaperDotsForChars(chars);
 }
 
 export function qrBitmap(line: ParsedPrintStyleLine, paperDots: number): TicketBitmap {
@@ -36,19 +36,11 @@ export function qrBitmap(line: ParsedPrintStyleLine, paperDots: number): TicketB
 
 export function logoBitmap(line: ParsedPrintStyleLine, paperDots: number): TicketBitmap {
   const png = PNG.sync.read(Buffer.from(line.logoImageDataUrl!.split(",")[1]!, "base64"), { checkCRC: true });
-  const width = Math.min(paperDots - 16, Math.round((line.logoWidthMm ?? 32) * 203 / 25.4));
-  const scale = Math.min(width / png.width, 160 / png.height);
-  const imageWidth = Math.max(1, Math.round(png.width * scale));
-  const height = Math.max(1, Math.round(png.height * scale));
-  const data = new Uint8Array(paperDots * height * 4).fill(255);
-  const left = Math.floor((paperDots - imageWidth) / 2);
-  for (let y = 0; y < height; y++) for (let x = 0; x < imageWidth; x++) {
-    const source = (Math.min(png.height - 1, Math.floor(y / scale)) * png.width + Math.min(png.width - 1, Math.floor(x / scale))) * 4;
-    const target = (y * paperDots + x + left) * 4;
-    const alpha = png.data[source + 3]! / 255;
-    for (let channel = 0; channel < 3; channel++) data[target + channel] = Math.round(png.data[source + channel]! * alpha + 255 * (1 - alpha));
-  }
-  return { width: paperDots, height, data };
+  return renderLogoBitmap(png, paperDots, {
+    logoWidthMm: line.logoWidthMm,
+    logoThreshold: line.logoThreshold,
+    logoPrintMode: line.logoPrintMode
+  });
 }
 
 export function textBitmap(line: ParsedPrintStyleLine, paperDots: number): TicketBitmap {

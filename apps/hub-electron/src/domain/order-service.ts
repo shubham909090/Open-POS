@@ -1,5 +1,5 @@
 import { billPrinterReceiptLayout } from "./order-service/printer-settings.js";
-import { readRestaurantBranding, prepareRestaurantLogo, RESTAURANT_BRANDING_SETTING_KEY } from "./order-service/restaurant-branding.js";
+import { readRestaurantBranding, prepareRestaurantLogo, prepareRestaurantIcon, RESTAURANT_BRANDING_SETTING_KEY } from "./order-service/restaurant-branding.js";
 import {
   type RestaurantBranding,
   type UpdateRestaurantBrandingInput,
@@ -482,11 +482,25 @@ export class OrderService {
 
   async updateRestaurantBranding(input: UpdateRestaurantBrandingInput, requestedBy: string): Promise<{ branding: RestaurantBranding }> {
     this.verifyMasterApproval(input.masterApproval, "restaurant_branding.updated", "hub_setting", RESTAURANT_BRANDING_SETTING_KEY, requestedBy);
-    const logo = input.imageDataUrl === undefined ? undefined : input.imageDataUrl === null ? null : await prepareRestaurantLogo(input.imageDataUrl);
+    const snapshot = this.getRestaurantBranding();
+    if (input.expectedUpdatedAt !== undefined && input.expectedUpdatedAt !== snapshot.updatedAt) throw new DomainError("Restaurant branding changed on another device. Reopen settings before saving.", 409);
+    const logo = input.imageDataUrl === undefined ? snapshot.logoImageDataUrl : input.imageDataUrl === null ? null : await prepareRestaurantLogo(input.imageDataUrl);
+    const iconCrop = input.iconCrop === undefined ? (input.imageDataUrl === undefined ? snapshot.iconCrop ?? null : null) : input.iconCrop;
+    if (!logo && iconCrop) throw new DomainError("Upload a logo before framing the app icon", 400);
+    const iconChanged = input.imageDataUrl !== undefined || input.iconCrop !== undefined;
+    const iconImageDataUrl = iconChanged ? (logo ? await prepareRestaurantIcon(logo, iconCrop) : null) : snapshot.iconImageDataUrl ?? null;
     return this.db.transaction(() => {
       const current = this.getRestaurantBranding();
-      if (input.expectedUpdatedAt !== undefined && input.expectedUpdatedAt !== current.updatedAt) throw new DomainError("Restaurant branding changed on another device. Reopen settings before saving.", 409);
-      const branding: RestaurantBranding = { restaurantName: input.restaurantName, logoImageDataUrl: logo === undefined ? current.logoImageDataUrl : logo, updatedAt: new Date().toISOString() };
+      if (snapshot.updatedAt !== current.updatedAt) throw new DomainError("Restaurant branding changed on another device. Reopen settings before saving.", 409);
+      const previousTime = current.updatedAt ? Date.parse(current.updatedAt) : 0;
+      const updatedAt = new Date(Math.max(Date.now(), previousTime + 1)).toISOString();
+      const branding: RestaurantBranding = {
+        restaurantName: input.restaurantName,
+        logoImageDataUrl: logo,
+        iconImageDataUrl,
+        iconCrop: logo ? iconCrop : null,
+        updatedAt
+      };
       this.upsertSetting(RESTAURANT_BRANDING_SETTING_KEY, JSON.stringify(branding));
       this.appendEvent("restaurant_branding.updated", "hub_setting", RESTAURANT_BRANDING_SETTING_KEY, { requestedBy, configured: !!branding.logoImageDataUrl });
       return { branding };
@@ -1114,6 +1128,7 @@ export class OrderService {
       receiptLayout: billPrinterReceiptLayout(this.getPrintLayout("receipt"), this.getBillPrinterProfile(input.printerSlot ?? "default")),
       paperWidthMm: this.getBillPrinterProfile(input.printerSlot ?? "default").paperWidthMm,
       restaurantBranding: this.getRestaurantBranding(),
+      logoSettings: this.getBillPrinterProfile(input.printerSlot ?? "default"),
       paymentQr: this.getPaymentQrForPrinter(input.printerSlot ?? "default")
     });
   }

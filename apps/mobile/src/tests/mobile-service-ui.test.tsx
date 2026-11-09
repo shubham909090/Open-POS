@@ -3,8 +3,9 @@ import { createElement } from "react";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { Keyboard } from "react-native";
+import { cropRestaurantIcon, requestRestaurantShortcut } from "../../modules/restaurant-shortcut";
 import { MenuItemRow } from "../components/menu-screen";
-import { MobileUpdatePanel } from "../components/settings-panels";
+import { BrandingSettings, MobileUpdatePanel, RestaurantShortcutSettings } from "../components/settings-panels";
 import { KitchenScreen } from "../components/kitchen-screen";
 import { TicketScreen } from "../components/ticket-screen";
 import { BillingHistoryPanel } from "../components/billing-history-panel";
@@ -27,7 +28,8 @@ vi.mock("react-native", () => ({
 vi.mock("../components/pressable", () => ({ Pressable: ({ children, onPress, disabled, accessibilityLabel, accessibilityRole, accessibilityState }: any) => createElement("button", { onClick: onPress, disabled, "aria-label": accessibilityLabel, role: accessibilityRole, "aria-selected": accessibilityState?.selected }, children) }));
 vi.mock("../components/form-modal", () => ({ FormModal: ({ visible, children }: any) => visible ? children : null }));
 vi.mock("../styles/app-styles", () => ({ styles: {}, palette: {} }));
-vi.mock("../components/brand-mark", () => ({ BrandMark: () => null, DEFAULT_BRAND_NAME: "Gaurav" }));
+vi.mock("../components/brand-mark", () => ({ BrandMark: () => null, DEFAULT_BRAND_NAME: "Restaurant", brandDisplayName: (branding: any) => branding?.restaurantName || "Restaurant" }));
+vi.mock("../../modules/restaurant-shortcut", () => ({ isRestaurantShortcutSupported: () => true, isRestaurantIconCropSupported: () => true, cropRestaurantIcon: vi.fn(), requestRestaurantShortcut: vi.fn(), updateRestaurantShortcut: vi.fn() }));
 vi.mock("lucide-react-native", () => ({ Plus: () => null, Search: () => null, X: () => null }));
 vi.mock("../components/app-shell", () => ({
   EmptyState: ({ title, text }: any) => createElement("div", null, title, text),
@@ -218,4 +220,71 @@ it.each(["UPI amount", "Discount", "Tip"])("blocks malformed %s even when all ot
   expect((screen.getByRole("button", { name: "Record ₹1,400" }) as HTMLButtonElement).disabled).toBe(true);
   expect(screen.getByText("Enter valid amounts with up to two decimal places.")).toBeTruthy();
   expect(settle).not.toHaveBeenCalled();
+});
+
+it("requests the saved restaurant home screen shortcut without claiming installation", async () => {
+  vi.mocked(requestRestaurantShortcut).mockResolvedValueOnce("requested");
+  const branding = { restaurantName: "Saffron Table", logoImageDataUrl: "data:image/png;base64,SOURCE", iconImageDataUrl: "data:image/png;base64,ICON", updatedAt: null };
+  render(<RestaurantShortcutSettings branding={branding} />);
+  await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Add to home screen" })); });
+  expect(requestRestaurantShortcut).toHaveBeenCalledWith({ name: "Saffron Table", logoImageDataUrl: branding.iconImageDataUrl });
+  expect(screen.getByText("Confirm on your home screen to add the shortcut.")).toBeTruthy();
+});
+
+it("keeps a crop through name edits and sends it only with Master PIN save", async () => {
+  const crop = { x: 0.25, y: 0, width: 0.5, height: 1 };
+  vi.mocked(cropRestaurantIcon).mockResolvedValueOnce({ crop, previewImageDataUrl: "data:image/png;base64,ICON" });
+  const onSave = vi.fn(async () => false);
+  const branding = { restaurantName: "Saffron Table", logoImageDataUrl: "data:image/png;base64,SOURCE", iconImageDataUrl: null, iconCrop: null, updatedAt: null };
+  render(<BrandingSettings branding={branding} online busy={false} error="" notice="" onPickLogo={vi.fn()} onSave={onSave} />);
+  await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Adjust restaurant icon" })); });
+  expect(cropRestaurantIcon).toHaveBeenLastCalledWith(branding.logoImageDataUrl, null);
+  expect(onSave).not.toHaveBeenCalled();
+  fireEvent.change(screen.getByLabelText("Restaurant name"), { target: { value: "Saffron Garden" } });
+  fireEvent.change(screen.getByLabelText("Master PIN for restaurant branding"), { target: { value: "9876" } });
+  await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Save" })); });
+  expect(onSave).toHaveBeenCalledWith({ restaurantName: "Saffron Garden", imageDataUrl: undefined, iconCrop: crop }, "9876");
+});
+
+it("leaves the draft untouched when the native crop editor is cancelled", async () => {
+  const crop = { x: 0.25, y: 0, width: 0.5, height: 1 };
+  vi.mocked(cropRestaurantIcon).mockResolvedValueOnce(null);
+  const branding = { restaurantName: "Saffron Table", logoImageDataUrl: "data:image/png;base64,SOURCE", iconImageDataUrl: "data:image/png;base64,ICON", iconCrop: crop, updatedAt: null };
+  render(<BrandingSettings branding={branding} online busy={false} error="" notice="" onPickLogo={vi.fn()} onSave={vi.fn()} />);
+  await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Adjust restaurant icon" })); });
+  expect(cropRestaurantIcon).toHaveBeenLastCalledWith(branding.logoImageDataUrl, crop);
+  expect(screen.queryByLabelText("Master PIN for restaurant branding")).toBeNull();
+});
+
+it("gates icon adjustment when connected to a hub without cropping support", () => {
+  const branding = { restaurantName: "Saffron Table", logoImageDataUrl: "data:image/png;base64,SOURCE", updatedAt: null };
+  render(<BrandingSettings branding={branding} online busy={false} error="" notice="" onPickLogo={vi.fn()} onSave={vi.fn()} />);
+  expect((screen.getByRole("button", { name: "Adjust restaurant icon" }) as HTMLButtonElement).disabled).toBe(true);
+});
+
+it("blocks saving a crop when shared branding changes while the native editor is open", async () => {
+  let finishCrop!: (value: { crop: { x: number; y: number; width: number; height: number }; previewImageDataUrl: string }) => void;
+  vi.mocked(cropRestaurantIcon).mockReturnValueOnce(new Promise((resolve) => { finishCrop = resolve; }));
+  const onSave = vi.fn(async () => false);
+  const original = { restaurantName: "Saffron Table", logoImageDataUrl: "data:image/png;base64,OLD", iconImageDataUrl: null, iconCrop: null, updatedAt: "2026-11-09T01:00:00.000Z" };
+  const props = { online: true, busy: false, error: "", notice: "", onPickLogo: vi.fn(), onSave };
+  const view = render(<BrandingSettings {...props} branding={original} />);
+  fireEvent.click(screen.getByRole("button", { name: "Adjust restaurant icon" }));
+  view.rerender(<BrandingSettings {...props} branding={{ ...original, logoImageDataUrl: "data:image/png;base64,NEW", updatedAt: "2026-11-09T02:00:00.000Z" }} />);
+  await act(async () => { finishCrop({ crop: { x: 0.25, y: 0, width: 0.5, height: 1 }, previewImageDataUrl: "data:image/png;base64,OLD-CROP" }); });
+  fireEvent.change(screen.getByLabelText("Master PIN for restaurant branding"), { target: { value: "9876" } });
+  expect(screen.getByText("Changed on another device. Discard to reload.")).toBeTruthy();
+  expect((screen.getByRole("button", { name: "Save" }) as HTMLButtonElement).disabled).toBe(true);
+  expect(onSave).not.toHaveBeenCalled();
+});
+
+
+it("resets only the icon crop and preserves the receipt source", async () => {
+  const onSave = vi.fn(async () => false);
+  const branding = { restaurantName: "Saffron Table", logoImageDataUrl: "data:image/png;base64,SOURCE", iconImageDataUrl: "data:image/png;base64,ICON", iconCrop: { x: 0.25, y: 0, width: 0.5, height: 1 }, updatedAt: null };
+  render(<BrandingSettings branding={branding} online busy={false} error="" notice="" onPickLogo={vi.fn()} onSave={onSave} />);
+  fireEvent.click(screen.getByRole("button", { name: "Reset restaurant icon" }));
+  fireEvent.change(screen.getByLabelText("Master PIN for restaurant branding"), { target: { value: "9876" } });
+  await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Save" })); });
+  expect(onSave).toHaveBeenCalledWith({ restaurantName: "Saffron Table", imageDataUrl: undefined, iconCrop: null }, "9876");
 });

@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { billPrinterLineWidthChars, type PaymentQr } from "@gaurav-pos/shared";
+import { billPrinterLineWidthChars, resolveReceiptRestaurantName, type PaymentQr } from "@gaurav-pos/shared";
 import { type NoticeSetter, messageOf } from "../../lib/format.js";
 import type { ManagerApprovalRequest } from "../../hooks/use-manager-approval.js";
 import {
@@ -15,7 +15,7 @@ import { PrintLayoutPreview } from "./print-layout-preview.js";
 import { defaultSectionStyle, PrintLayoutStyleControls } from "./print-layout-style-controls.js";
 
 type Scope = "receipt" | "unit";
-type ToggleKey = "showTable" | "showDateTime" | "showBillId" | "showTaxBreakup" | "showDiscountTip" | "showPaymentSplit" | "showCaptain" | "showNcReprintRevision";
+type ToggleKey = "showRestaurantName" | "showRestaurantLogo" | "showPaymentQr" | "showTable" | "showDateTime" | "showBillId" | "showTaxBreakup" | "showDiscountTip" | "showPaymentSplit" | "showCaptain" | "showNcReprintRevision" | "showCustomerName" | "showOrderNote" | "showItemNotes";
 
 // Only flags the renderer actually reads for each ticket type (see domain/tickets.ts).
 const TOGGLES: Record<Scope, Array<[ToggleKey, string]>> = {
@@ -23,6 +23,7 @@ const TOGGLES: Record<Scope, Array<[ToggleKey, string]>> = {
     ["showTable", "Table"],
     ["showDateTime", "Date and time"],
     ["showBillId", "Bill number"],
+    ["showCustomerName", "Customer name"],
     ["showTaxBreakup", "Tax breakup"],
     ["showDiscountTip", "Discount and tip"],
     ["showPaymentSplit", "Payment split"],
@@ -32,6 +33,8 @@ const TOGGLES: Record<Scope, Array<[ToggleKey, string]>> = {
     ["showTable", "Table"],
     ["showCaptain", "Captain"],
     ["showDateTime", "Time"],
+    ["showOrderNote", "Order note"],
+    ["showItemNotes", "Item notes"],
   ],
 };
 
@@ -93,14 +96,14 @@ export function PrintLayoutEditor({
     setDraft(next);
   };
   const update = <K extends keyof PrintLayoutSettings>(key: K, value: PrintLayoutSettings[K]) => remember({ ...draft, [key]: value });
-  const updateSectionStyle = (key: keyof PrintLayoutSettings["sectionStyles"], patch: Partial<PrintLayoutSettings["sectionStyles"][string]>) =>
+  const updateSectionStyle = (key: keyof PrintLayoutSettings["sectionStyles"], patch: Partial<PrintLayoutSettings["sectionStyles"][keyof PrintLayoutSettings["sectionStyles"]]>) =>
     remember({ ...draft, sectionStyles: { ...draft.sectionStyles, [key]: { ...(draft.sectionStyles[key] ?? defaultSectionStyle), ...patch } } });
 
   const dirty = draftByLayout.current.has(layoutKey);
   const previewPrinter = scope === "receipt" ? billPrinters?.[previewSlot] : undefined;
   const effectiveWidth = previewPrinter ? billPrinterLineWidthChars(previewPrinter.paperWidthMm, draft.lineWidthChars) : draft.lineWidthChars;
   const effectivePaper = PAPER_OPTIONS.find(([chars]) => chars === effectiveWidth)?.[1] ?? `${effectiveWidth} characters`;
-  const brandName = branding?.restaurantName?.trim();
+  const brandName = resolveReceiptRestaurantName(branding, draft.restaurantName);
   const unitName = units.find((unit) => unit.id === selectedUnitId)?.name ?? "Kitchen";
 
   const saveLayout = async () => {
@@ -165,55 +168,51 @@ export function PrintLayoutEditor({
             </div>
 
             <div className="layout-group">
-              <h4>Header and footer</h4>
+              <h4>Branding and text</h4>
               {scope === "receipt" ? (
-                <p className="layout-identity">
-                  <span>Restaurant name and logo</span>
-                  <strong>{brandName || draft.restaurantName || "Not set"}</strong>
-                  <small>Change them in General › Restaurant identity.</small>
-                </p>
+                <>
+                  <div className="layout-check-grid layout-branding-checks">
+                    {([["showRestaurantLogo", "Logo"], ["showRestaurantName", "Restaurant name"], ["showPaymentQr", "Payment QR"]] as const).map(([key, label]) => (
+                      <label key={key}>
+                        <input type="checkbox" checked={draft[key] !== false} onChange={(event) => update(key, event.target.checked)} />
+                        {label}
+                      </label>
+                    ))}
+                  </div>
+                  <p className="layout-hint">{brandName || "Name and logo"} · Edit in General</p>
+                </>
               ) : null}
               <div className="layout-fields two">
                 {scope === "receipt" ? (
                   <>
-                    <label className="span-2">
-                      Address on bill
-                      <textarea value={draft.restaurantAddress} onChange={(event) => update("restaurantAddress", event.target.value)} rows={2} placeholder="Shop address, phone" />
-                    </label>
-                    <label className="span-2">
-                      GST registration line
-                      <input value={draft.taxRegistrationText} onChange={(event) => update("taxRegistrationText", event.target.value)} placeholder="GSTIN 27ABCDE1234F1Z5" />
-                    </label>
+                    <OptionalLayoutField label="Address" checked={draft.showRestaurantAddress !== false} onChange={(checked) => update("showRestaurantAddress", checked)}>
+                      <textarea aria-label="Address on bill" value={draft.restaurantAddress} onChange={(event) => update("restaurantAddress", event.target.value)} rows={2} placeholder="Shop address, phone" />
+                    </OptionalLayoutField>
+                    <OptionalLayoutField label="GST registration" checked={draft.showTaxRegistration !== false} onChange={(checked) => update("showTaxRegistration", checked)}>
+                      <input aria-label="GST registration line" value={draft.taxRegistrationText} onChange={(event) => update("taxRegistrationText", event.target.value)} placeholder="GSTIN 27ABCDE1234F1Z5" />
+                    </OptionalLayoutField>
                   </>
                 ) : null}
-                <label>
-                  Header text
-                  <input
-                    value={scope === "receipt" ? draft.billHeader : draft.kotHeader}
-                    onChange={(event) => update(scope === "receipt" ? "billHeader" : "kotHeader", event.target.value)}
-                  />
-                </label>
-                <label>
-                  Header alignment
-                  <select value={draft.headerAlign} onChange={(event) => update("headerAlign", event.target.value as "left" | "center")}>
-                    <option value="center">Center</option>
-                    <option value="left">Left</option>
-                  </select>
-                </label>
-                <label>
-                  Footer text
-                  <input
-                    value={scope === "receipt" ? draft.billFooter : draft.kotFooter}
-                    onChange={(event) => update(scope === "receipt" ? "billFooter" : "kotFooter", event.target.value)}
-                  />
-                </label>
-                <label>
-                  Footer alignment
-                  <select value={draft.footerAlign} onChange={(event) => update("footerAlign", event.target.value as "left" | "center")}>
-                    <option value="center">Center</option>
-                    <option value="left">Left</option>
-                  </select>
-                </label>
+                <OptionalLayoutField label="Header" checked={draft.showHeader !== false} onChange={(checked) => update("showHeader", checked)}>
+                  <input aria-label="Header text" value={scope === "receipt" ? draft.billHeader : draft.kotHeader} onChange={(event) => update(scope === "receipt" ? "billHeader" : "kotHeader", event.target.value)} />
+                  <label className="layout-text-align">
+                    Align
+                    <select aria-label="Header alignment" value={draft.headerAlign} onChange={(event) => update("headerAlign", event.target.value as "left" | "center")}>
+                      <option value="center">Center</option>
+                      <option value="left">Left</option>
+                    </select>
+                  </label>
+                </OptionalLayoutField>
+                <OptionalLayoutField label="Footer" checked={draft.showFooter !== false} onChange={(checked) => update("showFooter", checked)}>
+                  <input aria-label="Footer text" value={scope === "receipt" ? draft.billFooter : draft.kotFooter} onChange={(event) => update(scope === "receipt" ? "billFooter" : "kotFooter", event.target.value)} />
+                  <label className="layout-text-align">
+                    Align
+                    <select aria-label="Footer alignment" value={draft.footerAlign} onChange={(event) => update("footerAlign", event.target.value as "left" | "center")}>
+                      <option value="center">Center</option>
+                      <option value="left">Left</option>
+                    </select>
+                  </label>
+                </OptionalLayoutField>
               </div>
             </div>
 
@@ -222,7 +221,7 @@ export function PrintLayoutEditor({
               <div className="layout-check-grid">
                 {TOGGLES[scope].map(([key, label]) => (
                   <label key={key}>
-                    <input type="checkbox" checked={draft[key]} onChange={(event) => update(key, event.target.checked)} />
+                    <input type="checkbox" checked={draft[key] !== false} onChange={(event) => update(key, event.target.checked)} />
                     {label}
                   </label>
                 ))}
@@ -261,18 +260,31 @@ export function PrintLayoutEditor({
           <p className="layout-preview-meta">
             {effectivePaper}
             {previewPrinter?.paperWidthMm ? " · printer setting" : ""}
-            {scope === "receipt" && paymentQr ? ` · QR ${previewPrinter?.paymentQrSizeMm ?? paymentQr.sizeMm} mm` : ""}
+            {scope === "receipt" && draft.showPaymentQr !== false && paymentQr ? ` · QR ${previewPrinter?.paymentQrSizeMm ?? paymentQr.sizeMm} mm` : ""}
           </p>
           <PrintLayoutPreview
             draft={{ ...draft, lineWidthChars: effectiveWidth }}
             paymentQr={paymentQr && previewPrinter ? { ...paymentQr, sizeMm: previewPrinter.paymentQrSizeMm } : paymentQr}
-            restaurantName={brandName || draft.restaurantName}
+            restaurantName={brandName ?? draft.restaurantName}
             restaurantLogo={branding?.logoImageDataUrl ?? null}
+            logoSettings={previewPrinter}
             scope={scope}
             unitName={unitName}
           />
         </aside>
       </div>
     </section>
+  );
+}
+
+function OptionalLayoutField({ label, checked, onChange, children }: { label: string; checked: boolean; onChange: (checked: boolean) => void; children: ReactNode }) {
+  return (
+    <div className="layout-optional-field">
+      <label className="layout-print-check">
+        <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} />
+        {label}
+      </label>
+      {checked ? <div className="layout-optional-content">{children}</div> : null}
+    </div>
   );
 }

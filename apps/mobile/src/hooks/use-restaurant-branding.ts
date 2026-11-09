@@ -1,19 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import { RESTAURANT_LOGO_MAX_IMAGE_BYTES, restaurantBrandingSchema, type RestaurantBranding } from "@gaurav-pos/shared";
+import { RESTAURANT_LOGO_MAX_IMAGE_BYTES, type RestaurantBranding, type UpdateRestaurantBrandingInput } from "@gaurav-pos/shared";
 
 import type { HubClient } from "../lib/hub-client";
 import { pickImageDataUrl } from "./use-payment-qr";
+import { readRestaurantBrandingCache, writeRestaurantBrandingCache } from "../lib/restaurant-branding-cache";
+import { updateRestaurantShortcut } from "../../modules/restaurant-shortcut";
 
 const BRANDING_CACHE_KEY = "gaurav-pos:restaurant-branding";
-// Skip caching anything unexpectedly large after the hub normalizes the image.
-const BRANDING_CACHE_MAX_LENGTH = 900_000;
 
-export type RestaurantBrandingDraft = {
-  restaurantName: string;
-  /** undefined keeps the saved logo, null removes it, a data URL replaces it. */
-  imageDataUrl?: string | null;
-};
+export type RestaurantBrandingDraft = Pick<UpdateRestaurantBrandingInput, "restaurantName" | "imageDataUrl" | "iconCrop">;
 
 /**
  * Shared restaurant name and logo for every paired role. The last copy is kept on the phone so
@@ -25,6 +20,8 @@ export function useRestaurantBranding({ client, hubUrl, online, deviceName }: { 
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const mounted = useRef(true);
+  const cacheWrite = useRef(Promise.resolve());
+  const refreshGeneration = useRef(0);
   const currentClient = useRef(client);
   currentClient.current = client;
   const cacheKey = `${BRANDING_CACHE_KEY}:${hubUrl.trim().replace(/\/+$/, "")}`;
@@ -36,31 +33,26 @@ export function useRestaurantBranding({ client, hubUrl, online, deviceName }: { 
     setBusy(false);
     setError("");
     setNotice("");
-    void AsyncStorage.getItem(cacheKey).then((stored) => {
-      if (!stored || !mounted.current || !active) return;
-      try {
-        const parsed = restaurantBrandingSchema.safeParse(JSON.parse(stored));
-        if (parsed.success) setBranding((current) => current ?? parsed.data);
-      } catch { /* A damaged cache only means the default mark shows until the hub answers. */ }
-    }).catch(() => { /* The default mark remains available if local storage fails. */ });
+    void readRestaurantBrandingCache(cacheKey).then((cached) => {
+      if (cached && mounted.current && active) setBranding((current) => current ?? cached);
+    }).catch(() => { /* The restaurant name remains available when a cache cannot be read. */ });
     return () => { active = false; mounted.current = false; };
   }, [cacheKey]);
 
   const apply = useCallback((next: RestaurantBranding) => {
     setBranding(next);
-    const serialised = JSON.stringify(next);
-    const write = serialised.length <= BRANDING_CACHE_MAX_LENGTH
-      ? AsyncStorage.setItem(cacheKey, serialised)
-      : AsyncStorage.removeItem(cacheKey);
-    void write.catch(() => { /* Branding still works without an offline cache. */ });
+    cacheWrite.current = cacheWrite.current.catch(() => {}).then(() => writeRestaurantBrandingCache(cacheKey, next));
+    void cacheWrite.current.catch(() => { /* Online branding remains available if storage is full. */ });
+    void updateRestaurantShortcut({ name: next.restaurantName, logoImageDataUrl: next.iconImageDataUrl ?? next.logoImageDataUrl }).catch(() => {});
   }, [cacheKey]);
 
   const refresh = useCallback(async () => {
+    const generation = ++refreshGeneration.current;
     try {
       const result = await client.restaurantBranding();
-      if (mounted.current && currentClient.current === client) apply(result.branding);
+      if (mounted.current && currentClient.current === client && generation === refreshGeneration.current) apply(result.branding);
     } catch {
-      // Older hubs do not have branding yet; the shell keeps its cached or default mark.
+      // Older hubs do not have branding yet; the shell keeps its cached restaurant identity.
     }
   }, [apply, client]);
 
@@ -104,10 +96,11 @@ export function useRestaurantBranding({ client, hubUrl, online, deviceName }: { 
       const expectedUpdatedAt = branding?.updatedAt ?? null;
       const result = removingOnly
         ? await client.removeRestaurantLogo(approval, expectedUpdatedAt)
-        : await client.updateRestaurantBranding({ restaurantName: draft.restaurantName.trim(), imageDataUrl: draft.imageDataUrl, expectedUpdatedAt }, approval);
+        : await client.updateRestaurantBranding({ restaurantName: draft.restaurantName.trim(), imageDataUrl: draft.imageDataUrl, iconCrop: draft.iconCrop, expectedUpdatedAt }, approval);
       if (!mounted.current || currentClient.current !== client) return true;
+      refreshGeneration.current++;
       apply(result.branding);
-      setNotice("Restaurant branding saved. Every paired device updates automatically.");
+      setNotice("Restaurant branding saved.");
       return true;
     } catch (failure) {
       if (mounted.current && currentClient.current === client) setError(failure instanceof Error ? failure.message : "Could not update the restaurant branding.");

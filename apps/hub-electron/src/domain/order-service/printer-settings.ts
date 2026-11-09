@@ -1,5 +1,5 @@
-import { billPrinterLineWidthChars } from "@gaurav-pos/shared";
-import type { BillPrinterSlot, PrintLayoutSettingsInput, PrinterOutputMode } from "@gaurav-pos/shared";
+import { billPrinterLineWidthChars, LOGO_PRINT_DEFAULTS } from "@gaurav-pos/shared";
+import type { BillPrinterSlot, LogoPrintSettings, PrintLayoutSettingsInput, PrinterOutputMode } from "@gaurav-pos/shared";
 import { readPaymentQr } from "./payment-qr-settings.js";
 import type { BillPrinterProfile } from "./types.js";
 
@@ -27,6 +27,9 @@ export function readBillPrinterProfile(readSetting: SettingReader, slot: BillPri
   const paperWidthMm = readSetting(`${prefix}_paper_width_mm`);
   return {
     label,
+    logoWidthMm: Number(readSetting(`${prefix}_logo_width_mm`)) || null,
+    logoThreshold: Number(readSetting(`${prefix}_logo_threshold`) ?? LOGO_PRINT_DEFAULTS.threshold),
+    logoPrintMode: readSetting(`${prefix}_logo_print_mode`) === "dither" ? "dither" : "threshold",
     paperWidthMm: paperWidthMm === "45" ? 45 : paperWidthMm === "50" ? 50 : paperWidthMm === "58" ? 58 : paperWidthMm === "80" ? 80 : null,
     paymentQrSizeMm: Number(readSetting(`${prefix}_payment_qr_size_mm`)) || readPaymentQr(readSetting)?.sizeMm || 32,
     printerMode,
@@ -39,7 +42,7 @@ export function readBillPrinterProfile(readSetting: SettingReader, slot: BillPri
 
 export function billPrinterSettingValues(
   slot: BillPrinterSlot,
-  input: { label?: string; printerMode?: "system" | "network"; printerName?: string | null; printerHost?: string; printerPort?: number; paymentQrSizeMm?: number; paperWidthMm?: number | null }
+  input: LogoPrintSettings & { label?: string; printerMode?: "system" | "network"; printerName?: string | null; printerHost?: string; printerPort?: number; paymentQrSizeMm?: number; paperWidthMm?: number | null }
 ): Array<readonly [string, string]> {
   const prefix = billPrinterSettingPrefix(slot);
   return [
@@ -48,6 +51,9 @@ export function billPrinterSettingValues(
     [`${prefix}_name`, input.printerName ?? ""],
     [`${prefix}_host`, input.printerHost ?? ""],
     [`${prefix}_port`, String(input.printerPort ?? 9100)],
+    ...(input.logoWidthMm === undefined ? [] : [[`${prefix}_logo_width_mm`, input.logoWidthMm === null ? "" : String(input.logoWidthMm)] as const]),
+    ...(input.logoThreshold === undefined ? [] : [[`${prefix}_logo_threshold`, String(input.logoThreshold)] as const]),
+    ...(input.logoPrintMode === undefined ? [] : [[`${prefix}_logo_print_mode`, input.logoPrintMode] as const]),
     ...(input.paymentQrSizeMm === undefined ? [] : [[`${prefix}_payment_qr_size_mm`, String(input.paymentQrSizeMm)] as const]),
     ...(input.paperWidthMm === undefined ? [] : [[`${prefix}_paper_width_mm`, input.paperWidthMm === null ? "" : String(input.paperWidthMm)] as const])
   ];
@@ -91,6 +97,16 @@ export function defaultPrintLayout(readSetting: SettingReader, scope: PrintLayou
     },
     topPaddingLines: 0,
     feedLines: 3,
+    showRestaurantName: true,
+    showRestaurantLogo: true,
+    showPaymentQr: true,
+    showRestaurantAddress: true,
+    showTaxRegistration: true,
+    showHeader: true,
+    showFooter: true,
+    showCustomerName: true,
+    showOrderNote: true,
+    showItemNotes: true,
     showTable: true,
     showCaptain: true,
     showDateTime: true,

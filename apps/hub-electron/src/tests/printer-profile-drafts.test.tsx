@@ -199,18 +199,22 @@ describe("printer profile drafts", () => {
     expect(form.queryByRole("combobox", { name: "Installed printer" })).toBeNull();
   });
 
-  it("saves roll width and QR size for one printer and keeps the other printer's sizes", async () => {
+  it("saves logo, roll and QR settings for one printer and keeps the other printer's sizes", async () => {
     renderPrinterSettings();
     vi.mocked(hubApi.updateBillPrinters).mockResolvedValueOnce(initialPrinters);
     fireEvent.click(screen.getByRole("button", { name: "Edit Cash counter" }));
     const editor = within(screen.getByRole("form", { name: "Edit Cash counter" }));
     fireEvent.change(editor.getByRole("combobox", { name: /Paper roll/ }), { target: { value: "80" } });
     fireEvent.change(editor.getByRole("slider", { name: "Payment QR printed size in millimetres" }), { target: { value: "40" } });
+    fireEvent.click(editor.getByRole("radio", { name: "Custom" }));
+    fireEvent.change(editor.getByRole("slider", { name: "Logo printed width in millimetres" }), { target: { value: "24" } });
+    fireEvent.change(editor.getByRole("combobox", { name: "Style" }), { target: { value: "dither" } });
+    fireEvent.change(editor.getByRole("slider", { name: "Logo ink density" }), { target: { value: "190" } });
     fireEvent.click(editor.getByRole("button", { name: "Save printer" }));
 
     await waitFor(() => expect(hubApi.updateBillPrinters).toHaveBeenCalledTimes(1));
     const payload = vi.mocked(hubApi.updateBillPrinters).mock.calls[0]![0];
-    expect(payload.default).toMatchObject({ label: "Cash counter", printerMode: "system", printerName: "EPSON", paperWidthMm: 80, paymentQrSizeMm: 40 });
+    expect(payload.default).toMatchObject({ label: "Cash counter", printerMode: "system", printerName: "EPSON", paperWidthMm: 80, paymentQrSizeMm: 40, logoWidthMm: 24, logoPrintMode: "dither", logoThreshold: 190 });
     // Omitting sizes tells the hub to keep the second printer's saved 58 mm roll and 38 mm QR.
     expect(payload.alternate).toEqual({ label: "Downstairs", printerMode: "network", printerName: undefined, printerHost: "192.168.1.71", printerPort: 9100 });
   });

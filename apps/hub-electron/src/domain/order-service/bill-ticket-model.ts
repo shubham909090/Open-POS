@@ -1,5 +1,5 @@
-import type { PrintLayoutSettingsInput, TaxComponentAmount } from "@gaurav-pos/shared";
-import { calculateLineTotal, calculateTaxComponents } from "@gaurav-pos/shared";
+import type { LogoPrintSettings, PrintLayoutSettingsInput, TaxComponentAmount } from "@gaurav-pos/shared";
+import { calculateLineTotal, calculateTaxComponents, resolveReceiptRestaurantName } from "@gaurav-pos/shared";
 
 import type { SqliteDatabase } from "../../db/database.js";
 import type { BillTicket } from "../tickets.js";
@@ -29,6 +29,7 @@ export function buildBillTicket(input: {
   receiptLayout: PrintLayoutSettingsInput;
   paymentQr?: BillTicket["paymentQr"];
   paperWidthMm?: number | null;
+  logoSettings?: LogoPrintSettings;
   restaurantBranding?: import("@gaurav-pos/shared").RestaurantBranding;
   discountPaise?: number;
   tipPaise?: number;
@@ -63,8 +64,13 @@ export function buildBillTicket(input: {
     revisionNumber: input.bill.revision_number,
     ncReason: input.ncReason ?? input.bill.nc_reason,
     ...billPrintLayout(input.receiptLayout),
-    restaurantName: input.restaurantBranding?.restaurantName || input.receiptLayout.restaurantName,
-    restaurantLogo: input.restaurantBranding?.logoImageDataUrl ? { imageDataUrl: input.restaurantBranding.logoImageDataUrl } : null,
+    restaurantName: resolveReceiptRestaurantName(input.restaurantBranding, input.receiptLayout.restaurantName),
+    restaurantLogo: input.restaurantBranding?.logoImageDataUrl ? {
+      imageDataUrl: input.restaurantBranding.logoImageDataUrl,
+      widthMm: input.logoSettings?.logoWidthMm,
+      threshold: input.logoSettings?.logoThreshold,
+      printMode: input.logoSettings?.logoPrintMode
+    } : null,
     paperWidthMm: input.paperWidthMm ?? undefined,
     paymentQr: input.paymentQr
   };
@@ -97,6 +103,14 @@ function billPrintLayout(layout: PrintLayoutSettingsInput): Pick<
   | "sectionStyles"
   | "topPaddingLines"
   | "feedLines"
+  | "showRestaurantName"
+  | "showRestaurantLogo"
+  | "showPaymentQr"
+  | "showRestaurantAddress"
+  | "showTaxRegistration"
+  | "showHeader"
+  | "showFooter"
+  | "showCustomerName"
   | "showTable"
   | "showDateTime"
   | "showBillId"
@@ -117,6 +131,14 @@ function billPrintLayout(layout: PrintLayoutSettingsInput): Pick<
     sectionStyles: layout.sectionStyles,
     topPaddingLines: layout.topPaddingLines,
     feedLines: layout.feedLines,
+    showRestaurantName: layout.showRestaurantName,
+    showRestaurantLogo: layout.showRestaurantLogo,
+    showPaymentQr: layout.showPaymentQr,
+    showRestaurantAddress: layout.showRestaurantAddress,
+    showTaxRegistration: layout.showTaxRegistration,
+    showHeader: layout.showHeader,
+    showFooter: layout.showFooter,
+    showCustomerName: layout.showCustomerName,
     showTable: layout.showTable,
     showDateTime: layout.showDateTime,
     showBillId: layout.showBillId,
