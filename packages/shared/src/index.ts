@@ -12,3 +12,4 @@ export * from "./natural-order.js";
 
 export * from "./logo-printing.js";
 export * from "./restaurant-branding.js";
+export * from "./payment-summary.js";

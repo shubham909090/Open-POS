@@ -1,22 +1,23 @@
 # Official and nightly releases
 
-Hub 0.1.27 and Android 0.1.17 are the official release targets. This release adds optional receipt sections, logo cropping for app identity, higher-quality bill logos and per-printer logo sizing while preserving the compact interface and existing shortcuts.
+Hub 0.1.28 and Android 0.1.18 restore the settlement overview in bill history. Daily totals and recorded payment splits are visible without opening a bill, alongside the existing branding, receipt controls and shortcuts.
 
 | Channel | Windows Hub | Android | Intended use |
 | --- | --- | --- | --- |
-| Official | 0.1.27 | 0.1.17, versionCode 17 | Receipt visibility, logo cropping and printer logo controls |
-| Previous official | 0.1.26 | 0.1.16, versionCode 16 | Compact redesign, complete menu-size layouts and preserved shortcuts |
+| Official | 0.1.28 | 0.1.18, versionCode 18 | Always-visible history totals, payment splits and bill breakdowns |
+| Previous official | 0.1.27 | 0.1.17, versionCode 17 | Receipt visibility, logo cropping and printer logo controls |
+| Earlier official | 0.1.26 | 0.1.16, versionCode 16 | Compact redesign, complete menu-size layouts and preserved shortcuts |
 | Earlier official | 0.1.25 | 0.1.15, versionCode 15 | Initial redesign and new update controls |
 | Previous regular | 0.1.23 | 0.1.13, versionCode 13 | Previous interface with QR and text sizing |
 | Previous UI nightly | 0.1.24 | 0.1.14, versionCode 14 | Earlier manual UI preview |
 
 Release pages:
 
-- [Official release](https://github.com/shubham909090/Open-POS/releases/tag/hub-v0.1.27)
+- [Official release](https://github.com/shubham909090/Open-POS/releases/tag/hub-v0.1.28)
 - [Previous regular release](https://github.com/shubham909090/Open-POS/releases/tag/hub-v0.1.23)
 - [UI nightly prerelease](https://github.com/shubham909090/Open-POS/releases/tag/hub-v0.1.24)
 
-Hub 0.1.25/0.1.26 and Android 0.1.15/0.1.16 can use their update buttons to receive this release.
+Hub 0.1.25–0.1.27 and Android 0.1.15–0.1.17 can use their update buttons to receive this release.
 
 ## Updating the restaurant
 
@@ -50,3 +51,7 @@ Merging the UI PR changes source code only. Publishing a stable release is the s
 ## Optional receipt content
 
 In Settings → Printers & receipts → Ticket layout, independently show or hide restaurant name, logo, payment QR and customer name. Optional address, GST line, header and footer have adjacent checkboxes. Kitchen tickets also support hiding order and item notes. Hidden sections retain their saved text and styling; essential item rows and totals always remain. Existing installations default every new switch to on. Size 0 remains the smallest text, not a visibility switch.
+
+## History settlement overview
+
+Hub history rows show recorded payment splits, collected and outstanding amounts, and subtotal/tax plus applicable discount/tip without expanding a bill. Android history keeps the selected day’s sales, bill count and settlement overview visible above the list, with each bill’s split and financial breakdown shown inline. Older-day loading and unavailable payment-method details retain their context rather than borrowing today’s figures. Print, edit approvals and settlement calculations are unchanged.

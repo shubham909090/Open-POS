@@ -22,11 +22,6 @@
   @apply min-w-40;
 }
 
-.bill-history-table th:nth-child(7),
-.bill-history-table td:nth-child(7) {
-  @apply min-w-32;
-}
-
 .reports-layout .report-history-panel {
   grid-column: 1 / -1;
 }
@@ -109,18 +104,6 @@
   color: var(--danger);
 }
 
-.history-discount-text {
-  @apply mt-1 block text-xs font-semibold text-emerald-700;
-}
-
-.history-breakup {
-  @apply flex min-w-0 flex-wrap gap-1.5;
-}
-
-.history-breakup span {
-  @apply py-0.5 text-xs font-normal text-muted;
-}
-
 .history-item-lines {
   @apply space-y-1;
 }
@@ -131,14 +114,32 @@
 .history-items-details > summary { min-height: 24px; padding: 0; border: 0; background: transparent; color: var(--ink); font-size: 13px; cursor: pointer; }
 .history-items-details > summary::after { width: auto; height: auto; padding: 0; border: 0; background: transparent; }
 .history-items-details[open] > summary { margin-bottom: 8px; }
-.history-items-details, .history-breakup-details { border: 0; border-radius: 0; background: transparent; }
-.history-breakup-details { margin-top: 4px; text-align: left; }
-.history-breakup-details > summary { min-height: 20px; padding: 0; border: 0; font-size: 12px; font-weight: 400; color: var(--muted); }
-.history-breakup-details .history-breakup { display: grid; gap: 0; min-width: 120px; padding-top: 4px; }
+.history-items-details { border: 0; border-radius: 0; background: transparent; }
+.history-bill-total, .history-settlement { display: grid; gap: 3px; min-width: 112px; font-variant-numeric: tabular-nums; }
+.history-total-line { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 4px 8px; color: var(--muted); font-size: 12px; line-height: 17px; }
+.history-total-line > span { white-space: nowrap; }
+.history-settlement > strong { white-space: nowrap; }
+.history-settlement > strong small { color: var(--muted); font-size: 11px; font-weight: 400; }
+.history-payment-line { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 4px 8px; color: var(--ink-2); font-size: 12px; line-height: 17px; }
+.history-payment-line > span { white-space: nowrap; }
+.history-settlement-note { color: var(--muted); font-size: 12px; }
+.history-settlement-time { color: var(--muted); font-size: 11px; line-height: 16px; white-space: normal; }
+.history-balance-due { color: var(--warning); font-size: 12px; font-weight: 600; white-space: nowrap; }
 .bill-history-table .wrap-cell { min-width: 160px; }
 .bill-history-table .strong-cell small.history-customer-name { display: block; margin: 4px 0 0; padding: 0; border: 0; border-radius: 0; white-space: normal; font-weight: 400; background: transparent; }
 .bill-history-table th:last-child, .bill-history-table td:last-child { position: sticky; right: 0; z-index: 2; background: var(--panel); border-left: 1px solid var(--line); }
 .bill-history-table th:last-child { z-index: 3; background: var(--wash); }
+
+@media (min-width: 721px) and (max-width: 1200px) {
+  .bill-history-table { min-width: 0; }
+  .bill-history-table th, .bill-history-table td { padding-inline: 6px; }
+  .bill-history-table th:nth-child(1), .bill-history-table td:nth-child(1) { min-width: 64px; }
+  .bill-history-table th:nth-child(2), .bill-history-table td:nth-child(2) { min-width: 42px; }
+  .bill-history-table th:nth-child(3), .bill-history-table td:nth-child(3) { min-width: 60px; }
+  .bill-history-table th:nth-child(4), .bill-history-table td:nth-child(4), .bill-history-table .wrap-cell { min-width: 60px; }
+  .bill-history-table .history-actions { flex-direction: column; align-items: stretch; }
+  .bill-history-table .action-cell { width: 64px; }
+}
 
 .history-edit-modal {
   @apply grid gap-3;

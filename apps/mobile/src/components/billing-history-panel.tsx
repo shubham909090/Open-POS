@@ -2,13 +2,13 @@ import { FormModal } from "./form-modal";
 import { useState } from "react";
 import { ScrollView, Text, TextInput, View } from "react-native";
 import { Pressable } from "./pressable";
-import { formatPosDateTime, type HistoryEditBillInput, type HistoryEditSaveMode, type PaymentMethod } from "@gaurav-pos/shared";
+import { formatPosDateTime, groupPaymentsForDisplay, type HistoryEditBillInput, type HistoryEditSaveMode, type PaymentMethod } from "@gaurav-pos/shared";
 
 import { getBillingHistoryViewModel } from "../lib/billing-history";
 import type { CurrentDaySummary, DailyReportDetail, DailyReportRow, HubBootstrap } from "../lib/hub-client";
 import { amountInputToPaise, formatRupees, isValidAmountInput, paiseToRupeeInput } from "../lib/mobile-format";
 import { palette, styles } from "../styles/app-styles";
-import { EmptyState, LabeledMoneyInput, SummaryBox } from "./app-shell";
+import { EmptyState, LabeledMoneyInput } from "./app-shell";
 
 function BillingHistoryPanel({
   currentSummary,
@@ -40,7 +40,6 @@ function BillingHistoryPanel({
   const [customerName, setCustomerName] = useState("");
   const [masterPin, setMasterPin] = useState("");
   const [saveFailed, setSaveFailed] = useState(false);
-  const [totalsOpen, setTotalsOpen] = useState(false);
   const [editPayments, setEditPayments] = useState<Array<{ method: PaymentMethod; amount: string; reference?: string }>>([]);
   const searchedMenu = search.trim()
     ? menuItems.filter((item) => item.name.toLowerCase().includes(search.trim().toLowerCase())).slice(0, 8)
@@ -131,7 +130,6 @@ function BillingHistoryPanel({
 
   return (
     <View style={[styles.panel, styles.historyScreenPanel]}>
-      {/* One row: which day, and the totals toggle. The selected day's date rides along when totals open. */}
       <View style={styles.historyToolbar}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.flexText} contentContainerStyle={styles.historyDayChips}>
           <Pressable
@@ -150,31 +148,48 @@ function BillingHistoryPanel({
             </Pressable>
           ))}
         </ScrollView>
-        <Pressable accessibilityState={{ expanded: totalsOpen }} style={[styles.filterChip, styles.historyDayChip]} onPress={() => setTotalsOpen((open) => !open)}><Text style={styles.filterChipText}>Totals {totalsOpen ? "−" : "+"}</Text></Pressable>
       </View>
-      {totalsOpen ? <Text style={styles.muted}>{history.label}</Text> : null}
-      {totalsOpen && history.metrics.length ? (
-        <View style={styles.summaryGrid}>
-          {history.metrics.map((metric) => (
-            <SummaryBox
-              key={metric.label}
-              label={metric.label}
-              value={"valuePaise" in metric ? `₹${formatRupees(metric.valuePaise)}` : metric.value}
-            />
-          ))}
+      {history.overview ? (
+        <View style={styles.historyOverview} testID="history-settlement-overview">
+          <Text style={styles.smallMuted}>{history.label}</Text>
+          <View style={styles.historyOverviewTotals}>
+            {[
+              ["Sales", `₹${formatRupees(history.overview.salesPaise)}`],
+              ["Bills", String(history.overview.billCount)],
+              ["Collected", `₹${formatRupees(history.overview.collectedPaise)}`]
+            ].map(([label, value]) => (
+              <View key={label} style={styles.historyOverviewMetric}>
+                <Text style={styles.smallMuted}>{label}</Text>
+                <Text style={styles.historyOverviewAmount}>{value}</Text>
+              </View>
+            ))}
+          </View>
+          <View style={styles.historyTenderGrid}>
+            {history.overview.tenders.map((tender) => (
+              <View key={tender.method} style={styles.historyTenderMetric}>
+                <Text style={styles.historyMeta}>{tender.label}</Text>
+                <Text style={styles.historyTenderAmount}>{tender.amountPaise === null ? "—" : `₹${formatRupees(tender.amountPaise)}`}</Text>
+              </View>
+            ))}
+          </View>
+          {history.overview.tenders.some((tender) => tender.amountPaise === null) ? <Text style={styles.smallMuted}>Payment breakdown unavailable for this day.</Text> : null}
         </View>
-      ) : null}
+      ) : <Text style={styles.muted} accessibilityLiveRegion="polite">Loading history…</Text>}
 
       <View style={styles.historyBox}>
-        {history.bills.length === 0 ? (
+        {!history.overview ? null : history.bills.length === 0 ? (
           <View style={styles.historyEmpty}>
             <EmptyState title="No bills found" text="Choose another day." compact />
           </View>
         ) : (
           history.bills.map((historyBill) => {
             const previewItems = historyBill.items?.length ? historyBill.items.slice(0, 2) : [];
+            const payments = groupPaymentsForDisplay(historyBill.payments);
+            const outstandingPaise = Math.max(0, historyBill.finalTotalPaise - historyBill.paidPaise);
+            const voided = historyBill.status === "void" || historyBill.status === "cancelled";
+            const noSettlement = historyBill.isNc || voided;
             return (
-              <View key={historyBill.billId} style={styles.historyRow}>
+              <View key={historyBill.billId} style={styles.historyRow} testID={`history-bill-${historyBill.billId}`}>
                 <View style={styles.historyRowHeader}>
                   <View style={styles.historyTitleGroup}>
                     <Text style={styles.historyBillTitle}>Bill #{historyBill.billNumber ?? historyBill.billId}</Text>
@@ -183,15 +198,28 @@ function BillingHistoryPanel({
                   </View>
                   <Text style={styles.historyAmount}>₹{formatRupees(historyBill.finalTotalPaise)}</Text>
                 </View>
-                <Text style={styles.historyMeta} numberOfLines={1}>
-                  {historyBill.customerName ? `${historyBill.customerName} · ` : ""}Table {historyBill.tableName} · paid ₹{formatRupees(historyBill.paidPaise)}
+                <Text style={styles.historyMeta}>
+                  {historyBill.customerName ? `${historyBill.customerName} · ` : ""}Table {historyBill.tableName}
+                </Text>
+                <Text style={styles.historySettlement}>
+                  {!noSettlement && payments.length > 0 && payments.reduce((sum, payment) => sum + payment.amountPaise, 0) !== historyBill.paidPaise
+                    ? `Paid ₹${formatRupees(historyBill.paidPaise)} · ` : ""}
+                  {historyBill.isNc ? "Non-chargeable" : voided ? "Voided" : payments.length
+                    ? payments.map((payment) => `${payment.label} ₹${formatRupees(payment.amountPaise)}`).join(" · ")
+                    : historyBill.paidPaise > 0 ? `Paid ₹${formatRupees(historyBill.paidPaise)}` : historyBill.finalTotalPaise === 0 ? "No payment due" : "Unpaid"}
+                  {!noSettlement && outstandingPaise > 0 ? <Text style={styles.historyOutstanding}> · ₹{formatRupees(outstandingPaise)} due</Text> : null}
+                </Text>
+                <Text style={styles.historyMeta}>
+                  Subtotal ₹{formatRupees(historyBill.subtotalPaise ?? Math.max(0, historyBill.totalPaise - (historyBill.taxPaise ?? 0)))} · Tax ₹{formatRupees(historyBill.taxPaise ?? 0)}
+                  {historyBill.discountPaise > 0 ? ` · Discount ₹${formatRupees(historyBill.discountPaise)}` : ""}
+                  {historyBill.tipPaise > 0 ? ` · Tip ₹${formatRupees(historyBill.tipPaise)}` : ""}
                 </Text>
                 <Text style={styles.historyItemsLine} numberOfLines={2}>
                   {previewItems.length ? previewItems.map((item) => `${item.quantity} x ${item.name}`).join(", ") : "No item details"}
                 </Text>
                 <View style={styles.historyFooter}>
                   <Text style={[styles.smallMuted, styles.flexText]}>
-                    {historyBill.items && historyBill.items.length > 2 ? `+${historyBill.items.length - 2} more · ` : ""}{historyBill.settledAt ? formatPosDateTime(historyBill.settledAt) : "Not settled"}
+                    {historyBill.items && historyBill.items.length > 2 ? `+${historyBill.items.length - 2} more${historyBill.settledAt ? " · " : ""}` : ""}{historyBill.settledAt ? formatPosDateTime(historyBill.settledAt) : ""}
                   </Text>
                   <View style={styles.historyActionStack}>
                   <Pressable style={[styles.secondaryButton, styles.historyPrintButton, sending && styles.buttonDisabled]} disabled={sending} onPress={() => onHistoryPrint(historyBill.billId)}>
@@ -361,6 +389,6 @@ function historyStatusLabel(status: string): string {
 function historyStatusTagStyle(status: string) {
   if (status === "paid") return styles.historyStatusPaid;
   if (status === "pending") return styles.historyStatusPending;
-  if (status === "void") return styles.historyStatusVoid;
+  if (status === "void" || status === "cancelled") return styles.historyStatusVoid;
   return null;
 }

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { createElement } from "react";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { Keyboard } from "react-native";
 import { cropRestaurantIcon, requestRestaurantShortcut } from "../../modules/restaurant-shortcut";
@@ -10,7 +10,7 @@ import { KitchenScreen } from "../components/kitchen-screen";
 import { TicketScreen } from "../components/ticket-screen";
 import { BillingHistoryPanel } from "../components/billing-history-panel";
 import { CaptainBillingPanel } from "../components/billing-panel";
-import type { HubBootstrap, HubOrder, KdsTicket } from "../lib/hub-client";
+import type { CurrentDaySummary, HubBootstrap, HubOrder, KdsTicket } from "../lib/hub-client";
 
 vi.mock("react-native", () => ({
   View: ({ children, testID }: any) => createElement("div", { "data-testid": testID }, children),
@@ -154,7 +154,7 @@ it("keeps KOT actions on New, bill actions on Bill, and transfer on Sent", () =>
 });
 it("keeps history amounts above one thousand editable and submits exact paise", async () => {
   const save = vi.fn().mockResolvedValue(true);
-  const summary = { businessDay: { business_date: "2026-11-04" }, billCount: 1, finalSalesPaise: 140000, cashPaymentsPaise: 40000, upiPaymentsPaise: 100000, cardPaymentsPaise: 0, billSummaries: [{ billId: "paid", billNumber: 12, tableName: "M2", finalTotalPaise: 140000, totalPaise: 140000, paidPaise: 140000, discountPaise: 0, tipPaise: 0, status: "paid", createdAt: new Date().toISOString(), payments: [{ method: "cash", amountPaise: 40000 }, { method: "upi", amountPaise: 100000, reference: "original" }], items: [{ orderItemId: "sent", menuItemId: "dish", name: dish.name, quantity: 1, unitPricePaise: 140000 }] }] } as any;
+  const summary = { businessDay: { business_date: "2026-11-04" }, billCount: 1, finalSalesPaise: 140000, cashPaymentsPaise: 40000, upiPaymentsPaise: 100000, cardPaymentsPaise: 0, onlinePaymentsPaise: 0, totalPaymentsPaise: 140000, billSummaries: [{ billId: "paid", billNumber: 12, tableName: "M2", finalTotalPaise: 140000, totalPaise: 140000, paidPaise: 140000, discountPaise: 0, tipPaise: 0, status: "paid", createdAt: new Date().toISOString(), payments: [{ method: "cash", amountPaise: 40000 }, { method: "upi", amountPaise: 100000, reference: "original" }], items: [{ orderItemId: "sent", menuItemId: "dish", name: dish.name, quantity: 1, unitPricePaise: 140000 }] }] } as any;
   render(<BillingHistoryPanel currentSummary={summary} dailyReports={[]} selectedHistoryDayId={null} selectedHistoryDetail={null} menuItems={[dish]} sending={false} actionMessage="" onHistoryPrint={vi.fn()} onHistoryEdit={save} onSelectHistoryDay={vi.fn()} />);
   fireEvent.click(screen.getByRole("button", { name: "Edit" }));
   expect((screen.getByLabelText("Payment 2 amount") as HTMLInputElement).value).toBe("1000");
@@ -287,4 +287,55 @@ it("resets only the icon crop and preserves the receipt source", async () => {
   fireEvent.change(screen.getByLabelText("Master PIN for restaurant branding"), { target: { value: "9876" } });
   await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Save" })); });
   expect(onSave).toHaveBeenCalledWith({ restaurantName: "Saffron Table", imageDataUrl: undefined, iconCrop: null }, "9876");
+});
+
+it("shows settlement totals and bill payment splits before opening any bill", () => {
+  type Bill = NonNullable<CurrentDaySummary["billSummaries"]>[number];
+  const paid: Bill = {
+    billId: "paid", billNumber: 12, orderId: "order", tableName: "M2", status: "paid", subtotalPaise: 130000, taxPaise: 10000,
+    totalPaise: 140000, finalTotalPaise: 140000, discountPaise: 5000, tipPaise: 5000, paidPaise: 140000, settledAt: null,
+    payments: [{ method: "cash", amountPaise: 40000, reference: null }, { method: "upi", amountPaise: 100000, reference: null }]
+  };
+  const summary: CurrentDaySummary = {
+    businessDay: { business_date: "2026-11-09", period_start_at: "", period_end_at: "" }, billCount: 6, openOrders: 0, billedOrders: 1,
+    paidBills: 1, unpaidBills: 1, grossSalesPaise: 180000, discountPaise: 5000, tipPaise: 5000, finalSalesPaise: 180000,
+    cashPaymentsPaise: 50000, upiPaymentsPaise: 100000, cardPaymentsPaise: 0, onlinePaymentsPaise: 0, totalPaymentsPaise: 150000,
+    billSummaries: [paid,
+      { ...paid, billId: "partial", billNumber: 13, status: "pending", finalTotalPaise: 40000, paidPaise: 10000, payments: [{ method: "cash", amountPaise: 10000, reference: null }] },
+      { ...paid, billId: "nc", billNumber: 14, isNc: true, paidPaise: 0, payments: [] },
+      { ...paid, billId: "void", billNumber: 15, status: "void", paidPaise: 0, payments: [] },
+      { ...paid, billId: "cancelled", billNumber: 16, status: "cancelled", paidPaise: 0, payments: [] },
+      { ...paid, billId: "zero", billNumber: 17, status: "paid", finalTotalPaise: 0, paidPaise: 0, payments: [] },
+      { ...paid, billId: "incomplete", billNumber: 18, finalTotalPaise: 50000, paidPaise: 50000, payments: [{ method: "cash", amountPaise: 10000, reference: null }] }
+    ]
+  };
+  const print = vi.fn();
+  const edit = vi.fn();
+  render(<BillingHistoryPanel currentSummary={summary} dailyReports={[]} selectedHistoryDayId={null} selectedHistoryDetail={null} menuItems={[]} sending={false} actionMessage="" onHistoryPrint={print} onHistoryEdit={edit} onSelectHistoryDay={vi.fn()} />);
+  const overview = within(screen.getByTestId("history-settlement-overview"));
+  expect(overview.getByText("Collected")).toBeTruthy();
+  expect(overview.getByText("₹1,500")).toBeTruthy();
+  expect(overview.getByText("₹500")).toBeTruthy();
+  expect(overview.getByText("₹1,000")).toBeTruthy();
+  expect(overview.getAllByText("₹0")).toHaveLength(2);
+  expect(screen.queryByRole("button", { name: "Totals" })).toBeNull();
+  const paidRow = within(screen.getByTestId("history-bill-paid"));
+  expect(paidRow.getByText("Cash ₹400 · UPI ₹1,000")).toBeTruthy();
+  expect(paidRow.getByText("Subtotal ₹1,300 · Tax ₹100 · Discount ₹50 · Tip ₹50")).toBeTruthy();
+  expect(within(screen.getByTestId("history-bill-partial")).getByText(/₹300 due/)).toBeTruthy();
+  for (const id of ["nc", "void", "cancelled", "zero"]) expect(within(screen.getByTestId(`history-bill-${id}`)).queryByText(/₹.*due/)).toBeNull();
+  expect(within(screen.getByTestId("history-bill-zero")).getByText("No payment due")).toBeTruthy();
+  expect(within(screen.getByTestId("history-bill-incomplete")).getByText("Paid ₹500 · Cash ₹100")).toBeTruthy();
+  expect(within(screen.getByTestId("history-bill-nc")).getByText("Non-chargeable")).toBeTruthy();
+  expect(within(screen.getByTestId("history-bill-void")).getByText("Voided")).toBeTruthy();
+  fireEvent.click(paidRow.getByRole("button", { name: "Print" }));
+  expect(print).toHaveBeenCalledWith("paid");
+  expect(edit).not.toHaveBeenCalled();
+});
+
+it("keeps selected history loading until its own detail arrives", () => {
+  render(<BillingHistoryPanel currentSummary={null} dailyReports={[]} selectedHistoryDayId="older" selectedHistoryDetail={null} menuItems={[]} sending={false} actionMessage="" onHistoryPrint={vi.fn()} onHistoryEdit={vi.fn()} onSelectHistoryDay={vi.fn()} />);
+  expect(screen.getByText("Loading history…")).toBeTruthy();
+  expect(screen.queryByTestId("history-settlement-overview")).toBeNull();
+  expect(screen.queryByText("No bills found")).toBeNull();
 });
