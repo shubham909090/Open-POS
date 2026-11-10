@@ -151,7 +151,7 @@ function BillingHistoryPanel({
       </View>
       {history.overview ? (
         <View style={styles.historyOverview} testID="history-settlement-overview">
-          <Text style={styles.smallMuted}>{history.label}</Text>
+          <Text style={styles.smallMuted}>{history.label}{history.overview.grossSalesPaise !== undefined ? ` · Gross ₹${formatRupees(history.overview.grossSalesPaise)}` : ""}</Text>
           <View style={styles.historyOverviewTotals}>
             {[
               ["Sales", `₹${formatRupees(history.overview.salesPaise)}`],

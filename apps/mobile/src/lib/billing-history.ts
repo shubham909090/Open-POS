@@ -6,6 +6,7 @@ const TENDERS = [["cash", "Cash"], ["upi", "UPI"], ["card", "Card"], ["online", 
 
 type HistoryOverview = {
   salesPaise: number;
+  grossSalesPaise?: number;
   billCount: number;
   collectedPaise: number;
   tenders: Array<{ method: string; label: string; amountPaise: number | null }>;
@@ -42,6 +43,7 @@ export function getBillingHistoryViewModel(
       bills: newestBillsFirst(report?.billSummaries ?? []),
       overview: report ? {
         salesPaise: report.final_sales_paise,
+        grossSalesPaise: report.gross_sales_paise,
         billCount: report.bill_count,
         collectedPaise: report.total_payments_paise,
         tenders: savedDayTenders(report)

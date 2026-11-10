@@ -39,7 +39,7 @@ describe("mobile billing history view model", () => {
 
     expect(viewModel.label).toBe("2026-05-16");
     expect(viewModel.bills.map((bill) => bill.billId)).toEqual(["old-bill"]);
-    expect(viewModel.overview).toMatchObject({ salesPaise: 10_000, billCount: 2, collectedPaise: 10_000 });
+    expect(viewModel.overview).toMatchObject({ salesPaise: 10_000, grossSalesPaise: 12_000, billCount: 2, collectedPaise: 10_000 });
     expect(viewModel.overview?.tenders.every((tender) => tender.amountPaise === null)).toBe(true);
   });
 
