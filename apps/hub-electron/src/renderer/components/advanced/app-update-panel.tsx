@@ -63,6 +63,7 @@ export function AppUpdatePanel({ setNotice }: { setNotice: NoticeSetter }) {
   );
   const unavailable = updateStatus.isError && !status;
   const pendingLabel = unavailable ? "Status unavailable" : "Loading";
+  const onlineReady = online?.enabled && online.status !== "error";
   const rollbackCardClass = status
     ? rollbackReady
       ? "update-status-card ready"
@@ -80,7 +81,7 @@ export function AppUpdatePanel({ setNotice }: { setNotice: NoticeSetter }) {
       {!unavailable ? <div className="update-status-grid">
         <article
           className={
-            online?.enabled
+            onlineReady
               ? "update-status-card ready"
               : "update-status-card warning"
           }
@@ -99,7 +100,7 @@ export function AppUpdatePanel({ setNotice }: { setNotice: NoticeSetter }) {
           </div>
           <span
             className={
-              online?.enabled ? "record-status active" : "record-status warning"
+              onlineReady ? "record-status active" : "record-status warning"
             }
           >
             {online ? online.status === "error" ? "Needs attention" : online.enabled ? "Ready" : "Unavailable" : pendingLabel}
