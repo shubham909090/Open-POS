@@ -442,7 +442,16 @@ export class AppUpdateService {
 
   private completePendingInstall(): void {
     const state = this.readState();
-    if (!state.pending || state.pending.version !== this.input.appVersion) return;
+    if (!state.pending) return;
+    if (compareVersions(state.pending.version, this.input.appVersion) > 0) {
+      this.setOnlineState({
+        status: "error",
+        availableVersion: state.pending.version,
+        message: `Update ${state.pending.version} was not applied. Hub is still running ${this.input.appVersion}. Retry Update app or install the verified installer.`
+      });
+      return;
+    }
+    if (state.pending.version !== this.input.appVersion) return;
     this.writeState({ ...state, current: state.pending, pending: undefined });
   }
 

@@ -38,6 +38,23 @@ describe("AppUpdateService", () => {
       expect(service.status().online).toMatchObject({ status: "error", message: expect.stringContaining("previous update") });
     } finally { fixture.close(); }
   });
+
+  it("reports an unapplied update after restarting the old version without a helper error report", async () => {
+    const fixture = createFixture();
+    try {
+      const launchInstaller = vi.fn();
+      const onlineUpdater = createOnlineUpdater({ downloadedInstallerPath: writeInstaller(fixture.root, "0.2.0") });
+      await createService(fixture, { onlineUpdater, launchInstaller, platform: "win32" }).installOnlineUpdate();
+
+      const restarted = createService(fixture, { onlineUpdater, launchInstaller, platform: "win32" });
+      expect(restarted.status()).toMatchObject({
+        pending: { version: "0.2.0" },
+        online: { status: "error", availableVersion: "0.2.0", message: expect.stringContaining("Hub is still running 0.1.0") }
+      });
+      expect(launchInstaller).toHaveBeenCalledTimes(1);
+      expect(createService(fixture, { appVersion: "0.3.0", onlineUpdater }).status().online.status).toBe("idle");
+    } finally { fixture.close(); }
+  }, windowsBackupTimeout);
   // Creating the first real database/order fixture took 13 seconds on Windows
   // CI; allow cold-run setup time while keeping the active-order assertion.
   it("blocks one-click online update while running orders exist", async () => {
