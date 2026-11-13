@@ -442,7 +442,7 @@ export class AppUpdateService {
 
   private completePendingInstall(): void {
     const state = this.readState();
-    if (!state.pending) return;
+    if (!state.pending || typeof state.pending.version !== "string") return;
     if (compareVersions(state.pending.version, this.input.appVersion) > 0) {
       this.setOnlineState({
         status: "error",

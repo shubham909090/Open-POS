@@ -55,6 +55,16 @@ describe("AppUpdateService", () => {
       expect(createService(fixture, { appVersion: "0.3.0", onlineUpdater }).status().online.status).toBe("idle");
     } finally { fixture.close(); }
   }, windowsBackupTimeout);
+
+  it("keeps startup usable when an incomplete pending record has no version", () => {
+    const fixture = createFixture();
+    try {
+      const updateDir = join(fixture.root, "updates");
+      mkdirSync(updateDir, { recursive: true });
+      writeFileSync(join(updateDir, "app-update-state.json"), JSON.stringify({ pending: {} }));
+      expect(createService(fixture, { onlineUpdater: createOnlineUpdater() }).status().online.status).toBe("idle");
+    } finally { fixture.close(); }
+  });
   // Creating the first real database/order fixture took 13 seconds on Windows
   // CI; allow cold-run setup time while keeping the active-order assertion.
   it("blocks one-click online update while running orders exist", async () => {
