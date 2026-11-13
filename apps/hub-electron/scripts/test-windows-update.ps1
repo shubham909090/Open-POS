@@ -271,6 +271,10 @@ try {
 
   if ($PublishedSourceVersion) {
     New-Item -ItemType Directory -Force $env:HUB_UPDATE_DIR, $env:HUB_BACKUP_DIR | Out-Null
+    $baselineInstaller = Join-Path $root "Gaurav POS Hub Setup $PublishedSourceVersion.exe"
+    Copy-Item $previousInstaller $baselineInstaller
+    $baselineBody = @{ installerPath = $baselineInstaller } | ConvertTo-Json
+    Invoke-RestMethod "http://127.0.0.1:43737/system/update/register-installer-baseline" -Method Post -Headers $headers -ContentType "application/json" -Body $baselineBody | Out-Null
     Stop-HubGracefully
     $onlineUpdate = Test-OnlineHubUpdate
     Stop-HubGracefully
