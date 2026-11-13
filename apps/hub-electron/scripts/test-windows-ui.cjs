@@ -5,7 +5,9 @@ const path = require('node:path');
 const { once } = require('node:events');
 const { _electron } = require('playwright');
 
-const [executablePath, smokeRoot, onlineTargetVersion, mode] = process.argv.slice(2);
+const [executablePath, smokeRoot, targetOrMode, extraMode] = process.argv.slice(2);
+const onlineTargetVersion = targetOrMode?.startsWith('--') ? undefined : targetOrMode;
+const mode = targetOrMode?.startsWith('--') ? targetOrMode : extraMode;
 const report = {
   platform: process.platform,
   limits: ['Empty, unlicensed smoke database; no dense order workflows or business mutations.',
@@ -122,7 +124,7 @@ async function main() {
   assert.equal(process.platform, 'win32', 'This audit must run against the installed Windows application');
   assert.ok(executablePath && smokeRoot, 'Usage: node test-windows-ui.cjs <installed-exe> <smoke-root> [online-target-version]');
   if (onlineTargetVersion) assert.match(onlineTargetVersion, /^\d+\.\d+\.\d+$/);
-  assert.ok(!mode || (mode === '--update-only' && onlineTargetVersion), 'Update-only mode needs an online target');
+  assert.ok(!mode || mode === '--recovery-only' || (mode === '--update-only' && onlineTargetVersion), 'Unknown verification mode or missing online target');
   assert.ok(fs.existsSync(executablePath), 'Installed executable is missing');
   assert.equal(process.env.HUB_HOST, '127.0.0.1');
   assert.equal(process.env.HUB_PORT, '43737');
@@ -162,6 +164,16 @@ async function main() {
   const dismiss = page.getByRole('button', { name: 'Dismiss notification', exact: true });
   if (await dismiss.count()) await dismiss.click();
   const navigation = page.getByRole('navigation', { name: 'Hub sections', exact: true });
+  if (mode === '--recovery-only') {
+    await navigation.getByRole('button', { name: 'Administration', exact: true }).click();
+    await page.getByRole('navigation', { name: 'Administration sections', exact: true }).getByRole('button', { name: 'App updates', exact: true }).click();
+    await page.getByText(/previous update failed.*exit code 7/i).waitFor();
+    await capture('failed-installer-error');
+    report.recoveryErrorVisible = true;
+    assert.equal(report.errors.length, 0, 'Renderer emitted an error after installer recovery');
+    report.passed = true;
+    return;
+  }
   const sections = await navigation.getByRole('button').allTextContents();
   for (const zoom of mode === '--update-only' ? [] : [1, 1.25]) {
     await app.evaluate(({ BrowserWindow }, factor) => BrowserWindow.getAllWindows()[0].webContents.setZoomFactor(factor), zoom);

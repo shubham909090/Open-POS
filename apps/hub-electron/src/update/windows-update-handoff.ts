@@ -4,6 +4,8 @@ import { basename, dirname, join, win32 } from "node:path";
 import { Buffer } from "node:buffer";
 import { updateHandoffTiming } from "../config/update-handoff.js";
 
+export const UPDATE_FAILURE_FILE = "last-update-error.json";
+
 export interface UpdateLaunchPlan {
   filePath: string;
   args: string[];
@@ -32,36 +34,68 @@ export function writeWindowsInstallerHandoff(input: {
 }): UpdateLaunchPlan {
   const readyPath = join(dirname(input.scriptPath), "ready");
   const decisionPath = join(dirname(input.scriptPath), "decision");
+  const startupLogPath = join(dirname(input.scriptPath), "startup.log");
+  const failurePath = join(dirname(input.logPath), UPDATE_FAILURE_FILE);
+  const appName = psQuote(win32.basename(input.appExecutablePath, ".exe"));
+  const appPath = psQuote(input.appExecutablePath);
   const script = [
     "$ErrorActionPreference = 'Stop'",
     "$exitCode = 0",
     "$transcriptStarted = $false",
+    "$decision = ''",
+    "function Write-HandoffLog([string]$message) {",
+    "  try {",
+    `    [System.IO.File]::AppendAllText(${psQuote(startupLogPath)}, ([DateTime]::UtcNow.ToString('o') + ' ' + $message + [Environment]::NewLine))`,
+    "  } catch {}",
+    "}",
+    "Write-HandoffLog \"PowerShell helper started, PID $PID\"",
     "try {",
     `  Start-Transcript -Path ${psQuote(input.logPath)} -Append`,
     "  $transcriptStarted = $true",
     `  [System.IO.File]::WriteAllText(${psQuote(readyPath)}, 'ready')`,
+    "  Write-HandoffLog 'Helper ready; waiting for authorization.'",
     `  $deadline = (Get-Date).AddSeconds(${updateHandoffTiming.decisionTimeoutSeconds})`,
-    "  $decision = ''",
     "  while ($decision -eq '' -and (Get-Date) -lt $deadline) {",
     `    if (Test-Path -LiteralPath ${psQuote(decisionPath)}) { $decision = [System.IO.File]::ReadAllText(${psQuote(decisionPath)}) }`,
     `    if ($decision -eq '') { Start-Sleep -Milliseconds ${updateHandoffTiming.pollIntervalMs} }`,
     "  }",
     "  if ($decision -ne 'go') { throw 'Update handoff was cancelled or not authorized. Hub can remain open.' }",
+    "  Write-HandoffLog 'Shutdown authorized; waiting for Hub to exit.'",
     `  Write-Output 'Waiting for Gaurav POS Hub to exit...'`,
     `  Get-Process -Id ${input.parentPid} -ErrorAction SilentlyContinue | Wait-Process -Timeout ${updateHandoffTiming.appExitTimeoutSeconds} -ErrorAction Stop`,
-    `  Get-Process -Name ${psQuote(win32.basename(input.appExecutablePath, ".exe"))} -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq ${psQuote(input.appExecutablePath)} } | Wait-Process -Timeout ${updateHandoffTiming.appExitTimeoutSeconds} -ErrorAction Stop`,
+    `  Get-Process -Name ${appName} -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq ${appPath} } | Wait-Process -Timeout ${updateHandoffTiming.appExitTimeoutSeconds} -ErrorAction Stop`,
     `  Write-Output 'Hub exited. Starting the update installer...'`,
+    "  Write-HandoffLog 'Hub exited. Starting the update installer...'",
     `  $installer = ${startProcessCommand(input.installer)} -PassThru -ErrorAction Stop`,
     "  Write-Output \"Installer process: $($installer.Id)\"",
+    "  Write-HandoffLog \"Installer process: $($installer.Id)\"",
     "  $installer.WaitForExit()",
     "  if ($installer.ExitCode -ne 0) { throw \"Installer failed with exit code $($installer.ExitCode).\" }",
     "  Write-Output 'Update installer completed successfully.'",
+    "  Write-HandoffLog 'Update installer completed successfully.'",
     "} catch {",
-    `  [System.IO.File]::AppendAllText(${psQuote(join(dirname(input.scriptPath), "startup.log"))}, ($_ | Out-String))`,
-    "  Write-Output ($_ | Out-String)",
+    "  $failureMessage = $_.Exception.Message",
     "  $exitCode = 1",
+    "  Write-HandoffLog (\"Update failed: \" + $failureMessage)",
+    "  if ($decision -eq 'go') {",
+    "    try {",
+    "    $failure = @{ message = $failureMessage; occurredAt = [DateTime]::UtcNow.ToString('o') } | ConvertTo-Json -Compress",
+    `    [System.IO.File]::WriteAllText(${psQuote(failurePath)}, $failure)`,
+    "    } catch { Write-HandoffLog (\"Could not persist update failure: \" + $_.Exception.Message) }",
+    "  }",
+    "  try { Write-Output $failureMessage } catch {}",
+    "  if ($decision -eq 'go') {",
+    "    try {",
+    // An unreadable process path cannot establish that Hub has stopped.
+    `      $runningHub = @(Get-Process -Name ${appName} -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq ${appPath} -or -not $_.Path })`,
+    `      if ($runningHub.Count -eq 0 -and (Test-Path -LiteralPath ${appPath} -PathType Leaf)) {`,
+    "        Write-HandoffLog 'Reopening Hub after update failure...'",
+    `        Start-Process -FilePath ${appPath} -ErrorAction Stop | Out-Null`,
+    "      }",
+    "    } catch { Write-HandoffLog (\"Could not reopen Hub: \" + $_.Exception.Message) }",
+    "  }",
     "} finally {",
-    "  if ($transcriptStarted) { Stop-Transcript }",
+    "  if ($transcriptStarted) { try { Stop-Transcript } catch { Write-HandoffLog (\"Could not stop transcript: \" + $_.Exception.Message) } }",
     "}",
     "exit $exitCode"
   ].join("\r\n");
@@ -71,7 +105,7 @@ export function writeWindowsInstallerHandoff(input: {
   return {
     filePath: "powershell.exe",
     args: ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", input.scriptPath],
-    handoff: { readyPath, decisionPath, startupLogPath: join(dirname(input.scriptPath), "startup.log") }
+    handoff: { readyPath, decisionPath, startupLogPath }
   };
 }
 

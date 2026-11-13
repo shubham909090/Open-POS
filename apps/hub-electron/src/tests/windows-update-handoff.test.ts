@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { powershellCommand, startProcessCommand, writeWindowsHandoffScript, writeWindowsInstallerHandoff } from "../update/windows-update-handoff.js";
+import { UPDATE_FAILURE_FILE, powershellCommand, psQuote, startProcessCommand, writeWindowsHandoffScript, writeWindowsInstallerHandoff } from "../update/windows-update-handoff.js";
 
 describe("windows update handoff", () => {
   it("launches PowerShell directly with a file argument and waits before starting the installer", () => {
@@ -30,6 +30,46 @@ describe("windows update handoff", () => {
       expect(script).toContain("$installer.ExitCode -ne 0");
       expect(script).toContain("Start-Transcript");
       expect(script.indexOf("Wait-Process")).toBeLessThan(script.indexOf("Start-Process"));
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("records failures independently of the transcript and reopens only an authorized, stopped Hub", () => {
+    const root = mkdtempSync(join(tmpdir(), "gpos-recovery O'Hara & "));
+    try {
+      const attemptDir = join(root, "handoff-attempt");
+      const scriptPath = join(attemptDir, "Install Update.ps1");
+      const appPath = "C:\\Program Files\\Gaurav POS Hub\\Gaurav POS Hub.exe";
+      const plan = writeWindowsInstallerHandoff({
+        scriptPath,
+        logPath: join(root, "install-handoff.log"),
+        appExecutablePath: appPath,
+        parentPid: 12345,
+        installer: { filePath: "C:\\Temp\\setup.exe", args: ["--updated", "/S", "--force-run"] }
+      });
+      expect(plan.handoff).toEqual({ readyPath: join(attemptDir, "ready"), decisionPath: join(attemptDir, "decision"), startupLogPath: join(attemptDir, "startup.log") });
+      const script = readFileSync(scriptPath, "utf8");
+      expect(UPDATE_FAILURE_FILE).toBe("last-update-error.json");
+      expect(script).toContain(`[System.IO.File]::AppendAllText(${psQuote(join(attemptDir, "startup.log"))}`);
+      expect(script.indexOf('Write-HandoffLog "PowerShell helper started, PID $PID"')).toBeLessThan(script.indexOf("Start-Transcript"));
+      expect(script).toContain("Write-HandoffLog 'Shutdown authorized; waiting for Hub to exit.'");
+      expect(script).toContain('Write-HandoffLog "Installer process: $($installer.Id)"');
+      expect(script).toContain("message = $failureMessage; occurredAt = [DateTime]::UtcNow.ToString('o')");
+      expect(script).toContain(`[System.IO.File]::WriteAllText(${psQuote(join(root, UPDATE_FAILURE_FILE))}, $failure)`);
+      expect(script).not.toContain(psQuote(join(attemptDir, UPDATE_FAILURE_FILE)));
+      const failureHandler = script.slice(script.indexOf("  $failureMessage = $_.Exception.Message"));
+      expect(failureHandler).toContain("$exitCode = 1");
+      expect(failureHandler).toContain('Write-HandoffLog ("Update failed: " + $failureMessage)');
+      expect(failureHandler).toContain('catch { Write-HandoffLog ("Could not persist update failure: " + $_.Exception.Message) }');
+      expect(failureHandler).toContain("if ($decision -eq 'go') {");
+      expect(failureHandler).toContain(`Where-Object { $_.Path -eq ${psQuote(appPath)} -or -not $_.Path }`);
+      expect(failureHandler).toContain(`if ($runningHub.Count -eq 0 -and (Test-Path -LiteralPath ${psQuote(appPath)} -PathType Leaf)) {`);
+      expect(failureHandler).toContain(`Start-Process -FilePath ${psQuote(appPath)} -ErrorAction Stop | Out-Null`);
+      expect(failureHandler.indexOf("if ($decision -eq 'go')")).toBeLessThan(failureHandler.indexOf("Start-Process"));
+      expect(failureHandler).toContain('catch { Write-HandoffLog ("Could not reopen Hub: " + $_.Exception.Message) }');
+      expect(failureHandler).toContain('try { Stop-Transcript } catch { Write-HandoffLog ("Could not stop transcript: " + $_.Exception.Message) }');
+      expect(script.trimEnd()).toMatch(/exit \$exitCode$/);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

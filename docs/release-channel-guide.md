@@ -1,11 +1,12 @@
 # Official and nightly releases
 
-Hub 0.1.28 and Android 0.1.18 restore the settlement overview in bill history. Daily totals and recorded payment splits are visible without opening a bill, alongside the existing branding, receipt controls and shortcuts.
+Hub 0.1.29 adds recovery when the Windows installer reports failure after Hub closes. It reopens Hub and shows the failure in App updates. Android remains 0.1.18; bill-history settlement totals, branding and receipt controls are unchanged.
 
 | Channel | Windows Hub | Android | Intended use |
 | --- | --- | --- | --- |
-| Official | 0.1.28 | 0.1.18, versionCode 18 | Always-visible history totals, payment splits and bill breakdowns |
-| Previous official | 0.1.27 | 0.1.17, versionCode 17 | Receipt visibility, logo cropping and printer logo controls |
+| Official | 0.1.29 | 0.1.18, versionCode 18 | Hub installer-error recovery; Android unchanged |
+| Previous official | 0.1.28 | 0.1.18, versionCode 18 | Always-visible history totals, payment splits and bill breakdowns |
+| Earlier official | 0.1.27 | 0.1.17, versionCode 17 | Receipt visibility, logo cropping and printer logo controls |
 | Earlier official | 0.1.26 | 0.1.16, versionCode 16 | Compact redesign, complete menu-size layouts and preserved shortcuts |
 | Earlier official | 0.1.25 | 0.1.15, versionCode 15 | Initial redesign and new update controls |
 | Previous regular | 0.1.23 | 0.1.13, versionCode 13 | Previous interface with QR and text sizing |
@@ -13,11 +14,11 @@ Hub 0.1.28 and Android 0.1.18 restore the settlement overview in bill history. D
 
 Release pages:
 
-- [Official release](https://github.com/shubham909090/Open-POS/releases/tag/hub-v0.1.28)
+- [Official release](https://github.com/shubham909090/Open-POS/releases/tag/hub-v0.1.29)
 - [Previous regular release](https://github.com/shubham909090/Open-POS/releases/tag/hub-v0.1.23)
 - [UI nightly prerelease](https://github.com/shubham909090/Open-POS/releases/tag/hub-v0.1.24)
 
-Hub 0.1.25–0.1.27 and Android 0.1.15–0.1.17 can use their update buttons to receive this release.
+Hub 0.1.25–0.1.28 can use Update app to receive 0.1.29. Android remains 0.1.18; older Android apps with the update feature can still receive that APK.
 
 ## Updating the restaurant
 
@@ -55,3 +56,9 @@ In Settings → Printers & receipts → Ticket layout, independently show or hid
 ## History settlement overview
 
 Hub history rows show recorded payment splits, collected and outstanding amounts, and subtotal/tax plus applicable discount/tip without expanding a bill. Android history keeps the selected day’s sales, bill count and settlement overview visible above the list, with each bill’s split and financial breakdown shown inline. Older-day loading and unavailable payment-method details retain their context rather than borrowing today’s figures. Print, edit approvals and settlement calculations are unchanged.
+
+## Installer failure recovery
+
+Recovery applies after Hub 0.1.29 is installed. If its authorized installer reports an error after Hub has closed, the helper reopens Hub when its executable is available and no matching Hub process is running. App updates shows the persisted error. Direct helper logs record the actual PowerShell PID and progress, independently of the transcript. A canceled helper cannot reopen Hub or overwrite a later attempt’s error. Backup and checksum checks remain required.
+
+This handles reported helper/installer errors; it cannot guarantee recovery if Windows or security software forcibly terminates the helper itself. The restaurant’s earlier 0.1.26 failure was not reproduced: the unmodified published 0.1.26 → 0.1.28 online update passed in isolated Windows CI. The machine-specific cause remains unconfirmed. If an older installed updater has already exited without installing, use the verified installer over the existing installation; do not uninstall or replace the database.

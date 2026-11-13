@@ -9,7 +9,7 @@ import { DomainError } from "../domain/errors.js";
 import type { OnlineUpdateMetadata, UpdatePackageManifest } from "./update-package.js";
 import { PACKAGED_SQLITE_NATIVE_PATH, UPDATE_APP_ID, sha256, validateOnlineUpdateMetadata, validateUpdatePackage, validateWindowsX64NativeModule } from "./update-package.js";
 import { GithubUpdateSource, compareVersions, type GithubFetch, type GithubUpdateCheckResult, type GithubUpdateInstallRequest } from "./github-update-source.js";
-import { powershellCommand, psQuote, startProcessCommand, writeWindowsHandoffScript, writeWindowsInstallerHandoff, type UpdateLaunchPlan } from "./windows-update-handoff.js";
+import { UPDATE_FAILURE_FILE, powershellCommand, psQuote, startProcessCommand, writeWindowsHandoffScript, writeWindowsInstallerHandoff, type UpdateLaunchPlan } from "./windows-update-handoff.js";
 import { launchUpdateProcess } from "./launch-update-process.js";
 export type { GithubFetch, GithubFetchResponse, GithubRelease, GithubReleaseAsset, GithubUpdateCheckResult, GithubUpdateCheckStatus, GithubUpdateInstallRequest } from "./github-update-source.js";
 export type { UpdateLaunchPlan } from "./windows-update-handoff.js";
@@ -126,6 +126,7 @@ export class AppUpdateService {
     });
     mkdirSync(this.input.updateDir, { recursive: true });
     this.completePendingInstall();
+    this.restoreInstallerFailure();
   }
 
   status(): AppUpdateStatus {
@@ -445,6 +446,21 @@ export class AppUpdateService {
     this.writeState({ ...state, current: state.pending, pending: undefined });
   }
 
+  private restoreInstallerFailure(): void {
+    const path = join(this.input.updateDir, UPDATE_FAILURE_FILE);
+    if (!existsSync(path)) return;
+    let message = "The previous update did not finish. Check the updater log.";
+    try {
+      const failure: unknown = JSON.parse(readFileSync(path, "utf8"));
+      if (failure && typeof failure === "object" && "message" in failure && typeof failure.message === "string" && failure.message.trim()) {
+        message = `The previous update failed. ${failure.message}`;
+      }
+    } catch {
+      // An interrupted error-report write must never prevent restaurant startup.
+    }
+    this.setOnlineState({ status: "error", message });
+  }
+
   private activeOrderCount(): number {
     const row = this.input.database.db
       .prepare("SELECT COUNT(*) AS count FROM orders WHERE status IN ('open', 'billed')")
@@ -453,6 +469,7 @@ export class AppUpdateService {
   }
 
   private async launchAndExit(plan: UpdateLaunchPlan): Promise<void> {
+    rmSync(join(this.input.updateDir, UPDATE_FAILURE_FILE), { force: true });
     const launchPlan = this.installerLaunchPlan(plan);
     if (this.input.launchInstaller) await this.input.launchInstaller(launchPlan);
     else await launchUpdateProcess(launchPlan, this.input.updateDir);

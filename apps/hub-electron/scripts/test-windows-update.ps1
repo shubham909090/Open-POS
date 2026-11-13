@@ -145,6 +145,49 @@ function Test-PackagedHubUpdate {
   return $result
 }
 
+function Test-FailedInstallerRecovery {
+  # Exercise the real helper's failure path against the installed application.
+  # Only the installer is replaced with cmd's deterministic non-zero exit.
+  Push-Location $hubRoot
+  try {
+    node --input-type=module -e @'
+import { join } from 'node:path';
+import { writeWindowsInstallerHandoff } from './dist/update/windows-update-handoff.js';
+import { launchUpdateProcess } from './dist/update/launch-update-process.js';
+const plan = writeWindowsInstallerHandoff({
+  scriptPath: join(process.env.HUB_UPDATE_DIR, 'recovery-check', 'Install Gaurav POS Update.ps1'),
+  logPath: join(process.env.HUB_UPDATE_DIR, 'install-handoff.log'),
+  parentPid: process.pid,
+  appExecutablePath: process.env.SMOKE_APP_PATH,
+  installer: { filePath: process.env.ComSpec, args: ['/d', '/c', 'exit', '7'] }
+});
+await launchUpdateProcess(plan, process.env.HUB_UPDATE_DIR);
+'@
+    if ($LASTEXITCODE -ne 0) { throw "Recovery helper launch failed" }
+  } finally { Pop-Location }
+  Wait-ForHub
+  $headers = @{ "x-device-token" = $env:HUB_ADMIN_TOKEN }
+  $status = Invoke-RestMethod "http://127.0.0.1:43737/system/update/status" -Headers $headers
+  if ($status.online.status -ne 'error' -or !$status.online.message.Contains('exit code 7')) { throw "Recovered Hub did not explain the failed installer" }
+  if ($status.appVersion -ne $version) { throw "Failed installer changed the app version" }
+  $reportPath = Join-Path $env:HUB_UPDATE_DIR 'last-update-error.json'
+  $failure = Get-Content $reportPath -Raw | ConvertFrom-Json
+  if (!$failure.message.Contains('exit code 7') -or !$failure.occurredAt) { throw "Installer failure was not persisted" }
+  $helperLog = Get-Content (Join-Path $env:HUB_UPDATE_DIR 'recovery-check/startup.log') -Raw
+  if (!$helperLog.Contains('PowerShell helper started, PID') -or !$helperLog.Contains('Reopening Hub after update failure')) { throw "Recovery milestones were not logged" }
+  $windows = @(Get-Process -Name 'Gaurav POS Hub' | Where-Object { $_.MainWindowHandle -ne 0 })
+  if ($windows.Count -ne 1) { throw "Recovery opened duplicate Hub windows" }
+  Invoke-RestMethod "http://127.0.0.1:43737/admin/session/unlock" -Method Post -Headers $headers -ContentType 'application/json' -Body '{"pin":"4321"}' | Out-Null
+  $result = @{ installerExitCode = 7; reopenedHub = $true; visibleError = $status.online.message; managerPinPreserved = $true; singleWindow = $true }
+  $result | ConvertTo-Json | Set-Content (Join-Path $root 'failed-installer-recovery.json')
+  Stop-HubGracefully
+  node (Join-Path $PSScriptRoot 'test-windows-ui.cjs') $appPath $root '--recovery-only'
+  if ($LASTEXITCODE -ne 0) { throw "Recovered Hub did not show the installer error on screen" }
+  Copy-Item (Join-Path $root 'windows-ui-audit.json') (Join-Path $root 'recovery-ui-audit.json')
+  Remove-Item -LiteralPath $reportPath
+  return $result
+}
+
 function Test-OnlineHubUpdate {
   # Observe the real public feed; neither the UI nor production updater receives
   # a feed override. Published-source mode uses the original shipped binary.
@@ -340,6 +383,7 @@ console.log(JSON.stringify(plan));
   Invoke-RestMethod "http://127.0.0.1:43737/admin/session/unlock" -Method Post -Headers $headers -ContentType "application/json" -Body '{"pin":"4321"}' | Out-Null
   $packagedUpdate = Test-PackagedHubUpdate
   Stop-HubGracefully
+  $failureRecovery = Test-FailedInstallerRecovery
   $installedVersion = $version
   $onlineUpdate = $null
   if ($OnlineTargetVersion) {
@@ -352,7 +396,7 @@ console.log(JSON.stringify(plan));
   }
   $selfTest = Start-Process $appPath -ArgumentList "--self-test-sqlite" -PassThru -Wait
   if ($selfTest.ExitCode -ne 0) { throw "Installed SQLite self-test failed" }
-  @{ previousVersion = $PreviousVersion; installedVersion = $installedVersion; legacyUninstallerIntegrity = $legacyIntegrity; normalReinstall = "passed"; packagedUpdate = $packagedUpdate; onlineUpdate = $onlineUpdate; databasePreserved = $true; sqliteSelfTest = "passed" } |
+  @{ previousVersion = $PreviousVersion; installedVersion = $installedVersion; legacyUninstallerIntegrity = $legacyIntegrity; normalReinstall = "passed"; packagedUpdate = $packagedUpdate; failureRecovery = $failureRecovery; onlineUpdate = $onlineUpdate; databasePreserved = $true; sqliteSelfTest = "passed" } |
     ConvertTo-Json | Set-Content (Join-Path $root "result.json")
 } catch {
   $failure = $_

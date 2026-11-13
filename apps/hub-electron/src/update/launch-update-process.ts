@@ -44,7 +44,7 @@ export async function launchUpdateProcess(
       child.once("error", reject);
     });
     if (handoff) {
-      appendFileSync(handoff.startupLogPath, `${new Date().toISOString()} helper started, PID ${child.pid}\n`);
+      appendFileSync(handoff.startupLogPath, `${new Date().toISOString()} launcher started, PID ${child.pid}\n`);
       const deadline = Date.now() + timing.startupTimeoutMs;
       while (!existsSync(handoff.readyPath)) {
         if (launchError) throw launchError;

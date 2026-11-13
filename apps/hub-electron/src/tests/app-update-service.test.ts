@@ -17,6 +17,27 @@ import { PACKAGED_SQLITE_NATIVE_PATH, sha256, type OnlineUpdateMetadata, type Up
 const windowsBackupTimeout = process.platform === "win32" ? 30_000 : 5_000;
 
 describe("AppUpdateService", () => {
+  it("shows a persisted installer failure after Hub reopens", () => {
+    const fixture = createFixture();
+    try {
+      const updateDir = join(fixture.root, "updates");
+      mkdirSync(updateDir, { recursive: true });
+      writeFileSync(join(updateDir, "last-update-error.json"), JSON.stringify({ message: "Installer failed with exit code 7.", occurredAt: "2026-11-14T00:00:00Z" }));
+      const service = createService(fixture, { onlineUpdater: createOnlineUpdater() });
+      expect(service.status().online).toMatchObject({ status: "error", message: expect.stringContaining("Installer failed with exit code 7.") });
+    } finally { fixture.close(); }
+  });
+
+  it("keeps Hub usable when the persisted failure report is incomplete", () => {
+    const fixture = createFixture();
+    try {
+      const updateDir = join(fixture.root, "updates");
+      mkdirSync(updateDir, { recursive: true });
+      writeFileSync(join(updateDir, "last-update-error.json"), "{unfinished");
+      const service = createService(fixture, { onlineUpdater: createOnlineUpdater() });
+      expect(service.status().online).toMatchObject({ status: "error", message: expect.stringContaining("previous update") });
+    } finally { fixture.close(); }
+  });
   // Creating the first real database/order fixture took 13 seconds on Windows
   // CI; allow cold-run setup time while keeping the active-order assertion.
   it("blocks one-click online update while running orders exist", async () => {
@@ -66,6 +87,8 @@ describe("AppUpdateService", () => {
       const onlineUpdater = createOnlineUpdater({ availableVersion: "0.2.0", downloadedInstallerPath: writeInstaller(fixture.root, "0.2.0") });
       const service = createService(fixture, { onlineUpdater, launchInstaller, platform: "win32" });
       service.registerBaseline(writePackage(fixture.root, "0.1.0"));
+      const failurePath = join(fixture.root, "updates", "last-update-error.json");
+      writeFileSync(failurePath, JSON.stringify({ message: "An older attempt failed", occurredAt: "2026-11-14T00:00:00Z" }));
 
       const result = await service.installOnlineUpdate();
 
@@ -93,6 +116,8 @@ describe("AppUpdateService", () => {
         previous: { version: "0.1.0" }
       });
       expect(restartedService.status().pending).toBeUndefined();
+      expect(existsSync(failurePath)).toBe(false);
+      expect(restartedService.status().online.status).toBe("idle");
     } finally {
       fixture.close();
     }
