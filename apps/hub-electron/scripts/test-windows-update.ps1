@@ -1,7 +1,8 @@
 param(
   [string]$PreviousVersion = "0.1.19",
   [string]$FixtureVersion = "",
-  [string]$OnlineTargetVersion = ""
+  [string]$OnlineTargetVersion = "",
+  [string]$PublishedSourceVersion = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -146,7 +147,8 @@ function Test-PackagedHubUpdate {
 
 function Test-OnlineHubUpdate {
   # Observe the real public feed; neither the UI nor production updater receives
-  # a feed override. The internal fixture contains this checkout's patched code.
+  # a feed override. Published-source mode uses the original shipped binary.
+  $sourceVersion = if ($PublishedSourceVersion) { $PublishedSourceVersion } else { $FixtureVersion }
   $githubHeaders = @{ Accept = "application/vnd.github+json"; "User-Agent" = "Gaurav-POS-Windows-Smoke" }
   if ($env:GH_TOKEN) { $githubHeaders.Authorization = "Bearer $env:GH_TOKEN" }
   $release = Invoke-RestMethod "https://api.github.com/repos/shubham909090/Open-POS/releases/latest" -Headers $githubHeaders
@@ -167,7 +169,9 @@ function Test-OnlineHubUpdate {
   $backupsBefore = @(Get-ChildItem $env:HUB_BACKUP_DIR -File -Filter "*.sqlite" | Select-Object -ExpandProperty FullName)
   $logPath = Join-Path $env:HUB_UPDATE_DIR "install-handoff.log"
   $logBefore = if (Test-Path $logPath) { [string](Get-Content $logPath -Raw) } else { "" }
-  node (Join-Path $PSScriptRoot "test-windows-ui.cjs") $appPath $root $OnlineTargetVersion
+  $uiArgs = @((Join-Path $PSScriptRoot "test-windows-ui.cjs"), $appPath, $root, $OnlineTargetVersion)
+  if ($PublishedSourceVersion) { $uiArgs += "--update-only" }
+  node @uiArgs
   if ($LASTEXITCODE -ne 0) { throw "Real online Update app button audit failed" }
   $ui = Get-Content (Join-Path $root "windows-ui-audit.json") -Raw | ConvertFrom-Json
   if (!$ui.passed -or $ui.onlineButton.route -ne "/system/update/online/install" -or !$ui.onlineButton.oldProcessExited -or $ui.onlineButton.requestedTarget -ne $OnlineTargetVersion) { throw "Online UI click/process-exit evidence is missing" }
@@ -182,7 +186,7 @@ function Test-OnlineHubUpdate {
   $statePath = Join-Path $env:HUB_UPDATE_DIR "app-update-state.json"
   $state = Get-Content $statePath -Raw | ConvertFrom-Json
   $backupPath = $state.previous.preUpdateBackupPath
-  if ($state.previous.version -ne $FixtureVersion -or !$backupPath -or $backupPath -in $backupsBefore -or !(Test-Path $backupPath) -or (Get-Item $backupPath).Length -le 0) { throw "Online update did not create a new fixture database backup" }
+  if ($state.previous.version -ne $sourceVersion -or !$backupPath -or $backupPath -in $backupsBefore -or !(Test-Path $backupPath) -or (Get-Item $backupPath).Length -le 0) { throw "Online update did not create a new source database backup" }
 
   $deadline = (Get-Date).AddSeconds(180)
   $newLog = ""
@@ -209,8 +213,8 @@ function Test-OnlineHubUpdate {
   $cachedHash = (Get-FileHash $status.current.installerPath -Algorithm SHA256).Hash
   if ($cachedHash -ne $expectedHash -or $status.current.manifest.installer.sha256 -ne $expectedHash) { throw "Downloaded installer does not match official SHA256SUMS" }
   $result = @{
-    route = $ui.onlineButton.route; fixtureVersion = $FixtureVersion; targetVersion = $OnlineTargetVersion
-    internalFixture = $true; historicalPublishedFixtureUpdaterTested = $false; onlineFeedTested = $true
+    route = $ui.onlineButton.route; fixtureVersion = $sourceVersion; targetVersion = $OnlineTargetVersion
+    internalFixture = !$PublishedSourceVersion; historicalPublishedFixtureUpdaterTested = [bool]$PublishedSourceVersion; onlineFeedTested = $true
     helperReady = $true; helperAuthorized = $true; preUpdateBackup = Split-Path $backupPath -Leaf
     previousPid = $ui.onlineButton.oldPid; reopenedPid = $reopened.Id; managerPinPreserved = $true
     installerSha256 = $cachedHash; installerMatchesOfficialChecksums = $true; pendingCleared = $true
@@ -220,7 +224,11 @@ function Test-OnlineHubUpdate {
 }
 
 try {
-  if ([bool]$FixtureVersion -ne [bool]$OnlineTargetVersion) { throw "Supply both FixtureVersion and OnlineTargetVersion or neither" }
+  if ($PublishedSourceVersion) {
+    if ($FixtureVersion -or !$OnlineTargetVersion) { throw "Published source requires an online target and cannot use an internal fixture" }
+    if ($PublishedSourceVersion -notmatch '^\d+\.\d+\.\d+$' -or $OnlineTargetVersion -notmatch '^\d+\.\d+\.\d+$' -or [version]$PublishedSourceVersion -ge [version]$OnlineTargetVersion) { throw "Published source must be older than the stable target" }
+    $PreviousVersion = $PublishedSourceVersion
+  } elseif ([bool]$FixtureVersion -ne [bool]$OnlineTargetVersion) { throw "Supply both FixtureVersion and OnlineTargetVersion or neither" }
   if ($FixtureVersion) {
     if ($FixtureVersion -notmatch '^\d+\.\d+\.\d+$' -or $OnlineTargetVersion -notmatch '^\d+\.\d+\.\d+$') { throw "Online test versions must be stable x.y.z versions" }
     if ([version]$FixtureVersion -ge [version]$OnlineTargetVersion -or $version -ne $FixtureVersion) { throw "Build the older internal fixture before running the online update audit" }
@@ -228,6 +236,12 @@ try {
   gh release download "hub-v$PreviousVersion" --repo shubham909090/Open-POS --pattern "Gaurav-POS-Hub-Setup-$PreviousVersion.exe" --dir $root
   if ($LASTEXITCODE -ne 0) { throw "Previous installer download failed" }
   $previousInstaller = Join-Path $root "Gaurav-POS-Hub-Setup-$PreviousVersion.exe"
+  if ($PublishedSourceVersion) {
+    $release = Invoke-RestMethod "https://api.github.com/repos/shubham909090/Open-POS/releases/tags/hub-v$PublishedSourceVersion"
+    $asset = @($release.assets | Where-Object name -eq (Split-Path $previousInstaller -Leaf))
+    if ($asset.Count -ne 1 -or !$asset[0].digest -or "sha256:$((Get-FileHash $previousInstaller -Algorithm SHA256).Hash.ToLowerInvariant())" -ne $asset[0].digest) { throw "Published source installer checksum mismatch" }
+    @{ sourceVersion = $PublishedSourceVersion; installerSha256 = $asset[0].digest; publishedBinaryUnmodified = $true } | ConvertTo-Json | Set-Content (Join-Path $root "published-source.json")
+  }
   $install = Start-Process $previousInstaller -ArgumentList "/S" -PassThru -Wait
   if ($install.ExitCode -ne 0) { throw "Previous install failed: $($install.ExitCode)" }
   $appPath = Find-InstalledHub
@@ -254,6 +268,17 @@ try {
   $headers = @{ "x-device-token" = $env:HUB_ADMIN_TOKEN }
   Invoke-RestMethod "http://127.0.0.1:43737/settings/manager-pin" -Method Put -Headers $headers -ContentType "application/json" -Body '{"newPin":"4321","updatedBy":"windows-smoke"}' | Out-Null
   if (!(Test-Path $env:HUB_DATABASE_PATH)) { throw "Hub database was not created" }
+
+  if ($PublishedSourceVersion) {
+    New-Item -ItemType Directory -Force $env:HUB_UPDATE_DIR, $env:HUB_BACKUP_DIR | Out-Null
+    Stop-HubGracefully
+    $onlineUpdate = Test-OnlineHubUpdate
+    Stop-HubGracefully
+    $selfTest = Start-Process $appPath -ArgumentList "--self-test-sqlite" -PassThru -Wait
+    if ($selfTest.ExitCode -ne 0) { throw "Installed SQLite self-test failed" }
+    @{ previousVersion = $PreviousVersion; installedVersion = $OnlineTargetVersion; onlineUpdate = $onlineUpdate; databasePreserved = $true; sqliteSelfTest = "passed" } | ConvertTo-Json | Set-Content (Join-Path $root "result.json")
+    return
+  }
 
   $env:SMOKE_PARENT_PID = [string]$oldApp.Id
   $env:SMOKE_APP_PATH = $appPath

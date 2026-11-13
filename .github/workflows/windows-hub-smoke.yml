@@ -16,7 +16,11 @@ on:
         required: false
         type: string
       onlineTargetVersion:
-        description: 'Published latest stable target, e.g. 0.1.25; requires fixtureVersion'
+        description: 'Published latest stable target; requires fixtureVersion or publishedSourceVersion'
+        required: false
+        type: string
+      publishedSourceVersion:
+        description: 'Test the actual published installer, e.g. 0.1.26, without rebuilding it'
         required: false
         type: string
   push:
@@ -36,6 +40,7 @@ jobs:
     env:
       FIXTURE_VERSION: ${{ inputs.fixtureVersion || '' }}
       ONLINE_TARGET_VERSION: ${{ inputs.onlineTargetVersion || '' }}
+      PUBLISHED_SOURCE_VERSION: ${{ inputs.publishedSourceVersion || '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -52,6 +57,7 @@ jobs:
           [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path apps/hub-electron/scripts/test-windows-update.ps1), [ref]$tokens, [ref]$parseErrors) | Out-Null
           if ($parseErrors.Count -gt 0) { $parseErrors | Format-List; throw 'Windows smoke script has syntax errors' }
       - name: Fresh native Windows release
+        if: inputs.publishedSourceVersion == ''
         shell: pwsh
         run: |
           $version = (Get-Content apps/hub-electron/package.json | ConvertFrom-Json).version
@@ -69,9 +75,9 @@ jobs:
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-        run: ./apps/hub-electron/scripts/test-windows-update.ps1 -FixtureVersion "$env:FIXTURE_VERSION" -OnlineTargetVersion "$env:ONLINE_TARGET_VERSION"
+        run: ./apps/hub-electron/scripts/test-windows-update.ps1 -FixtureVersion "$env:FIXTURE_VERSION" -OnlineTargetVersion "$env:ONLINE_TARGET_VERSION" -PublishedSourceVersion "$env:PUBLISHED_SOURCE_VERSION"
       - uses: actions/upload-artifact@v4
-        if: always()
+        if: always() && inputs.publishedSourceVersion == ''
         with:
           name: ${{ inputs.fixtureVersion && 'windows-hub-internal-fixture' || 'windows-hub-release' }}
           path: apps/hub-electron/release/*
@@ -85,3 +91,6 @@ jobs:
             ${{ runner.temp }}/gpos-update-smoke/*.png
             ${{ runner.temp }}/gpos-update-smoke/updates/*.log
             ${{ runner.temp }}/gpos-update-smoke/updates/handoff-*/*.log
+            ${{ runner.temp }}/gpos-update-smoke/updates/handoff-*/*.ps1
+            ${{ runner.temp }}/gpos-update-smoke/updates/handoff-*/ready
+            ${{ runner.temp }}/gpos-update-smoke/updates/handoff-*/decision

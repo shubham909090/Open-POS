@@ -5,7 +5,7 @@ const path = require('node:path');
 const { once } = require('node:events');
 const { _electron } = require('playwright');
 
-const [executablePath, smokeRoot, onlineTargetVersion] = process.argv.slice(2);
+const [executablePath, smokeRoot, onlineTargetVersion, mode] = process.argv.slice(2);
 const report = {
   platform: process.platform,
   limits: ['Empty, unlicensed smoke database; no dense order workflows or business mutations.',
@@ -122,6 +122,7 @@ async function main() {
   assert.equal(process.platform, 'win32', 'This audit must run against the installed Windows application');
   assert.ok(executablePath && smokeRoot, 'Usage: node test-windows-ui.cjs <installed-exe> <smoke-root> [online-target-version]');
   if (onlineTargetVersion) assert.match(onlineTargetVersion, /^\d+\.\d+\.\d+$/);
+  assert.ok(!mode || (mode === '--update-only' && onlineTargetVersion), 'Update-only mode needs an online target');
   assert.ok(fs.existsSync(executablePath), 'Installed executable is missing');
   assert.equal(process.env.HUB_HOST, '127.0.0.1');
   assert.equal(process.env.HUB_PORT, '43737');
@@ -162,7 +163,7 @@ async function main() {
   if (await dismiss.count()) await dismiss.click();
   const navigation = page.getByRole('navigation', { name: 'Hub sections', exact: true });
   const sections = await navigation.getByRole('button').allTextContents();
-  for (const zoom of [1, 1.25]) {
+  for (const zoom of mode === '--update-only' ? [] : [1, 1.25]) {
     await app.evaluate(({ BrowserWindow }, factor) => BrowserWindow.getAllWindows()[0].webContents.setZoomFactor(factor), zoom);
     const prefix = `zoom-${Math.round(zoom * 100)}`;
     for (const label of sections.map(value => value.trim())) {
